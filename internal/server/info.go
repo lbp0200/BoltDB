@@ -1,11 +1,20 @@
 package server
 
 import (
-	"fmt"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 )
+
+// Version 版本号，通过 ldflags 注入
+var Version = "8.0.0"
+
+// GitCommitID Git commit ID，通过 ldflags 注入
+var GitCommitID = ""
+
+// BuildTime 编译时间，通过 ldflags 注入
+var BuildTime = ""
 
 // buildInfoResponse 构建INFO响应
 // 增强对 redis-sentinel 的兼容性
@@ -14,17 +23,19 @@ func (h *Handler) buildInfoResponse(section string) string {
 
 	if section == "" || section == "ALL" || section == "SERVER" {
 		builder.WriteString("# Server\n")
-		builder.WriteString("redis_version:boltdb-8.0.0\n")
+		builder.WriteString("redis_version:boltdb-" + Version + "\n")
+		builder.WriteString("git_commit_id:" + GitCommitID + "\n")
+		builder.WriteString("build_time:" + BuildTime + "\n")
 		builder.WriteString("os:" + runtime.GOOS + "\n")
 		builder.WriteString("arch_bits:64\n")
-		builder.WriteString("tcp_port:6379\n")
+		builder.WriteString("tcp_port:" + strconv.Itoa(h.Port) + "\n")
 		if runtime.GOOS == "linux" {
 			builder.WriteString("multiplexing_api:epoll\n")
 		} else {
 			builder.WriteString("multiplexing_api:kqueue\n")
 		}
 		builder.WriteString("gcc_version:" + runtime.Version() + "\n")
-		builder.WriteString(fmt.Sprintf("process_id:%d\n", os.Getpid()))
+		builder.WriteString("process_id:" + strconv.Itoa(os.Getpid()) + "\n")
 		builder.WriteString("run_id:\n")
 		builder.WriteString("tcp_backlog:511\n")
 		builder.WriteString("uptime_in_seconds:0\n")
@@ -36,44 +47,43 @@ func (h *Handler) buildInfoResponse(section string) string {
 		builder.WriteString("# Replication\n")
 		if h.Replication != nil {
 			role := h.Replication.GetRole()
-			builder.WriteString(fmt.Sprintf("role:%s\n", role))
+			builder.WriteString("role:" + role + "\n")
 
 			if role == "master" {
-				builder.WriteString(fmt.Sprintf("connected_slaves:%d\n", h.Replication.GetSlaveCount()))
-				builder.WriteString(fmt.Sprintf("master_replid:%s\n", h.Replication.GetReplicationID()))
-				builder.WriteString(fmt.Sprintf("master_repl_offset:%d\n", h.Replication.GetMasterReplOffset()))
-				builder.WriteString(fmt.Sprintf("second_repl_offset:-1\n"))
-				builder.WriteString(fmt.Sprintf("repl_backlog_active:%d\n", 1))
-				builder.WriteString(fmt.Sprintf("repl_backlog_size:%d\n", 1048576)) // 1MB
-				builder.WriteString(fmt.Sprintf("repl_backlog_first_byte_offset:%d\n", 0))
-				builder.WriteString(fmt.Sprintf("repl_backlog_histlen:%d\n", 0))
+				builder.WriteString("connected_slaves:" + strconv.Itoa(h.Replication.GetSlaveCount()) + "\n")
+				builder.WriteString("master_replid:" + h.Replication.GetReplicationID() + "\n")
+				builder.WriteString("master_repl_offset:" + strconv.FormatInt(h.Replication.GetMasterReplOffset(), 10) + "\n")
+				builder.WriteString("second_repl_offset:-1\n")
+				builder.WriteString("repl_backlog_active:1\n")
+				builder.WriteString("repl_backlog_size:1048576\n") // 1MB
+				builder.WriteString("repl_backlog_first_byte_offset:0\n")
+				builder.WriteString("repl_backlog_histlen:0\n")
 
 				slaves := h.Replication.GetSlaves()
 				for i, slave := range slaves {
-					builder.WriteString(fmt.Sprintf("slave%d:ip=%s,port=6379,state=online,offset=%d,lag=0\n",
-						i, slave.Addr, slave.GetReplOffset()))
+					builder.WriteString("slave" + strconv.Itoa(i) + ":ip=" + slave.Addr + ",port=6379,state=online,offset=" + strconv.FormatInt(slave.GetReplOffset(), 10) + ",lag=0\n")
 				}
 			} else if role == "slave" {
 				masterAddr := h.Replication.GetMasterAddr()
 				if masterAddr != "" {
-					builder.WriteString(fmt.Sprintf("master_host:%s\n", strings.Split(masterAddr, ":")[0]))
+					builder.WriteString("master_host:" + strings.Split(masterAddr, ":")[0] + "\n")
 					if parts := strings.Split(masterAddr, ":"); len(parts) > 1 {
-						builder.WriteString(fmt.Sprintf("master_port:%s\n", parts[1]))
+						builder.WriteString("master_port:" + parts[1] + "\n")
 					}
 				}
-				builder.WriteString(fmt.Sprintf("master_link_status:%s\n", "up"))
-				builder.WriteString(fmt.Sprintf("master_link_down_since_seconds:0\n"))
-				builder.WriteString(fmt.Sprintf("slave_priority:100\n"))
-				builder.WriteString(fmt.Sprintf("slave_read_only:1\n"))
-				builder.WriteString(fmt.Sprintf("replica_announced:1\n"))
-				builder.WriteString(fmt.Sprintf("connected_slaves:0\n"))
-				builder.WriteString(fmt.Sprintf("master_replid:%s\n", h.Replication.GetReplicationID()))
-				builder.WriteString(fmt.Sprintf("master_repl_offset:%d\n", h.Replication.GetMasterReplOffset()))
-				builder.WriteString(fmt.Sprintf("second_repl_offset:-1\n"))
-				builder.WriteString(fmt.Sprintf("repl_backlog_active:0\n"))
-				builder.WriteString(fmt.Sprintf("repl_backlog_size:0\n"))
-				builder.WriteString(fmt.Sprintf("repl_backlog_first_byte_offset:0\n"))
-				builder.WriteString(fmt.Sprintf("repl_backlog_histlen:0\n"))
+				builder.WriteString("master_link_status:up\n")
+				builder.WriteString("master_link_down_since_seconds:0\n")
+				builder.WriteString("slave_priority:100\n")
+				builder.WriteString("slave_read_only:1\n")
+				builder.WriteString("replica_announced:1\n")
+				builder.WriteString("connected_slaves:0\n")
+				builder.WriteString("master_replid:" + h.Replication.GetReplicationID() + "\n")
+				builder.WriteString("master_repl_offset:" + strconv.FormatInt(h.Replication.GetMasterReplOffset(), 10) + "\n")
+				builder.WriteString("second_repl_offset:-1\n")
+				builder.WriteString("repl_backlog_active:0\n")
+				builder.WriteString("repl_backlog_size:0\n")
+				builder.WriteString("repl_backlog_first_byte_offset:0\n")
+				builder.WriteString("repl_backlog_histlen:0\n")
 			}
 		} else {
 			builder.WriteString("role:master\n")
@@ -90,7 +100,7 @@ func (h *Handler) buildInfoResponse(section string) string {
 		builder.WriteString("# Persistence\n")
 		if h.Backup != nil {
 			lastSave := h.Backup.LastSave()
-			builder.WriteString(fmt.Sprintf("rdb_last_save_time:%d\n", lastSave))
+			builder.WriteString("rdb_last_save_time:" + strconv.FormatInt(lastSave, 10) + "\n")
 			builder.WriteString("rdb_changes_since_last_save:0\n")
 		}
 		builder.WriteString("\n")

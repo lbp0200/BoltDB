@@ -25,6 +25,7 @@ type Handler struct {
 	Replication *replication.ReplicationManager
 	Backup      *backup.BackupManager
 	PubSub      *store.PubSubManager
+	Port        int // 服务器监听端口
 	// 事务状态（每个连接独立）
 	transaction *TransactionState
 	// 客户端信息（连接级别）

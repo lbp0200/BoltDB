@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	addr := flag.String("addr", ":6379", "listen addr")
+	addr := flag.String("addr", ":6337", "listen addr")
 	dbPath := flag.String("dir", os.TempDir(), "badger dir")
 	logLevel := flag.String("log-level", "", "log level: DEBUG, INFO, WARNING, ERROR (default: WARNING, or from BOLTDB_LOG_LEVEL env)")
 	clusterEnabled := flag.Bool("cluster", false, "enable cluster mode")
@@ -80,6 +80,10 @@ func main() {
 	if err != nil {
 		logger.Logger.Fatal().Err(err).Str("addr", *addr).Msg("Failed to listen")
 	}
+	// 获取实际监听端口
+	tcpAddr := ln.Addr().(*net.TCPAddr)
+	handler.Port = tcpAddr.Port
+
 	// 启动信息使用 WARN 级别，确保默认配置下也能显示
 	logger.Warning("BoltDB 服务器启动，监听地址: %s", *addr)
 	logger.Warning("当前日志级别: %s", logger.GetLevelString())
