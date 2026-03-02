@@ -1,6 +1,6 @@
 module github.com/lbp0200/BoltDB
 
-go 1.26
+go 1.25
 
 require (
 	github.com/dgraph-io/badger/v4 v4.8.0
