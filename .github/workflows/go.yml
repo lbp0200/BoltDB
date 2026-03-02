@@ -96,7 +96,7 @@ jobs:
             echo "Building for $os-$arch..."
             # Main binary (includes sentinel functionality)
             GIT_COMMIT_ID=${GITHUB_SHA:0:7}
-            BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+            BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -o boltDB-${VERSION}-${osarch}${ext} -ldflags "-s -w -X github.com/lbp0200/BoltDB/internal/server.Version=${VERSION} -X github.com/lbp0200/BoltDB/internal/server.GitCommitID=${GIT_COMMIT_ID} -X github.com/lbp0200/BoltDB/internal/server.BuildTime=${BUILD_TIME}" ./cmd/boltDB/
           done
 
