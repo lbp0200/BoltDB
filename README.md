@@ -121,6 +121,70 @@ chmod +x boltDB
 .\boltDB.exe --dir=.\data --addr=:6379
 ```
 
+### Install via Homebrew | 通过 Homebrew 安装 (macOS)
+
+```bash
+# Add the tap
+brew tap lbp0200/boltdb
+
+# Install BoltDB
+brew install boltdb
+```
+
+#### Usage | 使用方法
+
+```bash
+# Start BoltDB (uses platform-specific data directory)
+boltdb
+
+# Or with custom options
+boltdb --addr=:6337 --dir=/path/to/data --log-level info
+```
+
+#### Data Directory | 数据目录
+
+BoltDB uses platform-specific default data directories:
+
+- **macOS**: `~/Library/Application Support/boltdb`
+- **Linux**: `/var/lib/boltdb`
+
+#### Running as a Service | 作为服务运行
+
+```bash
+# Start BoltDB as a background service (macOS)
+brew services start lbp0200/boltdb/boltdb
+
+# Check service status
+brew services list
+
+# Stop the service
+brew services stop lbp0200/boltdb/boltdb
+
+# Or on Linux (using systemd)
+sudo systemctl start boltdb
+sudo systemctl stop boltdb
+```
+
+#### Upgrading | 升级
+
+```bash
+# Update formulas
+brew update
+
+# Upgrade BoltDB
+brew upgrade boltdb
+```
+
+#### Uninstalling | 卸载
+
+```bash
+# Remove BoltDB
+brew uninstall boltdb
+
+# Remove tap
+brew untap lbp0200/boltdb
+```
+
 ### Build from Source | 从源码编译
 
 #### Linux / macOS
