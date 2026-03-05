@@ -206,7 +206,7 @@ jobs:
           echo '  def install' >> Formula/boltdb.rb
           echo '    arch = Hardware::CPU.arm? ? "arm64" : "amd64"' >> Formula/boltdb.rb
           echo '    os = OS.mac? ? "darwin" : "linux"' >> Formula/boltdb.rb
-          echo "    bin.install \"boltDB-$VERSION_NUM-${os}-${arch}\" => \"boltdb\"" >> Formula/boltdb.rb
+          echo "    bin.install \"boltDB-$VERSION-${os}-${arch}\" => \"boltdb\"" >> Formula/boltdb.rb
           echo "    (bin/\"boltdb-run\").write <<~EOS" >> Formula/boltdb.rb
           echo '      #!/bin/bash' >> Formula/boltdb.rb
           echo '      exec "#{bin}/boltdb" -dir /var/lib/boltdb -addr 0.0.0.0:6379' >> Formula/boltdb.rb
