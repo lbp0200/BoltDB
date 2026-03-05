@@ -209,7 +209,7 @@ jobs:
           echo '    bin.install "boltDB-#{version}-#{os}-#{arch}" => "boltdb"' >> Formula/boltdb.rb
           echo "    (bin/\"boltdb-run\").write <<~EOS" >> Formula/boltdb.rb
           echo '      #!/bin/bash' >> Formula/boltdb.rb
-          echo '      exec "#{bin}/boltdb" -dir /var/lib/boltdb -addr 0.0.0.0:6379' >> Formula/boltdb.rb
+          echo '      exec "#{bin}/boltdb" -dir /var/lib/boltdb -addr :6337 -skip-startup-cleanup' >> Formula/boltdb.rb
           echo '    EOS' >> Formula/boltdb.rb
           echo '    chmod "+x", bin/"boltdb-run"' >> Formula/boltdb.rb
           echo '  end' >> Formula/boltdb.rb
