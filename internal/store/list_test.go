@@ -6,16 +6,9 @@ import (
 	"github.com/zeebo/assert"
 )
 
-func setupListTest(t *testing.T) *BotreonStore {
-	dbPath := t.TempDir()
-	store, err := NewBadgerStore(dbPath)
-	assert.NoError(t, err)
-	return store
-}
-
 // TestLPush 测试 LPUSH 命令
 func TestLPush(t *testing.T) {
-	store := setupListTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	key := "mylist"
@@ -43,7 +36,7 @@ func TestLPush(t *testing.T) {
 
 // TestRPush 测试 RPUSH 命令
 func TestRPush(t *testing.T) {
-	store := setupListTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	key := "mylist"
@@ -74,7 +67,7 @@ func TestRPush(t *testing.T) {
 
 // TestLPop 测试 LPOP 命令
 func TestLPop(t *testing.T) {
-	store := setupListTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	key := "mylist"
@@ -105,7 +98,7 @@ func TestLPop(t *testing.T) {
 
 // TestRPop 测试 RPOP 命令
 func TestRPop(t *testing.T) {
-	store := setupListTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	key := "mylist"
@@ -136,7 +129,7 @@ func TestRPop(t *testing.T) {
 
 // TestLLen 测试 LLEN 命令
 func TestLLen(t *testing.T) {
-	store := setupListTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	key := "mylist"
@@ -155,7 +148,7 @@ func TestLLen(t *testing.T) {
 
 // TestLIndex 测试 LINDEX 命令
 func TestLIndex(t *testing.T) {
-	store := setupListTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	key := "mylist"
@@ -193,7 +186,7 @@ func TestLIndex(t *testing.T) {
 
 // TestLRange 测试 LRANGE 命令
 func TestLRange(t *testing.T) {
-	store := setupListTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	key := "mylist"
@@ -224,7 +217,7 @@ func TestLRange(t *testing.T) {
 
 // TestLSet 测试 LSET 命令
 func TestLSet(t *testing.T) {
-	store := setupListTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	key := "mylist"
@@ -247,7 +240,7 @@ func TestLSet(t *testing.T) {
 
 // TestLTrim 测试 LTRIM 命令
 func TestLTrim(t *testing.T) {
-	store := setupListTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	key := "mylist"
@@ -273,7 +266,7 @@ func TestLTrim(t *testing.T) {
 
 // TestLInsert 测试 LINSERT 命令
 func TestLInsert(t *testing.T) {
-	store := setupListTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	key := "mylist"
@@ -305,7 +298,7 @@ func TestLInsert(t *testing.T) {
 
 // TestLRem 测试 LREM 命令
 func TestLRem(t *testing.T) {
-	store := setupListTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	key := "mylist"
@@ -341,7 +334,7 @@ func TestLRem(t *testing.T) {
 
 // TestRPopLPush 测试 RPOPLPUSH 命令
 func TestRPopLPush(t *testing.T) {
-	store := setupListTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	source := "source"
@@ -374,7 +367,7 @@ func TestRPopLPush(t *testing.T) {
 
 // TestListEdgeCases 测试边界情况
 func TestListEdgeCases(t *testing.T) {
-	store := setupListTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	key := "mylist"
@@ -403,8 +396,7 @@ func TestListEdgeCases(t *testing.T) {
 }
 
 func TestLPUSHX(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	key := "test_lpushx"
@@ -428,8 +420,7 @@ func TestLPUSHX(t *testing.T) {
 }
 
 func TestRPUSHX(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	key := "test_rpushx"
@@ -453,8 +444,7 @@ func TestRPUSHX(t *testing.T) {
 }
 
 func TestBLPOP(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 测试非空列表
@@ -472,8 +462,7 @@ func TestBLPOP(t *testing.T) {
 }
 
 func TestBRPOP(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 测试非空列表
@@ -491,8 +480,7 @@ func TestBRPOP(t *testing.T) {
 }
 
 func TestBRPOPLPUSH(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 测试非空列表

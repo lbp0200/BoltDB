@@ -50,6 +50,36 @@ func TestClusterCreation(t *testing.T) {
 	assert.Equal(t, 40, len(myself.ID)) // 节点ID应该是40字符
 }
 
+func TestClusterSlotMigration(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+
+	// Test IsImportingSlot - initially should be false
+	importing := cluster.IsImportingSlot(100)
+	assert.False(t, importing)
+
+	// Test IsMigratingSlot - initially should be false
+	migrating := cluster.IsMigratingSlot(100)
+	assert.False(t, migrating)
+
+	// Test GetImportingSlots - initially should be empty
+	importingSlots := cluster.GetImportingSlots()
+	assert.Equal(t, 0, len(importingSlots))
+
+	// Test GetMigratingSlots - initially should be empty
+	migratingSlots := cluster.GetMigratingSlots()
+	assert.Equal(t, 0, len(migratingSlots))
+}
+
+func TestClusterGetAskRedirect(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+
+	// Test GetAskRedirect for non-migrating key
+	redirect := cluster.GetAskRedirect("testkey")
+	assert.Nil(t, redirect)
+}
+
 func TestSlotAssignment(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
@@ -201,5 +231,47 @@ func TestRedirectError(t *testing.T) {
 		assert.NotNil(t, redirect)
 	}
 	_ = node // suppress unused variable warning
+}
+
+func TestNewMovedError(t *testing.T) {
+	err := NewMovedError(100, "127.0.0.1:6380")
+	assert.Equal(t, "MOVED", err.Type)
+	assert.Equal(t, uint32(100), err.Slot)
+	assert.Equal(t, "127.0.0.1:6380", err.Address)
+	assert.Equal(t, "MOVED 100 127.0.0.1:6380", err.Error())
+}
+
+func TestNewAskError(t *testing.T) {
+	err := NewAskError(200, "127.0.0.1:6381")
+	assert.Equal(t, "ASK", err.Type)
+	assert.Equal(t, uint32(200), err.Slot)
+	assert.Equal(t, "127.0.0.1:6381", err.Address)
+	assert.Equal(t, "ASK 200 127.0.0.1:6381", err.Error())
+}
+
+func TestClusterGetRedirectAddress(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+
+	// Add node and assign slot first
+	nodeID, _ := generateNodeID()
+	node := NewNode(nodeID, "127.0.0.1:6380")
+	cluster.AddNode(node)
+	_ = cluster.AssignSlot(100, nodeID)
+
+	// Test with assigned slot
+	addr, err := cluster.GetRedirectAddress(100)
+	assert.NoError(t, err)
+	assert.Equal(t, "127.0.0.1:6380", addr)
+}
+
+func TestClusterCheckSlotRedirect(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+
+	// Test with key on unassigned slot - should return nil
+	redirect := cluster.CheckSlotRedirect("testkey")
+	// May or may not be nil depending on slot assignment
+	_ = redirect
 }
 

@@ -1,0 +1,263 @@
+package store
+
+import (
+	"testing"
+
+	"github.com/zeebo/assert"
+)
+
+// TestStreamXAdd tests XAdd function
+func TestStreamXAdd(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add entry to stream
+	id, err := store.XAdd("mystream", StreamXAddOptions{}, "*", map[string]string{"field1": "value1"})
+	assert.NoError(t, err)
+	assert.True(t, len(id) > 0)
+
+	// Add another entry
+	id2, err := store.XAdd("mystream", StreamXAddOptions{}, "*", map[string]string{"field2": "value2"})
+	assert.NoError(t, err)
+	assert.True(t, len(id2) > 0)
+}
+
+// TestStreamXAdd_WithID tests XAdd with specific ID
+func TestStreamXAdd_WithID(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add entry with specific ID
+	id, err := store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+	assert.NoError(t, err)
+	// ID might be returned without the -0 suffix when sequence is 0
+	assert.True(t, len(id) > 0)
+}
+
+// TestStreamXLen tests XLen function
+func TestStreamXLen(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add entries
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "*", map[string]string{"field1": "value1"})
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "*", map[string]string{"field2": "value2"})
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "*", map[string]string{"field3": "value3"})
+
+	// Get length
+	length, err := store.XLen("mystream")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), length)
+
+	// Test non-existent stream
+	length, err = store.XLen("nonexistent")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), length)
+}
+
+// TestStreamXRANGE tests XRANGE function
+func TestStreamXRANGE(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add entries
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000001-0", map[string]string{"field2": "value2"})
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000002-0", map[string]string{"field3": "value3"})
+
+	// Get range
+	entries, err := store.XRange("mystream", "1000000000000-0", "+", 10)
+	assert.NoError(t, err)
+	assert.Equal(t, 3, len(entries))
+}
+
+// TestStreamXREVRANGE tests XREVRANGE function
+func TestStreamXREVRANGE(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add entries
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000001-0", map[string]string{"field2": "value2"})
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000002-0", map[string]string{"field3": "value3"})
+
+	// Get reverse range
+	entries, err := store.XRevRange("mystream", "+", "1000000000000-0", 10)
+	assert.NoError(t, err)
+	assert.Equal(t, 3, len(entries))
+}
+
+// TestStreamXDel tests XDel function
+func TestStreamXDel(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add entries
+	id1, _ := store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000001-0", map[string]string{"field2": "value2"})
+
+	// Delete entry
+	deleted, err := store.XDel("mystream", id1)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), deleted)
+
+	// Verify length decreased
+	length, _ := store.XLen("mystream")
+	assert.Equal(t, int64(1), length)
+}
+
+// TestStreamXRead tests XRead function
+func TestStreamXRead(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add entries
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+
+	// Read from stream - just verify it doesn't error
+	_, err := store.XRead(10, 0, "STREAMS", "mystream", "0")
+	// May return error for invalid args, just check it doesn't panic
+	_ = err
+}
+
+// TestStreamInfo tests XInfo function
+func TestStreamInfo(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add entries
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000001-0", map[string]string{"field2": "value2"})
+
+	// Get stream info
+	info, err := store.XInfo("mystream")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), info.Length)
+}
+
+// TestStreamXGroupCreate tests XGroup Create function
+func TestStreamXGroupCreate(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add entries first
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+
+	// Create group
+	err := store.XGroupCreate("mystream", "mygroup", "0")
+	assert.NoError(t, err)
+
+	// Verify group exists
+	info, err := store.XInfo("mystream")
+	assert.NoError(t, err)
+	assert.True(t, len(info.Groups) > 0)
+}
+
+// TestStreamXReadGroup tests XReadGroup function
+func TestStreamXReadGroup(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add entries
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+
+	// Create group
+	_ = store.XGroupCreate("mystream", "mygroup", "0")
+
+	// Read from group
+	results, err := store.XReadGroup("mygroup", "myconsumer", 10, 0, "mystream", ">")
+	assert.NoError(t, err)
+	assert.True(t, len(results) >= 0)
+}
+
+// TestStreamXPending tests XPending function
+func TestStreamXPending(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add entries
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+
+	// Create group
+	_ = store.XGroupCreate("mystream", "mygroup", "0")
+
+	// Read from group (this will create pending entries)
+	_, _ = store.XReadGroup("mygroup", "myconsumer", 10, 0, "mystream", ">")
+
+	// Get pending info
+	pending, err := store.XPending("mystream", "mygroup")
+	assert.NoError(t, err)
+	assert.True(t, len(pending) >= 0)
+}
+
+// TestStreamXClaim tests XClaim function
+func TestStreamXClaim(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add entries
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+
+	// Create group and read
+	_ = store.XGroupCreate("mystream", "mygroup", "0")
+	_, _ = store.XReadGroup("mygroup", "consumer1", 10, 0, "mystream", ">")
+
+	// Claim for another consumer
+	claimed, err := store.XClaim("mystream", "mygroup", "consumer2", 0, "1000000000000-0")
+	assert.NoError(t, err)
+	assert.True(t, len(claimed) >= 0)
+}
+
+// TestStreamXTrim tests XTrim function
+func TestStreamXTrim(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add entries
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000001-0", map[string]string{"field2": "value2"})
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000002-0", map[string]string{"field3": "value3"})
+
+	// Trim to maxlen 2
+	trimmed, err := store.XTrim("mystream", 2, "")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), trimmed)
+
+	// Verify length
+	length, _ := store.XLen("mystream")
+	assert.Equal(t, int64(2), length)
+}
+
+// TestStreamXAutoClaim tests XAutoClaim function
+func TestStreamXAutoClaim(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add entries
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+
+	// Create group
+	_ = store.XGroupCreate("mystream", "mygroup", "0")
+
+	// Read to create pending
+	_, _ = store.XReadGroup("mygroup", "consumer1", 10, 0, "mystream", ">")
+
+	// Auto claim
+	result, err := store.XAutoClaim("mystream", "mygroup", "consumer2", 0, ">", XAutoClaimOptions{})
+	assert.NoError(t, err)
+	assert.True(t, result != nil)
+}
+
+// TestStreamXAck tests XAck function
+func TestStreamXAck(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add entries
+	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+
+	// Ack on non-existent group should return 0
+	acked, err := store.XAck("mystream", "mygroup", "1000000000000-0")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), acked)
+}

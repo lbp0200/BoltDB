@@ -6,16 +6,9 @@ import (
 	"github.com/zeebo/assert"
 )
 
-func setupStringTest(t *testing.T) *BotreonStore {
-	dbPath := t.TempDir()
-	store, err := NewBadgerStore(dbPath)
-	assert.NoError(t, err)
-	return store
-}
-
 // TestSetAndGet 测试 SET 和 GET 命令
 func TestSetAndGet(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// Test SET
@@ -35,7 +28,7 @@ func TestSetAndGet(t *testing.T) {
 
 // TestSetEX 测试 SETEX 命令
 func TestSetEX(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	err := store.SetEX("key1", "value1", 1)
@@ -49,7 +42,7 @@ func TestSetEX(t *testing.T) {
 
 // TestPSETEX 测试 PSETEX 命令
 func TestPSETEX(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 使用较长的TTL以确保在测试期间不会过期
@@ -64,7 +57,7 @@ func TestPSETEX(t *testing.T) {
 
 // TestSetNX 测试 SETNX 命令
 func TestSetNX(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 第一次设置应该成功
@@ -90,7 +83,7 @@ func TestSetNX(t *testing.T) {
 
 // TestGetSet 测试 GETSET 命令
 func TestGetSet(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 设置初始值
@@ -119,7 +112,7 @@ func TestGetSet(t *testing.T) {
 
 // TestMGet 测试 MGET 命令
 func TestMGet(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 设置多个键
@@ -139,7 +132,7 @@ func TestMGet(t *testing.T) {
 
 // TestMSet 测试 MSET 命令
 func TestMSet(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 设置多个键值对
@@ -157,7 +150,7 @@ func TestMSet(t *testing.T) {
 
 // TestMSetNX 测试 MSETNX 命令
 func TestMSetNX(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 第一次设置应该成功（所有键都不存在）
@@ -185,7 +178,7 @@ func TestMSetNX(t *testing.T) {
 
 // TestINCR 测试 INCR 命令
 func TestINCR(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 对不存在的键执行 INCR
@@ -206,7 +199,7 @@ func TestINCR(t *testing.T) {
 
 // TestINCRBY 测试 INCRBY 命令
 func TestINCRBY(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 设置初始值
@@ -226,7 +219,7 @@ func TestINCRBY(t *testing.T) {
 
 // TestDECR 测试 DECR 命令
 func TestDECR(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 设置初始值
@@ -246,7 +239,7 @@ func TestDECR(t *testing.T) {
 
 // TestDECRBY 测试 DECRBY 命令
 func TestDECRBY(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 设置初始值
@@ -266,7 +259,7 @@ func TestDECRBY(t *testing.T) {
 
 // TestINCRBYFLOAT 测试 INCRBYFLOAT 命令
 func TestINCRBYFLOAT(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 设置初始值
@@ -292,7 +285,7 @@ func TestINCRBYFLOAT(t *testing.T) {
 
 // TestAPPEND 测试 APPEND 命令
 func TestAPPEND(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 设置初始值
@@ -321,7 +314,7 @@ func TestAPPEND(t *testing.T) {
 
 // TestStrLen 测试 STRLEN 命令
 func TestStrLen(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 设置值
@@ -341,7 +334,7 @@ func TestStrLen(t *testing.T) {
 
 // TestGetRange 测试 GETRANGE 命令
 func TestGetRange(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 设置值
@@ -371,7 +364,7 @@ func TestGetRange(t *testing.T) {
 
 // TestSetRange 测试 SETRANGE 命令
 func TestSetRange(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 设置初始值
@@ -400,7 +393,7 @@ func TestSetRange(t *testing.T) {
 
 // TestGetBit 测试 GETBIT 命令
 func TestGetBit(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 设置值 "A" = 0x41 = 01000001
@@ -429,7 +422,7 @@ func TestGetBit(t *testing.T) {
 
 // TestSetBit 测试 SETBIT 命令
 func TestSetBit(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 设置值 "A" = 0x41 = 01000001
@@ -459,7 +452,7 @@ func TestSetBit(t *testing.T) {
 
 // TestBitCount 测试 BITCOUNT 命令
 func TestBitCount(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 设置值 "A" = 0x41 = 01000001 (2个1)
@@ -484,7 +477,7 @@ func TestBitCount(t *testing.T) {
 
 // TestBitOp 测试 BITOP 命令
 func TestBitOp(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 设置值
@@ -532,7 +525,7 @@ func TestBitOp(t *testing.T) {
 
 // TestBitPos 测试 BITPOS 命令
 func TestBitPos(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 设置值 "\x00\xFF" = 00000000 11111111
@@ -557,7 +550,7 @@ func TestBitPos(t *testing.T) {
 
 // TestStringEdgeCases 测试边界情况
 func TestStringEdgeCases(t *testing.T) {
-	store := setupStringTest(t)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 空字符串

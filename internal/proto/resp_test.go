@@ -364,3 +364,100 @@ func TestTruncateString(t *testing.T) {
 		})
 	}
 }
+
+// FuzzParseRESP tests RESP protocol parsing with fuzzed input
+func FuzzParseRESP(f *testing.F) {
+	// Seed corpus with valid and invalid inputs
+	f.Add("PING\r\n")
+	f.Add("SET key value\r\n")
+	f.Add("GET key\r\n")
+	f.Add("*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n")
+	f.Add("*0\r\n")
+	f.Add("*1\r\n$4\r\nPING\r\n")
+	f.Add("")
+
+	f.Fuzz(func(t *testing.T, data string) {
+		// Test that parsing doesn't panic
+		r := bufio.NewReader(bytes.NewReader([]byte(data)))
+		_, err := ReadRESP(r)
+
+		// We don't assert anything - just ensure no panics
+		// Invalid inputs are expected to return errors
+		_ = err
+	})
+}
+
+// FuzzParseInlineCommand tests inline command parsing with fuzzed input
+func FuzzParseInlineCommand(f *testing.F) {
+	// Seed corpus
+	f.Add("PING")
+	f.Add("GET key")
+	f.Add("SET key value")
+	f.Add("")
+	f.Add("GET key with spaces")
+	f.Add("GET\tkey\ttab")
+
+	f.Fuzz(func(t *testing.T, data string) {
+		// Test that parsing doesn't panic
+		_, err := parseInlineCommand([]byte(data))
+
+		// We don't assert anything - just ensure no panics
+		_ = err
+	})
+}
+
+// FuzzBulkString tests BulkString serialization with fuzzed input
+func FuzzBulkString(f *testing.F) {
+	// Seed corpus
+	f.Add("hello")
+	f.Add("")
+	f.Add("test value with spaces")
+	f.Add("unicode: 你好世界")
+	f.Add("newlines\n\r\n")
+
+	f.Fuzz(func(t *testing.T, data string) {
+		// Test that serialization doesn't panic
+		bs := BulkString([]byte(data))
+		_ = bs.String()
+	})
+}
+
+// TestNestedArrayString tests NestedArray String method
+func TestNestedArrayString(t *testing.T) {
+	tests := []struct {
+		name     string
+		elems    []RESP
+		expected string
+	}{
+		{
+			name:     "empty array",
+			elems:    []RESP{},
+			expected: "*0\r\n",
+		},
+		{
+			name:     "single element",
+			elems:    []RESP{NewSimpleString("OK")},
+			expected: "*1\r\n+OK\r\n",
+		},
+		{
+			name: "nested array",
+			elems: []RESP{
+				NewSimpleString("OK"),
+				&NestedArray{
+					Elems: []RESP{
+						NewSimpleString("inner"),
+					},
+				},
+			},
+			expected: "*2\r\n+OK\r\n*1\r\n+inner\r\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n := &NestedArray{Elems: tt.elems}
+			result := n.String()
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}

@@ -6,10 +6,9 @@ import (
 	"github.com/zeebo/assert"
 )
 
+// TestZAdd tests ZAdd operations
 func TestZAdd(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
 
 	zSetName := "myset"
 
@@ -39,88 +38,144 @@ func TestZAdd(t *testing.T) {
 	assert.Equal(t, 2.5, score)
 }
 
+// TestZCard tests ZCard operations using table-driven approach
 func TestZCard(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
 
-	zSetName := "myset"
+	tests := []struct {
+		name     string
+		setup    func()
+		expected int64
+	}{
+		{
+			name:     "empty set",
+			setup:    func() {},
+			expected: 0,
+		},
+		{
+			name: "with members",
+			setup: func() {
+				mustZAdd(t, store, "myset", []ZSetMember{
+					{Member: "member1", Score: 1.0},
+					{Member: "member2", Score: 2.0},
+				})
+			},
+			expected: 2,
+		},
+	}
 
-	// 空集合
-	card, err := store.ZCard(zSetName)
-	assert.NoError(t, err)
-	assert.Equal(t, int64(0), card)
-
-	// 添加成员后
-	_ = store.ZAdd(zSetName, []ZSetMember{
-		{Member: "member1", Score: 1.0},
-		{Member: "member2", Score: 2.0},
-	})
-	card, err = store.ZCard(zSetName)
-	assert.NoError(t, err)
-	assert.Equal(t, int64(2), card)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setup()
+			card, err := store.ZCard("myset")
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, card)
+		})
+	}
 }
 
+// TestZScore tests ZScore operations using table-driven approach
 func TestZScore(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
-
-	zSetName := "myset"
+	store := setupTestStore(t)
 
 	// 准备数据
-	_ = store.ZAdd(zSetName, []ZSetMember{
+	mustZAdd(t, store, "myset", []ZSetMember{
 		{Member: "member1", Score: 1.5},
 		{Member: "member2", Score: -2.0},
 	})
 
-	// 获取存在的成员分数
-	score, exists, err := store.ZScore(zSetName, "member1")
-	assert.NoError(t, err)
-	assert.True(t, exists)
-	assert.Equal(t, 1.5, score)
+	tests := []struct {
+		name      string
+		member    string
+		wantErr   bool
+		exists    bool
+		expectErr bool
+		expected  float64
+	}{
+		{
+			name:     "existing member",
+			member:   "member1",
+			exists:   true,
+			expected: 1.5,
+		},
+		{
+			name:     "negative score member",
+			member:   "member2",
+			exists:   true,
+			expected: -2.0,
+		},
+		{
+			name:     "nonexistent member",
+			member:   "nonexistent",
+			exists:   false,
+			expected: 0.0,
+		},
+	}
 
-	// 获取不存在的成员
-	_, exists, err = store.ZScore(zSetName, "nonexistent")
-	assert.NoError(t, err)
-	assert.False(t, exists)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			score, exists, err := store.ZScore("myset", tt.member)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.exists, exists)
+			assert.Equal(t, tt.expected, score)
+		})
+	}
 }
 
+// TestZCount tests ZCount operations
 func TestZCount(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
-
-	zSetName := "myset"
+	store := setupTestStore(t)
 
 	// 准备数据
-	store.ZAdd(zSetName, []ZSetMember{
+	mustZAdd(t, store, "myset", []ZSetMember{
 		{Member: "member1", Score: 1.0},
 		{Member: "member2", Score: 2.0},
 		{Member: "member3", Score: 3.0},
 		{Member: "member4", Score: 4.0},
 	})
 
-	// 计算范围内的成员数
-	count, err := store.ZCount(zSetName, 1.0, 3.0)
-	assert.NoError(t, err)
-	assert.Equal(t, int64(3), count)
+	tests := []struct {
+		name     string
+		min      float64
+		max      float64
+		expected int64
+	}{
+		{
+			name:     "within range",
+			min:      1.0,
+			max:      3.0,
+			expected: 3,
+		},
+		{
+			name:     "all members",
+			min:      -100.0,
+			max:      100.0,
+			expected: 4,
+		},
+		{
+			name:     "empty range",
+			min:      10.0,
+			max:      20.0,
+			expected: 0,
+		},
+	}
 
-	// 计算所有成员
-	count, err = store.ZCount(zSetName, -100.0, 100.0)
-	assert.NoError(t, err)
-	assert.Equal(t, int64(4), count)
-
-	// 空范围
-	count, err = store.ZCount(zSetName, 10.0, 20.0)
-	assert.NoError(t, err)
-	assert.Equal(t, int64(0), count)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			count, err := store.ZCount("myset", tt.min, tt.max)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, count)
+		})
+	}
 }
 
+// TestZIncrBy tests ZIncrBy operations
 func TestZIncrBy(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
 
 	zSetName := "myset"
 
@@ -146,74 +201,99 @@ func TestZIncrBy(t *testing.T) {
 }
 
 func TestZRank(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
-
-	zSetName := "myset"
+	store := setupTestStore(t)
 
 	// 准备数据（按分数排序：member2(-2.0), member3(0.0), member1(1.5)）
-	store.ZAdd(zSetName, []ZSetMember{
+	mustZAdd(t, store, "myset", []ZSetMember{
 		{Member: "member1", Score: 1.5},
 		{Member: "member2", Score: -2.0},
 		{Member: "member3", Score: 0.0},
 	})
 
-	// 获取排名
-	rank, err := store.ZRank(zSetName, "member2")
-	assert.NoError(t, err)
-	assert.Equal(t, int64(0), rank) // 最低分数，排名0
+	tests := []struct {
+		name     string
+		member   string
+		expected int64
+	}{
+		{
+			name:     "lowest score",
+			member:   "member2",
+			expected: 0, // 最低分数，排名0
+		},
+		{
+			name:     "middle score",
+			member:   "member3",
+			expected: 1,
+		},
+		{
+			name:     "highest score",
+			member:   "member1",
+			expected: 2, // 最高分数，排名2
+		},
+		{
+			name:     "nonexistent",
+			member:   "nonexistent",
+			expected: -1,
+		},
+	}
 
-	rank, err = store.ZRank(zSetName, "member3")
-	assert.NoError(t, err)
-	assert.Equal(t, int64(1), rank)
-
-	rank, err = store.ZRank(zSetName, "member1")
-	assert.NoError(t, err)
-	assert.Equal(t, int64(2), rank) // 最高分数，排名2
-
-	// 不存在的成员
-	rank, err = store.ZRank(zSetName, "nonexistent")
-	assert.NoError(t, err)
-	assert.Equal(t, int64(-1), rank)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rank, err := store.ZRank("myset", tt.member)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, rank)
+		})
+	}
 }
 
 func TestZRevRank(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
-
-	zSetName := "myset"
+	store := setupTestStore(t)
 
 	// 准备数据（按分数排序：member2(-2.0), member3(0.0), member1(1.5)）
-	store.ZAdd(zSetName, []ZSetMember{
+	mustZAdd(t, store, "myset", []ZSetMember{
 		{Member: "member1", Score: 1.5},
 		{Member: "member2", Score: -2.0},
 		{Member: "member3", Score: 0.0},
 	})
 
-	// 获取反向排名
-	rank, err := store.ZRevRank(zSetName, "member1")
-	assert.NoError(t, err)
-	assert.Equal(t, int64(0), rank) // 最高分数，反向排名0
+	tests := []struct {
+		name     string
+		member   string
+		expected int64
+	}{
+		{
+			name:     "highest score",
+			member:   "member1",
+			expected: 0, // 最高分数，反向排名0
+		},
+		{
+			name:     "middle score",
+			member:   "member3",
+			expected: 1,
+		},
+		{
+			name:     "lowest score",
+			member:   "member2",
+			expected: 2, // 最低分数，反向排名2
+		},
+		{
+			name:     "nonexistent",
+			member:   "nonexistent",
+			expected: -1,
+		},
+	}
 
-	rank, err = store.ZRevRank(zSetName, "member3")
-	assert.NoError(t, err)
-	assert.Equal(t, int64(1), rank)
-
-	rank, err = store.ZRevRank(zSetName, "member2")
-	assert.NoError(t, err)
-	assert.Equal(t, int64(2), rank) // 最低分数，反向排名2
-
-	// 不存在的成员
-	rank, err = store.ZRevRank(zSetName, "nonexistent")
-	assert.NoError(t, err)
-	assert.Equal(t, int64(-1), rank)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rank, err := store.ZRevRank("myset", tt.member)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, rank)
+		})
+	}
 }
 
 func TestZRange(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	zSetName := "myset"
@@ -245,8 +325,7 @@ func TestZRange(t *testing.T) {
 }
 
 func TestZRevRange(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	zSetName := "myset"
@@ -274,8 +353,7 @@ func TestZRevRange(t *testing.T) {
 }
 
 func TestZRangeByScore(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	zSetName := "myset"
@@ -303,8 +381,7 @@ func TestZRangeByScore(t *testing.T) {
 }
 
 func TestZRevRangeByScore(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	zSetName := "myset"
@@ -326,8 +403,7 @@ func TestZRevRangeByScore(t *testing.T) {
 }
 
 func TestZRem(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	zSetName := "myset"
@@ -356,8 +432,7 @@ func TestZRem(t *testing.T) {
 }
 
 func TestZRemRangeByRank(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	zSetName := "myset"
@@ -384,8 +459,7 @@ func TestZRemRangeByRank(t *testing.T) {
 }
 
 func TestZRemRangeByScore(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	zSetName := "myset"
@@ -409,8 +483,7 @@ func TestZRemRangeByScore(t *testing.T) {
 }
 
 func TestZPopMax(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	zSetName := "myset"
@@ -442,8 +515,7 @@ func TestZPopMax(t *testing.T) {
 }
 
 func TestZPopMin(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	zSetName := "myset"
@@ -475,8 +547,7 @@ func TestZPopMin(t *testing.T) {
 }
 
 func TestZSetDel(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	zSetName := "myset"
@@ -500,8 +571,7 @@ func TestZSetDel(t *testing.T) {
 }
 
 func TestSortedSetEdgeCases(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	zSetName := "myset"
@@ -547,8 +617,7 @@ func TestSortedSetEdgeCases(t *testing.T) {
 }
 
 func TestSortedSetOperations(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	zSetName := "myset"
@@ -587,8 +656,7 @@ func TestSortedSetOperations(t *testing.T) {
 }
 
 func TestZUnionStore(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 创建两个有序集合
@@ -635,8 +703,7 @@ func TestZUnionStore(t *testing.T) {
 }
 
 func TestZInterStore(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 创建两个有序集合
@@ -666,8 +733,7 @@ func TestZInterStore(t *testing.T) {
 }
 
 func TestZDiffStore(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 创建两个有序集合
@@ -693,8 +759,7 @@ func TestZDiffStore(t *testing.T) {
 }
 
 func TestZLexCount(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 创建有序集合（相同分数，按字典序）
@@ -716,8 +781,7 @@ func TestZLexCount(t *testing.T) {
 }
 
 func TestZRangeByLex(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 创建有序集合（相同分数，按字典序）
@@ -745,8 +809,7 @@ func TestZRangeByLex(t *testing.T) {
 }
 
 func TestZRevRangeByLex(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 创建有序集合
@@ -766,8 +829,7 @@ func TestZRevRangeByLex(t *testing.T) {
 }
 
 func TestZRemRangeByLex(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 创建有序集合
@@ -791,8 +853,7 @@ func TestZRemRangeByLex(t *testing.T) {
 }
 
 func TestZMScore(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
+	store := setupTestStore(t)
 	defer store.Close()
 
 	// 创建有序集合
