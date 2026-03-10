@@ -349,18 +349,18 @@ func TestStreamType(t *testing.T) {
 	store := setupTestStore(t)
 	defer store.Close()
 
-	// Test on non-existent key
-	typ, err := store.StreamType("nonexistent")
-	assert.Error(t, err)
-	_ = typ
+	// Test on non-existent key - should return false, no error
+	exists, err := store.StreamType("nonexistent")
+	assert.NoError(t, err)
+	assert.False(t, exists)
 
 	// Create a stream
 	store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field": "value"})
 
 	// Get type
-	typ, err = store.StreamType("mystream")
+	exists, err = store.StreamType("mystream")
 	assert.NoError(t, err)
-	assert.Equal(t, "stream", typ)
+	assert.True(t, exists)
 }
 
 // TestGetStreamEntry tests GetStreamEntry function
