@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/zeebo/assert"
@@ -565,4 +566,74 @@ func TestSetEdgeCases(t *testing.T) {
 	store.SAdd("special", "a:b", "c,d", "e f")
 	members, _ = store.SMembers("special")
 	assert.Equal(t, 3, len(members))
+}
+
+// TestSMIsMember 测试 SMISMEMBER 命令
+func TestSMIsMember(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Create a set
+	store.SAdd("myset", "a", "b", "c")
+
+	// Test SMIsMember with existing members
+	results, err := store.SMIsMember("myset", "a", "b", "d")
+	assert.NoError(t, err)
+	assert.Equal(t, 3, len(results))
+	assert.Equal(t, int64(1), results[0]) // "a" exists
+	assert.Equal(t, int64(1), results[1]) // "b" exists
+	assert.Equal(t, int64(0), results[2]) // "d" does not exist
+
+	// Test with non-existent key
+	results, err = store.SMIsMember("nonexistent", "a")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), results[0])
+}
+
+// TestSInterCard 测试 SINTERCARD 命令
+func TestSInterCard(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Create sets
+	store.SAdd("set1", "a", "b", "c")
+	store.SAdd("set2", "b", "c", "d")
+
+	// Test SInterCard
+	count, err := store.SInterCard("set1", "set2")
+	assert.NoError(t, err)
+	assert.Equal(t, uint64(2), count) // b, c
+
+	// Test with no overlap
+	store.SAdd("set3", "x", "y", "z")
+	count, err = store.SInterCard("set1", "set3")
+	assert.NoError(t, err)
+	assert.Equal(t, uint64(0), count)
+
+	// Test with non-existent key
+	count, err = store.SInterCard("nonexistent", "set1")
+	assert.NoError(t, err)
+	assert.Equal(t, uint64(0), count)
+}
+
+// TestSScan 测试 SSCAN 命令
+func TestSScan(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Create a set with many members
+	for i := 0; i < 100; i++ {
+		store.SAdd("myset", fmt.Sprintf("member%d", i))
+	}
+
+	// Test SScan - should return some members
+	result, err := store.SScan("myset", 0, "*member5*", 10)
+	assert.NoError(t, err)
+	// Result contains cursor and members
+	_ = result
+
+	// Test with non-existent key
+	result, err = store.SScan("nonexistent", 0, "*", 10)
+	assert.NoError(t, err)
+	_ = result
 }

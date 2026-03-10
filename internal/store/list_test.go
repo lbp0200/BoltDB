@@ -493,3 +493,76 @@ func TestBRPOPLPUSH(t *testing.T) {
 	val, _ := store.LIndex("dest", 0)
 	assert.Equal(t, "value1", val)
 }
+
+// TestLPos 测试 LPOS 命令
+func TestLPos(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Create a list with duplicate values
+	store.RPush("mylist", "a", "b", "c", "b", "a")
+
+	// Test basic LPOS
+	positions, err := store.LPos("mylist", "b", 0, 0, 0)
+	assert.NoError(t, err)
+	assert.True(t, len(positions) > 0)
+	assert.Equal(t, int64(1), positions[0])
+
+	// Test LPOS with RANK
+	positions, err = store.LPos("mylist", "b", 2, 1, 0)
+	assert.NoError(t, err)
+	assert.True(t, len(positions) > 0)
+	assert.Equal(t, int64(3), positions[0])
+
+	// Test LPOS for non-existent element
+	positions, err = store.LPos("mylist", "nonexistent", 0, 0, 0)
+	assert.Error(t, err)
+
+	// Test LPOS for non-existent key
+	positions, err = store.LPos("nonexistent", "value", 0, 0, 0)
+	assert.Error(t, err)
+}
+
+// TestLMove 测试 LMOVE 命令
+func TestLMove(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Create source list
+	store.RPush("source", "a", "b", "c")
+
+	// Test LMOVE LEFT to RIGHT
+	value, err := store.LMove("source", "dest", "LEFT", "RIGHT")
+	assert.NoError(t, err)
+	assert.Equal(t, "a", value)
+
+	// Verify
+	val, _ := store.LIndex("dest", 0)
+	assert.Equal(t, "a", val)
+
+	// Test LMOVE RIGHT to LEFT
+	store.RPush("source2", "x", "y", "z")
+	value, err = store.LMove("source2", "dest2", "RIGHT", "LEFT")
+	assert.NoError(t, err)
+	assert.Equal(t, "z", value)
+
+	// Verify
+	val, _ = store.LIndex("dest2", 0)
+	assert.Equal(t, "z", val)
+}
+
+// TestBLMove 测试 BLMOVE 命令
+func TestBLMove(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Test BLMOVE with existing element
+	store.RPush("source", "value1")
+	value, err := store.BLMove("source", "dest", "LEFT", "RIGHT", 1)
+	assert.NoError(t, err)
+	assert.Equal(t, "value1", value)
+
+	// Verify
+	val, _ := store.LIndex("dest", 0)
+	assert.Equal(t, "value1", val)
+}

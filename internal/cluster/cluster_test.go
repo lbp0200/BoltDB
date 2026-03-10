@@ -275,3 +275,344 @@ func TestClusterCheckSlotRedirect(t *testing.T) {
 	_ = redirect
 }
 
+func TestHandleGetKeysInSlot(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+	cmd := NewClusterCommands(cluster)
+
+	// Test CLUSTER GETKEYSINSLOT
+	result, err := cmd.HandleCommand([]string{"GETKEYSINSLOT", "100", "10"})
+	assert.NoError(t, err)
+	keys, ok := result.([]string)
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(keys))
+
+	// Test with invalid arguments
+	_, err = cmd.HandleCommand([]string{"GETKEYSINSLOT"})
+	assert.Error(t, err)
+
+	_, err = cmd.HandleCommand([]string{"GETKEYSINSLOT", "abc", "10"})
+	assert.Error(t, err)
+
+	_, err = cmd.HandleCommand([]string{"GETKEYSINSLOT", "100", "-1"})
+	assert.Error(t, err)
+
+	_, err = cmd.HandleCommand([]string{"GETKEYSINSLOT", "20000", "10"})
+	assert.Error(t, err)
+}
+
+func TestHandleSetSlot(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+	cmd := NewClusterCommands(cluster)
+
+	// Test CLUSTER SETSLOT <slot> IMPORTING
+	result, err := cmd.HandleCommand([]string{"SETSLOT", "100", "IMPORTING"})
+	assert.NoError(t, err)
+	assert.Equal(t, "OK", result)
+
+	// Test CLUSTER SETSLOT <slot> MIGRATING <nodeid>
+	result, err = cmd.HandleCommand([]string{"SETSLOT", "101", "MIGRATING", "some-node-id"})
+	assert.NoError(t, err)
+	assert.Equal(t, "OK", result)
+
+	// Test CLUSTER SETSLOT <slot> MIGRATING without nodeid
+	_, err = cmd.HandleCommand([]string{"SETSLOT", "102", "MIGRATING"})
+	assert.Error(t, err)
+
+	// Test CLUSTER SETSLOT <slot> STABLE
+	result, err = cmd.HandleCommand([]string{"SETSLOT", "103", "STABLE"})
+	assert.NoError(t, err)
+	assert.Equal(t, "OK", result)
+
+	// Test CLUSTER SETSLOT <slot> NODE <nodeid>
+	nodeID, _ := generateNodeID()
+	node := NewNode(nodeID, "127.0.0.1:6380")
+	cluster.AddNode(node)
+	result, err = cmd.HandleCommand([]string{"SETSLOT", "104", "NODE", nodeID})
+	assert.NoError(t, err)
+	assert.Equal(t, "OK", result)
+
+	// Verify slot was assigned
+	owner := cluster.GetNodeBySlot(104)
+	assert.NotNil(t, owner)
+	assert.Equal(t, nodeID, owner.ID)
+
+	// Test CLUSTER SETSLOT with invalid arguments
+	_, err = cmd.HandleCommand([]string{"SETSLOT"})
+	assert.Error(t, err)
+
+	_, err = cmd.HandleCommand([]string{"SETSLOT", "abc", "NODE"})
+	assert.Error(t, err)
+
+	_, err = cmd.HandleCommand([]string{"SETSLOT", "100", "INVALID"})
+	assert.Error(t, err)
+}
+
+func TestHandleForget(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+	cmd := NewClusterCommands(cluster)
+
+	// Add a new node
+	nodeID, _ := generateNodeID()
+	node := NewNode(nodeID, "127.0.0.1:6380")
+	cluster.AddNode(node)
+
+	// Test CLUSTER FORGET <nodeid>
+	result, err := cmd.HandleCommand([]string{"FORGET", nodeID})
+	assert.NoError(t, err)
+	assert.Equal(t, "OK", result)
+
+	// Verify node was removed
+	assert.Nil(t, cluster.GetNodeByID(nodeID))
+
+	// Test CLUSTER FORGET with myself
+	_, err = cmd.HandleCommand([]string{"FORGET", cluster.GetMyself().ID})
+	assert.Error(t, err)
+
+	// Test CLUSTER FORGET with missing nodeid
+	_, err = cmd.HandleCommand([]string{"FORGET"})
+	assert.Error(t, err)
+}
+
+func TestHandleReplicate(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+	cmd := NewClusterCommands(cluster)
+
+	// Add a master node
+	masterID, _ := generateNodeID()
+	master := NewNode(masterID, "127.0.0.1:6380")
+	master.Flags = []string{"master"}
+	cluster.AddNode(master)
+
+	// Assign a slot to myself first
+	_ = cluster.AssignSlot(100, cluster.GetMyself().ID)
+
+	// Test CLUSTER REPLICATE <masterid>
+	result, err := cmd.HandleCommand([]string{"REPLICATE", masterID})
+	assert.NoError(t, err)
+	assert.Equal(t, "OK", result)
+
+	// Verify this node is now a slave
+	myself := cluster.GetMyself()
+	assert.True(t, len(myself.Flags) > 0)
+	assert.Equal(t, "slave", myself.Flags[0])
+
+	// Test CLUSTER REPLICATE with unknown node
+	_, err = cmd.HandleCommand([]string{"REPLICATE", "unknown-node-id"})
+	assert.Error(t, err)
+
+	// Test CLUSTER REPLICATE with missing nodeid
+	_, err = cmd.HandleCommand([]string{"REPLICATE"})
+	assert.Error(t, err)
+}
+
+func TestHandleSaveConfig(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+	cmd := NewClusterCommands(cluster)
+
+	// Test CLUSTER SAVECONFIG
+	result, err := cmd.HandleCommand([]string{"SAVECONFIG"})
+	assert.NoError(t, err)
+	assert.Equal(t, "OK", result)
+}
+
+func TestHandleDelSlots(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+	cmd := NewClusterCommands(cluster)
+
+	// Test CLUSTER DELSLOTS
+	result, err := cmd.HandleCommand([]string{"DELSLOTS", "100", "101", "102"})
+	assert.NoError(t, err)
+	assert.Equal(t, "OK", result)
+
+	// Test with invalid slot
+	_, err = cmd.HandleCommand([]string{"DELSLOTS", "abc"})
+	assert.Error(t, err)
+
+	// Test with out of range slot
+	_, err = cmd.HandleCommand([]string{"DELSLOTS", "20000"})
+	assert.Error(t, err)
+
+	// Test with no arguments
+	_, err = cmd.HandleCommand([]string{"DELSLOTS"})
+	assert.Error(t, err)
+}
+
+func TestHandleFlushSlots(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+	cmd := NewClusterCommands(cluster)
+
+	// Assign some slots to myself first
+	_ = cluster.AssignSlot(100, cluster.GetMyself().ID)
+	_ = cluster.AssignSlot(101, cluster.GetMyself().ID)
+	_ = cluster.AssignSlot(102, cluster.GetMyself().ID)
+
+	// Verify slots are assigned
+	assert.NotNil(t, cluster.GetNodeBySlot(100))
+
+	// Test CLUSTER FLUSHSLOTS
+	result, err := cmd.HandleCommand([]string{"FLUSHSLOTS"})
+	assert.NoError(t, err)
+	assert.Equal(t, "OK", result)
+
+	// Verify slots are cleared for myself
+	myself := cluster.GetMyself()
+	assert.Equal(t, 0, len(myself.Slots))
+}
+
+func TestHandleCountKeysInSlot(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+	cmd := NewClusterCommands(cluster)
+
+	// Test CLUSTER COUNTKEYSINSLOT
+	result, err := cmd.HandleCommand([]string{"COUNTKEYSINSLOT", "100"})
+	assert.NoError(t, err)
+	count, ok := result.(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), count)
+
+	// Test with invalid arguments
+	_, err = cmd.HandleCommand([]string{"COUNTKEYSINSLOT"})
+	assert.Error(t, err)
+
+	_, err = cmd.HandleCommand([]string{"COUNTKEYSINSLOT", "abc"})
+	assert.Error(t, err)
+
+	_, err = cmd.HandleCommand([]string{"COUNTKEYSINSLOT", "20000"})
+	assert.Error(t, err)
+}
+
+func TestHandleEpoch(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+	cmd := NewClusterCommands(cluster)
+
+	// Test CLUSTER EPOCH
+	result, err := cmd.HandleCommand([]string{"EPOCH"})
+	assert.NoError(t, err)
+	epoch, ok := result.(int64)
+	assert.True(t, ok)
+	assert.True(t, epoch >= 0)
+}
+
+func TestHandleSlaves(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+	cmd := NewClusterCommands(cluster)
+
+	// Add a master node
+	masterID, _ := generateNodeID()
+	master := NewNode(masterID, "127.0.0.1:6380")
+	master.Flags = []string{"master"}
+	cluster.AddNode(master)
+
+	// Add a slave node
+	slaveID, _ := generateNodeID()
+	slave := NewNode(slaveID, "127.0.0.1:6381")
+	slave.Flags = []string{"slave"}
+	slave.MasterID = masterID
+	cluster.AddNode(slave)
+
+	// Test CLUSTER SLAVES <masterid>
+	result, err := cmd.HandleCommand([]string{"SLAVES", masterID})
+	assert.NoError(t, err)
+	slaves, ok := result.([]string)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(slaves))
+
+	// Test with unknown node
+	_, err = cmd.HandleCommand([]string{"SLAVES", "unknown-node-id"})
+	assert.Error(t, err)
+
+	// Test with missing nodeid
+	_, err = cmd.HandleCommand([]string{"SLAVES"})
+	assert.Error(t, err)
+}
+
+func TestHandleReset(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+	cmd := NewClusterCommands(cluster)
+
+	// Add another node and assign slots
+	nodeID, _ := generateNodeID()
+	node := NewNode(nodeID, "127.0.0.1:6380")
+	cluster.AddNode(node)
+	_ = cluster.AssignSlot(100, cluster.GetMyself().ID)
+	_ = cluster.AssignSlot(101, cluster.GetMyself().ID)
+
+	// Test CLUSTER RESET (soft reset)
+	result, err := cmd.HandleCommand([]string{"RESET"})
+	assert.NoError(t, err)
+	assert.Equal(t, "OK", result)
+
+	// Verify myself is still there
+	assert.NotNil(t, cluster.GetMyself())
+
+	// Test CLUSTER RESET HARD
+	_ = cluster.AssignSlot(200, cluster.GetMyself().ID)
+	result, err = cmd.HandleCommand([]string{"RESET", "HARD"})
+	assert.NoError(t, err)
+	assert.Equal(t, "OK", result)
+
+	// After hard reset, slots should be cleared
+	myself := cluster.GetMyself()
+	assert.Equal(t, 0, len(myself.Slots))
+}
+
+func TestHandleCalls(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+	cmd := NewClusterCommands(cluster)
+
+	// Test CLUSTER CALLS
+	result, err := cmd.HandleCommand([]string{"CALLS"})
+	assert.NoError(t, err)
+	calls, ok := result.([]interface{})
+	assert.True(t, ok)
+	// Should have at least myself in the result
+	assert.True(t, len(calls) >= 4) // at least one node with 4 fields
+}
+
+func TestHandleTotalKeys(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+	cmd := NewClusterCommands(cluster)
+
+	// Test CLUSTER TOTALKEYS
+	result, err := cmd.HandleCommand([]string{"TOTALKEYS", "100"})
+	assert.NoError(t, err)
+	keys, ok := result.(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), keys)
+
+	// Test with invalid arguments
+	_, err = cmd.HandleCommand([]string{"TOTALKEYS"})
+	assert.Error(t, err)
+
+	_, err = cmd.HandleCommand([]string{"TOTALKEYS", "abc"})
+	assert.Error(t, err)
+
+	_, err = cmd.HandleCommand([]string{"TOTALKEYS", "20000"})
+	assert.Error(t, err)
+}
+
+func TestNodeUpdatePing(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+
+	node := cluster.GetMyself()
+	assert.NotNil(t, node)
+
+	// Test UpdatePing
+	node.UpdatePing()
+	// Just verify it doesn't panic and completes
+}
+

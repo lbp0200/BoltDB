@@ -502,3 +502,57 @@ func TestHashOperations(t *testing.T) {
 	count, _ := store.HLen(key)
 	assert.Equal(t, uint64(2), count)
 }
+
+// TestHRandField 测试 HRANDFIELD 命令
+func TestHRandField(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Create hash
+	store.HSet("myhash", "field1", "value1")
+	store.HSet("myhash", "field2", "value2")
+	store.HSet("myhash", "field3", "value3")
+
+	// Test HRandField - get random fields (without values)
+	fields, _, err := store.HRandField("myhash", 2, false)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(fields))
+
+	// Test HRandField with values
+	fieldsWithValues, values, err := store.HRandField("myhash", 2, true)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(fieldsWithValues))
+	assert.Equal(t, 2, len(values))
+
+	// Test on non-existent key
+	fields, _, err = store.HRandField("nonexistent", 10, false)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(fields))
+
+	// Test with count > size
+	fields, _, err = store.HRandField("myhash", 10, false)
+	assert.NoError(t, err)
+	assert.Equal(t, 3, len(fields))
+}
+
+// TestHGetAllFields tests the hGetAllFields helper
+func TestHGetAllFields(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Create hash
+	store.HSet("myhash", "field1", "value1")
+	store.HSet("myhash", "field2", "value2")
+
+	// Test using HGetAll (which uses hGetAllFields internally)
+	data, err := store.HGetAll("myhash")
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(data))
+	assert.Equal(t, "value1", data["field1"])
+	assert.Equal(t, "value2", data["field2"])
+
+	// Test on non-existent key
+	data, err = store.HGetAll("nonexistent")
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(data))
+}

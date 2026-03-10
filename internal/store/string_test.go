@@ -575,3 +575,76 @@ func TestStringEdgeCases(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "\x00\x01\x02\xFF", value)
 }
+
+// TestBitLen 测试 BITLEN 命令
+func TestBitLen(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Test with value
+	err := store.Set("bits", "hi") // 'h' = 0x68 = 01101000, 'i' = 0x69 = 01101001
+	assert.NoError(t, err)
+
+	length, err := store.BitLen("bits")
+	assert.NoError(t, err)
+	assert.Equal(t, 16, length) // 2 bytes = 16 bits
+
+	// Test non-existent key (might return 0 or error depending on implementation)
+	length, _ = store.BitLen("nonexistent")
+	_ = length // just ensure it doesn't panic
+}
+
+// TestBitField 测试 BITFIELD 命令
+func TestBitField(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Test GET operation on non-existent key
+	result, err := store.BitField("key", []string{"GET", "u8", "0"})
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(result))
+
+	// Test SET operation
+	result, err = store.BitField("key", []string{"SET", "u8", "0", "255"})
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(result))
+
+	// Verify the SET worked by GET
+	result, err = store.BitField("key", []string{"GET", "u8", "0"})
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(result))
+
+	// Test INCRBY operation
+	result, err = store.BitField("key", []string{"INCRBY", "u8", "0", "1"})
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(result))
+
+	// Test with signed integers
+	result, err = store.BitField("signed", []string{"SET", "i8", "0", "127"})
+	assert.NoError(t, err)
+
+	result, err = store.BitField("signed", []string{"GET", "i8", "0"})
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(result))
+
+	// Test multiple operations
+	result, err = store.BitField("multi", []string{"SET", "u8", "0", "10", "GET", "u8", "1"})
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(result))
+}
+
+// TestBitFieldOverflow 测试 BITFIELD 溢出情况
+func TestBitFieldOverflow(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Test with 16-bit
+	err := store.Set("key16", "ab")
+	assert.NoError(t, err)
+
+	// GET beyond the string length
+	result, err := store.BitField("key16", []string{"GET", "u16", "8"})
+	assert.NoError(t, err)
+	// Should return 0 for bits beyond the string
+	_ = result
+}

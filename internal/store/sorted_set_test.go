@@ -872,3 +872,74 @@ func TestZMScore(t *testing.T) {
 	assert.Equal(t, 0.0, scores[2]) // 不存在的成员
 	assert.Equal(t, 3.0, scores[3])
 }
+
+// TestBZPopMax 测试 BZPOPMAX 命令
+func TestBZPopMax(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add elements to sorted set
+	store.ZAdd("zset", []ZSetMember{
+		{Member: "a", Score: 1.0},
+		{Member: "b", Score: 2.0},
+		{Member: "c", Score: 3.0},
+	})
+
+	// Test BZPopMax
+	key, member, err := store.BZPopMax([]string{"zset"}, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, "zset", key)
+	assert.Equal(t, "c", member.Member)
+	assert.Equal(t, 3.0, member.Score)
+
+	// Verify element was removed
+	count, _ := store.ZCard("zset")
+	assert.Equal(t, uint64(2), count)
+}
+
+// TestBZPopMin 测试 BZPOPMIN 命令
+func TestBZPopMin(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add elements to sorted set
+	store.ZAdd("zset", []ZSetMember{
+		{Member: "a", Score: 1.0},
+		{Member: "b", Score: 2.0},
+		{Member: "c", Score: 3.0},
+	})
+
+	// Test BZPopMin
+	key, member, err := store.BZPopMin([]string{"zset"}, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, "zset", key)
+	assert.Equal(t, "a", member.Member)
+	assert.Equal(t, 1.0, member.Score)
+
+	// Verify element was removed
+	count, _ := store.ZCard("zset")
+	assert.Equal(t, uint64(2), count)
+}
+
+// TestZScan 测试 ZSCAN 命令
+func TestZScan(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add elements to sorted set
+	for i := 0; i < 50; i++ {
+		store.ZAdd("zset", []ZSetMember{
+			{Member: "member" + string(rune('a'+i)), Score: float64(i)},
+		})
+	}
+
+	// Test ZScan
+	result, err := store.ZScan("zset", 0, "*member1*", 10)
+	assert.NoError(t, err)
+	_ = result
+
+	// Test with non-existent key
+	result, err = store.ZScan("nonexistent", 0, "*", 10)
+	assert.NoError(t, err)
+	_ = result
+}

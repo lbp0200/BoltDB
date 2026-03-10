@@ -367,3 +367,23 @@ func TestPUnsubscribeFromNonSubscribedPattern(t *testing.T) {
 	unsubscribed := psm.PUnsubscribe(sub, "neverpattern")
 	assert.Equal(t, 0, len(unsubscribed))
 }
+
+// TestGetPatternCount tests GetPatternCount function
+func TestGetPatternCount(t *testing.T) {
+	psm := NewPubSubManager()
+	sub1 := NewSubscriber("sub1")
+	sub2 := NewSubscriber("sub2")
+
+	// Initially, no pattern subscriptions
+	count := psm.GetPatternCount()
+	assert.Equal(t, 0, count)
+
+	// Subscribe to patterns
+	psm.PSubscribe(sub1, "news.*")
+	psm.PSubscribe(sub2, "news.*")
+	psm.PSubscribe(sub1, "sports.*")
+
+	// Now should have 2 unique patterns
+	count = psm.GetPatternCount()
+	assert.Equal(t, 2, count)
+}

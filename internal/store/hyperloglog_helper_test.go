@@ -262,3 +262,128 @@ func TestHyperLogLogMerge(t *testing.T) {
 		}
 	})
 }
+
+// TestPFAdd tests the store-level PFAdd function
+func TestPFAdd(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Test basic PFAdd
+	count, err := store.PFAdd("hll1", "a", "b", "c")
+	if err != nil {
+		t.Errorf("PFAdd error: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("PFAdd count = %d, want 1", count)
+	}
+
+	// Test PFAdd to existing key
+	count, err = store.PFAdd("hll1", "d", "e")
+	if err != nil {
+		t.Errorf("PFAdd error: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("PFAdd count = %d, want 1", count)
+	}
+
+	// Test PFAdd with no elements (should return 0)
+	count, err = store.PFAdd("hll2")
+	if err != nil {
+		t.Errorf("PFAdd error: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("PFAdd count = %d, want 0", count)
+	}
+}
+
+// TestPFCount tests the store-level PFCount function
+func TestPFCount(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Add elements to first HLL
+	store.PFAdd("hll1", "a", "b", "c")
+
+	// Test single key count
+	count, err := store.PFCount("hll1")
+	if err != nil {
+		t.Errorf("PFCount error: %v", err)
+	}
+	if count <= 0 {
+		t.Errorf("PFCount = %d, want > 0", count)
+	}
+
+	// Add elements to second HLL
+	store.PFAdd("hll2", "c", "d", "e")
+
+	// Test multiple keys count
+	count, err = store.PFCount("hll1", "hll2")
+	if err != nil {
+		t.Errorf("PFCount error: %v", err)
+	}
+	if count <= 0 {
+		t.Errorf("PFCount = %d, want > 0", count)
+	}
+
+	// Test non-existent key
+	count, err = store.PFCount("nonexistent")
+	if err != nil {
+		t.Errorf("PFCount error: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("PFCount = %d, want 0 for nonexistent key", count)
+	}
+}
+
+// TestPFMerge tests the store-level PFMerge function
+func TestPFMerge(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Create two HLLs
+	store.PFAdd("hll1", "a", "b", "c")
+	store.PFAdd("hll2", "d", "e", "f")
+
+	// Merge hll2 into hll1
+	err := store.PFMerge("hll1", "hll2")
+	if err != nil {
+		t.Errorf("PFMerge error: %v", err)
+	}
+
+	// Verify merged count
+	count, err := store.PFCount("hll1")
+	if err != nil {
+		t.Errorf("PFCount error: %v", err)
+	}
+	if count < 3 {
+		t.Errorf("PFCount = %d, want >= 3", count)
+	}
+}
+
+// TestPFInfo tests the store-level PFInfo function
+func TestPFInfo(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Test PFInfo on non-existent key
+	_, err := store.PFInfo("nonexistent")
+	if err == nil {
+		t.Error("PFInfo should error on nonexistent key")
+	}
+
+	// Create a HLL
+	store.PFAdd("hll1", "a", "b", "c")
+
+	// Test PFInfo on existing key
+	info, err := store.PFInfo("hll1")
+	if err != nil {
+		t.Errorf("PFInfo error: %v", err)
+	}
+	if info == nil {
+		t.Fatal("PFInfo returned nil")
+	}
+	// The map should have at least some keys
+	if len(info) == 0 {
+		t.Error("PFInfo returned empty map")
+	}
+}
