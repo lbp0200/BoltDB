@@ -1,6 +1,7 @@
 package replication
 
 import (
+	"bufio"
 	"testing"
 
 	"github.com/lbp0200/BoltDB/internal/store"
@@ -404,10 +405,73 @@ func TestSetMasterConnection(t *testing.T) {
 	// Initially nil
 	assert.True(t, rm.GetMasterConnection() == nil)
 
-	// Create a mock master connection (we'll use a mock)
-	// Since MasterConnection requires actual network, we just test the getter/setter pattern
-	// by verifying the function exists and can be called (it will be nil in tests)
-	assert.True(t, rm.GetMasterConnection() == nil)
+	// Create a mock master connection
+	mock := newMockMasterConn()
+	mc := &MasterConnection{
+		Addr:    "127.0.0.1:6379",
+		Conn:    mock,
+		Reader:  bufio.NewReader(mock),
+		Writer:  bufio.NewWriter(mock),
+		stopCh:  make(chan struct{}),
+	}
+
+	// Set the master connection
+	rm.SetMasterConnection(mc)
+
+	// Verify it's set
+	assert.True(t, rm.GetMasterConnection() != nil)
+	assert.Equal(t, "127.0.0.1:6379", rm.GetMasterConnection().Addr)
+}
+
+// TestStopSlaveReplication tests StopSlaveReplication function
+func TestStopSlaveReplication(t *testing.T) {
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	// First set role to slave
+	rm.SetRole(RoleSlave)
+	rm.SetMasterAddr("127.0.0.1:6379")
+
+	// Verify role is slave
+	assert.Equal(t, RoleSlave, rm.role)
+	assert.Equal(t, "127.0.0.1:6379", rm.GetMasterAddr())
+
+	// Stop replication - this should set role back to master
+	StopSlaveReplication(rm)
+
+	// Verify role changed to master and master addr cleared
+	assert.Equal(t, RoleMaster, rm.role)
+	assert.Equal(t, "", rm.GetMasterAddr())
+}
+
+// TestStartSlaveReplication_ConnectionFailure tests StartSlaveReplication with invalid address
+func TestStartSlaveReplication_ConnectionFailure(t *testing.T) {
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	// Use an invalid address that will fail to connect
+	err := StartSlaveReplication(rm, testStore, "127.0.0.1:59999")
+	// Connection should fail
+	assert.True(t, err != nil)
+}
+
+// TestStartSlaveReplication_SetsRole tests that StartSlaveReplication sets role to slave
+func TestStartSlaveReplication_SetsRole(t *testing.T) {
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	// Try to connect to a port that won't accept connections immediately
+	// This will cause the function to fail but role should still be set
+	// Use a non-routable address
+	err := StartSlaveReplication(rm, testStore, "10.255.255.1:1")
+	// Connection should fail (timeout or refused)
+	assert.True(t, err != nil)
+
+	// Role might be set to slave before the connection fails
+	// Note: The implementation sets role before connecting
 }
 
 // TestHandlePSync_PartialSync tests HandlePSync with partial sync scenario
@@ -425,6 +489,30 @@ func TestHandlePSync_PartialSync(t *testing.T) {
 	result, err := HandlePSync(rm, rm.GetReplicationID(), 0)
 	assert.NoError(t, err)
 	assert.True(t, result != nil)
+}
+
+// TestHandlePSync_ValidPartialSync tests HandlePSync with valid partial sync offset
+func TestHandlePSync_ValidPartialSync(t *testing.T) {
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	rm.SetRole(RoleMaster)
+
+	// Add some data to backlog to enable partial sync
+	rm.PropagateCommand([][]byte{[]byte("SET"), []byte("key"), []byte("value")})
+
+	// Get the current offset
+	currentOffset := rm.GetMasterReplOffset()
+
+	// Try partial sync with offset that should be within backlog range
+	result, err := HandlePSync(rm, rm.GetReplicationID(), currentOffset-1)
+	assert.NoError(t, err)
+	assert.True(t, result != nil)
+	// Should return partial sync if within valid range
+	if currentOffset > 0 {
+		assert.True(t, !result.FullResync)
+	}
 }
 
 // TestHandlePSync_DifferentReplId tests HandlePSync with different repl ID

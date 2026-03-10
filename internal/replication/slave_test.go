@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/zeebo/assert"
 )
 
@@ -216,4 +217,59 @@ func TestSendBacklogData_EmptyRange(t *testing.T) {
 	err := SendBacklogData(slave, backlog, 1000, 2000)
 	// 可能返回错误或空数据
 	_ = err
+}
+
+// TestSlaveConnection_SendRDB tests SendRDB function
+func TestSlaveConnection_SendRDB(t *testing.T) {
+	conn := newMockConn()
+	slave := NewSlaveConnection(conn)
+
+	rdbData := []byte("RDB_DATA_CONTENT")
+	err := slave.SendRDB(rdbData)
+	assert.NoError(t, err)
+
+	// 验证写入的数据包含 RESP 格式的 bulk string
+	// $16\r\nRDB_DATA_CONTENT\r\n (16 bytes)
+	expected := "$16\r\nRDB_DATA_CONTENT\r\n"
+	assert.Equal(t, expected, string(conn.writeBuffer))
+}
+
+// TestSlaveConnection_SendResponse tests SendResponse function
+func TestSlaveConnection_SendResponse(t *testing.T) {
+	conn := newMockConn()
+	slave := NewSlaveConnection(conn)
+
+	// Test sending a simple string response
+	resp := proto.NewSimpleString("OK")
+	err := slave.SendResponse(resp)
+	assert.NoError(t, err)
+
+	// Verify data was written
+	assert.True(t, len(conn.writeBuffer) > 0)
+}
+
+// TestSlaveConnection_SendRDB_Empty tests SendRDB with empty data
+func TestSlaveConnection_SendRDB_Empty(t *testing.T) {
+	conn := newMockConn()
+	slave := NewSlaveConnection(conn)
+
+	rdbData := []byte{}
+	err := slave.SendRDB(rdbData)
+	assert.NoError(t, err)
+
+	// $0\r\n\r\n
+	expected := "$0\r\n\r\n"
+	assert.Equal(t, expected, string(conn.writeBuffer))
+}
+
+// TestSlaveConnection_ReadCommand tests ReadCommand function
+func TestSlaveConnection_ReadCommand(t *testing.T) {
+	conn := newMockConn()
+	conn.readBuffer = []byte("*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n")
+	slave := NewSlaveConnection(conn)
+
+	cmd, err := slave.ReadCommand()
+	assert.NoError(t, err)
+	assert.NotEqual(t, nil, cmd)
+	assert.Equal(t, 3, len(cmd.Args))
 }

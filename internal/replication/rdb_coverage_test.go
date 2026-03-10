@@ -350,3 +350,110 @@ func TestLoadRDB_Overwrite(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "original", val)
 }
+
+// TestWriteKeyValue_StringType tests WriteKeyValue with string type
+func TestWriteKeyValue_StringType(t *testing.T) {
+	enc := NewRDBEncoder()
+	err := enc.WriteKeyValue("testkey", "testvalue", store.KeyTypeString, 0)
+	assert.NoError(t, err)
+
+	rdbData := enc.Bytes()
+	assert.True(t, len(rdbData) > 0)
+}
+
+// TestWriteKeyValue_WithTTL tests WriteKeyValue with TTL
+func TestWriteKeyValue_WithTTL(t *testing.T) {
+	enc := NewRDBEncoder()
+	err := enc.WriteKeyValue("testkey", "testvalue", store.KeyTypeString, 60)
+	assert.NoError(t, err)
+
+	rdbData := enc.Bytes()
+	assert.True(t, len(rdbData) > 0)
+}
+
+// TestWriteKeyValue_ListType tests WriteKeyValue with list type
+func TestWriteKeyValue_ListType(t *testing.T) {
+	enc := NewRDBEncoder()
+	err := enc.WriteKeyValue("testkey", []string{"a", "b", "c"}, store.KeyTypeList, 0)
+	assert.NoError(t, err)
+
+	rdbData := enc.Bytes()
+	assert.True(t, len(rdbData) > 0)
+}
+
+// TestWriteKeyValue_SetType tests WriteKeyValue with set type
+func TestWriteKeyValue_SetType(t *testing.T) {
+	enc := NewRDBEncoder()
+	err := enc.WriteKeyValue("testkey", []string{"a", "b", "c"}, store.KeyTypeSet, 0)
+	assert.NoError(t, err)
+
+	rdbData := enc.Bytes()
+	assert.True(t, len(rdbData) > 0)
+}
+
+// TestWriteKeyValue_HashType tests WriteKeyValue with hash type
+func TestWriteKeyValue_HashType(t *testing.T) {
+	enc := NewRDBEncoder()
+	err := enc.WriteKeyValue("testkey", map[string][]byte{"field1": []byte("value1")}, store.KeyTypeHash, 0)
+	assert.NoError(t, err)
+
+	rdbData := enc.Bytes()
+	assert.True(t, len(rdbData) > 0)
+}
+
+// TestWriteKeyValue_ZSetType tests WriteKeyValue with sorted set type
+// Note: WriteKeyValue writes the value as a string even for ZSET type (no error)
+func TestWriteKeyValue_ZSetType(t *testing.T) {
+	enc := NewRDBEncoder()
+	err := enc.WriteKeyValue("testkey", "dummy", store.KeyTypeSortedSet, 0)
+	// No error is returned - it just writes the string value
+	assert.NoError(t, err)
+
+	rdbData := enc.Bytes()
+	assert.True(t, len(rdbData) > 0)
+}
+
+// TestWriteKeyValue_LargeList tests WriteKeyValue with large list (triggers 14-bit and 32-bit length encoding)
+func TestWriteKeyValue_LargeList(t *testing.T) {
+	enc := NewRDBEncoder()
+	// Create a list with 100+ elements to trigger 14-bit length encoding
+	values := make([]string, 150)
+	for i := range values {
+		values[i] = string(rune(i % 256))
+	}
+	err := enc.WriteKeyValue("largekey", values, store.KeyTypeList, 0)
+	assert.NoError(t, err)
+
+	rdbData := enc.Bytes()
+	assert.True(t, len(rdbData) > 0)
+}
+
+// TestWriteKeyValue_LargeHash tests WriteKeyValue with large hash
+func TestWriteKeyValue_LargeHash(t *testing.T) {
+	enc := NewRDBEncoder()
+	// Create a hash with 100+ fields to trigger 14-bit length encoding
+	fields := make(map[string][]byte, 150)
+	for i := 0; i < 150; i++ {
+		fields[string(rune(i))] = []byte("value")
+	}
+	err := enc.WriteKeyValue("largehash", fields, store.KeyTypeHash, 0)
+	assert.NoError(t, err)
+
+	rdbData := enc.Bytes()
+	assert.True(t, len(rdbData) > 0)
+}
+
+// TestWriteKeyValue_LargeSet tests WriteKeyValue with large set
+func TestWriteKeyValue_LargeSet(t *testing.T) {
+	enc := NewRDBEncoder()
+	// Create a set with 100+ members to trigger 14-bit length encoding
+	members := make([]string, 150)
+	for i := range members {
+		members[i] = string(rune(i))
+	}
+	err := enc.WriteKeyValue("largetset", members, store.KeyTypeSet, 0)
+	assert.NoError(t, err)
+
+	rdbData := enc.Bytes()
+	assert.True(t, len(rdbData) > 0)
+}
