@@ -401,3 +401,40 @@ func TestListBackups_WithInvalidExt(t *testing.T) {
 	// Should include files without extension or .bak
 	assert.True(t, found["backup_001"] || found["backup_002.bak"])
 }
+
+// TestRDBBackupManager_GetBackupInfoFile tests GetBackupInfo for RDB files with success case
+func TestRDBBackupManager_GetBackupInfoFile(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a test RDB file
+	rdbFile := filepath.Join(tmpDir, "test.rdb")
+	err := os.WriteFile(rdbFile, []byte("mock rdb data"), 0644)
+	assert.NoError(t, err)
+
+	rbm := &RDBBackupManager{}
+	info, err := rbm.GetBackupInfo(rdbFile)
+	assert.NoError(t, err)
+	assert.True(t, info["size"].(int64) > 0)
+	assert.Equal(t, "RDB", info["format"])
+}
+
+// TestListRDBBackupsWithFiles tests ListRDBBackups function with files
+func TestListRDBBackupsWithFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create RDB files
+	rdbFiles := []string{
+		"backup_001.rdb",
+		"backup_002.rdb",
+		"backup_003.txt",
+	}
+
+	for _, f := range rdbFiles {
+		err := os.WriteFile(filepath.Join(tmpDir, f), []byte("test"), 0644)
+		assert.NoError(t, err)
+	}
+
+	backups, err := ListRDBBackups(tmpDir)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(backups))
+}
