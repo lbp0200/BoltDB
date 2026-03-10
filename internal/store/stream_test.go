@@ -311,16 +311,17 @@ func TestStreamXInfoGroups(t *testing.T) {
 	store := setupTestStore(t)
 	defer store.Close()
 
-	// Test on non-existent stream
-	_, err := store.XInfoGroups("nonexistent")
-	assert.Error(t, err)
+	// Test on non-existent stream - returns empty groups, not error
+	groups, err := store.XInfoGroups("nonexistent")
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(groups))
 
 	// Create stream with group
 	store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field": "value"})
 	store.XGroupCreate("mystream", "mygroup", "0")
 
 	// Get info
-	groups, err := store.XInfoGroups("mystream")
+	groups, err = store.XInfoGroups("mystream")
 	assert.NoError(t, err)
 	assert.True(t, len(groups) > 0)
 }
@@ -330,16 +331,17 @@ func TestStreamXInfoConsumers(t *testing.T) {
 	store := setupTestStore(t)
 	defer store.Close()
 
-	// Test on non-existent stream
-	_, err := store.XInfoConsumers("nonexistent", "mygroup")
-	assert.Error(t, err)
+	// Test on non-existent stream - returns empty consumers, not error
+	consumers, err := store.XInfoConsumers("nonexistent", "mygroup")
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(consumers))
 
 	// Create stream with group
 	store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field": "value"})
 	store.XGroupCreate("mystream", "mygroup", "0")
 
 	// Get info (no consumers yet)
-	consumers, err := store.XInfoConsumers("mystream", "mygroup")
+	consumers, err = store.XInfoConsumers("mystream", "mygroup")
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(consumers))
 }

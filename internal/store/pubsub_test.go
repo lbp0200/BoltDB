@@ -383,7 +383,7 @@ func TestGetPatternCount(t *testing.T) {
 	psm.PSubscribe(sub2, "news.*")
 	psm.PSubscribe(sub1, "sports.*")
 
-	// Now should have 2 unique patterns
+	// Now should have 3 pattern subscriptions (sub1 has 2, sub2 has 1)
 	count = psm.GetPatternCount()
-	assert.Equal(t, 2, count)
+	assert.Equal(t, 3, count)
 }

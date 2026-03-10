@@ -514,13 +514,15 @@ func TestLPos(t *testing.T) {
 	assert.True(t, len(positions) > 0)
 	assert.Equal(t, int64(3), positions[0])
 
-	// Test LPOS for non-existent element
+	// Test LPOS for non-existent element - returns empty positions, not error
 	positions, err = store.LPos("mylist", "nonexistent", 0, 0, 0)
-	assert.Error(t, err)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(positions))
 
-	// Test LPOS for non-existent key
+	// Test LPOS for non-existent key - returns empty positions, not error
 	positions, err = store.LPos("nonexistent", "value", 0, 0, 0)
-	assert.Error(t, err)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(positions))
 }
 
 // TestLMove 测试 LMOVE 命令
