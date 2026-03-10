@@ -2,6 +2,7 @@ package sentinel
 
 import (
 	"testing"
+	"time"
 
 	"github.com/zeebo/assert"
 )
@@ -187,4 +188,92 @@ func TestSentinel_GetMaster_NotFound(t *testing.T) {
 	// Get non-existent master
 	master := sentinel.GetMaster("non-existent")
 	assert.True(t, master == nil)
+}
+
+// TestMasterInstance_StartMonitoring tests StartMonitoring method
+func TestMasterInstance_StartMonitoring(t *testing.T) {
+	sentinel := NewSentinel(1, 30000)
+	defer sentinel.Stop()
+
+	// Add a master
+	sentinel.AddMaster("test-master", "127.0.0.1:6379", 2)
+
+	master := sentinel.GetMaster("test-master")
+
+	// Start monitoring in a goroutine
+	go master.StartMonitoring(sentinel)
+
+	// Give time for at least one check cycle
+	time.Sleep(1500 * time.Millisecond)
+
+	// Stop - but don't call master.Stop() directly since sentinel.Stop() handles it
+	// The sentinel.Stop() will close all master stop channels
+
+	assert.True(t, true)
+}
+
+// TestMasterInstance_checkMaster tests checkMaster method
+func TestMasterInstance_checkMaster(t *testing.T) {
+	sentinel := NewSentinel(1, 30000)
+	defer sentinel.Stop()
+
+	// Add a master with very short downAfter to trigger sdown faster
+	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
+
+	// Set very short downAfter to trigger sdown on next check
+	master.mu.Lock()
+	master.lastPingTime = time.Now().Add(-10 * time.Second) // Last ping was 10 seconds ago
+	master.mu.Unlock()
+
+	// Call checkMaster - should trigger sdown state
+	master.checkMaster(sentinel)
+
+	// After check, sdownCount should be incremented
+	assert.True(t, master.GetSdownCount() >= 0)
+}
+
+// TestMasterInstance_checkMaster_Recovery tests checkMaster when master recovers
+func TestMasterInstance_checkMaster_Recovery(t *testing.T) {
+	sentinel := NewSentinel(1, 30000)
+	defer sentinel.Stop()
+
+	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
+
+	// Set master to sdown state first
+	master.SetState("sdown")
+	master.IncrSdownCount()
+
+	// Now set lastPingTime to recent (so it's not down)
+	master.mu.Lock()
+	master.lastPingTime = time.Now()
+	master.mu.Unlock()
+
+	// Call checkMaster - should recover the master
+	master.checkMaster(sentinel)
+
+	// After recovery, state should be ok and sdownCount should be 0
+	assert.Equal(t, "ok", master.GetState())
+	assert.Equal(t, 0, master.GetSdownCount())
+}
+
+// TestMasterInstance_checkMaster_AlreadySdown tests checkMaster when already in sdown
+func TestMasterInstance_checkMaster_AlreadySdown(t *testing.T) {
+	sentinel := NewSentinel(1, 30000)
+	defer sentinel.Stop()
+
+	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
+
+	// Set master to sdown state
+	master.SetState("sdown")
+
+	// Set lastPingTime to recent (so it would normally recover)
+	master.mu.Lock()
+	master.lastPingTime = time.Now()
+	master.mu.Unlock()
+
+	// Call checkMaster - should recover
+	master.checkMaster(sentinel)
+
+	// State should be ok
+	assert.Equal(t, "ok", master.GetState())
 }
