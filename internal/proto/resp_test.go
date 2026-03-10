@@ -461,3 +461,82 @@ func TestNestedArrayString(t *testing.T) {
 		})
 	}
 }
+
+// TestRawString tests RawString String method
+func TestRawString(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    RawString
+		expected string
+	}{
+		{
+			name:     "simple string",
+			input:    RawString("+OK\r\n"),
+			expected: "+OK\r\n",
+		},
+		{
+			name:     "error string",
+			input:    RawString("-ERR test\r\n"),
+			expected: "-ERR test\r\n",
+		},
+		{
+			name:     "bulk string",
+			input:    RawString("$5\r\nhello\r\n"),
+			expected: "$5\r\nhello\r\n",
+		},
+		{
+			name:     "empty string",
+			input:    RawString(""),
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.input.String()
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// TestNewScanResponse tests NewScanResponse function
+func TestNewScanResponse(t *testing.T) {
+	tests := []struct {
+		name     string
+		cursor   uint64
+		keys     []string
+		expected string
+	}{
+		{
+			name:     "empty keys",
+			cursor:   0,
+			keys:     []string{},
+			expected: "*2\r\n$1\r\n0\r\n*0\r\n",
+		},
+		{
+			name:     "single key",
+			cursor:   0,
+			keys:     []string{"key1"},
+			expected: "*2\r\n$1\r\n0\r\n*1\r\n$4\r\nkey1\r\n",
+		},
+		{
+			name:     "multiple keys",
+			cursor:   100,
+			keys:     []string{"key1", "key2", "key3"},
+			expected: "*2\r\n$3\r\n100\r\n*3\r\n$4\r\nkey1\r\n$4\r\nkey2\r\n$4\r\nkey3\r\n",
+		},
+		{
+			name:     "non-zero cursor",
+			cursor:   12345,
+			keys:     []string{"mykey"},
+			expected: "*2\r\n$5\r\n12345\r\n*1\r\n$5\r\nmykey\r\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := NewScanResponse(tt.cursor, tt.keys)
+			assert.Equal(t, tt.expected, result.String())
+		})
+	}
+}
