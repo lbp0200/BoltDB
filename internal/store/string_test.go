@@ -648,3 +648,73 @@ func TestBitFieldOverflow(t *testing.T) {
 	// Should return 0 for bits beyond the string
 	_ = result
 }
+
+// TestSetWrongType tests that SET returns ErrWrongType when key exists with different type
+func TestSetWrongType(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Create a hash key first
+	err := store.HSet("myhash", "field1", "value1")
+	assert.NoError(t, err)
+
+	// Verify it's a hash
+	keyType, err := store.Type("myhash")
+	assert.NoError(t, err)
+	assert.Equal(t, "hash", keyType)
+
+	// Try to SET on the hash key - should return ErrWrongType
+	err = store.Set("myhash", "value")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Create a list key
+	_, err = store.LPush("mylist", "value1")
+	assert.NoError(t, err)
+
+	// Verify it's a list
+	keyType, err = store.Type("mylist")
+	assert.NoError(t, err)
+	assert.Equal(t, "list", keyType)
+
+	// Try to SET on the list key - should return ErrWrongType
+	err = store.Set("mylist", "value")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Create a set key
+	_, err = store.SAdd("myset", "member1")
+	assert.NoError(t, err)
+
+	// Verify it's a set
+	keyType, err = store.Type("myset")
+	assert.NoError(t, err)
+	assert.Equal(t, "set", keyType)
+
+	// Try to SET on the set key - should return ErrWrongType
+	err = store.Set("myset", "value")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Create a zset key
+	err = store.ZAdd("myzset", []ZSetMember{{Member: "member1", Score: 1.0}})
+	assert.NoError(t, err)
+
+	// Verify it's a zset
+	keyType, err = store.Type("myzset")
+	assert.NoError(t, err)
+	assert.Equal(t, "zset", keyType)
+
+	// Try to SET on the zset key - should return ErrWrongType
+	err = store.Set("myzset", "value")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// SET on non-existent key should work fine
+	err = store.Set("newstring", "value")
+	assert.NoError(t, err)
+
+	// SET on existing string key should also work fine
+	err = store.Set("newstring", "newvalue")
+	assert.NoError(t, err)
+}

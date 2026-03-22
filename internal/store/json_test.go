@@ -314,6 +314,37 @@ func TestJSONMGet(t *testing.T) {
 	}
 }
 
+// Test for WRONGTYPE error
+func TestJSONSetWrongType(t *testing.T) {
+	dir := t.TempDir()
+	db, err := NewBotreonStore(dir)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer db.Close()
+
+	// Set a string value first
+	err = db.Set("mykey", "value")
+	if err != nil {
+		t.Fatalf("SET failed: %v", err)
+	}
+
+	// Verify the type is "string"
+	keyType, err := db.Type("mykey")
+	if err != nil {
+		t.Fatalf("TYPE failed: %v", err)
+	}
+	if keyType != "string" {
+		t.Errorf("Expected type 'string', got '%s'", keyType)
+	}
+
+	// Try to set JSON on the same key - should return ErrWrongType
+	_, err = db.JSONSet("mykey", "$", `{"name":"John"}`, false, false)
+	if err != ErrWrongType {
+		t.Errorf("Expected ErrWrongType, got %v", err)
+	}
+}
+
 // Test for key not found scenarios
 func TestJSONKeyNotFound(t *testing.T) {
 	dir := t.TempDir()

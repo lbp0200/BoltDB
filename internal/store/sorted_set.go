@@ -142,6 +142,22 @@ func (s *BotreonStore) ZAdd(zSetName string, members []ZSetMember) error {
 	}
 	return s.retryUpdateSortedSet(func(txn *badger.Txn) error {
 		badgerTypeKey := TypeOfKeyGet(zSetName)
+
+		// Check if key already exists with a different type
+		item, err := txn.Get(badgerTypeKey)
+		if err == nil {
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(val)
+			if keyType != "" && keyType != KeyTypeSortedSet {
+				return ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
+
 		if err := txn.Set(badgerTypeKey, []byte(KeyTypeSortedSet)); err != nil {
 			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to set type key")
 			return err
@@ -150,7 +166,7 @@ func (s *BotreonStore) ZAdd(zSetName string, members []ZSetMember) error {
 		// 获取元数据
 		metaKey := sortedSetKeyMeta(zSetName)
 		var meta ZSetsMetaValue
-		item, err := txn.Get(metaKey)
+		item, err = txn.Get(metaKey)
 		if err == nil {
 			err = item.Value(func(val []byte) error {
 				meta, err = decodeMeta(val)

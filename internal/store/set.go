@@ -64,14 +64,32 @@ func (s *BotreonStore) setKey(key string, parts ...string) string {
 func (s *BotreonStore) SAdd(key string, members ...string) (int, error) {
 	added := 0
 	err := s.retryUpdate(func(txn *badger.Txn) error {
-		if err := txn.Set(TypeOfKeyGet(key), []byte(KeyTypeSet)); err != nil {
+		badgerTypeKey := TypeOfKeyGet(key)
+
+		// Check if key already exists with a different type
+		item, err := txn.Get(badgerTypeKey)
+		if err == nil {
+			// Key exists, check its type
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(val)
+			if keyType != "" && keyType != KeyTypeSet {
+				return ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
+
+		if err := txn.Set(badgerTypeKey, []byte(KeyTypeSet)); err != nil {
 			return err
 		}
 		countKey := s.setKey(key, "count")
 		var count uint64
 
 		// 获取当前计数器值
-		item, err := txn.Get([]byte(countKey))
+		item, err = txn.Get([]byte(countKey))
 		if err != badger.ErrKeyNotFound {
 			if err != nil {
 				return err

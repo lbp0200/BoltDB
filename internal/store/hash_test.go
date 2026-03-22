@@ -557,3 +557,65 @@ func TestHGetAllFields(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(data))
 }
+
+// TestHSetWrongType tests that HSet returns ErrWrongType when key exists with different type
+func TestHSetWrongType(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Create a string key first
+	err := store.Set("mystring", "value")
+	assert.NoError(t, err)
+
+	// Verify it's a string
+	keyType, err := store.Type("mystring")
+	assert.NoError(t, err)
+	assert.Equal(t, "string", keyType)
+
+	// Try to HSet to the string key - should return ErrWrongType
+	err = store.HSet("mystring", "field1", "value1")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Create a list key
+	_, err = store.LPush("mylist", "value1")
+	assert.NoError(t, err)
+
+	// Verify it's a list
+	keyType, err = store.Type("mylist")
+	assert.NoError(t, err)
+	assert.Equal(t, "list", keyType)
+
+	// Try to HSet to the list key - should return ErrWrongType
+	err = store.HSet("mylist", "field1", "value1")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Create a sorted set key
+	err = store.ZAdd("myzset", []ZSetMember{{Member: "member1", Score: 1.0}})
+	assert.NoError(t, err)
+
+	// Verify it's a zset
+	keyType, err = store.Type("myzset")
+	assert.NoError(t, err)
+	assert.Equal(t, "zset", keyType)
+
+	// Try to HSet to the zset key - should return ErrWrongType
+	err = store.HSet("myzset", "field1", "value1")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Create a set key
+	_, err = store.SAdd("myset", "member1")
+	assert.NoError(t, err)
+
+	// Verify it's a set
+	keyType, err = store.Type("myset")
+	assert.NoError(t, err)
+	assert.Equal(t, "set", keyType)
+
+	// Try to HSet to the set key - should return ErrWrongType
+	err = store.HSet("myset", "field1", "value1")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+}

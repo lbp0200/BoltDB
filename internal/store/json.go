@@ -75,6 +75,20 @@ func (s *BotreonStore) JSONSet(key, path, value string, nx, xx bool) (string, er
 	}
 
 	err = s.db.Update(func(txn *badger.Txn) error {
+		// Check if key already exists with a different type
+		item, err := txn.Get(TypeOfKeyGet(key))
+		if err == nil {
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(val)
+			if keyType != "" && keyType != KeyTypeJSON {
+				return ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
 		// Set type
 		if err := txn.Set(TypeOfKeyGet(key), []byte(KeyTypeJSON)); err != nil {
 			return err

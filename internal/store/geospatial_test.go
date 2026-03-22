@@ -20,6 +20,74 @@ func TestGeoAdd(t *testing.T) {
 	assert.Equal(t, int64(2), added)
 }
 
+// TestGeoAddWrongType tests that GeoAdd returns ErrWrongType when key exists with different type
+func TestGeoAddWrongType(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// First set a string key
+	err := store.Set("mykey", "value")
+	assert.NoError(t, err)
+
+	// Try to GeoAdd to the string key - should return ErrWrongType
+	_, err = store.GeoAdd("mykey", []GeoMember{
+		{Member: "Paris", Lat: 48.8566, Lon: 2.3521},
+	})
+	assert.Equal(t, ErrWrongType, err)
+
+	// Set a hash key
+	err = store.HSet("hashkey", "field1", "value1")
+	assert.NoError(t, err)
+
+	// Try to GeoAdd to the hash key - should return ErrWrongType
+	_, err = store.GeoAdd("hashkey", []GeoMember{
+		{Member: "Paris", Lat: 48.8566, Lon: 2.3521},
+	})
+	assert.Equal(t, ErrWrongType, err)
+
+	// Set a list key
+	_, err = store.LPush("listkey", "value1")
+	assert.NoError(t, err)
+
+	// Try to GeoAdd to the list key - should return ErrWrongType
+	_, err = store.GeoAdd("listkey", []GeoMember{
+		{Member: "Paris", Lat: 48.8566, Lon: 2.3521},
+	})
+	assert.Equal(t, ErrWrongType, err)
+
+	// Set a set key
+	_, err = store.SAdd("setkey", "member1")
+	assert.NoError(t, err)
+
+	// Try to GeoAdd to the set key - should return ErrWrongType
+	_, err = store.GeoAdd("setkey", []GeoMember{
+		{Member: "Paris", Lat: 48.8566, Lon: 2.3521},
+	})
+	assert.Equal(t, ErrWrongType, err)
+
+	// Set a zset key
+	err = store.ZAdd("zsetkey", []ZSetMember{{Member: "member1", Score: 1.0}})
+	assert.NoError(t, err)
+
+	// Try to GeoAdd to the zset key - should return ErrWrongType
+	_, err = store.GeoAdd("zsetkey", []GeoMember{
+		{Member: "Paris", Lat: 48.8566, Lon: 2.3521},
+	})
+	assert.Equal(t, ErrWrongType, err)
+
+	// Verify that GeoAdd works on a geo key (same type)
+	_, err = store.GeoAdd("mygeo", []GeoMember{
+		{Member: "Paris", Lat: 48.8566, Lon: 2.3521},
+	})
+	assert.NoError(t, err)
+
+	// Add more to the same geo key - should work
+	_, err = store.GeoAdd("mygeo", []GeoMember{
+		{Member: "London", Lat: 51.5074, Lon: -0.1276},
+	})
+	assert.NoError(t, err)
+}
+
 // TestGeoPos tests GeoPos function
 func TestGeoPos(t *testing.T) {
 	store := setupTestStore(t)

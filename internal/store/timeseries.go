@@ -151,8 +151,20 @@ func (s *BotreonStore) TSAdd(key string, timestamp int64, value float64, opts TS
 	err := s.db.Update(func(txn *badger.Txn) error {
 		// Set type key if not exists
 		typeKey := TypeOfKeyGet(key)
-		_, err := txn.Get(typeKey)
-		if errors.Is(err, badger.ErrKeyNotFound) {
+		typeItem, err := txn.Get(typeKey)
+		if err == nil {
+			// Key exists, check if it's a time series
+			err = typeItem.Value(func(val []byte) error {
+				keyType := string(val)
+				if keyType != "" && keyType != KeyTypeTimeSeries {
+					return ErrWrongType
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		} else if errors.Is(err, badger.ErrKeyNotFound) {
 			// Create the time series if it doesn't exist
 			if err := txn.Set(typeKey, []byte(KeyTypeTimeSeries)); err != nil {
 				return err
@@ -167,15 +179,16 @@ func (s *BotreonStore) TSAdd(key string, timestamp int64, value float64, opts TS
 			if err := txn.Set(tsMetaKey(key), encodeTSMeta(meta)); err != nil {
 				return err
 			}
-		} else if err != nil {
+		} else {
 			return err
 		}
 
 		// Get or create metadata
 		metaKey := tsMetaKey(key)
 		var meta *tsMetaData
+		var item *badger.Item
 
-		item, err := txn.Get(metaKey)
+		item, err = txn.Get(metaKey)
 		if err == nil {
 			err = item.Value(func(val []byte) error {
 				meta, err = decodeTSMeta(val)

@@ -154,6 +154,22 @@ func (s *BotreonStore) GeoAdd(key string, members []GeoMember) (int64, error) {
 	err := s.retryUpdateSortedSet(func(txn *badger.Txn) error {
 		// Set type key
 		typeKey := TypeOfKeyGet(key)
+
+		// Check if key already exists with a different type
+		item, err := txn.Get(typeKey)
+		if err == nil {
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(val)
+			if keyType != "" && keyType != KeyTypeGeo {
+				return ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
+
 		if err := txn.Set(typeKey, []byte(KeyTypeGeo)); err != nil {
 			logger.Logger.Error().Err(err).Str("key", key).Msg("GeoAdd: Failed to set type")
 			return err
@@ -162,8 +178,8 @@ func (s *BotreonStore) GeoAdd(key string, members []GeoMember) (int64, error) {
 		// Get current count
 		metaKey := geoKey(key)
 		var count int64 = 0
-		item, err := txn.Get(metaKey)
-		if err == nil && !errors.Is(err, badger.ErrKeyNotFound) {
+		item, err = txn.Get(metaKey)
+		if err == nil {
 			err = item.Value(func(val []byte) error {
 				count = int64(binary.BigEndian.Uint64(val))
 				return nil

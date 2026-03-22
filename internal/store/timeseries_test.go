@@ -287,3 +287,89 @@ func TestTSAutoTimestamp(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEqual(t, int64(0), ts1)
 }
+
+// TestTSAddWrongType tests that TSAdd returns ErrWrongType when key exists with different type
+func TestTSAddWrongType(t *testing.T) {
+	s, err := NewBotreonStore(t.TempDir())
+	assert.NoError(t, err)
+	defer s.Close()
+
+	// Create a string key
+	err = s.Set("mystring", "value")
+	assert.NoError(t, err)
+
+	// Verify it's a string
+	keyType, err := s.Type("mystring")
+	assert.NoError(t, err)
+	assert.Equal(t, "string", keyType)
+
+	// Try to TSAdd to the string key - should return ErrWrongType
+	_, err = s.TSAdd("mystring", time.Now().UnixNano()/int64(time.Millisecond), 10.0, TSAddOptions{})
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Create a list key
+	_, err = s.LPush("mylist", "value1")
+	assert.NoError(t, err)
+
+	// Verify it's a list
+	keyType, err = s.Type("mylist")
+	assert.NoError(t, err)
+	assert.Equal(t, "list", keyType)
+
+	// Try to TSAdd to the list key - should return ErrWrongType
+	_, err = s.TSAdd("mylist", time.Now().UnixNano()/int64(time.Millisecond), 10.0, TSAddOptions{})
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Create a hash key
+	err = s.HSet("myhash", "field1", "value1")
+	assert.NoError(t, err)
+
+	// Verify it's a hash
+	keyType, err = s.Type("myhash")
+	assert.NoError(t, err)
+	assert.Equal(t, "hash", keyType)
+
+	// Try to TSAdd to the hash key - should return ErrWrongType
+	_, err = s.TSAdd("myhash", time.Now().UnixNano()/int64(time.Millisecond), 10.0, TSAddOptions{})
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Create a set key
+	_, err = s.SAdd("myset", "member1")
+	assert.NoError(t, err)
+
+	// Verify it's a set
+	keyType, err = s.Type("myset")
+	assert.NoError(t, err)
+	assert.Equal(t, "set", keyType)
+
+	// Try to TSAdd to the set key - should return ErrWrongType
+	_, err = s.TSAdd("myset", time.Now().UnixNano()/int64(time.Millisecond), 10.0, TSAddOptions{})
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Create a sorted set key
+	err = s.ZAdd("myzset", []ZSetMember{{Member: "member1", Score: 1.0}})
+	assert.NoError(t, err)
+
+	// Verify it's a zset
+	keyType, err = s.Type("myzset")
+	assert.NoError(t, err)
+	assert.Equal(t, "zset", keyType)
+
+	// Try to TSAdd to the zset key - should return ErrWrongType
+	_, err = s.TSAdd("myzset", time.Now().UnixNano()/int64(time.Millisecond), 10.0, TSAddOptions{})
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// TSAdd on non-existent key should work fine
+	_, err = s.TSAdd("newts", time.Now().UnixNano()/int64(time.Millisecond), 10.0, TSAddOptions{})
+	assert.NoError(t, err)
+
+	// Verify it's now a time series
+	keyType, err = s.Type("newts")
+	assert.NoError(t, err)
+	assert.Equal(t, "ts", keyType)
+}

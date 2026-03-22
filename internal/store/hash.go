@@ -11,6 +11,9 @@ import (
 	"github.com/dgraph-io/badger/v4"
 )
 
+// ErrWrongType is returned when operation is attempted on key holding wrong type
+var ErrWrongType = errors.New("WRONGTYPE Operation against a key holding the wrong kind of value")
+
 // 哈希操作
 //func (s *BotreonStore) HSet(key, field string, value interface{}) error {
 //	logFuncTag := "BotreonStoreHSet"
@@ -88,6 +91,21 @@ func (s *BotreonStore) HSet(key, field string, value interface{}) error {
 		exists := false
 		if _, err := txn.Get(hkey); err == nil {
 			exists = true
+		}
+
+		// Check if key already exists with a different type
+		item, err := txn.Get(typeKey)
+		if err == nil {
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(val)
+			if keyType != "" && keyType != KeyTypeHash {
+				return ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
 		}
 
 		if err := txn.Set(typeKey, []byte(KeyTypeHash)); err != nil {

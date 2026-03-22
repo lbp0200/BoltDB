@@ -34,6 +34,45 @@ func TestSAdd(t *testing.T) {
 	assert.Equal(t, uint64(3), count)
 }
 
+// TestSAddWrongType tests that SADD returns ErrWrongType when key exists with different type
+func TestSAddWrongType(t *testing.T) {
+	dbPath := t.TempDir()
+	store, _ := NewBadgerStore(dbPath)
+	defer store.Close()
+
+	// Create a hash key first
+	err := store.HSet("myhash", "field1", "value1")
+	assert.NoError(t, err)
+
+	// Verify it's a hash
+	keyType, err := store.Type("myhash")
+	assert.NoError(t, err)
+	assert.Equal(t, "hash", keyType)
+
+	// Try to SADD to the hash key - should return ErrWrongType
+	_, err = store.SAdd("myhash", "member1")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Create a string key
+	err = store.Set("mystring", "value")
+	assert.NoError(t, err)
+
+	// Try to SADD to the string key - should return ErrWrongType
+	_, err = store.SAdd("mystring", "member1")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Create a zset key
+	err = store.ZAdd("myzset", []ZSetMember{{Member: "member1", Score: 1.0}})
+	assert.NoError(t, err)
+
+	// Try to SADD to the zset key - should return ErrWrongType
+	_, err = store.SAdd("myzset", "member1")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+}
+
 func TestSRem(t *testing.T) {
 	dbPath := t.TempDir()
 	store, _ := NewBadgerStore(dbPath)

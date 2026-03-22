@@ -67,7 +67,23 @@ func (s *BotreonStore) Set(key string, value string) error {
 	}
 
 	return s.db.Update(func(txn *badger.Txn) error {
-		if err := txn.Set(TypeOfKeyGet(key), []byte(KeyTypeString)); err != nil {
+		// Check if key already exists with a different type
+		badgerTypeKey := TypeOfKeyGet(key)
+		item, err := txn.Get(badgerTypeKey)
+		if err == nil {
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(val)
+			if keyType != "" && keyType != KeyTypeString {
+				return ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
+
+		if err := txn.Set(badgerTypeKey, []byte(KeyTypeString)); err != nil {
 			return err
 		}
 		strKey := s.stringKey(key)

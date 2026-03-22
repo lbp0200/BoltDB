@@ -568,3 +568,85 @@ func TestBLMove(t *testing.T) {
 	val, _ := store.LIndex("dest", 0)
 	assert.Equal(t, "value1", val)
 }
+
+// TestListWrongType tests that LPush/RPush returns ErrWrongType when key exists with different type
+func TestListWrongType(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+
+	// Create a hash key first
+	err := store.HSet("myhash", "field1", "value1")
+	assert.NoError(t, err)
+
+	// Verify it's a hash
+	keyType, err := store.Type("myhash")
+	assert.NoError(t, err)
+	assert.Equal(t, "hash", keyType)
+
+	// Try to LPush to the hash key - should return ErrWrongType
+	_, err = store.LPush("myhash", "value")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Try to RPush to the hash key - should return ErrWrongType
+	_, err = store.RPush("myhash", "value")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Create a string key
+	err = store.Set("mystring", "value")
+	assert.NoError(t, err)
+
+	// Verify it's a string
+	keyType, err = store.Type("mystring")
+	assert.NoError(t, err)
+	assert.Equal(t, "string", keyType)
+
+	// Try to LPush to the string key - should return ErrWrongType
+	_, err = store.LPush("mystring", "value")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Try to RPush to the string key - should return ErrWrongType
+	_, err = store.RPush("mystring", "value")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Create a sorted set key
+	err = store.ZAdd("myzset", []ZSetMember{{Member: "member1", Score: 1.0}})
+	assert.NoError(t, err)
+
+	// Verify it's a zset
+	keyType, err = store.Type("myzset")
+	assert.NoError(t, err)
+	assert.Equal(t, "zset", keyType)
+
+	// Try to LPush to the zset key - should return ErrWrongType
+	_, err = store.LPush("myzset", "value")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Try to RPush to the zset key - should return ErrWrongType
+	_, err = store.RPush("myzset", "value")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Create a set key
+	_, err = store.SAdd("myset", "member1")
+	assert.NoError(t, err)
+
+	// Verify it's a set
+	keyType, err = store.Type("myset")
+	assert.NoError(t, err)
+	assert.Equal(t, "set", keyType)
+
+	// Try to LPush to the set key - should return ErrWrongType
+	_, err = store.LPush("myset", "value")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// Try to RPush to the set key - should return ErrWrongType
+	_, err = store.RPush("myset", "value")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+}

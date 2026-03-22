@@ -139,6 +139,20 @@ func (s *BotreonStore) LPush(key string, values ...string) (int, error) {
 
 	var finalLength uint64
 	err := s.db.Update(func(txn *badger.Txn) error {
+		// Check if key already exists with a different type
+		item, err := txn.Get(TypeOfKeyGet(key))
+		if err == nil {
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(val)
+			if keyType != "" && keyType != KeyTypeList {
+				return ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
 		if err := txn.Set(TypeOfKeyGet(key), []byte(KeyTypeList)); err != nil {
 			return err
 		}
@@ -333,6 +347,20 @@ func (s *BotreonStore) RPush(key string, values ...string) (int, error) {
 
 	var finalLength uint64
 	err := s.db.Update(func(txn *badger.Txn) error {
+		// Check if key already exists with a different type
+		item, err := txn.Get(TypeOfKeyGet(key))
+		if err == nil {
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(val)
+			if keyType != "" && keyType != KeyTypeList {
+				return ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
 		if err := txn.Set(TypeOfKeyGet(key), []byte(KeyTypeList)); err != nil {
 			return err
 		}
@@ -1079,6 +1107,20 @@ func (s *BotreonStore) RPopLPush(source, destination string) (string, error) {
 		}
 
 		// 推入目标列表头部
+		// Check if destination key already exists with a different type
+		item, err = txn.Get(TypeOfKeyGet(destination))
+		if err == nil {
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(val)
+			if keyType != "" && keyType != KeyTypeList {
+				return ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
 		if err := txn.Set(TypeOfKeyGet(destination), []byte(KeyTypeList)); err != nil {
 			return err
 		}
