@@ -1980,7 +1980,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 			field, value := string(args[i]), args[i+1]
 			if err := h.Db.HSet(key, field, string(value)); err != nil {
 				if errors.Is(err, store.ErrWrongType) {
-					return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+					return proto.NewError("ERR WRONGTYPE Operation against a key holding the wrong kind of value")
 				}
 				return proto.NewError(fmt.Sprintf("ERR %v", err))
 			}
