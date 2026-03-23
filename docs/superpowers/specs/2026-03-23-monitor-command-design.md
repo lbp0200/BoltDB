@@ -82,7 +82,12 @@ func (m *CommandMonitor) Remove(client *MonitorClient) {
     m.mu.Lock()
     delete(m.clients, client)
     m.mu.Unlock()
-    close(client.quit)  // Only Remove closes quit
+    // Only close if not already closed (quit may be open or already closed by writeLoop)
+    select {
+    case <-client.quit:
+    default:
+        close(client.quit)
+    }
     client.conn.Close()
 }
 
@@ -92,7 +97,7 @@ func (m *CommandMonitor) Broadcast(format string, args ...interface{})
 ### MonitorClient writeLoop
 
 ```go
-func (c *MonitorClient) writeLoop() {
+func (c *MonitorClient) writeLoop(monitor *CommandMonitor) {
     timer := time.NewTimer(1 * time.Second)
     defer timer.Stop()
 
@@ -111,12 +116,14 @@ func (c *MonitorClient) writeLoop() {
         select {
         case msg := <-c.ch:
             if _, err := c.conn.Write([]byte(msg)); err != nil {
+                monitor.Remove(c)
                 return
             }
         case <-timer.C:
             // Timer fired - check if channel is still full
             if len(c.ch) == cap(c.ch) {
-                return  // Don't close quit here - Remove() will do it
+                monitor.Remove(c)
+                return
             }
         case <-c.quit:
             // Drain remaining messages before exiting
@@ -125,6 +132,7 @@ func (c *MonitorClient) writeLoop() {
                 case msg := <-c.ch:
                     c.conn.Write([]byte(msg))
                 default:
+                    close(c.ch)
                     return
                 }
             }
@@ -133,7 +141,7 @@ func (c *MonitorClient) writeLoop() {
 }
 ```
 
-Note: Only `Remove()` closes `quit` to prevent double-close. writeLoop exits via return when it detects slow client, and Remove() handles cleanup.
+Note: `writeLoop` calls `Remove()` when it exits due to slow client or write error. `Remove()` closes `quit` and `conn` only if not already closed. The `c.ch` close happens in the quit case after draining.
 
 ### Handler Changes (internal/server/handler.go)
 
@@ -188,7 +196,7 @@ func (h *Handler) handleMonitor(conn net.Conn, remoteAddr string) proto.Response
     h.monitor.Add(client)
 
     // Start writer goroutine
-    go client.writeLoop()
+    go client.writeLoop(h.monitor)
 
     // Return special response to signal connection hijack
     return proto.NewMonitorResponse()
