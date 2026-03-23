@@ -26,13 +26,13 @@ Redis-compatible format:
    - `Broadcast(cmd)` — send command to all monitors
 
 2. **MonitorClient**
-   - Per-client state: client connection, write channel
+   - Per-client state: client connection, write channel, remoteAddr, clientID
    - Channel buffered at 100 messages
    - Goroutine reads channel and writes to TCP
 
 3. **MONITOR command handler**
    - Registers client in monitor set
-   - Blocks until client disconnects (then auto-removes)
+   - Returns OK, then blocks until client disconnects (then auto-removes)
 
 4. **Command interception**
    - Hook into command execution in handler.go
@@ -50,12 +50,12 @@ Redis-compatible format:
 
 ```
 Command Executed → CommandMonitor.Broadcast(cmd)
-                 → for each MonitorClient:
+                 → for each MonitorClient (with lock):
                      select {
                        case client.ch <- formattedCmd: // sent
                        default: // channel full, drop message
                      }
-                 → client goroutine: read ch → write TCP
+                 → client goroutine: read ch → write TCP → on error close quit
 ```
 
 ## Implementation Details
@@ -69,9 +69,11 @@ type CommandMonitor struct {
 }
 
 type MonitorClient struct {
-    conn   net.Conn
-    ch     chan string
-    quit   chan struct{}
+    conn     net.Conn
+    ch       chan string
+    quit     chan struct{}
+    remoteAddr string
+    clientID int64
 }
 
 func NewCommandMonitor() *CommandMonitor
@@ -80,53 +82,72 @@ func (m *CommandMonitor) Remove(client *MonitorClient)
 func (m *CommandMonitor) Broadcast(format string, args ...interface{})
 ```
 
-### Handler Integration
+### Handler Changes (internal/server/handler.go)
 
-In `handler.go` command execution switch:
-
-```go
-case "MONITOR":
-    return h.handleMonitor()
-```
-
-After each command in the main execution path (before return):
+#### 1. Add monitor field to Handler struct
 
 ```go
-// Broadcast to monitors
-if h.monitor != nil {
-    h.monitor.Broadcast(...)
+type Handler struct {
+    // ... existing fields ...
+    monitor *CommandMonitor
 }
 ```
 
-### Handler Addition (internal/server/handler.go)
+#### 2. Initialize monitor in newHandler
 
 ```go
-func (h *Handler) handleMonitor() proto.Response {
+h.monitor = NewCommandMonitor()
+```
+
+#### 3. Add MONITOR case in command switch
+
+```go
+case "MONITOR":
+    return h.handleMonitor(conn, remoteAddr)
+```
+
+#### 4. handleMonitor implementation
+
+```go
+func (h *Handler) handleMonitor(conn net.Conn, remoteAddr string) proto.Response {
+    clientID := int64(0)
+    if h.clientInfo != nil {
+        clientID = h.clientInfo.ID
+    }
+
     client := &MonitorClient{
-        conn: h.conn,
-        ch:   make(chan string, 100),
-        quit: make(chan struct{}),
+        conn:      conn,
+        ch:        make(chan string, 100),
+        quit:      make(chan struct{}),
+        remoteAddr: remoteAddr,
+        clientID:  clientID,
     }
     h.monitor.Add(client)
 
     // Start writer goroutine
-    go client.writeLoop()
+    go client.writeLoop(h.monitor)
 
-    // Block until client disconnects
-    <-client.quit
-    h.monitor.Remove(client)
-    return nil // client disconnected
+    // Return OK then block until client disconnects
+    go func() {
+        <-client.quit
+        h.monitor.Remove(client)
+    }()
+
+    return proto.OK
 }
 ```
 
-### MonitorClient writeLoop
+#### 5. MonitorClient writeLoop with error handling
 
 ```go
-func (c *MonitorClient) writeLoop() {
+func (c *MonitorClient) writeLoop(monitor *CommandMonitor) {
     for {
         select {
         case msg := <-c.ch:
-            c.conn.Write([]byte(msg))
+            if _, err := c.conn.Write([]byte(msg)); err != nil {
+                close(c.quit)
+                return
+            }
         case <-c.quit:
             close(c.ch)
             return
@@ -135,21 +156,107 @@ func (c *MonitorClient) writeLoop() {
 }
 ```
 
+#### 6. Broadcast implementation (with lock protection)
+
+```go
+func (m *CommandMonitor) Broadcast(format string, args ...interface{}) {
+    msg := fmt.Sprintf(format, args...)
+
+    m.mu.RLock()
+    for client := range m.clients {
+        select {
+        case client.ch <- msg:
+        default:
+            // Channel full, drop message (client is slow)
+        }
+    }
+    m.mu.RUnlock()
+}
+```
+
+### Slow Client Disconnect (1-second timeout)
+
+Add to writeLoop:
+
+```go
+func (c *MonitorClient) writeLoop(monitor *CommandMonitor) {
+    for {
+        select {
+        case msg := <-c.ch:
+            if _, err := c.conn.Write([]byte(msg)); err != nil {
+                close(c.quit)
+                return
+            }
+        case <-time.After(1 * time.Second):
+            // Check if channel is still full (slow client)
+            if len(c.ch) == cap(c.ch) {
+                close(c.quit)
+                return
+            }
+        case <-c.quit:
+            close(c.ch)
+            return
+        }
+    }
+}
+```
+
+Note: The 1-second check via `time.After` creates a timer that resets each time a message is successfully sent. This is acceptable for the slow-client detection use case.
+
+### Command Broadcast Integration
+
+After each command in the main execution path, before returning response:
+
+```go
+// Broadcast to monitors (after command executes, before returning)
+if h.monitor != nil {
+    // Format: timestamp [clientID addr] "COMMAND" "arg1" "arg2"
+    ts := time.Now().UnixMicro()
+    clientID := int64(0)
+    addr := "127.0.0.1:6337"
+    if h.clientInfo != nil {
+        clientID = h.clientInfo.ID
+        if h.clientInfo.Addr != "" {
+            addr = h.clientInfo.Addr
+        }
+    }
+    h.monitor.Broadcast("%d [%d %s] %s", ts, clientID, addr, cmd)
+}
+```
+
+### RemoteAddr Handling
+
+The `remoteAddr` is already passed to `processRequest()` in handler.go. Pass it through to `handleMonitor()`:
+
+```go
+// In processRequest, where handleMonitor is called:
+case "MONITOR":
+    return h.handleMonitor(conn, remoteAddr)
+```
+
+## Race Condition Prevention
+
+1. **Broadcast** uses `m.mu.RLock()` to safely iterate clients
+2. **Remove** uses `m.mu.Lock()` to safely delete from map
+3. **writeLoop checks quit channel** before/after channel receive to avoid send on closed channel
+4. **Close quit only once** - in error case or when Remove is called
+
 ## Files to Modify
 
 | File | Change |
 |------|--------|
-| `internal/server/monitor.go` | New file |
-| `internal/server/handler.go` | Add MONITOR case, add monitor field, call Broadcast |
+| `internal/server/monitor.go` | New file with CommandMonitor and MonitorClient |
+| `internal/server/handler.go` | Add `monitor` field, initialize it, add MONITOR case, add broadcast calls |
 | `internal/server/handler_test.go` | Add MONITOR tests |
 
 ## Testing
 
-1. **Unit test**: `TestMonitor` — start server, connect monitor client, send commands, verify output format
+1. **Unit test**: `TestMonitor` — connect monitor client, send commands, verify output format
 2. **Integration test**: Full protocol test with go-redis client
 
 ## Error Handling
 
-- If monitor channel full > 1s: close client connection, remove from monitor set
-- If write fails: remove client from monitor set
+- If write fails: close quit channel (writeLoop exits, client removed)
+- If channel full > 1s: close quit channel (disconnect slow client)
 - If handler.go already has `h.monitor`: check for nil before broadcast
+- On server shutdown: close all monitor connections gracefully
