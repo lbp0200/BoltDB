@@ -673,6 +673,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if resp := h.checkAndHandleRedirect(key); resp != nil {
 			return resp
 		}
+		h.markDirtyKeys(key)
 		if err := h.Db.Set(key, value); err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -705,6 +706,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR invalid integer")
 		}
+		h.markDirtyKeys(key)
 		if err := h.Db.SetEX(key, value, seconds); err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -719,6 +721,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR invalid integer")
 		}
+		h.markDirtyKeys(key)
 		if err := h.Db.PSETEX(key, value, milliseconds); err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -729,6 +732,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 			return proto.NewError("ERR wrong number of arguments for 'SETNX' command")
 		}
 		key, value := string(args[0]), string(args[1])
+		h.markDirtyKeys(key)
 		success, err := h.Db.SetNX(key, value)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -740,6 +744,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 			return proto.NewError("ERR wrong number of arguments for 'GETSET' command")
 		}
 		key, value := string(args[0]), string(args[1])
+		h.markDirtyKeys(key)
 		oldValue, err := h.Db.GetSet(key, value)
 		if err != nil {
 			return proto.NewBulkString(nil)
@@ -824,6 +829,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if resp := h.checkAndHandleRedirect(key); resp != nil {
 			return resp
 		}
+		h.markDirtyKeys(key)
 		value, err := h.Db.INCR(key)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -843,6 +849,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
+		h.markDirtyKeys(key)
 		value, err := h.Db.INCRBY(key, increment)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -858,6 +865,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if resp := h.checkAndHandleRedirect(key); resp != nil {
 			return resp
 		}
+		h.markDirtyKeys(key)
 		value, err := h.Db.DECR(key)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -877,6 +885,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
+		h.markDirtyKeys(key)
 		value, err := h.Db.DECRBY(key, decrement)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -896,6 +905,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR value is not a valid float")
 		}
+		h.markDirtyKeys(key)
 		value, err := h.Db.INCRBYFLOAT(key, increment)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -911,6 +921,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if resp := h.checkAndHandleRedirect(key); resp != nil {
 			return resp
 		}
+		h.markDirtyKeys(key)
 		length, err := h.Db.APPEND(key, value)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -948,6 +959,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil || (bit != 0 && bit != 1) {
 			return proto.NewError("ERR bit is not an integer or out of range")
 		}
+		h.markDirtyKeys(key)
 		newBit, err := h.Db.SetBit(key, int(offset), int(bit))
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1014,6 +1026,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if operation == "NOT" && len(sourceKeys) != 1 {
 			return proto.NewError("ERR BITOP NOT must be called with exactly one source key")
 		}
+		h.markDirtyKeys(destKey)
 		length, err := h.Db.BitOp(operation, destKey, sourceKeys...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1122,6 +1135,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
+		h.markDirtyKeys(key)
 		length, err := h.Db.SetRange(key, offset, value)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1142,6 +1156,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
 			return resp
 		}
+		h.markDirtyKeys(keys...)
 		count := int64(0)
 		for _, arg := range args {
 			key := string(arg)
@@ -1189,6 +1204,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		for i := 1; i < len(args); i++ {
 			elements[i-1] = string(args[i])
 		}
+		h.markDirtyKeys(key)
 		changed, err := h.Db.PFAdd(key, elements...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1226,6 +1242,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if resp := h.checkAndHandleRedirect(destKey); resp != nil {
 			return resp
 		}
+		h.markDirtyKeys(destKey)
 		err := h.Db.PFMerge(destKey, sourceKeys...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1384,6 +1401,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
+		h.markDirtyKeys(key)
 		success, err := h.Db.Expire(key, seconds)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1399,6 +1417,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
+		h.markDirtyKeys(key)
 		success, err := h.Db.ExpireAt(key, timestamp)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1414,6 +1433,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
+		h.markDirtyKeys(key)
 		success, err := h.Db.PExpire(key, milliseconds)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1429,6 +1449,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
+		h.markDirtyKeys(key)
 		success, err := h.Db.PExpireAt(key, timestamp)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1462,6 +1483,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 			return proto.NewError("ERR wrong number of arguments for 'PERSIST' command")
 		}
 		key := string(args[0])
+		h.markDirtyKeys(key)
 		success, err := h.Db.Persist(key)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1473,6 +1495,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 			return proto.NewError("ERR wrong number of arguments for 'RENAME' command")
 		}
 		key, newKey := string(args[0]), string(args[1])
+		h.markDirtyKeys(key, newKey)
 		if err := h.Db.Rename(key, newKey); err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -1483,6 +1506,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 			return proto.NewError("ERR wrong number of arguments for 'RENAMENX' command")
 		}
 		key, newKey := string(args[0]), string(args[1])
+		h.markDirtyKeys(key, newKey)
 		success, err := h.Db.RenameNX(key, newKey)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1535,6 +1559,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if dstExists && !replace {
 			return proto.NewInteger(0) // 目标存在且不替换
 		}
+		h.markDirtyKeys(srcKey, dstKey)
 		// 根据类型复制
 		var copied bool
 		switch srcType {
@@ -1646,6 +1671,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		for i := 1; i < len(args); i++ {
 			values[i-1] = string(args[i])
 		}
+		h.markDirtyKeys(key)
 		count, err := h.Db.LPush(key, values...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1662,6 +1688,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		for i := 1; i < len(args); i++ {
 			values[i-1] = string(args[i])
 		}
+		h.markDirtyKeys(key)
 		count, err := h.Db.RPush(key, values...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1747,6 +1774,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
+		h.markDirtyKeys(key)
 		if err := h.Db.LSet(key, index, value); err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -1762,6 +1790,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err1 != nil || err2 != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
+		h.markDirtyKeys(key)
 		if err := h.Db.LTrim(key, start, stop); err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -1776,6 +1805,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if where != "BEFORE" && where != "AFTER" {
 			return proto.NewError("ERR syntax error")
 		}
+		h.markDirtyKeys(key)
 		count, err := h.Db.LInsert(key, where, pivot, value)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1844,6 +1874,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
+		h.markDirtyKeys(key)
 		removed, err := h.Db.LRem(key, count, value)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1855,6 +1886,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 			return proto.NewError("ERR wrong number of arguments for 'RPOPLPUSH' command")
 		}
 		source, destination := string(args[0]), string(args[1])
+		h.markDirtyKeys(source, destination)
 		value, err := h.Db.RPopLPush(source, destination)
 		if err != nil || value == "" {
 			return proto.NewBulkString(nil)
@@ -1869,6 +1901,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		destination := string(args[1])
 		sourceDirection := strings.ToUpper(string(args[2]))
 		destinationDirection := strings.ToUpper(string(args[3]))
+		h.markDirtyKeys(source, destination)
 		value, err := h.Db.LMove(source, destination, sourceDirection, destinationDirection)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1890,6 +1923,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR timeout is not a float")
 		}
+		h.markDirtyKeys(source, destination)
 		value, err := h.Db.BLMoveBlocking(source, destination, sourceDirection, destinationDirection, timeout)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1908,6 +1942,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		for i := 1; i < len(args); i++ {
 			values[i-1] = string(args[i])
 		}
+		h.markDirtyKeys(key)
 		count, err := h.Db.LPUSHX(key, values...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1924,6 +1959,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		for i := 1; i < len(args); i++ {
 			values[i-1] = string(args[i])
 		}
+		h.markDirtyKeys(key)
 		count, err := h.Db.RPUSHX(key, values...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1988,6 +2024,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 			return proto.NewError("ERR wrong number of arguments for 'HSET' command")
 		}
 		key := string(args[0])
+		h.markDirtyKeys(key)
 		count := 0
 		for i := 1; i < len(args); i += 2 {
 			if i+1 >= len(args) {
@@ -2025,6 +2062,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		for i := 1; i < len(args); i++ {
 			fields[i-1] = string(args[i])
 		}
+		h.markDirtyKeys(key)
 		count, err := h.Db.HDel(key, fields...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2103,6 +2141,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 			return proto.NewError("ERR wrong number of arguments for 'HMSET' command")
 		}
 		key := string(args[0])
+		h.markDirtyKeys(key)
 		for i := 1; i < len(args); i += 2 {
 			if i+1 >= len(args) {
 				break
@@ -2142,6 +2181,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 			return proto.NewError("ERR wrong number of arguments for 'HSETNX' command")
 		}
 		key, field, value := string(args[0]), string(args[1]), string(args[2])
+		h.markDirtyKeys(key)
 		success, err := h.Db.HSetNX(key, field, value)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2157,6 +2197,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
+		h.markDirtyKeys(key)
 		value, err := h.Db.HIncrBy(key, field, increment)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2172,6 +2213,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR value is not a valid float")
 		}
+		h.markDirtyKeys(key)
 		value, err := h.Db.HIncrByFloat(key, field, increment)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2247,6 +2289,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		for i := 1; i < len(args); i++ {
 			members[i-1] = string(args[i])
 		}
+		h.markDirtyKeys(key)
 		count, err := h.Db.SAdd(key, members...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2263,6 +2306,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		for i := 1; i < len(args); i++ {
 			members[i-1] = string(args[i])
 		}
+		h.markDirtyKeys(key)
 		count, err := h.Db.SRem(key, members...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2418,6 +2462,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		for i := 1; i < len(args); i++ {
 			keys[i-1] = string(args[i])
 		}
+		h.markDirtyKeys(destination)
 		count, err := h.Db.SInterStore(destination, keys...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2468,6 +2513,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		for i := 1; i < len(args); i++ {
 			keys[i-1] = string(args[i])
 		}
+		h.markDirtyKeys(destination)
 		count, err := h.Db.SUnionStore(destination, keys...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2484,6 +2530,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		for i := 1; i < len(args); i++ {
 			keys[i-1] = string(args[i])
 		}
+		h.markDirtyKeys(destination)
 		count, err := h.Db.SDiffStore(destination, keys...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2549,6 +2596,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 			member := string(args[i+1])
 			members = append(members, store.ZSetMember{Member: member, Score: score})
 		}
+		h.markDirtyKeys(key)
 		if err := h.Db.ZAdd(key, members); err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -2559,6 +2607,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 			return proto.NewError("ERR wrong number of arguments for 'ZREM' command")
 		}
 		key := string(args[0])
+		h.markDirtyKeys(key)
 		count := 0
 		for i := 1; i < len(args); i++ {
 			member := string(args[i])
@@ -2852,6 +2901,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR value is not a valid float")
 		}
+		h.markDirtyKeys(key)
 		score, err := h.Db.ZIncrBy(key, member, increment)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2871,6 +2921,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
+		h.markDirtyKeys(key)
 		count, err := h.Db.ZRemRangeByRank(key, start, stop)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2890,6 +2941,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR value is not a valid float")
 		}
+		h.markDirtyKeys(key)
 		count, err := h.Db.ZRemRangeByScore(key, min, max, minExclusive, maxExclusive)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2909,6 +2961,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 			}
 			count = c
 		}
+		h.markDirtyKeys(key)
 		members, err := h.Db.ZPopMax(key, count)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2933,6 +2986,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 			}
 			count = c
 		}
+		h.markDirtyKeys(key)
 		members, err := h.Db.ZPopMin(key, count)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -3027,6 +3081,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 				return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
 			}
 		}
+		h.markDirtyKeys(destination)
 		count, err := h.Db.ZUnionStore(destination, keys, weights, aggregate)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -3080,6 +3135,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 				return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
 			}
 		}
+		h.markDirtyKeys(destination)
 		count, err := h.Db.ZInterStore(destination, keys, weights, aggregate)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -3102,6 +3158,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		for i := 0; i < numKeys; i++ {
 			keys[i] = string(args[2+i])
 		}
+		h.markDirtyKeys(destination)
 		count, err := h.Db.ZDiffStore(destination, keys)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -3206,6 +3263,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		zSetName := string(args[0])
 		min := string(args[1])
 		max := string(args[2])
+		h.markDirtyKeys(zSetName)
 		removed, err := h.Db.ZRemRangeByLex(zSetName, min, max)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -4051,6 +4109,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 				Member: string(args[i+2]),
 			})
 		}
+		h.markDirtyKeys(key)
 		added, err := h.Db.GeoAdd(key, members)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -5400,6 +5459,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 				xx = true
 			}
 		}
+		h.markDirtyKeys(key)
 		result, err := h.Db.JSONSet(key, path, value, nx, xx)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -5441,6 +5501,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		for i := 1; i < len(args); i++ {
 			paths = append(paths, string(args[i]))
 		}
+		h.markDirtyKeys(key)
 		count, err := h.Db.JSONDel(key, paths...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -5497,6 +5558,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		for i := 2; i < len(args); i++ {
 			values = append(values, string(args[i]))
 		}
+		h.markDirtyKeys(key)
 		count, err := h.Db.JSONArrAppend(key, path, values...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -5546,6 +5608,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR increment must be a valid number")
 		}
+		h.markDirtyKeys(key)
 		result, err := h.Db.JSONNumIncrBy(key, path, increment)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -5561,6 +5624,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if err != nil {
 			return proto.NewError("ERR multiplier must be a valid number")
 		}
+		h.markDirtyKeys(key)
 		result, err := h.Db.JSONNumMultBy(key, path, multiplier)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -5576,6 +5640,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		if len(args) >= 2 {
 			path = string(args[1])
 		}
+		h.markDirtyKeys(key)
 		count, err := h.Db.JSONClear(key, path)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -5673,6 +5738,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 				opts.OnDuplicate = string(args[4])
 			}
 		}
+		h.markDirtyKeys(key)
 		ts, err := h.Db.TSAdd(key, timestamp, value, opts)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -5735,6 +5801,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		key := string(args[0])
 		start := string(args[1])
 		stop := string(args[2])
+		h.markDirtyKeys(key)
 		deleted, err := h.Db.TSDel(key, start, stop)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
