@@ -3951,14 +3951,19 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 	// Transaction commands - 事务命令
 	case "MULTI":
 		// 开始事务
-		if h.transaction != nil && len(h.transaction.Commands) > 0 {
+		if h.transaction != nil && h.transaction.InTransaction {
 			return proto.NewError("ERR MULTI calls can not be nested")
 		}
-		h.transaction = &TransactionState{
-			Commands:   make([]TransactionCommand, 0),
-			WatchKeys:  make(map[string]struct{}),
-			IsWatching: false,
+		if h.transaction == nil {
+			h.transaction = &TransactionState{
+				Commands:   make([]TransactionCommand, 0),
+				WatchKeys:  make(map[string]struct{}),
+				DirtyKeys:  make(map[string]struct{}),
+			}
 		}
+		h.transaction.InTransaction = true
+		h.transaction.Commands = make([]TransactionCommand, 0) // 清除排队的命令
+		// 注意：不重置 WatchKeys 和 IsWatching，允许 WATCH 在 MULTI 之前
 		return proto.NewSimpleString("OK")
 
 	case "EXEC":
