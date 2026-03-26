@@ -56,9 +56,11 @@ type ClientInfo struct {
 
 // TransactionState 事务状态
 type TransactionState struct {
-	Commands   []TransactionCommand // 排队的命令
-	WatchKeys  map[string]struct{}  // 监控的键
-	IsWatching bool                 // 是否处于WATCH状态
+	Commands      []TransactionCommand // 排队的命令
+	WatchKeys     map[string]struct{} // 监控的键
+	IsWatching    bool                // 是否处于监视状态
+	InTransaction bool                // 是否在事务中（MULTI 已执行）
+	DirtyKeys     map[string]struct{} // 被修改的键
 }
 
 // TransactionCommand 事务中的命令
