@@ -912,6 +912,52 @@ func TestTransaction(t *testing.T) {
 	assert.Equal(t, int64(3), result)
 }
 
+// TestTransactionExtended 扩展事务命令测试 - 测试修复后的 WATCH/MULTI/EXEC 行为
+func TestTransactionExtended(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+
+	// ========== Error Cases ==========
+
+	// EXEC without MULTI - should return error
+	_, err := testClient.Do(ctx, "EXEC").Result()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "EXEC without MULTI"))
+
+	// DISCARD without MULTI - should return error
+	_, err = testClient.Do(ctx, "DISCARD").Result()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "DISCARD without MULTI"))
+
+	// ========== Transaction with multiple commands ==========
+	_, _ = testClient.Do(ctx, "MULTI").Result()
+	_ = testClient.Set(ctx, "mkey1", "val1", 0).Err()
+	_ = testClient.Set(ctx, "mkey2", "val2", 0).Err()
+	_ = testClient.Set(ctx, "mkey3", "val3", 0).Err()
+	_, err = testClient.Do(ctx, "EXEC").Result()
+	assert.NoError(t, err)
+
+	// Verify all commands were executed
+	val1, _ := testClient.Get(ctx, "mkey1").Result()
+	val2, _ := testClient.Get(ctx, "mkey2").Result()
+	val3, _ := testClient.Get(ctx, "mkey3").Result()
+	assert.Equal(t, "val1", val1)
+	assert.Equal(t, "val2", val2)
+	assert.Equal(t, "val3", val3)
+
+	// ========== WATCH without keys (wrong number of args) ==========
+	_, err = testClient.Do(ctx, "WATCH").Result()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "wrong number of arguments"))
+
+	// ========== WATCH with multiple keys ==========
+	result, err := testClient.Do(ctx, "WATCH", "key1", "key2", "key3").Result()
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), result)
+}
+
 // TestCOPY 测试COPY命令
 func TestCOPY(t *testing.T) {
 	setupTestServer(t)
