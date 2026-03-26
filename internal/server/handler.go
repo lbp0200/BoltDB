@@ -3967,29 +3967,25 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		return proto.NewSimpleString("OK")
 
 	case "EXEC":
-		// 执行事务
-		if h.transaction == nil {
+		if h.transaction == nil || !h.transaction.InTransaction {
 			return proto.NewError("ERR EXEC without MULTI")
 		}
-		// 检查WATCH的键是否被修改
-		if h.transaction.IsWatching {
-			for key := range h.transaction.WatchKeys {
-				exists, _ := h.Db.Exists(key)
-				if exists {
+		// 检查 dirty keys（如果监视的键被修改，事务失败）
+		if h.transaction.IsWatching && len(h.transaction.WatchKeys) > 0 {
+			for watchKey := range h.transaction.WatchKeys {
+				if _, dirty := h.transaction.DirtyKeys[watchKey]; dirty {
 					// 键被修改，事务失败
-					h.transaction = nil
+					h.resetTransaction()
 					return nil // 返回 nil 表示 WATCH 失败
 				}
 			}
 		}
-
 		// 执行所有排队的命令
 		results := make([]proto.RESP, len(h.transaction.Commands))
 		for i, tc := range h.transaction.Commands {
 			results[i] = h.executeQueuedCommand(tc.Command, tc.Args)
 		}
-		h.transaction = nil
-		// 转换为 [][]byte
+		h.resetTransaction()
 		flatArgs := make([][]byte, 0)
 		for _, r := range results {
 			flatArgs = append(flatArgs, []byte(r.String()))
