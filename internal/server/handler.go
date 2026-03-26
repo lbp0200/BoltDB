@@ -4000,19 +4000,23 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		return proto.NewSimpleString("OK")
 
 	case "WATCH":
-		// 监控键
 		if len(args) < 1 {
 			return proto.NewError("ERR wrong number of arguments for 'WATCH' command")
 		}
-		// WATCH 只能在事务外使用
-		if h.transaction != nil && len(h.transaction.Commands) > 0 {
+		if h.transaction != nil && h.transaction.InTransaction && len(h.transaction.Commands) > 0 {
 			return proto.NewError("ERR WATCH inside MULTI is not allowed")
 		}
-		// 初始化或重置事务状态用于WATCH
-		h.transaction = &TransactionState{
-			Commands:   make([]TransactionCommand, 0),
-			WatchKeys:  make(map[string]struct{}),
-			IsWatching: true,
+		// 复用现有事务状态或创建新的
+		if h.transaction == nil {
+			h.transaction = &TransactionState{
+				Commands:   make([]TransactionCommand, 0),
+				WatchKeys:  make(map[string]struct{}),
+				IsWatching: true,
+				DirtyKeys:  make(map[string]struct{}),
+			}
+		} else {
+			h.transaction.IsWatching = true
+			h.transaction.WatchKeys = make(map[string]struct{})
 		}
 		for _, arg := range args {
 			key := string(arg)
