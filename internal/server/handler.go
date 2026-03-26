@@ -3993,11 +3993,10 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		return &proto.Array{Args: flatArgs}
 
 	case "DISCARD":
-		// 放弃事务
-		if h.transaction == nil {
+		if h.transaction == nil || !h.transaction.InTransaction {
 			return proto.NewError("ERR DISCARD without MULTI")
 		}
-		h.transaction = nil
+		h.resetTransaction()
 		return proto.NewSimpleString("OK")
 
 	case "WATCH":
