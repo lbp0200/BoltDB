@@ -69,6 +69,20 @@ type TransactionCommand struct {
 	Args    [][]byte
 }
 
+// resetTransaction 重置事务状态
+func (h *Handler) resetTransaction() {
+	h.transaction = nil
+}
+
+// markDirtyKeys 标记键为脏（被修改）
+func (h *Handler) markDirtyKeys(keys ...string) {
+	if h.transaction != nil && h.transaction.IsWatching {
+		for _, key := range keys {
+			h.transaction.DirtyKeys[key] = struct{}{}
+		}
+	}
+}
+
 // checkAndHandleRedirect 检查键是否需要重定向到其他节点
 // 返回 nil 表示不需要重定向，可以继续执行命令
 // 返回非 nil 表示需要重定向，包含重定向信息
