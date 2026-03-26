@@ -4025,8 +4025,11 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		return proto.NewInteger(int64(len(args)))
 
 	case "UNWATCH":
-		// 取消监控所有键
-		h.transaction = nil
+		if h.transaction != nil {
+			h.transaction.IsWatching = false
+			h.transaction.WatchKeys = make(map[string]struct{})
+		}
+		h.resetTransaction()
 		return proto.NewSimpleString("OK")
 
 	// ==================== GEOADD ====================
