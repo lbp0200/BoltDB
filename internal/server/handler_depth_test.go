@@ -230,3 +230,29 @@ func TestListBoundary_NegativeIndex(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "", string(*bs))
 }
+
+// TestListError_TypeMismatch tests list command on string type
+func TestListError_TypeMismatch(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("LPUSH", [][]byte{[]byte("string_key"), []byte("new")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
+
+// TestListError_InvalidIndex tests LSET with invalid index
+func TestListError_InvalidIndex(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("RPUSH", [][]byte{[]byte("valid_list"), []byte("a"), []byte("b")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("LSET", [][]byte{[]byte("valid_list"), []byte("5"), []byte("c")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "index out of range"))
+}
