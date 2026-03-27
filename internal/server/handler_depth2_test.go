@@ -72,3 +72,97 @@ func TestHashError_WrongNumberOfArguments(t *testing.T) {
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "wrong number of arguments"))
 }
+
+// TestSetBoundary_EmptySet tests SMEMBERS on nonexistent set
+func TestSetBoundary_EmptySet(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand("SMEMBERS", [][]byte{[]byte("nonexistent_set")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(arr.Args))
+}
+
+// TestSetBoundary_SingleElement tests SADD/SREM on single element set
+func TestSetBoundary_SingleElement(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SADD", [][]byte{[]byte("single_set"), []byte("only")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("SCARD", [][]byte{[]byte("single_set")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// Remove the only element
+	handler.executeCommand("SREM", [][]byte{[]byte("single_set"), []byte("only")}, "127.0.0.1:12345")
+
+	resp = handler.executeCommand("SCARD", [][]byte{[]byte("single_set")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+}
+
+// TestSortedSetBoundary_EmptyZSet tests ZRANGE on nonexistent sorted set
+func TestSortedSetBoundary_EmptyZSet(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand("ZRANGE", [][]byte{[]byte("nonexistent_zset"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(arr.Args))
+}
+
+// TestSortedSetBoundary_ScoreBoundary tests sorted set with extreme scores
+func TestSortedSetBoundary_ScoreBoundary(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Add members with extreme scores
+	handler.executeCommand("ZADD", [][]byte{[]byte("zset"), []byte("-9223372036854775808"), []byte("min_score")}, "127.0.0.1:12345")
+	handler.executeCommand("ZADD", [][]byte{[]byte("zset"), []byte("9223372036854775807"), []byte("max_score")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("ZRANGE", [][]byte{[]byte("zset"), []byte("0"), []byte("-1"), []byte("WITHSCORES")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 4, len(arr.Args))
+}
+
+// TestKeyExpiryBoundary_ExpiredKey tests access to expired key
+func TestKeyExpiryBoundary_ExpiredKey(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Set key with 1ms expiry
+	handler.executeCommand("SET", [][]byte{[]byte("expiring_key"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand("PEXPIRE", [][]byte{[]byte("expiring_key"), []byte("1")}, "127.0.0.1:12345")
+
+	// Immediate access should work
+	resp := handler.executeCommand("GET", [][]byte{[]byte("expiring_key")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "value", string(*bs))
+}
+
+// TestKeyExpiryBoundary_TTL tests TTL on key with expiry
+func TestKeyExpiryBoundary_TTL(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("ttl_key"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand("EXPIRE", [][]byte{[]byte("ttl_key"), []byte("3600")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("TTL", [][]byte{[]byte("ttl_key")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.True(t, int64(*integer) > 0 && int64(*integer) <= 3600)
+
+	// Key with no expiry
+	resp = handler.executeCommand("TTL", [][]byte{[]byte("nonexistent")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(-2), int64(*integer))
+}
