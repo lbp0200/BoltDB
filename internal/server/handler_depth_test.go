@@ -94,3 +94,55 @@ func TestIncrBoundary_NegativeToPositive(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
 }
+
+// TestStringError_TypeMismatch tests string command on non-string type
+func TestStringError_TypeMismatch(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Create a list type key
+	handler.executeCommand("LPUSH", [][]byte{[]byte("list_key"), []byte("value")}, "127.0.0.1:12345")
+
+	// APPEND on list key should error
+	resp := handler.executeCommand("APPEND", [][]byte{[]byte("list_key"), []byte("extra")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
+
+// TestStringError_WrongNumberOfArguments tests GET without key argument
+func TestStringError_WrongNumberOfArguments(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand("GET", [][]byte{}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "wrong number of arguments"))
+}
+
+// TestStringError_SetGetInvalidArgs tests SET with missing value
+func TestStringError_SetGetInvalidArgs(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// SET with only key (missing value)
+	resp := handler.executeCommand("SET", [][]byte{[]byte("key_only")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "wrong number of arguments"))
+}
+
+// TestStringError_IncrOnFloat tests INCR on float value
+func TestStringError_IncrOnFloat(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("float_key"), []byte("1.5")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("INCR", [][]byte{[]byte("float_key")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	// Should error on non-integer value
+	assert.True(t, strings.Contains(string(*errResp), "not an integer"))
+}
