@@ -326,6 +326,10 @@ func (s *BotreonStore) INCR(key string) (int64, error) {
 		if err != nil {
 			return err
 		}
+		// Check for overflow: if oldValue is max int64, increment would overflow
+		if oldValue >= math.MaxInt64 {
+			return fmt.Errorf("increment overflow")
+		}
 		newValue = oldValue + 1
 		return s.setIntValue(txn, key, newValue)
 	})
@@ -342,6 +346,13 @@ func (s *BotreonStore) INCRBY(key string, increment int64) (int64, error) {
 		oldValue, err := s.getIntValue(txn, key)
 		if err != nil {
 			return err
+		}
+		// Check for overflow/underflow
+		if increment > 0 && oldValue > math.MaxInt64-increment {
+			return fmt.Errorf("increment overflow")
+		}
+		if increment < 0 && oldValue < math.MinInt64-increment {
+			return fmt.Errorf("increment overflow")
 		}
 		newValue = oldValue + increment
 		return s.setIntValue(txn, key, newValue)
