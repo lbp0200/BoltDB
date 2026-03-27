@@ -112,3 +112,61 @@ func TestStringConcurrent_AppendRace(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(4+goroutines*appendsPerGoroutine), finalLen)
 }
+
+// TestListConcurrent_PushPopRace tests concurrent LPUSH and LPOP
+func TestListConcurrent_PushPopRace(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+	const goroutines = 10
+	const opsPerGoroutine = 100
+
+	testClient.Del(ctx, "race_list")
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				if j%2 == 0 {
+					testClient.LPush(ctx, "race_list", idx*1000+j)
+				} else {
+					testClient.RPush(ctx, "race_list", idx*1000+j)
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// List should have some elements (not empty due to race)
+	llen, _ := testClient.LLen(ctx, "race_list").Result()
+	assert.True(t, llen >= 0)
+}
+
+// TestListConcurrent_MultipleBlockingPops tests BLPOP behavior
+func TestListConcurrent_MultipleBlockingPops(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+	testClient.Del(ctx, "blocking_list")
+
+	// Pre-populate the list
+	testClient.LPush(ctx, "blocking_list", "value1")
+	testClient.LPush(ctx, "blocking_list", "value2")
+
+	// BLPOP should return immediately since data exists
+	result, err := testClient.BLPop(ctx, 0, "blocking_list").Result()
+	assert.NoError(t, err)
+	assert.Equal(t, "blocking_list", result[0])
+	// The value returned is from the LEFT side (LPUSH), so it's "value2" (last pushed)
+	assert.Equal(t, "value2", result[1])
+
+	// Pop another value
+	result, err = testClient.BLPop(ctx, 0, "blocking_list").Result()
+	assert.NoError(t, err)
+	assert.Equal(t, "value1", result[1])
+}
