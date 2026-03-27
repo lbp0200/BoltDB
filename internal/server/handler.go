@@ -2048,6 +2048,9 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		}
 		key, field := string(args[0]), string(args[1])
 		value, err := h.Db.HGet(key, field)
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
 		if err != nil || value == nil {
 			return proto.NewBulkString(nil)
 		}

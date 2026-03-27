@@ -126,9 +126,33 @@ func (s *BotreonStore) HSet(key, field string, value interface{}) error {
 	})
 }
 func (s *BotreonStore) HGet(key, field string) ([]byte, error) {
+	// Check key type before retrieving field
+	typeKey := TypeOfKeyGet(key)
+	var keyType string
+	err := s.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(typeKey)
+		if err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
+		if err == nil {
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType = string(val)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if keyType != "" && keyType != KeyTypeHash {
+		return nil, ErrWrongType
+	}
+
 	hkey := s.hashKey(key, field)
 	var val []byte
-	err := s.db.View(func(txn *badger.Txn) error {
+	err = s.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(hkey)
 		if err != nil {
 			return err

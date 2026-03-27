@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
@@ -46,4 +47,28 @@ func TestHashBoundary_EmptyField(t *testing.T) {
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "", string(*bs))
+}
+
+// TestHashError_TypeMismatch tests hash command on string type
+func TestHashError_TypeMismatch(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("HGET", [][]byte{[]byte("string_key"), []byte("field")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
+
+// TestHashError_WrongNumberOfArguments tests HSET with missing arguments
+func TestHashError_WrongNumberOfArguments(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand("HSET", [][]byte{[]byte("hash")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "wrong number of arguments"))
 }
