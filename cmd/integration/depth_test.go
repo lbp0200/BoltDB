@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -169,4 +170,38 @@ func TestListConcurrent_MultipleBlockingPops(t *testing.T) {
 	result, err = testClient.BLPop(ctx, 0, "blocking_list").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, "value1", result[1])
+}
+
+// TestHashConcurrent_HgetHsetRace tests concurrent HGET and HSET
+func TestHashConcurrent_HgetHsetRace(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+	const goroutines = 10
+	const opsPerGoroutine = 100
+
+	testClient.Del(ctx, "race_hash")
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				field := fmt.Sprintf("field%d", j%10) // Use only 10 fields
+				if j%2 == 0 {
+					testClient.HSet(ctx, "race_hash", field, idx*1000+j)
+				} else {
+					testClient.HGet(ctx, "race_hash", field)
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Hash should have some fields
+	hlen, _ := testClient.HLen(ctx, "race_hash").Result()
+	assert.True(t, hlen > 0)
 }
