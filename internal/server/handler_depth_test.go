@@ -146,3 +146,87 @@ func TestStringError_IncrOnFloat(t *testing.T) {
 	// Should error on non-integer value
 	assert.True(t, strings.Contains(string(*errResp), "not an integer"))
 }
+
+// TestListBoundary_EmptyList tests LPOP on nonexistent key
+func TestListBoundary_EmptyList(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand("LPOP", [][]byte{[]byte("nonexistent_list")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "", string(*bs))
+}
+
+// TestListBoundary_SingleElement tests LPOP/RPOP on list with one element
+func TestListBoundary_SingleElement(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("LPUSH", [][]byte{[]byte("single_list"), []byte("only")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("LPOP", [][]byte{[]byte("single_list")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "only", string(*bs))
+
+	// Second pop should return empty
+	resp = handler.executeCommand("LPOP", [][]byte{[]byte("single_list")}, "127.0.0.1:12345")
+	bs, ok = resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "", string(*bs))
+}
+
+// TestListBoundary_IndexOverflow tests LLEN and LINDEX on large list
+func TestListBoundary_IndexOverflow(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Push 1000 elements
+	for i := 0; i < 1000; i++ {
+		handler.executeCommand("RPUSH", [][]byte{[]byte("large_list"), []byte(string(rune('A' + i%26)))}, "127.0.0.1:12345")
+	}
+
+	resp := handler.executeCommand("LLEN", [][]byte{[]byte("large_list")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1000), int64(*integer))
+
+	// Index beyond length
+	resp = handler.executeCommand("LINDEX", [][]byte{[]byte("large_list"), []byte("9999")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "", string(*bs))
+}
+
+// TestListBoundary_NegativeIndex tests negative index access
+func TestListBoundary_NegativeIndex(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("RPUSH", [][]byte{[]byte("neg_index_list"), []byte("first"), []byte("middle"), []byte("last")}, "127.0.0.1:12345")
+
+	// -1 = last element
+	resp := handler.executeCommand("LINDEX", [][]byte{[]byte("neg_index_list"), []byte("-1")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "last", string(*bs))
+
+	// -2 = middle element
+	resp = handler.executeCommand("LINDEX", [][]byte{[]byte("neg_index_list"), []byte("-2")}, "127.0.0.1:12345")
+	bs, ok = resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "middle", string(*bs))
+
+	// -3 = first element
+	resp = handler.executeCommand("LINDEX", [][]byte{[]byte("neg_index_list"), []byte("-3")}, "127.0.0.1:12345")
+	bs, ok = resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "first", string(*bs))
+
+	// -4 beyond list (only 3 elements, so -4 is out of bounds)
+	resp = handler.executeCommand("LINDEX", [][]byte{[]byte("neg_index_list"), []byte("-4")}, "127.0.0.1:12345")
+	bs, ok = resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "", string(*bs))
+}
