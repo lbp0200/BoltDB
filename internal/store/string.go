@@ -390,6 +390,9 @@ func (s *BotreonStore) INCRBYFLOAT(key string, increment float64) (float64, erro
 
 // APPEND 实现 Redis APPEND 命令，追加字符串
 func (s *BotreonStore) APPEND(key string, value string) (int, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
+
 	// 先读取旧值（在 View 事务中）
 	var existingValue string
 	err := s.db.View(func(txn *badger.Txn) error {
