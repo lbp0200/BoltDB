@@ -335,10 +335,26 @@ func (s *BotreonStore) ZRangeByScore(zSetName string, minScore, maxScore float64
 // ZRem 删除成员
 func (s *BotreonStore) ZRem(zSetName, member string) error {
 	return s.retryUpdateSortedSet(func(txn *badger.Txn) error {
+		// Check if key already exists with a different type
+		badgerTypeKey := TypeOfKeyGet(zSetName)
+		typeItem, typeErr := txn.Get(badgerTypeKey)
+		if typeErr == nil {
+			typeVal, err := typeItem.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(typeVal)
+			if keyType != "" && keyType != KeyTypeSortedSet {
+				return ErrWrongType
+			}
+		} else if !errors.Is(typeErr, badger.ErrKeyNotFound) {
+			return typeErr
+		}
+
 		dataKey := sortedSetKeyMember(zSetName, member)
 		item, err := txn.Get(dataKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
-			return nil
+			return ErrMemberNotFound
 		}
 		if err != nil {
 			logger.Logger.Error().Err(err).Str("data_key", string(dataKey)).Msg("ZRem: Failed to get data key")
@@ -413,6 +429,30 @@ func (s *BotreonStore) ZRem(zSetName, member string) error {
 
 // ZScore 获取成员分数
 func (s *BotreonStore) ZScore(zSetName, member string) (float64, bool, error) {
+	// Check if key exists with wrong type
+	typeKey := TypeOfKeyGet(zSetName)
+	var typeErr error
+	_ = s.db.View(func(txn *badger.Txn) error {
+		typeItem, err := txn.Get(typeKey)
+		if err == nil {
+			typeVal, err := typeItem.ValueCopy(nil)
+			if err != nil {
+				typeErr = err
+				return err
+			}
+			keyType := string(typeVal)
+			if keyType != "" && keyType != KeyTypeSortedSet {
+				typeErr = ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			typeErr = err
+		}
+		return nil
+	})
+	if typeErr != nil {
+		return 0, false, typeErr
+	}
+
 	var score float64
 	dataKey := sortedSetKeyMember(zSetName, member)
 
@@ -438,6 +478,30 @@ func (s *BotreonStore) ZScore(zSetName, member string) (float64, bool, error) {
 
 // ZRange 获取指定排名范围的成员
 func (s *BotreonStore) ZRange(zSetName string, start, stop int64) ([]*ZSetMember, error) {
+	// Check if key exists with wrong type
+	typeKey := TypeOfKeyGet(zSetName)
+	var typeErr error
+	_ = s.db.View(func(txn *badger.Txn) error {
+		typeItem, err := txn.Get(typeKey)
+		if err == nil {
+			typeVal, err := typeItem.ValueCopy(nil)
+			if err != nil {
+				typeErr = err
+				return err
+			}
+			keyType := string(typeVal)
+			if keyType != "" && keyType != KeyTypeSortedSet {
+				typeErr = ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			typeErr = err
+		}
+		return nil
+	})
+	if typeErr != nil {
+		return nil, typeErr
+	}
+
 	var results []*ZSetMember
 	err := s.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
@@ -581,6 +645,30 @@ func (s *BotreonStore) ZSetDel(zSetName string) error {
 
 // ZCard 实现 Redis ZCARD 命令，获取有序集合中成员的数量
 func (s *BotreonStore) ZCard(zSetName string) (int64, error) {
+	// Check if key exists with wrong type
+	typeKey := TypeOfKeyGet(zSetName)
+	var typeErr error
+	_ = s.db.View(func(txn *badger.Txn) error {
+		typeItem, err := txn.Get(typeKey)
+		if err == nil {
+			typeVal, err := typeItem.ValueCopy(nil)
+			if err != nil {
+				typeErr = err
+				return err
+			}
+			keyType := string(typeVal)
+			if keyType != "" && keyType != KeyTypeSortedSet {
+				typeErr = ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			typeErr = err
+		}
+		return nil
+	})
+	if typeErr != nil {
+		return 0, typeErr
+	}
+
 	var card int64
 	err := s.db.View(func(txn *badger.Txn) error {
 		metaKey := sortedSetKeyMeta(zSetName)

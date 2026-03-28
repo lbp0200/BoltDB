@@ -2629,9 +2629,17 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		count := 0
 		for i := 1; i < len(args); i++ {
 			member := string(args[i])
-			if err := h.Db.ZRem(key, member); err == nil {
-				count++
+			err := h.Db.ZRem(key, member)
+			if err != nil {
+				if errors.Is(err, store.ErrWrongType) {
+					return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+				}
+				if errors.Is(err, store.ErrMemberNotFound) {
+					continue
+				}
+				return proto.NewError(fmt.Sprintf("ERR %v", err))
 			}
+			count++
 		}
 		// #nosec G115 - count is bounded by practical data size limits
 		return proto.NewInteger(int64(count))
@@ -2643,6 +2651,9 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		key := string(args[0])
 		count, err := h.Db.ZCard(key)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewInteger(0)
 		}
 		return proto.NewInteger(count)
@@ -2653,6 +2664,9 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		}
 		key, member := string(args[0]), string(args[1])
 		score, exists, err := h.Db.ZScore(key, member)
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
 		if err != nil || !exists {
 			return proto.NewBulkString(nil)
 		}
@@ -2695,6 +2709,9 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		}
 		members, err := h.Db.ZRange(key, start, stop)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return &proto.Array{Args: [][]byte{}}
 		}
 		results := make([][]byte, 0)

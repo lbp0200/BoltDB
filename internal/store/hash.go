@@ -14,6 +14,9 @@ import (
 // ErrWrongType is returned when operation is attempted on key holding wrong type
 var ErrWrongType = errors.New("WRONGTYPE Operation against a key holding the wrong kind of value")
 
+// ErrMemberNotFound is returned when member is not found in sorted set
+var ErrMemberNotFound = errors.New("member not found")
+
 // 哈希操作
 //func (s *BotreonStore) HSet(key, field string, value interface{}) error {
 //	logFuncTag := "BotreonStoreHSet"

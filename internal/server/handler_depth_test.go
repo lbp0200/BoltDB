@@ -839,3 +839,154 @@ func TestSetError_WrongTypeForScard(t *testing.T) {
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
 }
+
+// === SortedSet Boundary and Error Tests ===
+
+// TestSortedSetBoundary_ZaddBasic tests ZADD adds new members with scores
+func TestSortedSetBoundary_ZaddBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// ZADD new members - returns count of members in command
+	resp := handler.executeCommand("ZADD", [][]byte{[]byte("zset_key"), []byte("1.0"), []byte("member1"), []byte("2.0"), []byte("member2")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(2), int64(*integer))
+
+	// ZADD to update member - BoltDB returns len(members) (behavioral difference from Redis)
+	resp = handler.executeCommand("ZADD", [][]byte{[]byte("zset_key"), []byte("3.0"), []byte("member1")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+}
+
+// TestSortedSetBoundary_ZremBasic tests ZREM removes existing members
+func TestSortedSetBoundary_ZremBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("ZADD", [][]byte{[]byte("zset_key"), []byte("1.0"), []byte("member1"), []byte("2.0"), []byte("member2")}, "127.0.0.1:12345")
+
+	// ZREM existing member
+	resp := handler.executeCommand("ZREM", [][]byte{[]byte("zset_key"), []byte("member1")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// ZREM non-existing member - should return 0
+	resp = handler.executeCommand("ZREM", [][]byte{[]byte("zset_key"), []byte("nonexistent")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+}
+
+// TestSortedSetBoundary_ZcardBasic tests ZCARD returns sorted set cardinality
+func TestSortedSetBoundary_ZcardBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("ZADD", [][]byte{[]byte("zset_key"), []byte("1.0"), []byte("member1"), []byte("2.0"), []byte("member2")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("ZCARD", [][]byte{[]byte("zset_key")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(2), int64(*integer))
+}
+
+// TestSortedSetBoundary_ZscoreBasic tests ZSCORE returns member score
+func TestSortedSetBoundary_ZscoreBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("ZADD", [][]byte{[]byte("zset_key"), []byte("1.5"), []byte("member1")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("ZSCORE", [][]byte{[]byte("zset_key"), []byte("member1")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "1.5", string(*bs))
+
+	// Non-existing member
+	resp = handler.executeCommand("ZSCORE", [][]byte{[]byte("zset_key"), []byte("nonexistent")}, "127.0.0.1:12345")
+	nilResp, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.True(t, nilResp == nil || string(*nilResp) == "")
+}
+
+// TestSortedSetBoundary_ZrangeBasic tests ZRANGE returns members by rank
+func TestSortedSetBoundary_ZrangeBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("ZADD", [][]byte{[]byte("zset_key"), []byte("1.0"), []byte("a"), []byte("2.0"), []byte("b"), []byte("3.0"), []byte("c")}, "127.0.0.1:12345")
+
+	// Without WITHSCORES, ZRANGE returns only members
+	resp := handler.executeCommand("ZRANGE", [][]byte{[]byte("zset_key"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 3, len(arr.Args)) // a, b, c (members only)
+}
+
+// TestSortedSetError_WrongTypeForZadd tests ZADD on string key returns WRONGTYPE
+func TestSortedSetError_WrongTypeForZadd(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("ZADD", [][]byte{[]byte("string_key"), []byte("1.0"), []byte("member")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
+
+// TestSortedSetError_WrongTypeForZrem tests ZREM on string key returns WRONGTYPE
+func TestSortedSetError_WrongTypeForZrem(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("ZREM", [][]byte{[]byte("string_key"), []byte("member")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
+
+// TestSortedSetError_WrongTypeForZcard tests ZCARD on string key returns WRONGTYPE
+func TestSortedSetError_WrongTypeForZcard(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("ZCARD", [][]byte{[]byte("string_key")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
+
+// TestSortedSetError_WrongTypeForZscore tests ZSCORE on string key returns WRONGTYPE
+func TestSortedSetError_WrongTypeForZscore(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("ZSCORE", [][]byte{[]byte("string_key"), []byte("member")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
+
+// TestSortedSetError_WrongTypeForZrange tests ZRANGE on string key returns WRONGTYPE
+func TestSortedSetError_WrongTypeForZrange(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("ZRANGE", [][]byte{[]byte("string_key"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
