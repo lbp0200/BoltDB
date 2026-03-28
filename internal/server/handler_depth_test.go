@@ -305,3 +305,51 @@ func TestStringBoundary_GetrangeOutOfBounds(t *testing.T) {
 	assert.Equal(t, "hi", string(*bs))
 }
 
+// TestStringError_WrongTypeForDecr tests DECR on hash key returns WRONGTYPE
+func TestStringError_WrongTypeForDecr(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("HSET", [][]byte{[]byte("hash_key"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
+	resp := handler.executeCommand("DECR", [][]byte{[]byte("hash_key")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
+
+// TestStringError_WrongTypeForDecrby tests DECRBY on set key returns WRONGTYPE
+func TestStringError_WrongTypeForDecrby(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SADD", [][]byte{[]byte("set_key"), []byte("member")}, "127.0.0.1:12345")
+	resp := handler.executeCommand("DECRBY", [][]byte{[]byte("set_key"), []byte("1")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
+
+// TestStringError_SetexWrongType tests SETEX on zset key returns WRONGTYPE
+func TestStringError_SetexWrongType(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("ZADD", [][]byte{[]byte("zset_key"), []byte("1.0"), []byte("member")}, "127.0.0.1:12345")
+	resp := handler.executeCommand("SETEX", [][]byte{[]byte("zset_key"), []byte("10"), []byte("value")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
+
+// TestStringError_PsetexWrongType tests PSETEX on list key returns WRONGTYPE
+func TestStringError_PsetexWrongType(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("LPUSH", [][]byte{[]byte("list_key"), []byte("value")}, "127.0.0.1:12345")
+	resp := handler.executeCommand("PSETEX", [][]byte{[]byte("list_key"), []byte("1000"), []byte("value")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
+
