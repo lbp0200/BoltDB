@@ -990,3 +990,61 @@ func TestSortedSetError_WrongTypeForZrange(t *testing.T) {
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
 }
+
+// === Cluster Boundary and Error Tests ===
+
+// TestClusterError_ClusterDisabled tests CLUSTER commands return error when cluster is disabled
+func TestClusterError_ClusterDisabled(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// CLUSTER INFO should return error when cluster support is disabled
+	resp := handler.executeCommand("CLUSTER", [][]byte{[]byte("INFO")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "cluster support disabled"))
+}
+
+// TestClusterError_ClusterDisabledNodes tests CLUSTER NODES returns error when disabled
+func TestClusterError_ClusterDisabledNodes(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand("CLUSTER", [][]byte{[]byte("NODES")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "cluster support disabled"))
+}
+
+// TestClusterError_ClusterDisabledKeySlot tests CLUSTER KEYSLOT returns error when disabled
+func TestClusterError_ClusterDisabledKeySlot(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand("CLUSTER", [][]byte{[]byte("KEYSLOT"), []byte("mykey")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "cluster support disabled"))
+}
+
+// TestClusterError_ClusterDisabledSlots tests CLUSTER SLOTS returns error when disabled
+func TestClusterError_ClusterDisabledSlots(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand("CLUSTER", [][]byte{[]byte("SLOTS")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "cluster support disabled"))
+}
+
+// TestClusterError_InvalidSubcommand tests CLUSTER with invalid subcommand returns error
+func TestClusterError_InvalidSubcommand(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand("CLUSTER", [][]byte{[]byte("INVALID")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "ERR"))
+}
