@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -311,4 +312,48 @@ func TestHashConcurrent_HgetHsetRace(t *testing.T) {
 	// Hash should have some fields
 	hlen, _ := testClient.HLen(ctx, "race_hash").Result()
 	assert.True(t, hlen > 0)
+}
+
+// TestStringError_TypeMismatchIntegration tests string commands on wrong types (integration level)
+func TestStringError_TypeMismatchIntegration(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+
+	// Create a hash key
+	testClient.HSet(ctx, "myhash", "field", "value")
+
+	// APPEND on hash should return WRONGTYPE
+	err := testClient.Append(ctx, "myhash", "extra").Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	// DECR on hash should return WRONGTYPE
+	err = testClient.Decr(ctx, "myhash").Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	// DECRBY on hash should return WRONGTYPE
+	err = testClient.DecrBy(ctx, "myhash", 1).Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	// SETEX on hash should return WRONGTYPE
+	err = testClient.SetEx(ctx, "myhash", "value", 10).Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+}
+
+// TestStringError_DecrbyOnFloat tests DECRBY on float string value
+func TestStringError_DecrbyOnFloat(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+
+	testClient.Set(ctx, "float_key", "1.5", 0)
+	err := testClient.DecrBy(ctx, "float_key", 1).Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "not an integer"))
 }
