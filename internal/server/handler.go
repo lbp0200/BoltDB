@@ -2067,6 +2067,9 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		}
 		h.markDirtyKeys(key)
 		count, err := h.Db.HDel(key, fields...)
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}

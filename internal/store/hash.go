@@ -176,6 +176,22 @@ func (s *BotreonStore) hashCountKey(key string) []byte {
 func (s *BotreonStore) HDel(key string, fields ...string) (int, error) {
 	deletedCount := 0
 	err := s.db.Update(func(txn *badger.Txn) error {
+		// Check if key already exists with a different type
+		typeKey := TypeOfKeyGet(key)
+		typeItem, typeErr := txn.Get(typeKey)
+		if typeErr == nil {
+			typeVal, err := typeItem.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(typeVal)
+			if keyType != "" && keyType != KeyTypeHash {
+				return ErrWrongType
+			}
+		} else if !errors.Is(typeErr, badger.ErrKeyNotFound) {
+			return typeErr
+		}
+
 		countKey := s.hashCountKey(key)
 		var currentCount uint64
 		countItem, err := txn.Get(countKey)
@@ -546,8 +562,19 @@ func (s *BotreonStore) HIncrBy(key, field string, increment int64) (int64, error
 	var result int64
 	typeKey := TypeOfKeyGet(key)
 	err := s.db.Update(func(txn *badger.Txn) error {
-		if err := txn.Set(typeKey, []byte(KeyTypeHash)); err != nil {
-			return err
+		// Check if key already exists with a different type
+		typeItem, typeErr := txn.Get(typeKey)
+		if typeErr == nil {
+			typeVal, err := typeItem.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(typeVal)
+			if keyType != "" && keyType != KeyTypeHash {
+				return ErrWrongType
+			}
+		} else if !errors.Is(typeErr, badger.ErrKeyNotFound) {
+			return typeErr
 		}
 
 		hkey := s.hashKey(key, field)
@@ -611,8 +638,19 @@ func (s *BotreonStore) HIncrByFloat(key, field string, increment float64) (float
 	var result float64
 	typeKey := TypeOfKeyGet(key)
 	err := s.db.Update(func(txn *badger.Txn) error {
-		if err := txn.Set(typeKey, []byte(KeyTypeHash)); err != nil {
-			return err
+		// Check if key already exists with a different type
+		typeItem, typeErr := txn.Get(typeKey)
+		if typeErr == nil {
+			typeVal, err := typeItem.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(typeVal)
+			if keyType != "" && keyType != KeyTypeHash {
+				return ErrWrongType
+			}
+		} else if !errors.Is(typeErr, badger.ErrKeyNotFound) {
+			return typeErr
 		}
 
 		hkey := s.hashKey(key, field)
