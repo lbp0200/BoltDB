@@ -1109,3 +1109,50 @@ func TestReplicationError_ReplconfAckWithoutArgs(t *testing.T) {
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "ERR"))
 }
+
+// === Sentinel Boundary and Error Tests ===
+
+// TestSentinelBoundary_InfoReplication tests INFO replication returns sentinel-compatible format
+func TestSentinelBoundary_InfoReplication(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Set up replication manager as slave to get master_link_status in output
+	handler.Replication = replication.NewReplicationManager(handler.Db)
+	handler.Replication.SetRole("slave")
+	handler.Replication.SetMasterAddr("127.0.0.1:6379")
+
+	resp := handler.executeCommand("INFO", [][]byte{[]byte("replication")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	info := string(*bs)
+	assert.True(t, strings.Contains(info, "role:"))
+	assert.True(t, strings.Contains(info, "master_link_status:"))
+}
+
+// TestSentinelBoundary_ReplconfGetack tests REPLCONF GETACK returns ACK format
+func TestSentinelBoundary_ReplconfGetack(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Set up replication manager for GETACK to work
+	handler.Replication = replication.NewReplicationManager(handler.Db)
+
+	resp := handler.executeCommand("REPLCONF", [][]byte{[]byte("GETACK"), []byte("*")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.True(t, len(arr.Args) >= 3)
+	assert.Equal(t, []byte("REPLCONF"), arr.Args[0])
+	assert.Equal(t, []byte("ACK"), arr.Args[1])
+}
+
+// TestSentinelError_ReplconfUnknownSubcommand tests REPLCONF with unknown subcommand
+func TestSentinelError_ReplconfUnknownSubcommand(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand("REPLCONF", [][]byte{[]byte("UNKNOWN")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "ERR"))
+}
