@@ -788,58 +788,54 @@ func TestSetError_WrongTypeForSadd(t *testing.T) {
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
 }
 
-// TestSetError_WrongTypeForSrem tests SREM on string key (returns 0, no WRONGTYPE check)
+// TestSetError_WrongTypeForSrem tests SREM on string key returns WRONGTYPE
 func TestSetError_WrongTypeForSrem(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
 
-	// SREM returns 0 when called on wrong type (no WRONGTYPE check implemented)
 	resp := handler.executeCommand("SREM", [][]byte{[]byte("string_key"), []byte("member")}, "127.0.0.1:12345")
-	integer, ok := resp.(*proto.Integer)
+	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
-	assert.Equal(t, int64(0), int64(*integer))
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
 }
 
-// TestSetError_WrongTypeForSismember tests SISMEMBER on string key (returns 0, no WRONGTYPE check)
+// TestSetError_WrongTypeForSismember tests SISMEMBER on string key returns WRONGTYPE
 func TestSetError_WrongTypeForSismember(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
 
-	// SISMEMBER returns 0 when called on wrong type (no WRONGTYPE check implemented)
 	resp := handler.executeCommand("SISMEMBER", [][]byte{[]byte("string_key"), []byte("member")}, "127.0.0.1:12345")
-	integer, ok := resp.(*proto.Integer)
+	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
-	assert.Equal(t, int64(0), int64(*integer))
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
 }
 
-// TestSetError_WrongTypeForSmembers tests SMEMBERS on string key (returns empty array, no WRONGTYPE check)
+// TestSetError_WrongTypeForSmembers tests SMEMBERS on string key returns WRONGTYPE
 func TestSetError_WrongTypeForSmembers(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
 
-	// SMEMBERS returns empty array when called on wrong type (no WRONGTYPE check implemented)
 	resp := handler.executeCommand("SMEMBERS", [][]byte{[]byte("string_key")}, "127.0.0.1:12345")
-	arr, ok := resp.(*proto.Array)
+	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
-	assert.Equal(t, 0, len(arr.Args))
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
 }
 
-// TestSetError_WrongTypeForScard tests SCARD on string key (returns 0, no WRONGTYPE check)
+// TestSetError_WrongTypeForScard tests SCARD on string key returns WRONGTYPE
 func TestSetError_WrongTypeForScard(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
 
-	// SCARD returns 0 when called on wrong type (no WRONGTYPE check implemented)
 	resp := handler.executeCommand("SCARD", [][]byte{[]byte("string_key")}, "127.0.0.1:12345")
-	integer, ok := resp.(*proto.Integer)
+	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
-	assert.Equal(t, int64(0), int64(*integer))
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
 }

@@ -126,6 +126,22 @@ func (s *BotreonStore) SAdd(key string, members ...string) (int, error) {
 func (s *BotreonStore) SRem(key string, members ...string) (int, error) {
 	removed := 0
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		// Check if key already exists with a different type
+		typeKey := TypeOfKeyGet(key)
+		typeItem, typeErr := txn.Get(typeKey)
+		if typeErr == nil {
+			typeVal, err := typeItem.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(typeVal)
+			if keyType != "" && keyType != KeyTypeSet {
+				return ErrWrongType
+			}
+		} else if !errors.Is(typeErr, badger.ErrKeyNotFound) {
+			return typeErr
+		}
+
 		countKey := s.setKey(key, "count")
 		var count uint64
 
@@ -166,6 +182,22 @@ func (s *BotreonStore) SRem(key string, members ...string) (int, error) {
 func (s *BotreonStore) SCard(key string) (uint64, error) {
 	var count uint64
 	err := s.db.View(func(txn *badger.Txn) error {
+		// Check if key already exists with a different type
+		typeKey := TypeOfKeyGet(key)
+		typeItem, typeErr := txn.Get(typeKey)
+		if typeErr == nil {
+			typeVal, err := typeItem.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(typeVal)
+			if keyType != "" && keyType != KeyTypeSet {
+				return ErrWrongType
+			}
+		} else if !errors.Is(typeErr, badger.ErrKeyNotFound) {
+			return typeErr
+		}
+
 		countKey := s.setKey(key, "count")
 		item, err := txn.Get([]byte(countKey))
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -185,6 +217,22 @@ func (s *BotreonStore) SCard(key string) (uint64, error) {
 func (s *BotreonStore) SIsMember(key string, member string) (bool, error) {
 	exists := false
 	err := s.db.View(func(txn *badger.Txn) error {
+		// Check if key already exists with a different type
+		typeKey := TypeOfKeyGet(key)
+		typeItem, typeErr := txn.Get(typeKey)
+		if typeErr == nil {
+			typeVal, err := typeItem.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(typeVal)
+			if keyType != "" && keyType != KeyTypeSet {
+				return ErrWrongType
+			}
+		} else if !errors.Is(typeErr, badger.ErrKeyNotFound) {
+			return typeErr
+		}
+
 		memberKey := s.setKey(key, "member", member)
 		_, err := txn.Get([]byte(memberKey))
 		if err == nil {
@@ -224,6 +272,22 @@ func (s *BotreonStore) getAllMembers(txn *badger.Txn, key string) ([]string, err
 func (s *BotreonStore) SMembers(key string) ([]string, error) {
 	var members []string
 	err := s.db.View(func(txn *badger.Txn) error {
+		// Check if key already exists with a different type
+		typeKey := TypeOfKeyGet(key)
+		typeItem, typeErr := txn.Get(typeKey)
+		if typeErr == nil {
+			typeVal, err := typeItem.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(typeVal)
+			if keyType != "" && keyType != KeyTypeSet {
+				return ErrWrongType
+			}
+		} else if !errors.Is(typeErr, badger.ErrKeyNotFound) {
+			return typeErr
+		}
+
 		var err error
 		members, err = s.getAllMembers(txn, key)
 		return err

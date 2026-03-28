@@ -2314,6 +2314,9 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		}
 		h.markDirtyKeys(key)
 		count, err := h.Db.SRem(key, members...)
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -2326,6 +2329,9 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		}
 		key := string(args[0])
 		count, err := h.Db.SCard(key)
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
 		if err != nil {
 			return proto.NewInteger(0)
 		}
@@ -2338,6 +2344,9 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		}
 		key, member := string(args[0]), string(args[1])
 		exists, err := h.Db.SIsMember(key, member)
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
 		if err != nil {
 			return proto.NewInteger(0)
 		}
@@ -2349,6 +2358,9 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		}
 		key := string(args[0])
 		members, err := h.Db.SMembers(key)
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
 		if err != nil {
 			return &proto.Array{Args: [][]byte{}}
 		}
