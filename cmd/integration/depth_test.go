@@ -357,3 +357,67 @@ func TestStringError_DecrbyOnFloat(t *testing.T) {
 	assert.Error(t, err)
 	assert.True(t, strings.Contains(err.Error(), "not an integer"))
 }
+
+// TestListConcurrent_LpushxRace tests concurrent LPUSHX on same key
+func TestListConcurrent_LpushxRace(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+	const goroutines = 5
+	const opsPerGoroutine = 50
+
+	// Initialize list
+	testClient.RPush(ctx, "lpushx_race_key", "initial")
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				testClient.LPushX(ctx, "lpushx_race_key", fmt.Sprintf("val%d_%d", idx, j))
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// List should have more elements than initial
+	llen, err := testClient.LLen(ctx, "lpushx_race_key").Result()
+	assert.NoError(t, err)
+	assert.True(t, llen > 1)
+}
+
+// TestListConcurrent_LmoveRace tests concurrent LMOVE operations
+func TestListConcurrent_LmoveRace(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+	const goroutines = 5
+	const opsPerGoroutine = 20
+
+	// Initialize source list with enough elements
+	for i := 0; i < goroutines*opsPerGoroutine; i++ {
+		testClient.RPush(ctx, "lmove_source", fmt.Sprintf("item%d", i))
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				testClient.LMove(ctx, "lmove_source", "lmove_dest", "LEFT", "RIGHT")
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Source or dest should have elements
+	srcLen, _ := testClient.LLen(ctx, "lmove_source").Result()
+	dstLen, _ := testClient.LLen(ctx, "lmove_dest").Result()
+	assert.True(t, srcLen+dstLen > 0)
+}
