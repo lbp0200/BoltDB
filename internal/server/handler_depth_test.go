@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
+	"github.com/lbp0200/BoltDB/internal/replication"
 	"github.com/zeebo/assert"
 )
 
@@ -1044,6 +1045,66 @@ func TestClusterError_InvalidSubcommand(t *testing.T) {
 	defer handler.Db.Close()
 
 	resp := handler.executeCommand("CLUSTER", [][]byte{[]byte("INVALID")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "ERR"))
+}
+
+// === Replication Boundary and Error Tests ===
+
+// TestReplicationBoundary_RoleMaster tests ROLE returns master when node is master
+func TestReplicationBoundary_RoleMaster(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand("ROLE", [][]byte{}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.True(t, len(arr.Args) >= 1)
+	assert.Equal(t, []byte("master"), arr.Args[0])
+}
+
+// TestReplicationBoundary_ReplconfListeningPort tests REPLCONF LISTENING-PORT
+func TestReplicationBoundary_ReplconfListeningPort(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+	handler.Replication = replication.NewReplicationManager(handler.Db)
+
+	resp := handler.executeCommand("REPLCONF", [][]byte{[]byte("LISTENING-PORT"), []byte("6379")}, "127.0.0.1:12345")
+	simple, ok := resp.(*proto.SimpleString)
+	assert.True(t, ok)
+	assert.Equal(t, "OK", string(*simple))
+}
+
+// TestReplicationBoundary_ReplconfCapa tests REPLCONF CAPA
+func TestReplicationBoundary_ReplconfCapa(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+	handler.Replication = replication.NewReplicationManager(handler.Db)
+
+	resp := handler.executeCommand("REPLCONF", [][]byte{[]byte("CAPA"), []byte("eof")}, "127.0.0.1:12345")
+	simple, ok := resp.(*proto.SimpleString)
+	assert.True(t, ok)
+	assert.Equal(t, "OK", string(*simple))
+}
+
+// TestReplicationError_ReplconfInvalidSubcommand tests REPLCONF with invalid subcommand
+func TestReplicationError_ReplconfInvalidSubcommand(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand("REPLCONF", [][]byte{[]byte("INVALID")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "ERR"))
+}
+
+// TestReplicationError_ReplconfAckWithoutArgs tests REPLCONF ACK without offset
+func TestReplicationError_ReplconfAckWithoutArgs(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand("REPLCONF", [][]byte{[]byte("ACK")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "ERR"))
