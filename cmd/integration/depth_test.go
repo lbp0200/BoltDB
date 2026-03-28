@@ -63,7 +63,8 @@ func TestStringConcurrent_ConcurrentIncrement(t *testing.T) {
 	const incrsPerGoroutine = 100
 
 	// Initialize counter
-	testClient.Set(ctx, "incr_counter", 0, 0)
+	err := testClient.Set(ctx, "incr_counter", 0, 0).Err()
+	assert.NoError(t, err)
 
 	var wg sync.WaitGroup
 	for i := 0; i < goroutines; i++ {
@@ -71,7 +72,7 @@ func TestStringConcurrent_ConcurrentIncrement(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < incrsPerGoroutine; j++ {
-				testClient.Incr(ctx, "incr_counter")
+				_, _ = testClient.Incr(ctx, "incr_counter").Result()
 			}
 		}()
 	}

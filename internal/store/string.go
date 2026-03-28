@@ -312,7 +312,14 @@ func (s *BotreonStore) setIntValue(txn *badger.Txn, key string, value int64) err
 		return err
 	}
 	strKey := s.stringKey(key)
-	return txn.Set([]byte(strKey), []byte(strconv.FormatInt(value, 10)))
+	if err := txn.Set([]byte(strKey), []byte(strconv.FormatInt(value, 10))); err != nil {
+		return err
+	}
+	// Update readCache to maintain consistency
+	if s.readCache != nil {
+		s.readCache.Set(key, []byte(strconv.FormatInt(value, 10)))
+	}
+	return nil
 }
 
 // INCR 实现 Redis INCR 命令，将键的值加1
