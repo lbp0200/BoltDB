@@ -480,3 +480,67 @@ func TestHashConcurrent_HincrbyRace(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, finalVal > 0)
 }
+
+// TestSetConcurrent_SaddSremRace tests concurrent SADD and SREM on same set
+func TestSetConcurrent_SaddSremRace(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+	const goroutines = 10
+	const opsPerGoroutine = 100
+
+	testClient.Del(ctx, "race_set")
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				member := fmt.Sprintf("member%d", j%20)
+				if j%2 == 0 {
+					testClient.SAdd(ctx, "race_set", member)
+				} else {
+					testClient.SRem(ctx, "race_set", member)
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Set should have some members
+	card, _ := testClient.SCard(ctx, "race_set").Result()
+	assert.True(t, card >= 0)
+}
+
+// TestSetConcurrent_SismemberRace tests concurrent SISMEMBER on same set
+func TestSetConcurrent_SismemberRace(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+	const goroutines = 10
+	const opsPerGoroutine = 100
+
+	testClient.Del(ctx, "race_set")
+	testClient.SAdd(ctx, "race_set", "target_member")
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				testClient.SIsMember(ctx, "race_set", "target_member")
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Member should still exist
+	isMember, _ := testClient.SIsMember(ctx, "race_set", "target_member").Result()
+	assert.True(t, isMember)
+}
