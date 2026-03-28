@@ -555,3 +555,145 @@ func TestListError_WrongTypeForLinsert(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
 }
+
+// TestHashBoundary_HsetNxBasic tests HSETNX behavior
+func TestHashBoundary_HsetNxBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("HSET", [][]byte{[]byte("hash_key"), []byte("field1"), []byte("val1")}, "127.0.0.1:12345")
+
+	// HSETNX on existing field should return 0
+	resp := handler.executeCommand("HSETNX", [][]byte{[]byte("hash_key"), []byte("field1"), []byte("new_val")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+
+	// HSETNX on new field should return 1
+	resp = handler.executeCommand("HSETNX", [][]byte{[]byte("hash_key"), []byte("field2"), []byte("val2")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+}
+
+// TestHashBoundary_HincrbyBasic tests HINCRBY with positive increment
+func TestHashBoundary_HincrbyBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("HSET", [][]byte{[]byte("hash_key"), []byte("counter"), []byte("10")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("HINCRBY", [][]byte{[]byte("hash_key"), []byte("counter"), []byte("5")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(15), int64(*integer))
+}
+
+// TestHashBoundary_HincrbyNegative tests HINCRBY with negative increment
+func TestHashBoundary_HincrbyNegative(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("HSET", [][]byte{[]byte("hash_key"), []byte("counter"), []byte("10")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("HINCRBY", [][]byte{[]byte("hash_key"), []byte("counter"), []byte("-3")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(7), int64(*integer))
+}
+
+// TestHashBoundary_HincrbyFloatBasic tests HINCRBYFLOAT with float value
+func TestHashBoundary_HincrbyFloatBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("HSET", [][]byte{[]byte("hash_key"), []byte("counter"), []byte("10.5")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("HINCRBYFLOAT", [][]byte{[]byte("hash_key"), []byte("counter"), []byte("2.5")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "13", string(*bs)) // 10.5 + 2.5 = 13
+}
+
+// TestHashBoundary_HrandfieldBasic tests HRANDFIELD returns a field
+func TestHashBoundary_HrandfieldBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("HSET", [][]byte{[]byte("hash_key"), []byte("field1"), []byte("val1")}, "127.0.0.1:12345")
+	handler.executeCommand("HSET", [][]byte{[]byte("hash_key"), []byte("field2"), []byte("val2")}, "127.0.0.1:12345")
+	handler.executeCommand("HSET", [][]byte{[]byte("hash_key"), []byte("field3"), []byte("val3")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("HRANDFIELD", [][]byte{[]byte("hash_key")}, "127.0.0.1:12345")
+	// HRANDFIELD returns an Array of field names
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(arr.Args))
+	assert.True(t, len(string(arr.Args[0])) > 0)
+}
+
+// TestHashBoundary_HrandfieldWithValues tests HRANDFIELD with WITHVALUES
+func TestHashBoundary_HrandfieldWithValues(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("HSET", [][]byte{[]byte("hash_key"), []byte("field1"), []byte("val1")}, "127.0.0.1:12345")
+	handler.executeCommand("HSET", [][]byte{[]byte("hash_key"), []byte("field2"), []byte("val2")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("HRANDFIELD", [][]byte{[]byte("hash_key"), []byte("2"), []byte("WITHVALUES")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 4, len(arr.Args))
+}
+
+// TestHashError_WrongTypeForHset tests HSET on wrong type returns error
+func TestHashError_WrongTypeForHset(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("HSET", [][]byte{[]byte("string_key"), []byte("field"), []byte("val")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
+
+// TestHashError_WrongTypeForHget tests HGET on wrong type returns error
+func TestHashError_WrongTypeForHget(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("HGET", [][]byte{[]byte("string_key"), []byte("field")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
+
+// TestHashError_HincrbyOnNonNumeric tests HINCRBY on non-numeric value
+func TestHashError_HincrbyOnNonNumeric(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("HSET", [][]byte{[]byte("hash_key"), []byte("field"), []byte("not_a_number")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("HINCRBY", [][]byte{[]byte("hash_key"), []byte("field"), []byte("1")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "not an integer"))
+}
+
+// TestHashError_HincrbyFloatOnNonNumeric tests HINCRBYFLOAT on non-numeric value
+func TestHashError_HincrbyFloatOnNonNumeric(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("HSET", [][]byte{[]byte("hash_key"), []byte("field"), []byte("not_a_number")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("HINCRBYFLOAT", [][]byte{[]byte("hash_key"), []byte("field"), []byte("1.5")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "not a valid float"))
+}
