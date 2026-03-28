@@ -726,3 +726,75 @@ func TestClusterError_ClusterDisabledIntegration(t *testing.T) {
 	assert.Error(t, err)
 	assert.True(t, strings.Contains(err.Error(), "cluster support disabled"))
 }
+
+// TestReplicationConcurrent_RoleRace tests concurrent ROLE operations
+func TestReplicationConcurrent_RoleRace(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+	const goroutines = 10
+	const opsPerGoroutine = 100
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				testClient.Do(ctx, "ROLE")
+			}
+		}()
+	}
+
+	wg.Wait()
+	// No crash is the expected outcome
+}
+
+// TestReplicationConcurrent_ReplconfRace tests concurrent REPLCONF operations
+func TestReplicationConcurrent_ReplconfRace(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+	const goroutines = 10
+	const opsPerGoroutine = 100
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				testClient.Do(ctx, "REPLCONF", "LISTENING-PORT", "6379")
+			}
+		}()
+	}
+
+	wg.Wait()
+	// No crash is the expected outcome
+}
+
+// TestReplicationError_InvalidSubcommandIntegration tests REPLCONF with invalid subcommand (integration)
+func TestReplicationError_InvalidSubcommandIntegration(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+
+	_, err := testClient.Do(ctx, "REPLCONF", "INVALID_SUBCOMMAND").Result()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "ERR") || strings.Contains(err.Error(), "unknown"))
+}
+
+// TestReplicationError_AckWithoutOffset tests REPLCONF ACK without offset
+func TestReplicationError_AckWithoutOffset(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+
+	_, err := testClient.Do(ctx, "REPLCONF", "ACK").Result()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "ERR"))
+}
