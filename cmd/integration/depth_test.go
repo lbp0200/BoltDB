@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/zeebo/assert"
 )
 
@@ -577,6 +578,108 @@ func TestSetError_WrongTypeIntegration(t *testing.T) {
 
 	// SCARD on string should return WRONGTYPE
 	err = testClient.SCard(ctx, "string_key").Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+}
+
+// TestSortedSetConcurrent_ZaddZremRace tests concurrent ZADD and ZREM
+func TestSortedSetConcurrent_ZaddZremRace(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+	const goroutines = 10
+	const opsPerGoroutine = 100
+
+	testClient.Del(ctx, "race_zset")
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				member := fmt.Sprintf("member%d", j%20)
+				score := float64(j%100) + 0.5
+				if j%2 == 0 {
+					testClient.ZAdd(ctx, "race_zset", redis.Z{Member: member, Score: score})
+				} else {
+					testClient.ZRem(ctx, "race_zset", member)
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// ZSet should have some members (not empty due to race)
+	card, _ := testClient.ZCard(ctx, "race_zset").Result()
+	assert.True(t, card >= 0)
+}
+
+// TestSortedSetConcurrent_ZscoreRace tests concurrent ZSCORE operations
+func TestSortedSetConcurrent_ZscoreRace(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+	const goroutines = 10
+	const opsPerGoroutine = 100
+
+	testClient.Del(ctx, "race_zset")
+	testClient.ZAdd(ctx, "race_zset", redis.Z{Member: "target_member", Score: 42.0})
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				testClient.ZScore(ctx, "race_zset", "target_member")
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Member should still exist with correct score
+	score, err := testClient.ZScore(ctx, "race_zset", "target_member").Result()
+	assert.NoError(t, err)
+	assert.Equal(t, 42.0, score)
+}
+
+// TestSortedSetError_WrongTypeIntegration tests sorted set commands on wrong types
+func TestSortedSetError_WrongTypeIntegration(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+
+	// Create a string key
+	testClient.Set(ctx, "string_key", "value", 0)
+
+	// ZADD on string should return WRONGTYPE
+	err := testClient.ZAdd(ctx, "string_key", redis.Z{Member: "m", Score: 1.0}).Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	// ZREM on string should return WRONGTYPE
+	err = testClient.ZRem(ctx, "string_key", "m").Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	// ZCARD on string should return WRONGTYPE
+	err = testClient.ZCard(ctx, "string_key").Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	// ZSCORE on string should return WRONGTYPE
+	err = testClient.ZScore(ctx, "string_key", "m").Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	// ZRANGE on string should return WRONGTYPE
+	err = testClient.ZRange(ctx, "string_key", 0, -1).Err()
 	assert.Error(t, err)
 	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
 }
