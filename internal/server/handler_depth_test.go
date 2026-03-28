@@ -353,3 +353,58 @@ func TestStringError_PsetexWrongType(t *testing.T) {
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
 }
 
+// TestStringBoundary_SetbitGetbitBasic tests SETBIT and GETBIT
+func TestStringBoundary_SetbitGetbitBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Set bit 7 to 1 (value = 128)
+	resp := handler.executeCommand("SETBIT", [][]byte{[]byte("bit_key"), []byte("7"), []byte("1")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer)) // old value was 0
+
+	// GETBIT should return 1
+	resp = handler.executeCommand("GETBIT", [][]byte{[]byte("bit_key"), []byte("7")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+}
+
+// TestStringBoundary_SetbitOutOfRange tests SETBIT on offset beyond practical limits
+func TestStringBoundary_SetbitOutOfRange(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Set bit at a large offset (creates a string of that size)
+	resp := handler.executeCommand("SETBIT", [][]byte{[]byte("large_bit_key"), []byte("1048576"), []byte("1")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+
+	// Verify the bit was set
+	resp = handler.executeCommand("GETBIT", [][]byte{[]byte("large_bit_key"), []byte("1048576")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+}
+
+// TestStringBoundary_SetrangeExtend tests SETRANGE extending a string
+func TestStringBoundary_SetrangeExtend(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("extend_key"), []byte("hello")}, "127.0.0.1:12345")
+
+	// Extend from offset 5 with " world"
+	resp := handler.executeCommand("SETRANGE", [][]byte{[]byte("extend_key"), []byte("5"), []byte(" world")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(11), int64(*integer))
+
+	// Verify new value
+	getResp := handler.executeCommand("GET", [][]byte{[]byte("extend_key")}, "127.0.0.1:12345")
+	bs, ok := getResp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "hello world", string(*bs))
+}
