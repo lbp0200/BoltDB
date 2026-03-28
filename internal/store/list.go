@@ -1159,6 +1159,7 @@ func (s *BotreonStore) RPopLPush(source, destination string) (string, error) {
 func (s *BotreonStore) LPUSHX(key string, values ...string) (int, error) {
 	// 先检查键是否存在且是List类型（在 View 事务中）
 	var isList bool
+	var keyExists bool
 	err := s.db.View(func(txn *badger.Txn) error {
 		typeKey := TypeOfKeyGet(key)
 		item, err := txn.Get(typeKey)
@@ -1168,19 +1169,23 @@ func (s *BotreonStore) LPUSHX(key string, values ...string) (int, error) {
 		if err != nil {
 			return err
 		}
+		keyExists = true
 		val, err := item.ValueCopy(nil)
 		if err != nil {
 			return err
 		}
 		keyType := string(val)
 		if keyType != KeyTypeList {
-			return nil // 不是List类型
+			return ErrWrongType // 不是List类型，返回WRONGTYPE错误
 		}
 		isList = true
 		return nil
 	})
 	if err != nil {
 		return 0, err
+	}
+	if keyExists && !isList {
+		return 0, ErrWrongType
 	}
 	if !isList {
 		return 0, nil
@@ -1194,6 +1199,7 @@ func (s *BotreonStore) LPUSHX(key string, values ...string) (int, error) {
 func (s *BotreonStore) RPUSHX(key string, values ...string) (int, error) {
 	// 先检查键是否存在且是List类型（在 View 事务中）
 	var isList bool
+	var keyExists bool
 	err := s.db.View(func(txn *badger.Txn) error {
 		typeKey := TypeOfKeyGet(key)
 		item, err := txn.Get(typeKey)
@@ -1203,19 +1209,23 @@ func (s *BotreonStore) RPUSHX(key string, values ...string) (int, error) {
 		if err != nil {
 			return err
 		}
+		keyExists = true
 		val, err := item.ValueCopy(nil)
 		if err != nil {
 			return err
 		}
 		keyType := string(val)
 		if keyType != KeyTypeList {
-			return nil // 不是List类型
+			return ErrWrongType // 不是List类型，返回WRONGTYPE错误
 		}
 		isList = true
 		return nil
 	})
 	if err != nil {
 		return 0, err
+	}
+	if keyExists && !isList {
+		return 0, ErrWrongType
 	}
 	if !isList {
 		return 0, nil
@@ -1262,9 +1272,71 @@ func (s *BotreonStore) BRPOPLPUSH(source, destination string, timeout int) (stri
 // sourceDirection: "LEFT" 或 "RIGHT"
 // destinationDirection: "LEFT" 或 "RIGHT"
 func (s *BotreonStore) LMove(source, destination, sourceDirection, destinationDirection string) (string, error) {
-	var value string
-	var err error
+	// 检查source键是否存在且是List类型
+	var sourceIsList bool
+	var sourceKeyExists bool
+	err := s.db.View(func(txn *badger.Txn) error {
+		typeKey := TypeOfKeyGet(source)
+		item, err := txn.Get(typeKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return nil // 键不存在
+		}
+		if err != nil {
+			return err
+		}
+		sourceKeyExists = true
+		val, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		keyType := string(val)
+		if keyType != KeyTypeList {
+			return ErrWrongType // 不是List类型，返回WRONGTYPE错误
+		}
+		sourceIsList = true
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	if sourceKeyExists && !sourceIsList {
+		return "", ErrWrongType
+	}
 
+	// 同样检查destination键的类型（如果它已存在）
+	var destIsList bool
+	var destKeyExists bool
+	err = s.db.View(func(txn *badger.Txn) error {
+		typeKey := TypeOfKeyGet(destination)
+		item, err := txn.Get(typeKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return nil // 键不存在
+		}
+		if err != nil {
+			return err
+		}
+		destKeyExists = true
+		val, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		keyType := string(val)
+		if keyType != KeyTypeList && keyType != "" {
+			return ErrWrongType // 不是List类型，返回WRONGTYPE错误
+		}
+		if keyType == KeyTypeList {
+			destIsList = true
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	if destKeyExists && !destIsList {
+		return "", ErrWrongType
+	}
+
+	var value string
 	switch sourceDirection {
 	case "LEFT":
 		value, err = s.LPop(source)

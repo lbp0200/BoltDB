@@ -421,3 +421,29 @@ func TestListConcurrent_LmoveRace(t *testing.T) {
 	dstLen, _ := testClient.LLen(ctx, "lmove_dest").Result()
 	assert.True(t, srcLen+dstLen > 0)
 }
+
+// TestListError_WrongTypeIntegration tests list commands on wrong types (integration level)
+func TestListError_WrongTypeIntegration(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+
+	// Create a string key
+	testClient.Set(ctx, "string_key", "value", 0)
+
+	// LPUSHX on string should return WRONGTYPE
+	err := testClient.LPushX(ctx, "string_key", "val").Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	// RPUSHX on string should return WRONGTYPE
+	err = testClient.RPushX(ctx, "string_key", "val").Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	// LMOVE from string key should return WRONGTYPE
+	err = testClient.LMove(ctx, "string_key", "dest", "LEFT", "RIGHT").Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+}
