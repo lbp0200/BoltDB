@@ -94,6 +94,22 @@ func (s *BotreonStore) Set(key string, value string) error {
 // SetWithTTL 字符串操作，设置键值对并设置过期时间
 func (s *BotreonStore) SetWithTTL(key, value string, ttl time.Duration) error {
 	return s.db.Update(func(txn *badger.Txn) error {
+		// Check if key already exists with a different type
+		typeKey := TypeOfKeyGet(key)
+		item, err := txn.Get(typeKey)
+		if err == nil {
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(val)
+			if keyType != "" && keyType != KeyTypeString {
+				return ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
+
 		if err := txn.Set(TypeOfKeyGet(key), []byte(KeyTypeString)); err != nil {
 			return err
 		}
@@ -350,6 +366,22 @@ func (s *BotreonStore) INCRBY(key string, increment int64) (int64, error) {
 
 	var newValue int64
 	err := s.db.Update(func(txn *badger.Txn) error {
+		// Check if key exists with a different type before overwriting
+		typeKey := TypeOfKeyGet(key)
+		item, err := txn.Get(typeKey)
+		if err == nil {
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(val)
+			if keyType != "" && keyType != KeyTypeString {
+				return ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
+
 		oldValue, err := s.getIntValue(txn, key)
 		if err != nil {
 			return err

@@ -257,6 +257,101 @@ func TestListError_InvalidIndex(t *testing.T) {
 	assert.True(t, strings.Contains(string(*errResp), "index out of range"))
 }
 
+// TestStringBoundary_DecrOverflow tests DECR at int64 min boundary
+func TestStringBoundary_DecrOverflow(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Set to min int64 + 1
+	handler.executeCommand("SET", [][]byte{[]byte("min_counter"), []byte("-9223372036854775807")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("DECR", [][]byte{[]byte("min_counter")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(-9223372036854775808), int64(*integer))
+
+	// Next DECR should overflow
+	resp = handler.executeCommand("DECR", [][]byte{[]byte("min_counter")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "overflow"))
+}
+
+// TestStringBoundary_GetrangeFullString tests GETRANGE with full range
+func TestStringBoundary_GetrangeFullString(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("range_key"), []byte("hello")}, "127.0.0.1:12345")
+
+	// Get full string with 0 to -1
+	resp := handler.executeCommand("GETRANGE", [][]byte{[]byte("range_key"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "hello", string(*bs))
+}
+
+// TestStringBoundary_GetrangeOutOfBounds tests GETRANGE beyond string bounds
+func TestStringBoundary_GetrangeOutOfBounds(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("short_key"), []byte("hi")}, "127.0.0.1:12345")
+
+	// Request more than exists — should return what is available
+	resp := handler.executeCommand("GETRANGE", [][]byte{[]byte("short_key"), []byte("0"), []byte("100")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "hi", string(*bs))
+}
+
+// TestStringError_WrongTypeForDecr tests DECR on hash key returns WRONGTYPE
+func TestStringError_WrongTypeForDecr(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("HSET", [][]byte{[]byte("hash_key"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
+	resp := handler.executeCommand("DECR", [][]byte{[]byte("hash_key")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
+
+// TestStringError_WrongTypeForDecrby tests DECRBY on set key returns WRONGTYPE
+func TestStringError_WrongTypeForDecrby(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SADD", [][]byte{[]byte("set_key"), []byte("member")}, "127.0.0.1:12345")
+	resp := handler.executeCommand("DECRBY", [][]byte{[]byte("set_key"), []byte("1")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
+
+// TestStringError_SetexWrongType tests SETEX on zset key returns WRONGTYPE
+func TestStringError_SetexWrongType(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("ZADD", [][]byte{[]byte("zset_key"), []byte("1.0"), []byte("member")}, "127.0.0.1:12345")
+	resp := handler.executeCommand("SETEX", [][]byte{[]byte("zset_key"), []byte("10"), []byte("value")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
+
+// TestStringError_PsetexWrongType tests PSETEX on list key returns WRONGTYPE
+func TestStringError_PsetexWrongType(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("LPUSH", [][]byte{[]byte("list_key"), []byte("value")}, "127.0.0.1:12345")
+	resp := handler.executeCommand("PSETEX", [][]byte{[]byte("list_key"), []byte("1000"), []byte("value")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
 // TestStringBoundary_SetbitGetbitBasic tests SETBIT and GETBIT
 func TestStringBoundary_SetbitGetbitBasic(t *testing.T) {
 	handler := setupTestHandler(t)
