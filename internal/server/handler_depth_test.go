@@ -697,3 +697,149 @@ func TestHashError_HincrbyFloatOnNonNumeric(t *testing.T) {
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "not a valid float"))
 }
+
+// TestSetBoundary_SaddBasic tests SADD with multiple members
+func TestSetBoundary_SaddBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand("SADD", [][]byte{[]byte("set_key"), []byte("member1"), []byte("member2"), []byte("member3")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(3), int64(*integer))
+
+	resp = handler.executeCommand("SADD", [][]byte{[]byte("set_key"), []byte("member1")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+}
+
+// TestSetBoundary_SremBasic tests SREM behavior
+func TestSetBoundary_SremBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SADD", [][]byte{[]byte("set_key"), []byte("member1"), []byte("member2"), []byte("member3")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("SREM", [][]byte{[]byte("set_key"), []byte("member1")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	resp = handler.executeCommand("SREM", [][]byte{[]byte("set_key"), []byte("nonexistent")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+}
+
+// TestSetBoundary_ScardBasic tests SCARD returns set size
+func TestSetBoundary_ScardBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SADD", [][]byte{[]byte("set_key"), []byte("member1"), []byte("member2")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("SCARD", [][]byte{[]byte("set_key")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(2), int64(*integer))
+}
+
+// TestSetBoundary_SrandmemberBasic tests SRANDMEMBER returns a member
+func TestSetBoundary_SrandmemberBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SADD", [][]byte{[]byte("set_key"), []byte("member1"), []byte("member2"), []byte("member3")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("SRANDMEMBER", [][]byte{[]byte("set_key")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.True(t, len(string(*bs)) > 0)
+}
+
+// TestSetBoundary_SpopBasic tests SPOP removes and returns a member
+func TestSetBoundary_SpopBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SADD", [][]byte{[]byte("set_key"), []byte("member1"), []byte("member2"), []byte("member3")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("SPOP", [][]byte{[]byte("set_key")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.True(t, len(string(*bs)) > 0)
+
+	cardResp := handler.executeCommand("SCARD", [][]byte{[]byte("set_key")}, "127.0.0.1:12345")
+	cardInt, _ := cardResp.(*proto.Integer)
+	assert.Equal(t, int64(2), int64(*cardInt))
+}
+
+// TestSetError_WrongTypeForSadd tests SADD on string key returns WRONGTYPE
+func TestSetError_WrongTypeForSadd(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("SADD", [][]byte{[]byte("string_key"), []byte("member")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
+
+// TestSetError_WrongTypeForSrem tests SREM on string key (returns 0, no WRONGTYPE check)
+func TestSetError_WrongTypeForSrem(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+
+	// SREM returns 0 when called on wrong type (no WRONGTYPE check implemented)
+	resp := handler.executeCommand("SREM", [][]byte{[]byte("string_key"), []byte("member")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+}
+
+// TestSetError_WrongTypeForSismember tests SISMEMBER on string key (returns 0, no WRONGTYPE check)
+func TestSetError_WrongTypeForSismember(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+
+	// SISMEMBER returns 0 when called on wrong type (no WRONGTYPE check implemented)
+	resp := handler.executeCommand("SISMEMBER", [][]byte{[]byte("string_key"), []byte("member")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+}
+
+// TestSetError_WrongTypeForSmembers tests SMEMBERS on string key (returns empty array, no WRONGTYPE check)
+func TestSetError_WrongTypeForSmembers(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+
+	// SMEMBERS returns empty array when called on wrong type (no WRONGTYPE check implemented)
+	resp := handler.executeCommand("SMEMBERS", [][]byte{[]byte("string_key")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(arr.Args))
+}
+
+// TestSetError_WrongTypeForScard tests SCARD on string key (returns 0, no WRONGTYPE check)
+func TestSetError_WrongTypeForScard(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+
+	// SCARD returns 0 when called on wrong type (no WRONGTYPE check implemented)
+	resp := handler.executeCommand("SCARD", [][]byte{[]byte("string_key")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+}
