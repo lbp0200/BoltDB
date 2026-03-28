@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/zeebo/assert"
 )
@@ -113,6 +114,111 @@ func TestStringConcurrent_AppendRace(t *testing.T) {
 	finalLen, err := testClient.StrLen(ctx, "append_race_key").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(4+goroutines*appendsPerGoroutine), finalLen)
+}
+
+// TestStringConcurrent_DecrRace tests concurrent DECR on same key
+func TestStringConcurrent_DecrRace(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+	const goroutines = 10
+	const decrsPerGoroutine = 100
+
+	// Initialize counter to a large positive value
+	err := testClient.Set(ctx, "decr_counter", goroutines*decrsPerGoroutine, 0).Err()
+	assert.NoError(t, err)
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < decrsPerGoroutine; j++ {
+				_, _ = testClient.Decr(ctx, "decr_counter").Result()
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Final value should be 0
+	finalVal, err := testClient.Get(ctx, "decr_counter").Int64()
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), finalVal)
+}
+
+// TestStringConcurrent_SetexRace tests concurrent SETEX on same key
+func TestStringConcurrent_SetexRace(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+	const goroutines = 5
+	const opsPerGoroutine = 20
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				testClient.SetEx(ctx, "setex_concurrent_key", fmt.Sprintf("value%d_%d", idx, j), 10*time.Second)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Key should exist with some value
+	val, err := testClient.Get(ctx, "setex_concurrent_key").Result()
+	assert.NoError(t, err)
+	assert.True(t, len(val) > 0)
+}
+
+// TestStringConcurrent_GetrangeSetrangeRace tests concurrent GETRANGE and SETRANGE
+func TestStringConcurrent_GetrangeSetrangeRace(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+	const goroutines = 5
+	const opsPerGoroutine = 50
+
+	// Initialize string
+	testClient.Set(ctx, "range_race_key", "abcdefghij", 0)
+
+	var wg sync.WaitGroup
+
+	// SETRANGE goroutines
+	for i := 0; i < goroutines/2; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				offset := int64(j % 10)
+				testClient.SetRange(ctx, "range_race_key", offset, fmt.Sprintf("%d", idx))
+			}
+		}(i)
+	}
+
+	// GETRANGE goroutines
+	for i := 0; i < goroutines/2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				testClient.GetRange(ctx, "range_race_key", 0, -1)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Key should still be a valid string
+	val, err := testClient.Get(ctx, "range_race_key").Result()
+	assert.NoError(t, err)
+	assert.Equal(t, 10, len(val))
 }
 
 // TestListConcurrent_PushPopRace tests concurrent LPUSH and LPOP
