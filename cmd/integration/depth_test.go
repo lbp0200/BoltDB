@@ -798,3 +798,43 @@ func TestReplicationError_AckWithoutOffset(t *testing.T) {
 	assert.Error(t, err)
 	assert.True(t, strings.Contains(err.Error(), "ERR"))
 }
+
+// TestSentinelConcurrent_InfoReplicationRace tests concurrent INFO replication operations
+func TestSentinelConcurrent_InfoReplicationRace(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+	const goroutines = 10
+	const opsPerGoroutine = 100
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				testClient.Do(ctx, "INFO", "replication")
+			}
+		}()
+	}
+
+	wg.Wait()
+	// No crash is the expected outcome
+}
+
+// TestSentinelError_InfoInvalidSection tests INFO with invalid section returns empty or error
+func TestSentinelError_InfoInvalidSection(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+
+	// INFO with invalid section should return empty or valid response (not crash)
+	result, err := testClient.Do(ctx, "INFO", "invalid_section").Result()
+	// Redis returns empty section, we may do the same
+	if err == nil {
+		// Expected - empty or partial response
+		assert.True(t, result != nil)
+	}
+}
