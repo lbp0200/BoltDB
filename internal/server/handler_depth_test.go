@@ -407,3 +407,151 @@ func TestStringBoundary_SetrangeExtend(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "hello world", string(*bs))
 }
+
+// TestListBoundary_LinsertBefore tests LINSERT BEFORE first element
+func TestListBoundary_LinsertBefore(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.Db.RPush("linsert_key", "first", "second")
+
+	// LINSERT BEFORE first element (position 0)
+	resp := handler.executeCommand("LINSERT", [][]byte{[]byte("linsert_key"), []byte("BEFORE"), []byte("first"), []byte("new_first")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// Verify list length increased
+	lenResp := handler.executeCommand("LLEN", [][]byte{[]byte("linsert_key")}, "127.0.0.1:12345")
+	lenInt, ok := lenResp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(3), int64(*lenInt))
+}
+
+// TestListBoundary_LinsertAfter tests LINSERT AFTER an element
+func TestListBoundary_LinsertAfter(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.Db.RPush("linsert_key", "first", "second")
+
+	// LINSERT AFTER first element
+	resp := handler.executeCommand("LINSERT", [][]byte{[]byte("linsert_key"), []byte("AFTER"), []byte("first"), []byte("new_second")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+}
+
+// TestListBoundary_LinsertNotFound tests LINSERT when pivot not found
+func TestListBoundary_LinsertNotFound(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("RPUSH", [][]byte{[]byte("linsert_key"), []byte("first"), []byte("second")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("LINSERT", [][]byte{[]byte("linsert_key"), []byte("BEFORE"), []byte("nonexistent"), []byte("new_val")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+}
+
+// TestListBoundary_LposBasic tests LPOS returns correct index
+func TestListBoundary_LposBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("RPUSH", [][]byte{[]byte("lpos_key"), []byte("a"), []byte("b"), []byte("c"), []byte("b")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("LPOS", [][]byte{[]byte("lpos_key"), []byte("b")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+}
+
+// TestListBoundary_LposRank tests LPOS with RANK returns nth occurrence
+func TestListBoundary_LposRank(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("RPUSH", [][]byte{[]byte("lpos_key"), []byte("a"), []byte("b"), []byte("c"), []byte("b")}, "127.0.0.1:12345")
+
+	// LPOS with RANK returns an array of positions
+	resp := handler.executeCommand("LPOS", [][]byte{[]byte("lpos_key"), []byte("b"), []byte("RANK"), []byte("2")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(arr.Args))
+	assert.Equal(t, "3", string(arr.Args[0]))
+}
+
+// TestListBoundary_LmoveBasic tests LMOVE from one list to another
+func TestListBoundary_LmoveBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("RPUSH", [][]byte{[]byte("source_list"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("LMOVE", [][]byte{[]byte("source_list"), []byte("dest_list"), []byte("RIGHT"), []byte("LEFT")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "c", string(*bs))
+
+	srcResp := handler.executeCommand("LRANGE", [][]byte{[]byte("source_list"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
+	srcArr, ok := srcResp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(srcArr.Args))
+
+	dstResp := handler.executeCommand("LRANGE", [][]byte{[]byte("dest_list"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
+	dstArr, ok := dstResp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(dstArr.Args))
+}
+
+// TestListBoundary_LpushxBasic tests LPUSHX adds to existing list only
+func TestListBoundary_LpushxBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("RPUSH", [][]byte{[]byte("lpushx_key"), []byte("first")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("LPUSHX", [][]byte{[]byte("lpushx_key"), []byte("pushed")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(2), int64(*integer))
+}
+
+// TestListBoundary_LpushxNotExist tests LPUSHX does nothing if key doesn't exist
+func TestListBoundary_LpushxNotExist(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand("LPUSHX", [][]byte{[]byte("nonexistent_key"), []byte("value")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+}
+
+// TestListBoundary_RpushxBasic tests RPUSHX adds to existing list only
+func TestListBoundary_RpushxBasic(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("RPUSH", [][]byte{[]byte("rpushx_key"), []byte("first")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("RPUSHX", [][]byte{[]byte("rpushx_key"), []byte("pushed")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(2), int64(*integer))
+}
+
+// TestListError_WrongTypeForLinsert tests LINSERT on wrong type
+func TestListError_WrongTypeForLinsert(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+	resp := handler.executeCommand("LINSERT", [][]byte{[]byte("string_key"), []byte("BEFORE"), []byte("pivot"), []byte("val")}, "127.0.0.1:12345")
+	// LINSERT returns 0 when key exists but is not a list (no error, just 0 count)
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+}
