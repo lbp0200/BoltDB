@@ -683,3 +683,46 @@ func TestSortedSetError_WrongTypeIntegration(t *testing.T) {
 	assert.Error(t, err)
 	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
 }
+
+// TestClusterConcurrent_ClusterCallsRace tests concurrent CLUSTER command calls
+func TestClusterConcurrent_ClusterCallsRace(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+	const goroutines = 10
+	const opsPerGoroutine = 100
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				// CLUSTER INFO returns error in non-cluster mode - verify no crash
+				_, err := testClient.Do(ctx, "CLUSTER", "INFO").Result()
+				assert.True(t, err != nil) // Should return error, not crash
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+// TestClusterError_ClusterDisabledIntegration tests CLUSTER commands return error when disabled
+func TestClusterError_ClusterDisabledIntegration(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+
+	// CLUSTER INFO should return error when cluster is disabled
+	_, err := testClient.Do(ctx, "CLUSTER", "INFO").Result()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "cluster support disabled"))
+
+	// CLUSTER KEYSLOT should also return error
+	_, err = testClient.Do(ctx, "CLUSTER", "KEYSLOT", "mykey").Result()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "cluster support disabled"))
+}
