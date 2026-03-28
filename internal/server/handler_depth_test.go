@@ -256,3 +256,52 @@ func TestListError_InvalidIndex(t *testing.T) {
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "index out of range"))
 }
+
+// TestStringBoundary_DecrOverflow tests DECR at int64 min boundary
+func TestStringBoundary_DecrOverflow(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Set to min int64 + 1
+	handler.executeCommand("SET", [][]byte{[]byte("min_counter"), []byte("-9223372036854775807")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand("DECR", [][]byte{[]byte("min_counter")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(-9223372036854775808), int64(*integer))
+
+	// Next DECR should overflow
+	resp = handler.executeCommand("DECR", [][]byte{[]byte("min_counter")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "overflow"))
+}
+
+// TestStringBoundary_GetrangeFullString tests GETRANGE with full range
+func TestStringBoundary_GetrangeFullString(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("range_key"), []byte("hello")}, "127.0.0.1:12345")
+
+	// Get full string with 0 to -1
+	resp := handler.executeCommand("GETRANGE", [][]byte{[]byte("range_key"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "hello", string(*bs))
+}
+
+// TestStringBoundary_GetrangeOutOfBounds tests GETRANGE beyond string bounds
+func TestStringBoundary_GetrangeOutOfBounds(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand("SET", [][]byte{[]byte("short_key"), []byte("hi")}, "127.0.0.1:12345")
+
+	// Request more than exists — should return what is available
+	resp := handler.executeCommand("GETRANGE", [][]byte{[]byte("short_key"), []byte("0"), []byte("100")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "hi", string(*bs))
+}
+
