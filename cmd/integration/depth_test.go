@@ -544,3 +544,39 @@ func TestSetConcurrent_SismemberRace(t *testing.T) {
 	isMember, _ := testClient.SIsMember(ctx, "race_set", "target_member").Result()
 	assert.True(t, isMember)
 }
+
+// TestSetError_WrongTypeIntegration tests set commands on wrong types (integration level)
+func TestSetError_WrongTypeIntegration(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+
+	// Create a string key
+	testClient.Set(ctx, "string_key", "value", 0)
+
+	// SADD on string should return WRONGTYPE
+	err := testClient.SAdd(ctx, "string_key", "member").Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	// SREM on string should return WRONGTYPE
+	err = testClient.SRem(ctx, "string_key", "member").Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	// SISMEMBER on string should return WRONGTYPE
+	err = testClient.SIsMember(ctx, "string_key", "member").Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	// SMEMBERS on string should return WRONGTYPE
+	err = testClient.SMembers(ctx, "string_key").Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	// SCARD on string should return WRONGTYPE
+	err = testClient.SCard(ctx, "string_key").Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+}
