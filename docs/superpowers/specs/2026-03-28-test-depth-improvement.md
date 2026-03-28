@@ -4,7 +4,7 @@
 
 **Goal:** 系统性提升测试深度，覆盖边界条件、错误处理、并发安全三类场景，减少 bug 漏过。
 
-**Architecture:** 在现有测试文件基础上增加三类深度测试函数，复用现有 fixture 和测试框架。
+**Strategy:** Incremental by module — add boundary, error, and concurrent tests module-by-module, building on the work already started in March 28 session.
 
 ---
 
@@ -14,6 +14,28 @@
 - 边界条件未充分测试（空值、极限值、临界长度）
 - 错误处理路径未充分验证（类型错误、参数错误、状态错误）
 - 并发安全场景缺失（多 client 竞争、事务冲突）
+
+### Gap Analysis Summary (2026-03-28)
+
+**Commands with no integration test coverage:**
+- String: DECR, DECRBY, GETRANGE, SETBIT, GETBIT, SETRANGE, SETEX, PSETEX
+- Key: PERSIST, PEXPIRE, PEXPIREAT, PTTL, TOUCH
+- List: LINSERT, LPOS, LMOVE, LPUSHX, RPUSHX
+- Hash: HMSET, HINCRBY, HINCRBYFLOAT
+- Set: SISMEMBER, SPOP, SRANDMEMBER, SMOVE, SDIFF, SDIFFSTORE, SSCAN
+- SortedSet: ZMSCORE, ZUNIONSTORE, ZINTERSTORE, ZDIFFSTORE
+- Server: FLUSHALL, SAVE
+- Cluster: ADDSLOTS, SETSLOT, FORGET, REPLICATE (only basic redirect tested)
+
+**Error scenarios not tested:**
+- WRONGTYPE errors (string cmd on hash key, etc.)
+- Invalid argument types (INCRBY on non-integer, ZADD with NaN)
+- Index out of bounds (LSET, LINDEX, LRANGE)
+- Non-existent key operations
+- Transaction error paths (EXEC outside MULTI, etc.)
+
+**Reliability:** Excellent — no flaky tests detected
+**Speed:** Good — full suite in ~40s
 
 ---
 
@@ -29,14 +51,6 @@
 
 **命名约定：** `Test<Type>Boundary_<Scenario>`
 
-```go
-func TestStringBoundary_EmptyKey()
-func TestStringBoundary_MaxValueSize()
-func TestListBoundary_EmptyListPop()
-func TestListBoundary_OverflowIndex()
-func TestIncrBoundary_MaxInt64()
-```
-
 ### 2. 错误处理测试 (Error)
 
 测试命令在错误参数或错误状态下的行为：
@@ -45,13 +59,6 @@ func TestIncrBoundary_MaxInt64()
 - 状态错误：已删除的 key、已关闭的连接、过期资源
 
 **命名约定：** `Test<Type>Error_<Scenario>`
-
-```go
-func TestStringError_TypeMismatch()
-func TestHashError_InvalidField()
-func TestListError_InvalidIndex()
-func TestCommandError_WrongNumberOfArguments()
-```
 
 ### 3. 并发安全测试 (Concurrent)
 
@@ -63,190 +70,52 @@ func TestCommandError_WrongNumberOfArguments()
 
 **命名约定：** `Test<Type>Concurrent_<Scenario>`
 
-```go
-func TestStringConcurrent_ReadWriteConflict()
-func TestListConcurrent_PushPopRace()
-func TestIncrConcurrent_ConcurrentIncrement()
-func TestTransactionConcurrent_WatchConflict()
-```
+---
+
+## Implementation Phases
+
+| Phase | Module | Untested Commands | Priority |
+|-------|--------|-------------------|----------|
+| 1 | String | DECR, DECRBY, GETRANGE, SETBIT, GETBIT, SETRANGE, SETEX, PSETEX | High |
+| 2 | Key | PERSIST, PEXPIRE, PEXPIREAT, PTTL, TOUCH, FLUSHALL, SAVE | High |
+| 3 | List | LINSERT, LPOS, LMOVE, LPUSHX, RPUSHX | Medium |
+| 4 | Hash | HMSET, HINCRBY, HINCRBYFLOAT | Medium |
+| 5 | Set | SISMEMBER, SPOP, SRANDMEMBER, SMOVE, SDIFF, SDIFFSTORE, SSCAN | Medium |
+| 6 | SortedSet | ZMSCORE, ZUNIONSTORE, ZINTERSTORE, ZDIFFSTORE | Medium |
+| 7 | Cluster | ADDSLOTS, SETSLOT, FORGET, REPLICATE edge cases | Low |
+| 8 | Replication | PSYNC edge cases, full sync edge cases | Low |
+
+**Error path coverage per phase:**
+- WRONGTYPE errors for each data type
+- Invalid argument type errors
+- Index out of bounds
+- Non-existent key edge cases
 
 ---
 
 ## Test File Structure
 
-在现有测试文件基础上扩展，每类测试独立函数：
-
 ```
-internal/server/handler_commands_test.go
-├── TestStringCommands           (现有)
-├── TestStringBoundary_EmptyKey  (新增)
-├── TestStringBoundary_MaxSize   (新增)
-├── TestStringError_TypeMismatch  (新增)
-└── TestStringConcurrent_Race    (新增)
+cmd/integration/depth_test.go
+├── Concurrent tests (already started)
+│   ├── TestStringConcurrent_ReadWriteConflict
+│   ├── TestStringConcurrent_ConcurrentIncrement
+│   ├── TestStringConcurrent_AppendRace
+│   ├── TestListConcurrent_PushPopRace
+│   ├── TestListConcurrent_MultipleBlockingPops
+│   └── TestHashConcurrent_HgetHsetRace
+└── [Boundary + Error tests to be added per phase]
 
-internal/server/handler_coverage_test.go
-└── [继续添加其他命令的深度测试]
-
-cmd/integration/integration_test.go
-└── [并发测试使用真实 server + go-redis 多 client]
+internal/server/handler_*_test.go
+├── Unit-level boundary tests
+└── Unit-level error tests
 ```
-
----
-
-## Implementation Order
-
-按模块优先级逐步实现：
-
-| 阶段 | 模块 | 原因 |
-|------|------|------|
-| 1 | String | 最常用，边界清晰 |
-| 2 | List | 操作复杂，边界多 |
-| 3 | Hash | 字段操作边界 |
-| 4 | Set | 集合操作边界 |
-| 5 | SortedSet | 分值边界 |
-| 6 | Cluster | 槽位边界、redirect |
-| 7 | Replication | 主从同步边界 |
-| 8 | Sentinel | 故障转移边界 |
-
----
-
-## Concurrency Test Patterns
-
-### 多 client 并发模式
-
-```go
-func TestStringConcurrent_ReadWriteConflict(t *testing.T) {
-    setupTestServer(t)
-    defer teardownTestServer(t)
-
-    var wg sync.WaitGroup
-    const numGoroutines = 10
-
-    // 写操作
-    wg.Add(1)
-    go func() {
-        defer wg.Done()
-        for i := 0; i < 100; i++ {
-            testClient.Set(ctx, "concurrent_key", i, 0)
-        }
-    }()
-
-    // 读操作
-    for i := 0; i < numGoroutines; i++ {
-        wg.Add(1)
-        go func() {
-            defer wg.Done()
-            for j := 0; j < 100; j++ {
-                testClient.Get(ctx, "concurrent_key")
-            }
-        }()
-    }
-
-    wg.Wait()
-    // 验证最终值一致
-}
-```
-
-### 竞态条件模式
-
-```go
-func TestKeyExpiredConcurrent_AccessDuringExpiry(t *testing.T) {
-    setupTestServer(t)
-    defer teardownTestServer(t)
-
-    // 设置 1ms 过期的 key
-    testClient.Set(ctx, "expiring_key", "value", 1*time.Millisecond)
-
-    var wg sync.WaitGroup
-    done := make(chan bool)
-
-    // 持续读取直到过期
-    wg.Add(1)
-    go func() {
-        defer wg.Done()
-        for i := 0; i < 1000; i++ {
-            testClient.Get(ctx, "expiring_key")
-            select {
-            case <-done:
-                return
-            default:
-            }
-        }
-    }()
-
-    // 等待过期
-    time.Sleep(10 * time.Millisecond)
-    close(done)
-    wg.Wait()
-}
-```
-
----
-
-## Boundary Test Patterns
-
-### 极限值测试
-
-```go
-func TestStringBoundary_MaxValueSize(t *testing.T) {
-    // Redis 最大 value 大小 512MB
-    maxSize := 512 * 1024 * 1024
-    largeValue := make([]byte, maxSize)
-
-    err := testClient.Set(ctx, "max_value", largeValue, 0).Err()
-    assert.NoError(t, err)
-
-    val, err := testClient.Get(ctx, "max_value").Bytes()
-    assert.NoError(t, err)
-    assert.Equal(t, maxSize, len(val))
-}
-```
-
-### 空集合边界
-
-```go
-func TestListBoundary_EmptyListPop(t *testing.T) {
-    // 已有 key 但不是 list 类型
-    testClient.Set(ctx, "not_a_list", "value", 0)
-
-    // LPOP 空 list 应返回 nil
-    result, err := testClient.LPop(ctx, "nonexistent_list").Result()
-    assert.Equal(t, redis.Nil, err)
-    assert.Empty(t, result)
-}
-```
-
----
-
-## Error Test Patterns
-
-### 类型错误
-
-```go
-func TestStringError_TypeMismatch(t *testing.T) {
-    // 设置 hash 类型
-    testClient.HSet(ctx, "myhash", "field", "value")
-
-    // 对 hash key 使用 string 命令应返回错误
-    err := testClient.Append(ctx, "myhash", "extra").Err()
-    assert.Error(t, err)
-    assert.Contains(t, err.Error(), "WRONGTYPE")
-}
-```
-
----
-
-## Reuse of Existing Fixtures
-
-- `internal/server/handler_test.go` 的 `setupTestHandler()` — 单元测试用
-- `cmd/integration/integration_test.go` 的 `setupTestServer()` / `teardownTestServer()` — 集成测试用
-- 并发测试使用全局 `testClient` 或创建额外 client
 
 ---
 
 ## Commit Strategy
 
-每完成一个模块 commit 一次，格式：
+每完成一个 phase commit 一次，格式：
 ```
 test: add depth tests for <module> (boundary + error + concurrent)
 ```
@@ -259,4 +128,5 @@ test: add depth tests for <module> (boundary + error + concurrent)
 2. 错误处理测试覆盖所有命令的类型/参数错误路径
 3. 并发测试覆盖高频竞态场景
 4. 无新增 flaky test（使用适当同步机制）
-5. 测试执行时间不超过现有时间的 2x
+5. 测试执行时间不超过现有时间的 2x（≤ 80s）
+6. 所有 40+  untested commands get integration test coverage
