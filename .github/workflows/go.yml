@@ -224,7 +224,7 @@ jobs:
           echo '  service do' >> Formula/boltdb.rb
           echo '    run bin/"boltdb-run"' >> Formula/boltdb.rb
           echo '    keep_alive true' >> Formula/boltdb.rb
-          echo '    working_dir data_dir' >> Formula/boltdb.rb
+          echo '    working_dir @formula.data_dir' >> Formula/boltdb.rb
           echo '  end' >> Formula/boltdb.rb
           echo '' >> Formula/boltdb.rb
           echo '  test do' >> Formula/boltdb.rb
