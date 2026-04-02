@@ -62,7 +62,7 @@ type BotreonStore struct {
 
 // NewBotreonStore 创建新的BotreonStore实例
 func NewBotreonStore(path string) (*BotreonStore, error) {
-	return NewBotreonStoreWithCompression(path, CompressionLZ4)
+	return NewBotreonStoreWithCompression(path, CompressionSnappy)
 }
 
 // NewBotreonStoreWithCompression 创建新的BotreonStore实例，指定压缩算法

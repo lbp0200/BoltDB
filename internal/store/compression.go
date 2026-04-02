@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
+	"github.com/golang/snappy"
 	"github.com/klauspost/compress/zstd"
 	"github.com/lbp0200/BoltDB/internal/logger"
 	lz4 "github.com/pierrec/lz4/v4"
@@ -15,15 +16,17 @@ import (
 type CompressionType string
 
 const (
-	CompressionNone CompressionType = "none" // 不压缩
-	CompressionLZ4  CompressionType = "lz4"  // LZ4压缩（默认）
-	CompressionZSTD CompressionType = "zstd" // ZSTD压缩
+	CompressionNone  CompressionType = "none"   // 不压缩
+	CompressionLZ4   CompressionType = "lz4"    // LZ4压缩
+	CompressionZSTD  CompressionType = "zstd"  // ZSTD压缩
+	CompressionSnappy CompressionType = "snappy" // Snappy压缩（默认）
 )
 
 // compressionMagic 压缩数据的前缀魔数，用于识别压缩算法
 var (
-	compressionMagicLZ4  = []byte{0x4C, 0x5A, 0x34, 0x01} // "LZ4\01"
-	compressionMagicZSTD = []byte{0x5A, 0x53, 0x54, 0x44} // "ZSTD"
+	compressionMagicLZ4    = []byte{0x4C, 0x5A, 0x34, 0x01} // "LZ4\01"
+	compressionMagicZSTD   = []byte{0x5A, 0x53, 0x54, 0x44} // "ZSTD"
+	compressionMagicSnappy = []byte{0x53, 0x4E, 0x41, 0x50} // "SNAP"
 )
 
 // compressData 压缩数据
@@ -37,6 +40,8 @@ func compressData(data []byte, compressionType CompressionType) ([]byte, error) 
 		return compressLZ4(data)
 	case CompressionZSTD:
 		return compressZSTD(data)
+	case CompressionSnappy:
+		return compressSnappy(data)
 	default:
 		return nil, fmt.Errorf("unsupported compression type: %s", compressionType)
 	}
@@ -56,6 +61,9 @@ func decompressData(data []byte) ([]byte, error) {
 		}
 		if bytes.HasPrefix(data, compressionMagicZSTD) {
 			return decompressZSTD(data[len(compressionMagicZSTD):])
+		}
+		if bytes.HasPrefix(data, compressionMagicSnappy) {
+			return decompressSnappy(data[len(compressionMagicSnappy):])
 		}
 	}
 
@@ -133,6 +141,28 @@ func decompressZSTD(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("zstd decompress error: %w", err)
 	}
 	
+	return decompressed, nil
+}
+
+// compressSnappy 使用Snappy压缩
+func compressSnappy(data []byte) ([]byte, error) {
+	compressed := snappy.Encode(nil, data)
+
+	// 添加压缩标记
+	result := make([]byte, len(compressionMagicSnappy)+len(compressed))
+	copy(result, compressionMagicSnappy)
+	copy(result[len(compressionMagicSnappy):], compressed)
+
+	return result, nil
+}
+
+// decompressSnappy 使用Snappy解压缩
+func decompressSnappy(data []byte) ([]byte, error) {
+	decompressed, err := snappy.Decode(nil, data)
+	if err != nil {
+		return nil, fmt.Errorf("snappy decompress error: %w", err)
+	}
+
 	return decompressed, nil
 }
 

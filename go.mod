@@ -4,6 +4,7 @@ go 1.25.7
 
 require (
 	github.com/dgraph-io/badger/v4 v4.8.0
+	github.com/golang/snappy v1.0.0
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.18.1
 	github.com/pierrec/lz4/v4 v4.1.21

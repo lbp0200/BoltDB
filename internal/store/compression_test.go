@@ -1,11 +1,136 @@
 package store
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/zeebo/assert"
 )
+
+// BenchmarkCompression 对比各压缩算法的性能
+func BenchmarkCompression(b *testing.B) {
+	// 使用较大的数据块进行压缩测试
+	largeValue := strings.Repeat("This is a test string that will be compressed. ", 100)
+	data := []byte(largeValue)
+
+	testCases := []struct {
+		name      string
+		algo      CompressionType
+	}{
+		{"LZ4", CompressionLZ4},
+		{"Snappy", CompressionSnappy},
+		{"ZSTD", CompressionZSTD},
+	}
+
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.Run("Compress", func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					compressed, err := compressData(data, tc.algo)
+					if err != nil {
+						b.Fatal(err)
+					}
+					// 防止编译器优化
+					_ = len(compressed)
+				}
+			})
+
+			compressed, err := compressData(data, tc.algo)
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			b.Run("Decompress", func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					decompressed, err := decompressData(compressed)
+					if err != nil {
+						b.Fatal(err)
+					}
+					// 防止编译器优化
+					_ = len(decompressed)
+				}
+			})
+		})
+	}
+}
+
+// BenchmarkCompressionRatio 对比各算法的压缩率
+func BenchmarkCompressionRatio(b *testing.B) {
+	testCases := []struct {
+		name string
+		algo CompressionType
+	}{
+		{"LZ4", CompressionLZ4},
+		{"Snappy", CompressionSnappy},
+		{"ZSTD", CompressionZSTD},
+	}
+
+	dataSizes := []int{1024, 10240, 102400} // 1KB, 10KB, 100KB
+
+	for _, size := range dataSizes {
+		// 生成不同大小的测试数据
+		var data []byte
+		for i := 0; i < size; i++ {
+			data = append(data, byte('A'+i%26))
+		}
+
+		for _, tc := range testCases {
+			tc := tc
+			size := size
+			b.Run(fmt.Sprintf("%s-%dB", tc.name, size), func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					compressed, err := compressData(data, tc.algo)
+					if err != nil {
+						b.Fatal(err)
+					}
+					ratio := float64(len(compressed)) / float64(len(data))
+					// 防止编译器优化
+					_ = ratio
+				}
+			})
+		}
+	}
+}
+
+// BenchmarkStoreCompression 带存储的压缩性能测试
+func BenchmarkStoreCompression(b *testing.B) {
+	testCases := []struct {
+		name string
+		algo CompressionType
+	}{
+		{"LZ4", CompressionLZ4},
+		{"Snappy", CompressionSnappy},
+		{"ZSTD", CompressionZSTD},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		b.Run(tc.name, func(b *testing.B) {
+			dbPath := b.TempDir()
+			store, err := NewBotreonStoreWithCompression(dbPath, tc.algo)
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer store.Close()
+
+			largeValue := strings.Repeat("This is a test string that will be compressed. ", 100)
+			key := "bench_key"
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				err := store.Set(key, largeValue)
+				if err != nil {
+					b.Fatal(err)
+				}
+				_, err = store.Get(key)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
 
 func TestCompressionLZ4(t *testing.T) {
 	dbPath := t.TempDir()
@@ -65,6 +190,17 @@ func TestCompressionNone(t *testing.T) {
 	value, err := store.Get(key)
 	assert.NoError(t, err)
 	assert.Equal(t, largeValue, value)
+}
+
+func TestCompressionDefaultIsSnappy(t *testing.T) {
+	dbPath := t.TempDir()
+	// 不指定压缩算法，使用默认
+	store, err := NewBotreonStore(dbPath)
+	assert.NoError(t, err)
+	defer store.Close()
+
+	// 验证默认压缩算法是 Snappy
+	assert.Equal(t, CompressionSnappy, store.GetCompression())
 }
 
 func TestCompressionSmallData(t *testing.T) {
@@ -132,6 +268,26 @@ func TestCompressionBackwardCompatibility(t *testing.T) {
 	value2, err := store2.Get("key2")
 	assert.NoError(t, err)
 	assert.True(t, len(value2) > 0)
+}
+
+func TestCompressionSnappy(t *testing.T) {
+	dbPath := t.TempDir()
+	store, err := NewBotreonStoreWithCompression(dbPath, CompressionSnappy)
+	assert.NoError(t, err)
+	defer store.Close()
+
+	// 测试大字符串压缩
+	largeValue := strings.Repeat("This is a test string that will be compressed. ", 100)
+	key := "large_key"
+
+	// 写入
+	err = store.Set(key, largeValue)
+	assert.NoError(t, err)
+
+	// 读取
+	value, err := store.Get(key)
+	assert.NoError(t, err)
+	assert.Equal(t, largeValue, value)
 }
 
 func TestCompressionSwitch(t *testing.T) {
