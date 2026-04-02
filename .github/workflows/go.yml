@@ -206,11 +206,14 @@ jobs:
           echo '    end' >> Formula/boltdb.rb
           echo '  end' >> Formula/boltdb.rb
           echo '' >> Formula/boltdb.rb
+          echo '  def data_dir' >> Formula/boltdb.rb
+          echo '    OS.mac? ? "#{ENV["HOME"]}/Library/Application Support/boltdb" : "#{ENV["HOME"]}/.local/share/boltdb"' >> Formula/boltdb.rb
+          echo '  end' >> Formula/boltdb.rb
+          echo '' >> Formula/boltdb.rb
           echo '  def install' >> Formula/boltdb.rb
           echo '    arch = Hardware::CPU.arm? ? "arm64" : "amd64"' >> Formula/boltdb.rb
           echo '    os = OS.mac? ? "darwin" : "linux"' >> Formula/boltdb.rb
           echo '    bin.install "boltDB-v#{version}-#{os}-#{arch}" => "boltdb"' >> Formula/boltdb.rb
-          echo '    data_dir = OS.mac? ? "#{ENV["HOME"]}/Library/Application Support/boltdb" : "#{ENV["HOME"]}/.local/share/boltdb"' >> Formula/boltdb.rb
           echo "    (bin/\"boltdb-run\").write <<~EOS" >> Formula/boltdb.rb
           echo '      #!/bin/bash' >> Formula/boltdb.rb
           echo '      exec "#{bin}/boltdb" -dir "#{data_dir}" -skip-startup-cleanup' >> Formula/boltdb.rb
