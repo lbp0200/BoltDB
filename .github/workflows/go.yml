@@ -210,9 +210,10 @@ jobs:
           echo '    arch = Hardware::CPU.arm? ? "arm64" : "amd64"' >> Formula/boltdb.rb
           echo '    os = OS.mac? ? "darwin" : "linux"' >> Formula/boltdb.rb
           echo '    bin.install "boltDB-v#{version}-#{os}-#{arch}" => "boltdb"' >> Formula/boltdb.rb
+          echo '    data_dir = OS.mac? ? "#{ENV["HOME"]}/Library/Application Support/boltdb" : "#{ENV["HOME"]}/.local/share/boltdb"' >> Formula/boltdb.rb
           echo "    (bin/\"boltdb-run\").write <<~EOS" >> Formula/boltdb.rb
           echo '      #!/bin/bash' >> Formula/boltdb.rb
-          echo '      exec "#{bin}/boltdb" -dir "<%= OS.mac? ? '\''#{ENV["HOME"]}/Library/Application Support/boltdb'\'' : '\''#{ENV["HOME"]}/.local/share/boltdb'\'' %>" -skip-startup-cleanup' >> Formula/boltdb.rb
+          echo '      exec "#{bin}/boltdb" -dir "#{data_dir}" -skip-startup-cleanup' >> Formula/boltdb.rb
           echo '    EOS' >> Formula/boltdb.rb
           echo '    chmod "+x", bin/"boltdb-run"' >> Formula/boltdb.rb
           echo '  end' >> Formula/boltdb.rb
@@ -220,7 +221,7 @@ jobs:
           echo '  service do' >> Formula/boltdb.rb
           echo '    run bin/"boltdb-run"' >> Formula/boltdb.rb
           echo '    keep_alive true' >> Formula/boltdb.rb
-          echo '    working_dir "<%= OS.mac? ? '\''#{ENV["HOME"]}/Library/Application Support/boltdb'\'' : '\''#{ENV["HOME"]}/.local/share/boltdb'\'' %>"' >> Formula/boltdb.rb
+          echo '    working_dir data_dir' >> Formula/boltdb.rb
           echo '  end' >> Formula/boltdb.rb
           echo '' >> Formula/boltdb.rb
           echo '  test do' >> Formula/boltdb.rb
