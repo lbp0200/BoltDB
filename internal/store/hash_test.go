@@ -7,9 +7,8 @@ import (
 )
 
 func TestHSet(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "user:1"
 
@@ -38,9 +37,8 @@ func TestHSet(t *testing.T) {
 }
 
 func TestHGet(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "user:1"
 
@@ -60,9 +58,8 @@ func TestHGet(t *testing.T) {
 }
 
 func TestHDel(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "user:1"
 
@@ -96,9 +93,8 @@ func TestHDel(t *testing.T) {
 }
 
 func TestHLen(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "user:1"
 
@@ -120,9 +116,8 @@ func TestHLen(t *testing.T) {
 }
 
 func TestHGetAll(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "user:1"
 
@@ -146,9 +141,8 @@ func TestHGetAll(t *testing.T) {
 }
 
 func TestHExists(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "user:1"
 
@@ -172,9 +166,8 @@ func TestHExists(t *testing.T) {
 }
 
 func TestHKeys(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "user:1"
 
@@ -204,9 +197,8 @@ func TestHKeys(t *testing.T) {
 }
 
 func TestHVals(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "user:1"
 
@@ -233,9 +225,8 @@ func TestHVals(t *testing.T) {
 }
 
 func TestHMSet(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "user:1"
 
@@ -273,9 +264,8 @@ func TestHMSet(t *testing.T) {
 }
 
 func TestHMGet(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "user:1"
 
@@ -300,9 +290,8 @@ func TestHMGet(t *testing.T) {
 }
 
 func TestHSetNX(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "user:1"
 
@@ -331,9 +320,8 @@ func TestHSetNX(t *testing.T) {
 }
 
 func TestHIncrBy(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "counter"
 
@@ -363,9 +351,8 @@ func TestHIncrBy(t *testing.T) {
 }
 
 func TestHIncrByFloat(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "counter"
 
@@ -395,9 +382,8 @@ func TestHIncrByFloat(t *testing.T) {
 }
 
 func TestHStrLen(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "user:1"
 
@@ -426,9 +412,8 @@ func TestHStrLen(t *testing.T) {
 }
 
 func TestHashEdgeCases(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "test"
 
@@ -457,9 +442,8 @@ func TestHashEdgeCases(t *testing.T) {
 }
 
 func TestHashOperations(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "user:1"
 
@@ -506,7 +490,7 @@ func TestHashOperations(t *testing.T) {
 // TestHRandField 测试 HRANDFIELD 命令
 func TestHRandField(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Create hash
 	store.HSet("myhash", "field1", "value1")
@@ -539,7 +523,7 @@ func TestHRandField(t *testing.T) {
 // TestHGetAllFields tests the hGetAllFields helper
 func TestHGetAllFields(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Create hash
 	store.HSet("myhash", "field1", "value1")
@@ -561,7 +545,7 @@ func TestHGetAllFields(t *testing.T) {
 // TestHSetWrongType tests that HSet returns ErrWrongType when key exists with different type
 func TestHSetWrongType(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Create a string key first
 	err := store.Set("mystring", "value")

@@ -354,7 +354,8 @@ func (s *BotreonStore) ZRem(zSetName, member string) error {
 		dataKey := sortedSetKeyMember(zSetName, member)
 		item, err := txn.Get(dataKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
-			return ErrMemberNotFound
+			// Redis 规范：ZRem 对不存在的成员返回成功（删除 0 个），不是错误
+			return nil
 		}
 		if err != nil {
 			logger.Logger.Error().Err(err).Str("data_key", string(dataKey)).Msg("ZRem: Failed to get data key")

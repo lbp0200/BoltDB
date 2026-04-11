@@ -9,7 +9,7 @@ import (
 // TestSetAndGet 测试 SET 和 GET 命令
 func TestSetAndGet(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Test SET
 	err := store.Set("key1", "value1")
@@ -29,7 +29,7 @@ func TestSetAndGet(t *testing.T) {
 // TestSetEX 测试 SETEX 命令
 func TestSetEX(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	err := store.SetEX("key1", "value1", 1)
 	assert.NoError(t, err)
@@ -43,7 +43,7 @@ func TestSetEX(t *testing.T) {
 // TestPSETEX 测试 PSETEX 命令
 func TestPSETEX(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 使用较长的TTL以确保在测试期间不会过期
 	err := store.PSETEX("key1", "value1", 10000)
@@ -58,7 +58,7 @@ func TestPSETEX(t *testing.T) {
 // TestSetNX 测试 SETNX 命令
 func TestSetNX(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 第一次设置应该成功
 	success, err := store.SetNX("key1", "value1")
@@ -84,7 +84,7 @@ func TestSetNX(t *testing.T) {
 // TestGetSet 测试 GETSET 命令
 func TestGetSet(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 设置初始值
 	err := store.Set("key1", "oldvalue")
@@ -113,7 +113,7 @@ func TestGetSet(t *testing.T) {
 // TestMGet 测试 MGET 命令
 func TestMGet(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 设置多个键
 	err := store.Set("key1", "value1")
@@ -133,7 +133,7 @@ func TestMGet(t *testing.T) {
 // TestMSet 测试 MSET 命令
 func TestMSet(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 设置多个键值对
 	err := store.MSet("key1", "value1", "key2", "value2", "key3", "value3")
@@ -151,7 +151,7 @@ func TestMSet(t *testing.T) {
 // TestMSetNX 测试 MSETNX 命令
 func TestMSetNX(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 第一次设置应该成功（所有键都不存在）
 	success, err := store.MSetNX("key1", "value1", "key2", "value2")
@@ -179,7 +179,7 @@ func TestMSetNX(t *testing.T) {
 // TestINCR 测试 INCR 命令
 func TestINCR(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 对不存在的键执行 INCR
 	value, err := store.INCR("counter")
@@ -200,7 +200,7 @@ func TestINCR(t *testing.T) {
 // TestINCRBY 测试 INCRBY 命令
 func TestINCRBY(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 设置初始值
 	err := store.Set("counter", "10")
@@ -220,7 +220,7 @@ func TestINCRBY(t *testing.T) {
 // TestDECR 测试 DECR 命令
 func TestDECR(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 设置初始值
 	err := store.Set("counter", "10")
@@ -240,7 +240,7 @@ func TestDECR(t *testing.T) {
 // TestDECRBY 测试 DECRBY 命令
 func TestDECRBY(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 设置初始值
 	err := store.Set("counter", "10")
@@ -260,7 +260,7 @@ func TestDECRBY(t *testing.T) {
 // TestINCRBYFLOAT 测试 INCRBYFLOAT 命令
 func TestINCRBYFLOAT(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 设置初始值
 	err := store.Set("float", "10.5")
@@ -286,7 +286,7 @@ func TestINCRBYFLOAT(t *testing.T) {
 // TestAPPEND 测试 APPEND 命令
 func TestAPPEND(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 设置初始值
 	err := store.Set("key1", "Hello")
@@ -315,7 +315,7 @@ func TestAPPEND(t *testing.T) {
 // TestStrLen 测试 STRLEN 命令
 func TestStrLen(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 设置值
 	err := store.Set("key1", "Hello")
@@ -335,7 +335,7 @@ func TestStrLen(t *testing.T) {
 // TestGetRange 测试 GETRANGE 命令
 func TestGetRange(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 设置值
 	err := store.Set("key1", "Hello World")
@@ -365,7 +365,7 @@ func TestGetRange(t *testing.T) {
 // TestSetRange 测试 SETRANGE 命令
 func TestSetRange(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 设置初始值
 	err := store.Set("key1", "Hello World")
@@ -394,7 +394,7 @@ func TestSetRange(t *testing.T) {
 // TestGetBit 测试 GETBIT 命令
 func TestGetBit(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 设置值 "A" = 0x41 = 01000001
 	err := store.Set("key1", "A")
@@ -423,7 +423,7 @@ func TestGetBit(t *testing.T) {
 // TestSetBit 测试 SETBIT 命令
 func TestSetBit(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 设置值 "A" = 0x41 = 01000001
 	err := store.Set("key1", "A")
@@ -453,7 +453,7 @@ func TestSetBit(t *testing.T) {
 // TestBitCount 测试 BITCOUNT 命令
 func TestBitCount(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 设置值 "A" = 0x41 = 01000001 (2个1)
 	err := store.Set("key1", "A")
@@ -478,7 +478,7 @@ func TestBitCount(t *testing.T) {
 // TestBitOp 测试 BITOP 命令
 func TestBitOp(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 设置值
 	err := store.Set("key1", "\x01") // 00000001
@@ -526,7 +526,7 @@ func TestBitOp(t *testing.T) {
 // TestBitPos 测试 BITPOS 命令
 func TestBitPos(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 设置值 "\x00\xFF" = 00000000 11111111
 	err := store.Set("key1", "\x00\xFF")
@@ -551,7 +551,7 @@ func TestBitPos(t *testing.T) {
 // TestStringEdgeCases 测试边界情况
 func TestStringEdgeCases(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 空字符串
 	err := store.Set("empty", "")
@@ -579,7 +579,7 @@ func TestStringEdgeCases(t *testing.T) {
 // TestBitLen 测试 BITLEN 命令
 func TestBitLen(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Test with value
 	err := store.Set("bits", "hi") // 'h' = 0x68 = 01101000, 'i' = 0x69 = 01101001
@@ -597,7 +597,7 @@ func TestBitLen(t *testing.T) {
 // TestBitField 测试 BITFIELD 命令
 func TestBitField(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Test GET operation on non-existent key
 	result, err := store.BitField("key", []string{"GET", "u8", "0"})
@@ -636,7 +636,7 @@ func TestBitField(t *testing.T) {
 // TestBitFieldOverflow 测试 BITFIELD 溢出情况
 func TestBitFieldOverflow(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Test with 16-bit
 	err := store.Set("key16", "ab")
@@ -652,7 +652,7 @@ func TestBitFieldOverflow(t *testing.T) {
 // TestSetWrongType tests that SET returns ErrWrongType when key exists with different type
 func TestSetWrongType(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Create a hash key first
 	err := store.HSet("myhash", "field1", "value1")

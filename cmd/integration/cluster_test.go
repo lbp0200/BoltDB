@@ -455,3 +455,110 @@ func TestClusterHashTag(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "value1", val)
 }
+
+// === Cluster Boundary Tests ===
+
+// TestClusterBoundary_Info tests CLUSTER INFO returns valid cluster information
+func TestClusterBoundary_Info(t *testing.T) {
+	setupClusterTestServer(t)
+	defer teardownClusterTestServer(t)
+
+	ctx := context.Background()
+
+	info, err := clusterClient.Do(ctx, "CLUSTER", "INFO").Result()
+	assert.NoError(t, err)
+	infoStr, ok := info.(string)
+	assert.True(t, ok)
+	if len(infoStr) == 0 {
+		t.Error("CLUSTER INFO should return non-empty string")
+	}
+	if !strings.Contains(infoStr, "cluster_state:") {
+		t.Error("CLUSTER INFO should contain cluster_state field")
+	}
+	if !strings.Contains(infoStr, "cluster_slots_assigned:") {
+		t.Error("CLUSTER INFO should contain cluster_slots_assigned field")
+	}
+}
+
+// TestClusterBoundary_Nodes tests CLUSTER NODES returns valid node information
+func TestClusterBoundary_Nodes(t *testing.T) {
+	setupClusterTestServer(t)
+	defer teardownClusterTestServer(t)
+
+	ctx := context.Background()
+
+	nodes, err := clusterClient.Do(ctx, "CLUSTER", "NODES").Result()
+	assert.NoError(t, err)
+	nodesStr, ok := nodes.(string)
+	assert.True(t, ok)
+	if len(nodesStr) == 0 {
+		t.Error("CLUSTER NODES should return non-empty string")
+	}
+	// Each node entry contains: nodeId, ip:port, lastping, pong, port, flags
+	if !strings.Contains(nodesStr, " myself") {
+		t.Error("CLUSTER NODES should contain self node")
+	}
+}
+
+// TestClusterBoundary_KeySlot tests CLUSTER KEYSLOT returns slot number in valid range
+func TestClusterBoundary_KeySlot(t *testing.T) {
+	setupClusterTestServer(t)
+	defer teardownClusterTestServer(t)
+
+	ctx := context.Background()
+
+	testCases := []struct {
+		key  string
+		desc string
+	}{
+		{"mykey", "simple key"},
+		{"", "empty key"},
+		{"{tag}:subkey", "key with hash tag"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			slot, err := clusterClient.Do(ctx, "CLUSTER", "KEYSLOT", tc.key).Result()
+			assert.NoError(t, err)
+			slotNum, ok := slot.(int64)
+			if !ok {
+				t.Errorf("CLUSTER KEYSLOT %s: could not convert result to int64", tc.desc)
+				return
+			}
+			if slotNum < 0 || slotNum >= 16384 {
+				t.Errorf("CLUSTER KEYSLOT %s: got %d, want 0-16383", tc.desc, slotNum)
+			}
+		})
+	}
+}
+
+// TestClusterBoundary_Slots tests CLUSTER SLOTS returns slot allocation array
+func TestClusterBoundary_Slots(t *testing.T) {
+	setupClusterTestServer(t)
+	defer teardownClusterTestServer(t)
+
+	ctx := context.Background()
+
+	// Add some slots first
+	_, err := clusterClient.Do(ctx, "CLUSTER", "ADDSLOTS", 0, 1, 2, 3, 4).Result()
+	assert.NoError(t, err)
+
+	slots, err := clusterClient.Do(ctx, "CLUSTER", "SLOTS").Result()
+	assert.NoError(t, err)
+	slotsArr, ok := slots.([]interface{})
+	if !ok {
+		t.Error("CLUSTER SLOTS should return array")
+	}
+	_ = slotsArr // CLUSTER SLOTS returns array
+
+	// Verify slot structure: [startSlot, endSlot, ip, port, nodeId]
+	for _, slotEntry := range slotsArr {
+		entry, ok := slotEntry.([]interface{})
+		if !ok {
+			t.Error("each slot entry should be an array")
+		}
+		if len(entry) < 3 {
+			t.Error("each slot entry should have at least 3 elements")
+		}
+	}
+}

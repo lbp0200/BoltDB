@@ -3392,6 +3392,18 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 				strs[i] = []byte(fmt.Sprintf("%v", item))
 			}
 			return &proto.Array{Args: strs}
+		case [][]interface{}:
+			// 对于CLUSTER SLOTS，槽位信息
+			// 格式：[[startSlot, endSlot, ip, port, nodeId], ...]
+			slotsResp := make([]proto.RESP, len(v))
+			for i, slotEntry := range v {
+				entry := make([][]byte, len(slotEntry))
+				for j, item := range slotEntry {
+					entry[j] = []byte(fmt.Sprintf("%v", item))
+				}
+				slotsResp[i] = &proto.Array{Args: entry}
+			}
+			return &proto.NestedArray{Elems: slotsResp}
 		default:
 			return proto.NewSimpleString(fmt.Sprintf("%v", v))
 		}

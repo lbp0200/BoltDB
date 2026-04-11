@@ -243,6 +243,7 @@ func (s *BotreonStore) XAdd(key string, opts StreamXAddOptions, id string, field
 			meta.LastID = timestamp
 			id = formatStreamID(meta.LastID, meta.LastSeq)
 		} else {
+			// User provided explicit ID - preserve it as-is
 			ts, seq, err := parseStreamID(id)
 			if err != nil {
 				return err
@@ -251,9 +252,10 @@ func (s *BotreonStore) XAdd(key string, opts StreamXAddOptions, id string, field
 			if compareStreamID(id, formatStreamID(meta.LastID, meta.LastSeq)) < 0 {
 				return fmt.Errorf("ERR ID must be greater than the last entry ID (%d-%d)", meta.LastID, meta.LastSeq)
 			}
+			// Update metadata but keep the original ID string
 			meta.LastID = ts
 			meta.LastSeq = seq
-			id = formatStreamID(ts, seq)
+			// Do NOT reformat the ID - preserve user's exact format (e.g. "1000000000000-0" keeps "-0")
 		}
 
 		// Check MINID if specified

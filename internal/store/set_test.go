@@ -8,9 +8,8 @@ import (
 )
 
 func TestSAdd(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "myset"
 
@@ -36,9 +35,8 @@ func TestSAdd(t *testing.T) {
 
 // TestSAddWrongType tests that SADD returns ErrWrongType when key exists with different type
 func TestSAddWrongType(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	// Create a hash key first
 	err := store.HSet("myhash", "field1", "value1")
@@ -74,9 +72,8 @@ func TestSAddWrongType(t *testing.T) {
 }
 
 func TestSRem(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "myset"
 
@@ -104,9 +101,8 @@ func TestSRem(t *testing.T) {
 }
 
 func TestSCard(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "myset"
 
@@ -123,9 +119,8 @@ func TestSCard(t *testing.T) {
 }
 
 func TestSIsMember(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "myset"
 
@@ -149,9 +144,8 @@ func TestSIsMember(t *testing.T) {
 }
 
 func TestSMembers(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "myset"
 
@@ -177,9 +171,8 @@ func TestSMembers(t *testing.T) {
 }
 
 func TestSPop(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "myset"
 
@@ -206,9 +199,8 @@ func TestSPop(t *testing.T) {
 }
 
 func TestSPopN(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "myset"
 
@@ -241,9 +233,8 @@ func TestSPopN(t *testing.T) {
 }
 
 func TestSRandMember(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "myset"
 
@@ -270,9 +261,8 @@ func TestSRandMember(t *testing.T) {
 }
 
 func TestSRandMemberN(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key := "myset"
 
@@ -302,9 +292,8 @@ func TestSRandMemberN(t *testing.T) {
 }
 
 func TestSMove(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	source := "source"
 	dest := "dest"
@@ -343,9 +332,8 @@ func TestSMove(t *testing.T) {
 }
 
 func TestSInter(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key1 := "set1"
 	key2 := "set2"
@@ -388,9 +376,8 @@ func TestSInter(t *testing.T) {
 }
 
 func TestSUnion(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key1 := "set1"
 	key2 := "set2"
@@ -427,9 +414,8 @@ func TestSUnion(t *testing.T) {
 }
 
 func TestSDiff(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key1 := "set1"
 	key2 := "set2"
@@ -464,9 +450,8 @@ func TestSDiff(t *testing.T) {
 }
 
 func TestSInterStore(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key1 := "set1"
 	key2 := "set2"
@@ -503,9 +488,8 @@ func TestSInterStore(t *testing.T) {
 }
 
 func TestSUnionStore(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key1 := "set1"
 	key2 := "set2"
@@ -543,9 +527,8 @@ func TestSUnionStore(t *testing.T) {
 }
 
 func TestSDiffStore(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	key1 := "set1"
 	key2 := "set2"
@@ -577,9 +560,8 @@ func TestSDiffStore(t *testing.T) {
 }
 
 func TestSetEdgeCases(t *testing.T) {
-	dbPath := t.TempDir()
-	store, _ := NewBadgerStore(dbPath)
-	defer store.Close()
+	store := setupTestStore(t)
+
 
 	// 测试空集合操作
 	count, _ := store.SCard("empty")
@@ -610,7 +592,7 @@ func TestSetEdgeCases(t *testing.T) {
 // TestSMIsMember 测试 SMISMEMBER 命令
 func TestSMIsMember(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Create a set
 	store.SAdd("myset", "a", "b", "c")
@@ -632,7 +614,7 @@ func TestSMIsMember(t *testing.T) {
 // TestSInterCard 测试 SINTERCARD 命令
 func TestSInterCard(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Create sets
 	store.SAdd("set1", "a", "b", "c")
@@ -658,7 +640,7 @@ func TestSInterCard(t *testing.T) {
 // TestSScan 测试 SSCAN 命令
 func TestSScan(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Create a set with many members
 	for i := 0; i < 100; i++ {

@@ -838,3 +838,33 @@ func TestSentinelError_InfoInvalidSection(t *testing.T) {
 		assert.True(t, result != nil)
 	}
 }
+
+// TestSentinelError_ReplconfUnknownSubcommandIntegration tests REPLCONF with unknown subcommand (integration)
+func TestSentinelError_ReplconfUnknownSubcommandIntegration(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+
+	// REPLCONF with unknown subcommand should return error
+	_, err := testClient.Do(ctx, "REPLCONF", "UNKNOWN_SUBCOMMAND").Result()
+	assert.Error(t, err)
+	if !strings.Contains(err.Error(), "ERR") && !strings.Contains(err.Error(), "unknown") {
+		t.Errorf("Error should mention ERR or unknown, got: %s", err.Error())
+	}
+}
+
+// TestClusterError_InvalidSubcommandIntegration tests CLUSTER with invalid subcommand (integration)
+func TestClusterError_InvalidSubcommandIntegration(t *testing.T) {
+	setupTestServer(t)
+	defer teardownTestServer(t)
+
+	ctx := context.Background()
+
+	// CLUSTER with invalid subcommand should return error
+	_, err := testClient.Do(ctx, "CLUSTER", "INVALID_SUBCOMMAND").Result()
+	assert.Error(t, err)
+	if !strings.Contains(err.Error(), "ERR") && !strings.Contains(err.Error(), "unknown subcommand") {
+		t.Errorf("Error should mention ERR or unknown subcommand, got: %s", err.Error())
+	}
+}

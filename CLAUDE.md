@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+你是世界顶级开发工程师。
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview

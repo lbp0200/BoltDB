@@ -266,7 +266,7 @@ func TestHyperLogLogMerge(t *testing.T) {
 // TestPFAdd tests the store-level PFAdd function
 func TestPFAdd(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Test basic PFAdd
 	count, err := store.PFAdd("hll1", "a", "b", "c")
@@ -299,7 +299,7 @@ func TestPFAdd(t *testing.T) {
 // TestPFCount tests the store-level PFCount function
 func TestPFCount(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add elements to first HLL
 	store.PFAdd("hll1", "a", "b", "c")
@@ -338,7 +338,7 @@ func TestPFCount(t *testing.T) {
 // TestPFMerge tests the store-level PFMerge function
 func TestPFMerge(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Create two HLLs
 	store.PFAdd("hll1", "a", "b", "c")
@@ -363,7 +363,7 @@ func TestPFMerge(t *testing.T) {
 // TestPFInfo tests the store-level PFInfo function
 func TestPFInfo(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Test PFInfo on non-existent key
 	_, err := store.PFInfo("nonexistent")

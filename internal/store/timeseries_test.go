@@ -9,9 +9,9 @@ import (
 )
 
 func TestTSCreate(t *testing.T) {
-	s, err := NewBotreonStore(t.TempDir())
-	assert.NoError(t, err)
-	defer s.Close()
+	s := setupTestStore(t)
+	var err error
+
 
 	// Test basic creation
 	err = s.TSCreate("ts1", TSCreateOptions{})
@@ -36,9 +36,9 @@ func TestTSCreate(t *testing.T) {
 }
 
 func TestTSAdd(t *testing.T) {
-	s, err := NewBotreonStore(t.TempDir())
-	assert.NoError(t, err)
-	defer s.Close()
+	s := setupTestStore(t)
+	var err error
+
 
 	// Add data points
 	ts1, err := s.TSAdd("ts1", time.Now().UnixNano()/int64(time.Millisecond), 25.5, TSAddOptions{})
@@ -61,9 +61,9 @@ func TestTSAdd(t *testing.T) {
 }
 
 func TestTSGet(t *testing.T) {
-	s, err := NewBotreonStore(t.TempDir())
-	assert.NoError(t, err)
-	defer s.Close()
+	s := setupTestStore(t)
+	var err error
+
 
 	// Add data points
 	now := time.Now().UnixNano() / int64(time.Millisecond)
@@ -88,9 +88,9 @@ func TestTSGet(t *testing.T) {
 }
 
 func TestTSRange(t *testing.T) {
-	s, err := NewBotreonStore(t.TempDir())
-	assert.NoError(t, err)
-	defer s.Close()
+	s := setupTestStore(t)
+	var err error
+
 
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 	// Add data points
@@ -125,9 +125,9 @@ func TestTSRange(t *testing.T) {
 }
 
 func TestTSDel(t *testing.T) {
-	s, err := NewBotreonStore(t.TempDir())
-	assert.NoError(t, err)
-	defer s.Close()
+	s := setupTestStore(t)
+	var err error
+
 
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 	// Add data points
@@ -157,9 +157,9 @@ func TestTSDel(t *testing.T) {
 }
 
 func TestTSInfo(t *testing.T) {
-	s, err := NewBotreonStore(t.TempDir())
-	assert.NoError(t, err)
-	defer s.Close()
+	s := setupTestStore(t)
+	var err error
+
 
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 	s.TSAdd("ts1", now, 10.0, TSAddOptions{})
@@ -180,9 +180,9 @@ func TestTSInfo(t *testing.T) {
 }
 
 func TestTSLen(t *testing.T) {
-	s, err := NewBotreonStore(t.TempDir())
-	assert.NoError(t, err)
-	defer s.Close()
+	s := setupTestStore(t)
+	var err error
+
 
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 	s.TSAdd("ts1", now, 10.0, TSAddOptions{})
@@ -199,9 +199,9 @@ func TestTSLen(t *testing.T) {
 }
 
 func TestTSMGet(t *testing.T) {
-	s, err := NewBotreonStore(t.TempDir())
-	assert.NoError(t, err)
-	defer s.Close()
+	s := setupTestStore(t)
+	var err error
+
 
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 	s.TSAdd("ts1", now, 10.0, TSAddOptions{})
@@ -222,9 +222,9 @@ func TestTSMGet(t *testing.T) {
 }
 
 func TestTSDuplicatePolicy(t *testing.T) {
-	s, err := NewBotreonStore(t.TempDir())
-	assert.NoError(t, err)
-	defer s.Close()
+	s := setupTestStore(t)
+	var err error
+
 
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 	timestamp := now
@@ -257,9 +257,9 @@ func TestTSDuplicatePolicy(t *testing.T) {
 }
 
 func TestTSType(t *testing.T) {
-	s, err := NewBotreonStore(t.TempDir())
-	assert.NoError(t, err)
-	defer s.Close()
+	s := setupTestStore(t)
+	var err error
+
 
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 	s.TSAdd("ts1", now, 10.0, TSAddOptions{})
@@ -276,9 +276,9 @@ func TestTSType(t *testing.T) {
 }
 
 func TestTSAutoTimestamp(t *testing.T) {
-	s, err := NewBotreonStore(t.TempDir())
-	assert.NoError(t, err)
-	defer s.Close()
+	s := setupTestStore(t)
+	var err error
+
 
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 
@@ -290,9 +290,9 @@ func TestTSAutoTimestamp(t *testing.T) {
 
 // TestTSAddWrongType tests that TSAdd returns ErrWrongType when key exists with different type
 func TestTSAddWrongType(t *testing.T) {
-	s, err := NewBotreonStore(t.TempDir())
-	assert.NoError(t, err)
-	defer s.Close()
+	s := setupTestStore(t)
+	var err error
+
 
 	// Create a string key
 	err = s.Set("mystring", "value")

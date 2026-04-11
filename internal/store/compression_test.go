@@ -112,7 +112,7 @@ func BenchmarkStoreCompression(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			defer store.Close()
+		
 
 			largeValue := strings.Repeat("This is a test string that will be compressed. ", 100)
 			key := "bench_key"
@@ -133,17 +133,15 @@ func BenchmarkStoreCompression(b *testing.B) {
 }
 
 func TestCompressionLZ4(t *testing.T) {
-	dbPath := t.TempDir()
-	store, err := NewBotreonStoreWithCompression(dbPath, CompressionLZ4)
-	assert.NoError(t, err)
-	defer store.Close()
+	store := setupTestStore(t)
+	store.SetCompression(CompressionLZ4)
 
 	// 测试大字符串压缩
 	largeValue := strings.Repeat("This is a test string that will be compressed. ", 100)
 	key := "large_key"
 
 	// 写入
-	err = store.Set(key, largeValue)
+	err := store.Set(key, largeValue)
 	assert.NoError(t, err)
 
 	// 读取
@@ -153,17 +151,15 @@ func TestCompressionLZ4(t *testing.T) {
 }
 
 func TestCompressionZSTD(t *testing.T) {
-	dbPath := t.TempDir()
-	store, err := NewBotreonStoreWithCompression(dbPath, CompressionZSTD)
-	assert.NoError(t, err)
-	defer store.Close()
+	store := setupTestStore(t)
+	store.SetCompression(CompressionZSTD)
 
 	// 测试大字符串压缩
 	largeValue := strings.Repeat("This is a test string that will be compressed. ", 100)
 	key := "large_key"
 
 	// 写入
-	err = store.Set(key, largeValue)
+	err := store.Set(key, largeValue)
 	assert.NoError(t, err)
 
 	// 读取
@@ -173,17 +169,15 @@ func TestCompressionZSTD(t *testing.T) {
 }
 
 func TestCompressionNone(t *testing.T) {
-	dbPath := t.TempDir()
-	store, err := NewBotreonStoreWithCompression(dbPath, CompressionNone)
-	assert.NoError(t, err)
-	defer store.Close()
+	store := setupTestStore(t)
+	store.SetCompression(CompressionNone)
 
 	// 测试不压缩
 	largeValue := strings.Repeat("This is a test string. ", 100)
 	key := "large_key"
 
 	// 写入
-	err = store.Set(key, largeValue)
+	err := store.Set(key, largeValue)
 	assert.NoError(t, err)
 
 	// 读取
@@ -197,24 +191,22 @@ func TestCompressionDefaultIsSnappy(t *testing.T) {
 	// 不指定压缩算法，使用默认
 	store, err := NewBotreonStore(dbPath)
 	assert.NoError(t, err)
-	defer store.Close()
+
 
 	// 验证默认压缩算法是 Snappy
 	assert.Equal(t, CompressionSnappy, store.GetCompression())
 }
 
 func TestCompressionSmallData(t *testing.T) {
-	dbPath := t.TempDir()
-	store, err := NewBotreonStoreWithCompression(dbPath, CompressionLZ4)
-	assert.NoError(t, err)
-	defer store.Close()
+	store := setupTestStore(t)
+	store.SetCompression(CompressionLZ4)
 
 	// 小数据（小于64字节）不应该被压缩
 	smallValue := "small"
 	key := "small_key"
 
 	// 写入
-	err = store.Set(key, smallValue)
+	err := store.Set(key, smallValue)
 	assert.NoError(t, err)
 
 	// 读取
@@ -224,16 +216,14 @@ func TestCompressionSmallData(t *testing.T) {
 }
 
 func TestCompressionHash(t *testing.T) {
-	dbPath := t.TempDir()
-	store, err := NewBotreonStoreWithCompression(dbPath, CompressionLZ4)
-	assert.NoError(t, err)
-	defer store.Close()
+	store := setupTestStore(t)
+	store.SetCompression(CompressionLZ4)
 
 	// 测试Hash压缩
 	key := "user:1"
 	largeValue := strings.Repeat("This is a large hash field value. ", 50)
 
-	err = store.HSet(key, "description", largeValue)
+	err := store.HSet(key, "description", largeValue)
 	assert.NoError(t, err)
 
 	value, err := store.HGet(key, "description")
@@ -271,17 +261,15 @@ func TestCompressionBackwardCompatibility(t *testing.T) {
 }
 
 func TestCompressionSnappy(t *testing.T) {
-	dbPath := t.TempDir()
-	store, err := NewBotreonStoreWithCompression(dbPath, CompressionSnappy)
-	assert.NoError(t, err)
-	defer store.Close()
+	store := setupTestStore(t)
+	store.SetCompression(CompressionSnappy)
 
 	// 测试大字符串压缩
 	largeValue := strings.Repeat("This is a test string that will be compressed. ", 100)
 	key := "large_key"
 
 	// 写入
-	err = store.Set(key, largeValue)
+	err := store.Set(key, largeValue)
 	assert.NoError(t, err)
 
 	// 读取
@@ -291,14 +279,12 @@ func TestCompressionSnappy(t *testing.T) {
 }
 
 func TestCompressionSwitch(t *testing.T) {
-	dbPath := t.TempDir()
-	store, err := NewBotreonStoreWithCompression(dbPath, CompressionLZ4)
-	assert.NoError(t, err)
-	defer store.Close()
+	store := setupTestStore(t)
+	store.SetCompression(CompressionLZ4)
 
 	// 使用LZ4写入
 	largeValue := strings.Repeat("test ", 100)
-	err = store.Set("key1", largeValue)
+	err := store.Set("key1", largeValue)
 	assert.NoError(t, err)
 
 	// 切换到ZSTD

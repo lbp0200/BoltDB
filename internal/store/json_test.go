@@ -5,15 +5,9 @@ import (
 )
 
 func TestJSONSet(t *testing.T) {
-	// Create a temporary directory for the database
-	dir := t.TempDir()
+	db := setupTestStore(t)
+	var err error
 
-	// Open the database
-	db, err := NewBotreonStore(dir)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
-	defer db.Close()
 
 	// Test JSON.SET with simple object
 	result, err := db.JSONSet("user:1", "$", `{"name":"John","age":30}`, false, false)
@@ -53,12 +47,8 @@ func TestJSONSet(t *testing.T) {
 }
 
 func TestJSONGet(t *testing.T) {
-	dir := t.TempDir()
-	db, err := NewBotreonStore(dir)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
-	defer db.Close()
+	db := setupTestStore(t)
+	var err error
 
 	// Set up test data
 	_, err = db.JSONSet("user:1", "$", `{"name":"John","age":30}`, false, false)
@@ -77,12 +67,8 @@ func TestJSONGet(t *testing.T) {
 }
 
 func TestJSONDel(t *testing.T) {
-	dir := t.TempDir()
-	db, err := NewBotreonStore(dir)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
-	defer db.Close()
+	db := setupTestStore(t)
+	var err error
 
 	// Set up test data
 	_, err = db.JSONSet("user:1", "$", `{"name":"John","age":30}`, false, false)
@@ -110,12 +96,8 @@ func TestJSONDel(t *testing.T) {
 }
 
 func TestJSONType(t *testing.T) {
-	dir := t.TempDir()
-	db, err := NewBotreonStore(dir)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
-	defer db.Close()
+	db := setupTestStore(t)
+	var err error
 
 	// Set up test data
 	_, err = db.JSONSet("user:1", "$", `{"name":"John","age":30}`, false, false)
@@ -134,12 +116,8 @@ func TestJSONType(t *testing.T) {
 }
 
 func TestJSONArrAppend(t *testing.T) {
-	dir := t.TempDir()
-	db, err := NewBotreonStore(dir)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
-	defer db.Close()
+	db := setupTestStore(t)
+	var err error
 
 	// Set up array
 	_, err = db.JSONSet("arr", "$", `[]`, false, false)
@@ -167,12 +145,8 @@ func TestJSONArrAppend(t *testing.T) {
 }
 
 func TestJSONObjKeys(t *testing.T) {
-	dir := t.TempDir()
-	db, err := NewBotreonStore(dir)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
-	defer db.Close()
+	db := setupTestStore(t)
+	var err error
 
 	// Set up object
 	_, err = db.JSONSet("user:1", "$", `{"name":"John","age":30,"city":"NYC"}`, false, false)
@@ -191,12 +165,8 @@ func TestJSONObjKeys(t *testing.T) {
 }
 
 func TestJSONNumIncrBy(t *testing.T) {
-	dir := t.TempDir()
-	db, err := NewBotreonStore(dir)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
-	defer db.Close()
+	db := setupTestStore(t)
+	var err error
 
 	// Set up number
 	_, err = db.JSONSet("counter", "$", `10`, false, false)
@@ -215,12 +185,8 @@ func TestJSONNumIncrBy(t *testing.T) {
 }
 
 func TestJSONNumMultBy(t *testing.T) {
-	dir := t.TempDir()
-	db, err := NewBotreonStore(dir)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
-	defer db.Close()
+	db := setupTestStore(t)
+	var err error
 
 	// Set up number
 	_, err = db.JSONSet("counter", "$", `10`, false, false)
@@ -239,12 +205,8 @@ func TestJSONNumMultBy(t *testing.T) {
 }
 
 func TestJSONClear(t *testing.T) {
-	dir := t.TempDir()
-	db, err := NewBotreonStore(dir)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
-	defer db.Close()
+	db := setupTestStore(t)
+	var err error
 
 	// Set up object
 	_, err = db.JSONSet("user:1", "$", `{"name":"John","age":30}`, false, false)
@@ -263,12 +225,8 @@ func TestJSONClear(t *testing.T) {
 }
 
 func TestJSONDebugMemory(t *testing.T) {
-	dir := t.TempDir()
-	db, err := NewBotreonStore(dir)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
-	defer db.Close()
+	db := setupTestStore(t)
+	var err error
 
 	// Set up object
 	_, err = db.JSONSet("user:1", "$", `{"name":"John"}`, false, false)
@@ -287,12 +245,8 @@ func TestJSONDebugMemory(t *testing.T) {
 }
 
 func TestJSONMGet(t *testing.T) {
-	dir := t.TempDir()
-	db, err := NewBotreonStore(dir)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
-	defer db.Close()
+	db := setupTestStore(t)
+	var err error
 
 	// Set up test data
 	_, err = db.JSONSet("user:1", "$", `{"name":"John"}`, false, false)
@@ -316,12 +270,8 @@ func TestJSONMGet(t *testing.T) {
 
 // Test for WRONGTYPE error
 func TestJSONSetWrongType(t *testing.T) {
-	dir := t.TempDir()
-	db, err := NewBotreonStore(dir)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
-	defer db.Close()
+	db := setupTestStore(t)
+	var err error
 
 	// Set a string value first
 	err = db.Set("mykey", "value")
@@ -347,12 +297,8 @@ func TestJSONSetWrongType(t *testing.T) {
 
 // Test for key not found scenarios
 func TestJSONKeyNotFound(t *testing.T) {
-	dir := t.TempDir()
-	db, err := NewBotreonStore(dir)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
-	defer db.Close()
+	db := setupTestStore(t)
+	var err error
 
 	// Test JSON.GET on non-existent key
 	_, err = db.JSONGet("nonexistent")

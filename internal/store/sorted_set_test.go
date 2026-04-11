@@ -294,7 +294,7 @@ func TestZRevRank(t *testing.T) {
 
 func TestZRange(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	zSetName := "myset"
 
@@ -326,7 +326,7 @@ func TestZRange(t *testing.T) {
 
 func TestZRevRange(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	zSetName := "myset"
 
@@ -354,7 +354,7 @@ func TestZRevRange(t *testing.T) {
 
 func TestZRangeByScore(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	zSetName := "myset"
 
@@ -382,7 +382,7 @@ func TestZRangeByScore(t *testing.T) {
 
 func TestZRevRangeByScore(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	zSetName := "myset"
 
@@ -404,7 +404,7 @@ func TestZRevRangeByScore(t *testing.T) {
 
 func TestZRem(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	zSetName := "myset"
 
@@ -433,7 +433,7 @@ func TestZRem(t *testing.T) {
 
 func TestZRemRangeByRank(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	zSetName := "myset"
 
@@ -460,7 +460,7 @@ func TestZRemRangeByRank(t *testing.T) {
 
 func TestZRemRangeByScore(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	zSetName := "myset"
 
@@ -484,7 +484,7 @@ func TestZRemRangeByScore(t *testing.T) {
 
 func TestZPopMax(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	zSetName := "myset"
 
@@ -516,7 +516,7 @@ func TestZPopMax(t *testing.T) {
 
 func TestZPopMin(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	zSetName := "myset"
 
@@ -548,7 +548,7 @@ func TestZPopMin(t *testing.T) {
 
 func TestZSetDel(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	zSetName := "myset"
 
@@ -572,7 +572,7 @@ func TestZSetDel(t *testing.T) {
 
 func TestSortedSetEdgeCases(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	zSetName := "myset"
 
@@ -618,7 +618,7 @@ func TestSortedSetEdgeCases(t *testing.T) {
 
 func TestSortedSetOperations(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	zSetName := "myset"
 
@@ -657,7 +657,7 @@ func TestSortedSetOperations(t *testing.T) {
 
 func TestZUnionStore(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 创建两个有序集合
 	_ = store.ZAdd("zset1", []ZSetMember{
@@ -704,7 +704,7 @@ func TestZUnionStore(t *testing.T) {
 
 func TestZInterStore(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 创建两个有序集合
 	_ = store.ZAdd("zset1", []ZSetMember{
@@ -734,7 +734,7 @@ func TestZInterStore(t *testing.T) {
 
 func TestZDiffStore(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 创建两个有序集合
 	store.ZAdd("zset1", []ZSetMember{
@@ -760,7 +760,7 @@ func TestZDiffStore(t *testing.T) {
 
 func TestZLexCount(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 创建有序集合（相同分数，按字典序）
 	store.ZAdd("zset", []ZSetMember{
@@ -782,7 +782,7 @@ func TestZLexCount(t *testing.T) {
 
 func TestZRangeByLex(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 创建有序集合（相同分数，按字典序）
 	store.ZAdd("zset", []ZSetMember{
@@ -810,7 +810,7 @@ func TestZRangeByLex(t *testing.T) {
 
 func TestZRevRangeByLex(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 创建有序集合
 	store.ZAdd("zset", []ZSetMember{
@@ -830,7 +830,7 @@ func TestZRevRangeByLex(t *testing.T) {
 
 func TestZRemRangeByLex(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 创建有序集合
 	store.ZAdd("zset", []ZSetMember{
@@ -854,7 +854,7 @@ func TestZRemRangeByLex(t *testing.T) {
 
 func TestZMScore(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// 创建有序集合
 	store.ZAdd("zset", []ZSetMember{
@@ -876,7 +876,7 @@ func TestZMScore(t *testing.T) {
 // TestBZPopMax 测试 BZPOPMAX 命令
 func TestBZPopMax(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add elements to sorted set
 	store.ZAdd("zset", []ZSetMember{
@@ -900,7 +900,7 @@ func TestBZPopMax(t *testing.T) {
 // TestBZPopMin 测试 BZPOPMIN 命令
 func TestBZPopMin(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add elements to sorted set
 	store.ZAdd("zset", []ZSetMember{
@@ -924,7 +924,7 @@ func TestBZPopMin(t *testing.T) {
 // TestZScan 测试 ZSCAN 命令
 func TestZScan(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add elements to sorted set
 	for i := 0; i < 50; i++ {

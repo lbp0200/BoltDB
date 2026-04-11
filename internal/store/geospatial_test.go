@@ -9,7 +9,7 @@ import (
 // TestGeoAdd tests GeoAdd function
 func TestGeoAdd(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add geo points
 	added, err := store.GeoAdd("mygeo", []GeoMember{
@@ -23,7 +23,7 @@ func TestGeoAdd(t *testing.T) {
 // TestGeoAddWrongType tests that GeoAdd returns ErrWrongType when key exists with different type
 func TestGeoAddWrongType(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// First set a string key
 	err := store.Set("mykey", "value")
@@ -91,7 +91,7 @@ func TestGeoAddWrongType(t *testing.T) {
 // TestGeoPos tests GeoPos function
 func TestGeoPos(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add geo points
 	_, _ = store.GeoAdd("mygeo", []GeoMember{
@@ -107,7 +107,7 @@ func TestGeoPos(t *testing.T) {
 // TestGeoHash tests GeoHash function
 func TestGeoHash(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add geo points
 	_, _ = store.GeoAdd("mygeo", []GeoMember{
@@ -124,7 +124,7 @@ func TestGeoHash(t *testing.T) {
 // TestGeoDist tests GeoDist function
 func TestGeoDist(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add geo points
 	_, _ = store.GeoAdd("mygeo", []GeoMember{
@@ -141,7 +141,7 @@ func TestGeoDist(t *testing.T) {
 // TestGeoRadius tests GeoRadius function
 func TestGeoRadius(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add geo points
 	_, _ = store.GeoAdd("mygeo", []GeoMember{
@@ -158,7 +158,7 @@ func TestGeoRadius(t *testing.T) {
 // TestGeoMembers tests GeoMembers function
 func TestGeoMembers(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add geo points
 	_, _ = store.GeoAdd("mygeo", []GeoMember{
@@ -175,7 +175,7 @@ func TestGeoMembers(t *testing.T) {
 // TestGeoCard tests GeoCard function
 func TestGeoCard(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Test empty key
 	count, err := store.GeoCard("emptygeo")
@@ -186,7 +186,7 @@ func TestGeoCard(t *testing.T) {
 // TestGeoRadiusByMember tests GeoRadiusByMember function
 func TestGeoRadiusByMember(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add geo points
 	_, _ = store.GeoAdd("mygeo", []GeoMember{

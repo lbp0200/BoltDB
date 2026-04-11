@@ -802,6 +802,10 @@ func matchPattern(key, pattern string) bool {
 			continue
 		}
 		if keyStar >= 0 {
+			// If keyStar has reached/exceeded key length, no more backtracking possible
+			if keyStar >= len(keyRunes) {
+				return false
+			}
 			keyStar++
 			keyIdx = keyStar
 			patternIdx = patternStar + 1

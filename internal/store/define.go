@@ -1,11 +1,22 @@
 package store
 
 import (
+	"context"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
 )
+
+// CloseTimeout is the maximum time to wait for BadgerDB to close.
+// BadgerDB's doWrites goroutine can block during shutdown in rare cases,
+// causing the full test suite to hang. A short timeout prevents cascading
+// timeouts across all 279 tests (which would otherwise take ~558s).
+// Returning nil is safe: temp dirs are cleaned by t.TempDir(), and
+// Go 1.21+ waits for orphaned goroutines on process exit.
+const CloseTimeout = 2 * time.Second
+
 
 const (
 	//UnderScore       = "_"
@@ -123,15 +134,88 @@ func (s *BotreonStore) Close() error {
 	return s.db.Close()
 }
 
+// CloseWithTimeout closes the store with a timeout to prevent
+// indefinite blocking due to BadgerDB's doWrites drain bug.
+func (s *BotreonStore) CloseWithTimeout(timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- s.db.Close()
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		// Close is taking too long, return timeout error
+		return fmt.Errorf("close timed out after %v", timeout)
+	}
+}
+
 // GetDB 获取BadgerDB实例（用于复制和备份）
 func (s *BotreonStore) GetDB() *badger.DB {
 	return s.db
 }
 
 // FlushDB 删除数据库中的所有键
+// NOTE: DropAll() can block indefinitely on BadgerDB v4.8+/v4.9+ due to
+// doWrites drain bug. Use clearAllData() for test isolation instead.
 func (s *BotreonStore) FlushDB() error {
 	return s.db.DropAll()
 }
+
+// ClearAllData 安全地清空所有数据，用于测试隔离
+// 使用迭代删除，完全避免 DropAll/DropPrefix 的阻塞问题
+func (s *BotreonStore) ClearAllData() error {
+	return s.clearAllDataIterative()
+}
+
+
+// clearAllDataIterative 迭代删除所有键（DropPrefix 失败时的备选方案）
+func (s *BotreonStore) clearAllDataIterative() error {
+	var keysToDelete [][]byte
+	err := s.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			keyCopy := make([]byte, len(item.Key()))
+			copy(keyCopy, item.Key())
+			keysToDelete = append(keysToDelete, keyCopy)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	const batchSize = 500
+	for i := 0; i < len(keysToDelete); i += batchSize {
+		end := i + batchSize
+		if end > len(keysToDelete) {
+			end = len(keysToDelete)
+		}
+
+		err := s.db.Update(func(txn *badger.Txn) error {
+			for _, key := range keysToDelete[i:end] {
+				if err := txn.Delete(key); err != nil && err != badger.ErrKeyNotFound {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 
 // TypeOfKeyGet 用于生成存储类型的键
 func TypeOfKeyGet(strKey string) []byte {

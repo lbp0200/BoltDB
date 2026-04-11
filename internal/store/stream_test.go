@@ -9,7 +9,7 @@ import (
 // TestStreamXAdd tests XAdd function
 func TestStreamXAdd(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add entry to stream
 	id, err := store.XAdd("mystream", StreamXAddOptions{}, "*", map[string]string{"field1": "value1"})
@@ -25,7 +25,7 @@ func TestStreamXAdd(t *testing.T) {
 // TestStreamXAdd_WithID tests XAdd with specific ID
 func TestStreamXAdd_WithID(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add entry with specific ID
 	id, err := store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
@@ -37,7 +37,7 @@ func TestStreamXAdd_WithID(t *testing.T) {
 // TestStreamXLen tests XLen function
 func TestStreamXLen(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add entries
 	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "*", map[string]string{"field1": "value1"})
@@ -58,7 +58,7 @@ func TestStreamXLen(t *testing.T) {
 // TestStreamXRANGE tests XRANGE function
 func TestStreamXRANGE(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add entries
 	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
@@ -74,7 +74,7 @@ func TestStreamXRANGE(t *testing.T) {
 // TestStreamXREVRANGE tests XREVRANGE function
 func TestStreamXREVRANGE(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add entries
 	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
@@ -90,7 +90,7 @@ func TestStreamXREVRANGE(t *testing.T) {
 // TestStreamXDel tests XDel function
 func TestStreamXDel(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add entries
 	id1, _ := store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
@@ -109,7 +109,7 @@ func TestStreamXDel(t *testing.T) {
 // TestStreamXRead tests XRead function
 func TestStreamXRead(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add entries
 	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
@@ -123,7 +123,7 @@ func TestStreamXRead(t *testing.T) {
 // TestStreamInfo tests XInfo function
 func TestStreamInfo(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add entries
 	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
@@ -138,7 +138,7 @@ func TestStreamInfo(t *testing.T) {
 // TestStreamXGroupCreate tests XGroup Create function
 func TestStreamXGroupCreate(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add entries first
 	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
@@ -156,7 +156,7 @@ func TestStreamXGroupCreate(t *testing.T) {
 // TestStreamXReadGroup tests XReadGroup function
 func TestStreamXReadGroup(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add entries
 	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
@@ -173,7 +173,7 @@ func TestStreamXReadGroup(t *testing.T) {
 // TestStreamXPending tests XPending function
 func TestStreamXPending(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add entries
 	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
@@ -193,7 +193,7 @@ func TestStreamXPending(t *testing.T) {
 // TestStreamXClaim tests XClaim function
 func TestStreamXClaim(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add entries
 	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
@@ -211,7 +211,7 @@ func TestStreamXClaim(t *testing.T) {
 // TestStreamXTrim tests XTrim function
 func TestStreamXTrim(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add entries
 	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
@@ -231,7 +231,7 @@ func TestStreamXTrim(t *testing.T) {
 // TestStreamXAutoClaim tests XAutoClaim function
 func TestStreamXAutoClaim(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add entries
 	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
@@ -251,7 +251,7 @@ func TestStreamXAutoClaim(t *testing.T) {
 // TestStreamXAck tests XAck function
 func TestStreamXAck(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add entries
 	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
@@ -265,7 +265,7 @@ func TestStreamXAck(t *testing.T) {
 // TestStreamXGroupDelConsumer tests XGroupDelConsumer function
 func TestStreamXGroupDelConsumer(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add entries and create group
 	store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field": "value"})
@@ -281,7 +281,7 @@ func TestStreamXGroupDelConsumer(t *testing.T) {
 // TestStreamXGroupDestroy tests XGroupDestroy function
 func TestStreamXGroupDestroy(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Create group
 	store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field": "value"})
@@ -295,7 +295,7 @@ func TestStreamXGroupDestroy(t *testing.T) {
 // TestStreamXGroupSetID tests XGroupSetID function
 func TestStreamXGroupSetID(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Add entries and create group
 	store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field": "value"})
@@ -309,7 +309,7 @@ func TestStreamXGroupSetID(t *testing.T) {
 // TestStreamXInfoGroups tests XInfoGroups function
 func TestStreamXInfoGroups(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Test on non-existent stream - returns empty groups, not error
 	groups, err := store.XInfoGroups("nonexistent")
@@ -329,7 +329,7 @@ func TestStreamXInfoGroups(t *testing.T) {
 // TestStreamXInfoConsumers tests XInfoConsumers function
 func TestStreamXInfoConsumers(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Test on non-existent stream - returns empty consumers, not error
 	consumers, err := store.XInfoConsumers("nonexistent", "mygroup")
@@ -349,7 +349,7 @@ func TestStreamXInfoConsumers(t *testing.T) {
 // TestStreamType tests StreamType function
 func TestStreamType(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Test on non-existent key - should return false, no error
 	exists, err := store.StreamType("nonexistent")
@@ -368,7 +368,7 @@ func TestStreamType(t *testing.T) {
 // TestGetStreamEntry tests GetStreamEntry function
 func TestGetStreamEntry(t *testing.T) {
 	store := setupTestStore(t)
-	defer store.Close()
+
 
 	// Test on non-existent stream
 	_, err := store.GetStreamEntry("nonexistent", "1000000000000-0")
