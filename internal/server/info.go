@@ -8,7 +8,7 @@ import (
 )
 
 // Version 版本号，通过 ldflags 注入
-var Version = "8.1.4"
+var Version = "8.1.5"
 
 // GitCommitID Git commit ID，通过 ldflags 注入
 var GitCommitID = ""
