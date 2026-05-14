@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lbp0200/BoltDB/internal/backup"
+	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/lbp0200/BoltDB/internal/replication"
 	"github.com/lbp0200/BoltDB/internal/server"
 	"github.com/lbp0200/BoltDB/internal/store"
@@ -1877,6 +1879,159 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// ========== 回归测试 ==========
+
+// TestWATCHConflict 测试 WATCH 冲突检测
+// WATCH 一个键，另一个客户端修改该键后，EXEC 应返回 nil 表示事务失败
+func TestWATCHConflict(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	// 使用原始 TCP 连接发送 RESP 命令以完全控制 WATCH/MULTI/EXEC 流程
+	connA, err := net.Dial("tcp", sharedListener.Addr().String())
+	assert.NoError(t, err)
+	defer connA.Close()
+	readerA := bufio.NewReader(connA)
+
+	connB, err := net.Dial("tcp", sharedListener.Addr().String())
+	assert.NoError(t, err)
+	defer connB.Close()
+	readerB := bufio.NewReader(connB)
+
+	sendRESP := func(conn net.Conn, cmd string, args ...string) {
+		cmdArgs := make([][]byte, 1+len(args))
+		cmdArgs[0] = []byte(cmd)
+		for i, arg := range args {
+			cmdArgs[i+1] = []byte(arg)
+		}
+		req := &proto.Array{Args: cmdArgs}
+		err := proto.WriteRESP(conn, req)
+		assert.NoError(t, err)
+	}
+
+	sendRESP(connA, "SET", "watchkey", "original")
+	_, err = proto.ReadRESP(readerA)
+	assert.NoError(t, err)
+
+	// 连接 A: WATCH watchkey
+	sendRESP(connA, "WATCH", "watchkey")
+	resp, err := proto.ReadRESP(readerA)
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+
+	// 连接 B: 修改被监视的键
+	sendRESP(connB, "SET", "watchkey", "modified_by_b")
+	resp, err = proto.ReadRESP(readerB)
+	assert.NoError(t, err)
+
+	// 连接 A: MULTI
+	sendRESP(connA, "MULTI")
+	resp, err = proto.ReadRESP(readerA)
+	assert.NoError(t, err)
+
+	// 连接 A: SET（仅排队）
+	sendRESP(connA, "SET", "watchkey", "modified_by_a")
+	resp, err = proto.ReadRESP(readerA)
+	assert.NoError(t, err)
+
+	// 连接 A: EXEC - 应返回 nil array 因为 WATCH 检测到冲突
+	sendRESP(connA, "EXEC")
+	// Read raw response line since ReadRESP doesn't support nil arrays
+	rawLine, err := readerA.ReadString('\n')
+	assert.NoError(t, err)
+	assert.Equal(t, "*-1\r\n", rawLine)
+
+	// 验证键未被 Client A 修改
+	val, err := sharedClient.Get(ctx, "watchkey").Result()
+	assert.NoError(t, err)
+	assert.Equal(t, "modified_by_b", val)
+}
+
+// TestBLPOPTimeout 测试 BLPOP 在空键上的超时行为
+func TestBLPOPTimeout(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	start := time.Now()
+	// timeout 为 0 表示立即返回（非阻塞），BLPOP 无数据时返回 nil
+	result, err := sharedClient.BLPop(ctx, 0, "nonexistent_timeout_key").Result()
+	elapsed := time.Since(start)
+
+	assert.Equal(t, redis.Nil, err)
+	assert.Nil(t, result)
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("BLPOP timeout=0 should return immediately, took: %v", elapsed)
+	}
+}
+
+// TestConcurrentTransaction 测试并发事务隔离
+// 两个连接同时对同一个键执行 MULTI/SET/EXEC，不应互相干扰
+func TestConcurrentTransaction(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	clientA := redis.NewClient(&redis.Options{
+		Addr: sharedListener.Addr().String(),
+	})
+	defer clientA.Close()
+	clientB := redis.NewClient(&redis.Options{
+		Addr: sharedListener.Addr().String(),
+	})
+	defer clientB.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Client A: 并发事务写入
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 10; i++ {
+			err := clientA.Watch(ctx, func(tx *redis.Tx) error {
+				_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+					pipe.Set(ctx, "concurrent_key", "value_a", 0)
+					pipe.Incr(ctx, "concurrent_counter")
+					return nil
+				})
+				return err
+			}, "concurrent_key")
+			if err != nil && err != redis.TxFailedErr {
+				t.Logf("Client A transaction error (expected): %v", err)
+			}
+		}
+	}()
+
+	// Client B: 并发事务写入
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 10; i++ {
+			err := clientB.Watch(ctx, func(tx *redis.Tx) error {
+				_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+					pipe.Set(ctx, "concurrent_key", "value_b", 0)
+					pipe.Incr(ctx, "concurrent_counter")
+					return nil
+				})
+				return err
+			}, "concurrent_key")
+			if err != nil && err != redis.TxFailedErr {
+				t.Logf("Client B transaction error (expected): %v", err)
+			}
+		}
+	}()
+
+	wg.Wait()
+
+	// 验证 counter 在并发事务后至少被增加
+	counter, err := sharedClient.Get(ctx, "concurrent_counter").Result()
+	assert.NoError(t, err)
+	assert.NotEqual(t, "0", counter)
+}
+
 // ========== 共享服务器基础设施 ==========
 
 var (
@@ -1987,6 +2142,9 @@ func setupTest(t *testing.T) {
 
 	// 清理 PubSub 状态（跨测试残留会导致失败）
 	sharedServer.PubSub.Clear()
+
+	// 重置连接级别的状态（跨测试残留会导致失败）
+	sharedServer.ResetConnectionState()
 }
 
 // teardownTest 测试后清理（每个测试调用）

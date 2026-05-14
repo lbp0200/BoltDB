@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/lbp0200/BoltDB/internal/store"
@@ -172,10 +171,7 @@ func TestTCPIntegration(t *testing.T) {
 		_ = handler.ServeTCP(listener)
 	}()
 
-	// 等待服务器启动
-	time.Sleep(10 * time.Millisecond)
-
-	// 连接到服务器
+	// 连接到服务器 (listener 在 net.Listen 返回时已就绪)
 	conn, err := net.Dial("tcp", listener.Addr().String())
 	assert.NoError(t, err)
 	defer conn.Close()
@@ -476,8 +472,6 @@ func TestConcurrentConnections(t *testing.T) {
 		_ = handler.ServeTCP(listener)
 	}()
 
-	time.Sleep(10 * time.Millisecond)
-
 	// 创建多个并发连接
 	const numConnections = 10
 	done := make(chan bool, numConnections)
@@ -568,8 +562,6 @@ func TestRealWorldScenario(t *testing.T) {
 	go func() {
 		_ = handler.ServeTCP(listener)
 	}()
-
-	time.Sleep(10 * time.Millisecond)
 
 	conn, err := net.Dial("tcp", listener.Addr().String())
 	assert.NoError(t, err)

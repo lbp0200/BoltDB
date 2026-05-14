@@ -124,6 +124,31 @@ func TestMGet(t *testing.T) {
 	assert.Equal(t, "", values[2]) // 不存在的键返回空字符串
 }
 
+// TestMGetWrongType tests that MGet returns ErrWrongType when a key is not a string
+func TestMGetWrongType(t *testing.T) {
+	store := setupTestStore(t)
+
+	// Create a hash key
+	err := store.HSet("myhash", "field1", "value1")
+	assert.NoError(t, err)
+
+	// Create a string key
+	err = store.Set("mystring", "value1")
+	assert.NoError(t, err)
+
+	// MGet mixing string and non-string keys should return ErrWrongType
+	_, err = store.MGet("mystring", "myhash")
+	assert.Error(t, err)
+	assert.Equal(t, ErrWrongType, err)
+
+	// MGet with only non-existent keys should not error
+	values, err := store.MGet("nonexistent1", "nonexistent2")
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(values))
+	assert.Equal(t, "", values[0])
+	assert.Equal(t, "", values[1])
+}
+
 // TestMSet 测试 MSET 命令
 func TestMSet(t *testing.T) {
 	store := setupTestStore(t)

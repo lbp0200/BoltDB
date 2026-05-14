@@ -344,27 +344,6 @@ func TestNewFactoryFunctions(t *testing.T) {
 	assert.Equal(t, "+OK\r\n", OK.String())
 }
 
-func TestTruncateString(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		maxLen   int
-		expected string
-	}{
-		{name: "short", input: "hello", maxLen: 10, expected: "hello"},
-		{name: "exact", input: "hello", maxLen: 5, expected: "hello"},
-		{name: "long", input: "hello world", maxLen: 8, expected: "hello wo..."},
-		{name: "empty", input: "", maxLen: 10, expected: ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := truncateString(tt.input, tt.maxLen)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 // FuzzParseRESP tests RESP protocol parsing with fuzzed input
 func FuzzParseRESP(f *testing.F) {
 	// Seed corpus with valid and invalid inputs

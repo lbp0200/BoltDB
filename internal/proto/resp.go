@@ -187,32 +187,83 @@ func parseInlineCommand(line []byte) (*Array, error) {
 }
 
 func WriteRESP(w io.Writer, resp RESP) error {
-	respStr := resp.String()
-	logger.Logger.Debug().
-		Str("response", truncateString(respStr, 100)).
-		Msg("WriteRESP 写入响应")
-	_, err := fmt.Fprint(w, respStr)
-	if err != nil {
-		logger.Logger.Warn().Err(err).Msg("WriteRESP 写入失败")
-		return err
-	}
-	// 如果是 net.Conn，尝试刷新缓冲区
-	if conn, ok := w.(interface{ Flush() error }); ok {
-		if err := conn.Flush(); err != nil {
-			logger.Logger.Warn().Err(err).Msg("WriteRESP 刷新失败")
+	switch v := resp.(type) {
+	case *BulkString:
+		if v == nil || *v == nil {
+			if _, err := w.Write([]byte("$-1\r\n")); err != nil {
+				return err
+			}
+		} else {
+			if _, err := fmt.Fprintf(w, "$%d\r\n", len(*v)); err != nil {
+				return err
+			}
+			if _, err := w.Write(*v); err != nil {
+				return err
+			}
+			if _, err := w.Write([]byte("\r\n")); err != nil {
+				return err
+			}
+		}
+	case *Array:
+		if _, err := fmt.Fprintf(w, "*%d\r\n", len(v.Args)); err != nil {
 			return err
 		}
-		logger.Logger.Debug().Msg("WriteRESP 刷新成功")
+		for _, arg := range v.Args {
+			if arg == nil {
+				if _, err := w.Write([]byte("$-1\r\n")); err != nil {
+					return err
+				}
+			} else {
+				if _, err := fmt.Fprintf(w, "$%d\r\n", len(arg)); err != nil {
+					return err
+				}
+				if _, err := w.Write(arg); err != nil {
+					return err
+				}
+				if _, err := w.Write([]byte("\r\n")); err != nil {
+					return err
+				}
+			}
+		}
+	case *NestedArray:
+		if _, err := fmt.Fprintf(w, "*%d\r\n", len(v.Elems)); err != nil {
+			return err
+		}
+		for _, elem := range v.Elems {
+			if err := WriteRESP(w, elem); err != nil {
+				return err
+			}
+		}
+	case *SimpleString:
+		if _, err := fmt.Fprintf(w, "+%s\r\n", string(*v)); err != nil {
+			return err
+		}
+	case Error:
+		if _, err := fmt.Fprintf(w, "-%s\r\n", string(v)); err != nil {
+			return err
+		}
+	case Integer:
+		if _, err := fmt.Fprintf(w, ":%d\r\n", int64(v)); err != nil {
+			return err
+		}
+	case NilArray:
+		if _, err := w.Write([]byte("*-1\r\n")); err != nil {
+			return err
+		}
+	case RawString:
+		if _, err := w.Write([]byte(string(v))); err != nil {
+			return err
+		}
+	default:
+		respStr := resp.String()
+		if _, err := fmt.Fprint(w, respStr); err != nil {
+			return err
+		}
+	}
+	if flusher, ok := w.(interface{ Flush() error }); ok {
+		return flusher.Flush()
 	}
 	return nil
-}
-
-// truncateString 截断字符串用于日志显示
-func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
 }
 
 // helpers

@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lbp0200/BoltDB/internal/backup"
@@ -19,8 +20,16 @@ import (
 	"github.com/lbp0200/BoltDB/internal/store"
 )
 
-// connState holds per-connection state (currently unused, reserved for future use)
-type connState struct{}
+// connState holds per-connection state
+type connState struct {
+	inTransaction bool
+	commands      []TransactionCommand
+	transaction   *TransactionState
+	clientInfo    *ClientInfo
+	clusterAsking bool
+	watchedKeys   map[string]struct{}
+	dirtyKeys     map[string]struct{}
+}
 
 type Handler struct {
 	Db          *store.BotreonStore
@@ -28,8 +37,11 @@ type Handler struct {
 	Replication *replication.ReplicationManager
 	Backup      *backup.BackupManager
 	PubSub      *store.PubSubManager
-	Port        int // 服务器监听端口
-	// 事务状态（每个连接独立）
+	Port        int
+	// 共享的 Watch 监视器：key → 正在监视该 key 的连接
+	watchMonitors map[string]map[*connState]struct{}
+	watchMu       sync.Mutex
+	// 事务状态（共享 fallback，仅当 state==nil 时使用）
 	transaction *TransactionState
 	// 客户端信息（连接级别）
 	clientInfo *ClientInfo
@@ -77,11 +89,35 @@ func (h *Handler) resetTransaction() {
 	h.transaction = nil
 }
 
+// ResetConnectionState 重置连接级别的状态（测试用）
+func (h *Handler) ResetConnectionState() {
+	h.clientInfo = nil
+	h.clusterAsking = false
+	h.transaction = nil
+}
+
 // markDirtyKeys 标记键为脏（被修改）
-func (h *Handler) markDirtyKeys(keys ...string) {
-	if h.transaction != nil && h.transaction.IsWatching {
-		for _, key := range keys {
-			h.transaction.DirtyKeys[key] = struct{}{}
+// 通过共享 watchMonitors 通知所有正在监视该键的连接
+func (h *Handler) markDirtyKeys(state *connState, keys ...string) {
+	h.watchMu.Lock()
+	for _, key := range keys {
+		if watchers, exists := h.watchMonitors[key]; exists {
+			for watcher := range watchers {
+				if watcher.dirtyKeys == nil {
+					watcher.dirtyKeys = make(map[string]struct{})
+				}
+				watcher.dirtyKeys[key] = struct{}{}
+			}
+		}
+	}
+	h.watchMu.Unlock()
+
+	// 旧路径：当 state==nil（测试调用者），使用 h.transaction
+	if state == nil {
+		if h.transaction != nil && h.transaction.IsWatching {
+			for _, key := range keys {
+				h.transaction.DirtyKeys[key] = struct{}{}
+			}
 		}
 	}
 }
@@ -89,20 +125,25 @@ func (h *Handler) markDirtyKeys(keys ...string) {
 // checkAndHandleRedirect 检查键是否需要重定向到其他节点
 // 返回 nil 表示不需要重定向，可以继续执行命令
 // 返回非 nil 表示需要重定向，包含重定向信息
-func (h *Handler) checkAndHandleRedirect(key string) proto.RESP {
+func (h *Handler) checkAndHandleRedirect(state *connState, key string) proto.RESP {
 	if h.Cluster == nil {
-		return nil // 不在集群模式，直接执行
+		return nil
 	}
 
-	// 如果处于 ASKING 状态，检查是否是导入中的槽
-	if h.clusterAsking {
+	asking := h.clusterAsking
+	if state != nil {
+		asking = state.clusterAsking
+	}
+	if asking {
 		slot := cluster.Slot(key)
 		if h.Cluster.IsImportingSlot(slot) {
-			// 导入中的槽，允许执行命令
 			return nil
 		}
-		// ASKING 状态已过期，重置
-		h.clusterAsking = false
+		if state != nil {
+			state.clusterAsking = false
+		} else {
+			h.clusterAsking = false
+		}
 	}
 
 	redirect := h.Cluster.CheckSlotRedirect(key)
@@ -194,6 +235,18 @@ func (h *Handler) handleConnection(conn net.Conn) {
 		}
 	}
 
+	state := &connState{}
+
+	defer func() {
+		if len(state.watchedKeys) > 0 {
+			h.watchMu.Lock()
+			for key := range state.watchedKeys {
+				delete(h.watchMonitors, key)
+			}
+			h.watchMu.Unlock()
+		}
+	}()
+
 	for {
 		// 尝试读取所有可用的命令（支持 Pipeline）
 		// 先尝试读取第一个命令
@@ -211,7 +264,7 @@ func (h *Handler) handleConnection(conn net.Conn) {
 		commandsProcessed := 0
 
 		// 处理第一个命令
-		if resp := h.processRequest(req, reader, remoteAddr, writer, conn); resp != nil {
+		if resp := h.processRequest(req, reader, remoteAddr, writer, conn, state); resp != nil {
 			// 检查是否是复制接管信号
 			if _, isTakeover := resp.(ReplicationTakeoverSignal); isTakeover {
 				replicationOwned = true
@@ -236,7 +289,7 @@ func (h *Handler) handleConnection(conn net.Conn) {
 				break
 			}
 
-			if resp := h.processRequest(req, reader, remoteAddr, writer, conn); resp != nil {
+			if resp := h.processRequest(req, reader, remoteAddr, writer, conn, state); resp != nil {
 				// 检查是否是复制接管信号
 				if _, isTakeover := resp.(ReplicationTakeoverSignal); isTakeover {
 					replicationOwned = true
@@ -283,7 +336,7 @@ func (h *Handler) handleConnection(conn net.Conn) {
 // processRequest 处理单个请求，返回响应
 // PSYNC特殊处理：如果需要全量同步，会在返回响应后发送RDB数据
 // 返回 nil 表示连接已由复制接管，需要关闭处理循环
-func (h *Handler) processRequest(req *proto.Array, reader *bufio.Reader, remoteAddr string, writer *bufio.Writer, conn net.Conn) proto.RESP {
+func (h *Handler) processRequest(req *proto.Array, reader *bufio.Reader, remoteAddr string, writer *bufio.Writer, conn net.Conn, state *connState) proto.RESP {
 	args := req.Args
 	if len(args) == 0 {
 		logger.Logger.Warn().Str("remote_addr", remoteAddr).Msg("收到空命令")
@@ -306,7 +359,7 @@ func (h *Handler) processRequest(req *proto.Array, reader *bufio.Reader, remoteA
 		return resp
 	}
 
-	resp := h.executeCommand(nil, cmd, args[1:], remoteAddr)
+	resp := h.executeCommand(state, cmd, args[1:], remoteAddr)
 	if resp == nil {
 		logger.Logger.Error().
 			Str("remote_addr", remoteAddr).
@@ -513,6 +566,30 @@ func (h *Handler) handleSlaveReplicationConnection(slave *replication.SlaveConne
 }
 
 func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, remoteAddr string) proto.RESP {
+	// 如果在事务中（且不是事务控制命令），将命令加入队列
+	if state != nil && state.inTransaction {
+		switch cmd {
+		case "MULTI", "EXEC", "DISCARD", "WATCH", "UNWATCH", "PING", "QUIT":
+			// 事务控制/连接命令不排队
+		default:
+			state.commands = append(state.commands, TransactionCommand{
+				Command: cmd,
+				Args:    args,
+			})
+			return proto.NewSimpleString("QUEUED")
+		}
+	} else if state == nil && h.transaction != nil && h.transaction.InTransaction {
+		switch cmd {
+		case "MULTI", "EXEC", "DISCARD", "WATCH", "UNWATCH":
+		default:
+			h.transaction.Commands = append(h.transaction.Commands, TransactionCommand{
+				Command: cmd,
+				Args:    args,
+			})
+			return proto.NewSimpleString("QUEUED")
+		}
+	}
+
 	switch cmd {
 	// 连接命令
 	case "PING":
@@ -577,26 +654,39 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			// 返回当前客户端列表（简化实现）
 			return proto.NewBulkString([]byte("id=1 addr=127.0.0.1:12345 fd=6 name= age=0 idle=0 flags=N db=0 sub=0 psub=0 multi=-1 cmd=client events=r oFlags= keys=0"))
 		case "GETNAME":
-			if h.clientInfo != nil && h.clientInfo.Name != "" {
-				return proto.NewBulkString([]byte(h.clientInfo.Name))
+			ci := h.clientInfo
+			if state != nil && state.clientInfo != nil {
+				ci = state.clientInfo
 			}
-			// 返回 nil BulkString（go-redis 会将其作为 nil 返回）
+			if ci != nil && ci.Name != "" {
+				return proto.NewBulkString([]byte(ci.Name))
+			}
 			nilResp := proto.NewBulkString(nil)
 			return nilResp
 		case "SETNAME":
 			if len(args) < 2 {
 				return proto.NewError("ERR wrong number of arguments for 'CLIENT SETNAME' command")
 			}
-			// 设置客户端名称（仅内存存储）
 			name := string(args[1])
-			if h.clientInfo == nil {
-				h.clientInfo = &ClientInfo{}
+			if state != nil {
+				if state.clientInfo == nil {
+					state.clientInfo = &ClientInfo{}
+				}
+				state.clientInfo.Name = name
+			} else {
+				if h.clientInfo == nil {
+					h.clientInfo = &ClientInfo{}
+				}
+				h.clientInfo.Name = name
 			}
-			h.clientInfo.Name = name
 			return proto.OK
 		case "ID":
-			if h.clientInfo != nil {
-				return proto.NewInteger(h.clientInfo.ID)
+			ci := h.clientInfo
+			if state != nil && state.clientInfo != nil {
+				ci = state.clientInfo
+			}
+			if ci != nil && ci.ID > 0 {
+				return proto.NewInteger(ci.ID)
 			}
 			return proto.NewInteger(1)
 		case "KILL":
@@ -618,18 +708,21 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			// 取消暂停（简化实现：空操作）
 			return proto.OK
 		case "INFO":
-			// 返回客户端连接信息
 			addr := "127.0.0.1:6379"
 			clientID := int64(0)
 			fd := 0
 			clientName := ""
-			if h.clientInfo != nil {
-				if h.clientInfo.Addr != "" {
-					addr = h.clientInfo.Addr
+			ci := h.clientInfo
+			if state != nil && state.clientInfo != nil {
+				ci = state.clientInfo
+			}
+			if ci != nil {
+				if ci.Addr != "" {
+					addr = ci.Addr
 				}
-				clientID = h.clientInfo.ID
-				fd = h.clientInfo.FD
-				clientName = h.clientInfo.Name
+				clientID = ci.ID
+				fd = ci.FD
+				clientName = ci.Name
 			}
 			clientAge := "0"
 			idleTime := "0"
@@ -673,10 +766,10 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		key, value := string(args[0]), string(args[1])
 		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(key); resp != nil {
+		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 			return resp
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		if err := h.Db.Set(key, value); err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -688,7 +781,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		key := string(args[0])
 		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(key); resp != nil {
+		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 			return resp
 		}
 		value, err := h.Db.Get(key)
@@ -709,7 +802,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR invalid integer")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		if err := h.Db.SetEX(key, value, seconds); err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -724,7 +817,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR invalid integer")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		if err := h.Db.PSETEX(key, value, milliseconds); err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -735,7 +828,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR wrong number of arguments for 'SETNX' command")
 		}
 		key, value := string(args[0]), string(args[1])
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		success, err := h.Db.SetNX(key, value)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -747,7 +840,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR wrong number of arguments for 'GETSET' command")
 		}
 		key, value := string(args[0]), string(args[1])
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		oldValue, err := h.Db.GetSet(key, value)
 		if err != nil {
 			return proto.NewBulkString(nil)
@@ -829,10 +922,10 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		key := string(args[0])
 		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(key); resp != nil {
+		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 			return resp
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		value, err := h.Db.INCR(key)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -845,14 +938,14 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		key := string(args[0])
 		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(key); resp != nil {
+		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 			return resp
 		}
 		increment, err := strconv.ParseInt(string(args[1]), 10, 64)
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		value, err := h.Db.INCRBY(key, increment)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -865,10 +958,10 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		key := string(args[0])
 		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(key); resp != nil {
+		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 			return resp
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		value, err := h.Db.DECR(key)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -881,14 +974,14 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		key := string(args[0])
 		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(key); resp != nil {
+		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 			return resp
 		}
 		decrement, err := strconv.ParseInt(string(args[1]), 10, 64)
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		value, err := h.Db.DECRBY(key, decrement)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -901,14 +994,14 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		key := string(args[0])
 		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(key); resp != nil {
+		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 			return resp
 		}
 		increment, err := strconv.ParseFloat(string(args[1]), 64)
 		if err != nil {
 			return proto.NewError("ERR value is not a valid float")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		value, err := h.Db.INCRBYFLOAT(key, increment)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -921,10 +1014,10 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		key, value := string(args[0]), string(args[1])
 		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(key); resp != nil {
+		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 			return resp
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		length, err := h.Db.APPEND(key, value)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -938,7 +1031,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		key := string(args[0])
 		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(key); resp != nil {
+		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 			return resp
 		}
 		length, err := h.Db.StrLen(key)
@@ -962,7 +1055,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil || (bit != 0 && bit != 1) {
 			return proto.NewError("ERR bit is not an integer or out of range")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		newBit, err := h.Db.SetBit(key, int(offset), int(bit))
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1029,7 +1122,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if operation == "NOT" && len(sourceKeys) != 1 {
 			return proto.NewError("ERR BITOP NOT must be called with exactly one source key")
 		}
-		h.markDirtyKeys(destKey)
+		h.markDirtyKeys(state, destKey)
 		length, err := h.Db.BitOp(operation, destKey, sourceKeys...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1138,7 +1231,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		length, err := h.Db.SetRange(key, offset, value)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1159,7 +1252,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
 			return resp
 		}
-		h.markDirtyKeys(keys...)
+		h.markDirtyKeys(state, keys...)
 		count := int64(0)
 		for _, arg := range args {
 			key := string(arg)
@@ -1200,14 +1293,14 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		key := string(args[0])
 		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(key); resp != nil {
+		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 			return resp
 		}
 		elements := make([]string, len(args)-1)
 		for i := 1; i < len(args); i++ {
 			elements[i-1] = string(args[i])
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		changed, err := h.Db.PFAdd(key, elements...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1242,10 +1335,10 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			sourceKeys[i-1] = string(args[i])
 		}
 		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(destKey); resp != nil {
+		if resp := h.checkAndHandleRedirect(state, destKey); resp != nil {
 			return resp
 		}
-		h.markDirtyKeys(destKey)
+		h.markDirtyKeys(state, destKey)
 		err := h.Db.PFMerge(destKey, sourceKeys...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1258,7 +1351,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		key := string(args[0])
 		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(key); resp != nil {
+		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 			return resp
 		}
 		info, err := h.Db.PFInfo(key)
@@ -1278,7 +1371,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		key := string(args[0])
 		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(key); resp != nil {
+		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 			return resp
 		}
 		keyType, err := h.Db.Type(key)
@@ -1405,7 +1498,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		success, err := h.Db.Expire(key, seconds)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1421,7 +1514,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		success, err := h.Db.ExpireAt(key, timestamp)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1437,7 +1530,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		success, err := h.Db.PExpire(key, milliseconds)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1453,7 +1546,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		success, err := h.Db.PExpireAt(key, timestamp)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1487,7 +1580,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR wrong number of arguments for 'PERSIST' command")
 		}
 		key := string(args[0])
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		success, err := h.Db.Persist(key)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1499,7 +1592,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR wrong number of arguments for 'RENAME' command")
 		}
 		key, newKey := string(args[0]), string(args[1])
-		h.markDirtyKeys(key, newKey)
+		h.markDirtyKeys(state, key, newKey)
 		if err := h.Db.Rename(key, newKey); err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -1510,7 +1603,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR wrong number of arguments for 'RENAMENX' command")
 		}
 		key, newKey := string(args[0]), string(args[1])
-		h.markDirtyKeys(key, newKey)
+		h.markDirtyKeys(state, key, newKey)
 		success, err := h.Db.RenameNX(key, newKey)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1563,7 +1656,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if dstExists && !replace {
 			return proto.NewInteger(0) // 目标存在且不替换
 		}
-		h.markDirtyKeys(srcKey, dstKey)
+		h.markDirtyKeys(state, srcKey, dstKey)
 		// 根据类型复制
 		var copied bool
 		switch srcType {
@@ -1675,7 +1768,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i := 1; i < len(args); i++ {
 			values[i-1] = string(args[i])
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		count, err := h.Db.LPush(key, values...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1692,7 +1785,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i := 1; i < len(args); i++ {
 			values[i-1] = string(args[i])
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		count, err := h.Db.RPush(key, values...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1778,7 +1871,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		if err := h.Db.LSet(key, index, value); err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -1794,7 +1887,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err1 != nil || err2 != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		if err := h.Db.LTrim(key, start, stop); err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -1809,7 +1902,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if where != "BEFORE" && where != "AFTER" {
 			return proto.NewError("ERR syntax error")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		count, err := h.Db.LInsert(key, where, pivot, value)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1878,7 +1971,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		removed, err := h.Db.LRem(key, count, value)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1890,7 +1983,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR wrong number of arguments for 'RPOPLPUSH' command")
 		}
 		source, destination := string(args[0]), string(args[1])
-		h.markDirtyKeys(source, destination)
+		h.markDirtyKeys(state, source, destination)
 		value, err := h.Db.RPopLPush(source, destination)
 		if err != nil || value == "" {
 			return proto.NewBulkString(nil)
@@ -1905,7 +1998,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		destination := string(args[1])
 		sourceDirection := strings.ToUpper(string(args[2]))
 		destinationDirection := strings.ToUpper(string(args[3]))
-		h.markDirtyKeys(source, destination)
+		h.markDirtyKeys(state, source, destination)
 		value, err := h.Db.LMove(source, destination, sourceDirection, destinationDirection)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1927,7 +2020,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR timeout is not a float")
 		}
-		h.markDirtyKeys(source, destination)
+		h.markDirtyKeys(state, source, destination)
 		value, err := h.Db.BLMoveBlocking(source, destination, sourceDirection, destinationDirection, timeout)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1946,7 +2039,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i := 1; i < len(args); i++ {
 			values[i-1] = string(args[i])
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		count, err := h.Db.LPUSHX(key, values...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1963,7 +2056,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i := 1; i < len(args); i++ {
 			values[i-1] = string(args[i])
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		count, err := h.Db.RPUSHX(key, values...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -1985,7 +2078,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		key, value, err := h.Db.BLPOPBlocking(keys, timeout)
 		if err != nil || key == "" {
-			return &proto.Array{Args: [][]byte{}}
+			return proto.NilArray{}
 		}
 		return &proto.Array{Args: [][]byte{[]byte(key), []byte(value)}}
 
@@ -2003,7 +2096,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		key, value, err := h.Db.BRPOPBlocking(keys, timeout)
 		if err != nil || key == "" {
-			return &proto.Array{Args: [][]byte{}}
+			return proto.NilArray{}
 		}
 		return &proto.Array{Args: [][]byte{[]byte(key), []byte(value)}}
 
@@ -2028,7 +2121,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR wrong number of arguments for 'HSET' command")
 		}
 		key := string(args[0])
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		count := 0
 		for i := 1; i < len(args); i += 2 {
 			if i+1 >= len(args) {
@@ -2037,7 +2130,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			field, value := string(args[i]), args[i+1]
 			if err := h.Db.HSet(key, field, string(value)); err != nil {
 				if errors.Is(err, store.ErrWrongType) {
-					return proto.NewError("ERR WRONGTYPE Operation against a key holding the wrong kind of value")
+					return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 				}
 				return proto.NewError(fmt.Sprintf("ERR %v", err))
 			}
@@ -2069,7 +2162,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i := 1; i < len(args); i++ {
 			fields[i-1] = string(args[i])
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		count, err := h.Db.HDel(key, fields...)
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -2151,7 +2244,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR wrong number of arguments for 'HMSET' command")
 		}
 		key := string(args[0])
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		for i := 1; i < len(args); i += 2 {
 			if i+1 >= len(args) {
 				break
@@ -2191,7 +2284,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR wrong number of arguments for 'HSETNX' command")
 		}
 		key, field, value := string(args[0]), string(args[1]), string(args[2])
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		success, err := h.Db.HSetNX(key, field, value)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2207,7 +2300,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		value, err := h.Db.HIncrBy(key, field, increment)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2223,7 +2316,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR value is not a valid float")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		value, err := h.Db.HIncrByFloat(key, field, increment)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2299,7 +2392,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i := 1; i < len(args); i++ {
 			members[i-1] = string(args[i])
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		count, err := h.Db.SAdd(key, members...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2316,7 +2409,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i := 1; i < len(args); i++ {
 			members[i-1] = string(args[i])
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		count, err := h.Db.SRem(key, members...)
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -2484,7 +2577,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i := 1; i < len(args); i++ {
 			keys[i-1] = string(args[i])
 		}
-		h.markDirtyKeys(destination)
+		h.markDirtyKeys(state, destination)
 		count, err := h.Db.SInterStore(destination, keys...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2535,7 +2628,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i := 1; i < len(args); i++ {
 			keys[i-1] = string(args[i])
 		}
-		h.markDirtyKeys(destination)
+		h.markDirtyKeys(state, destination)
 		count, err := h.Db.SUnionStore(destination, keys...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2552,7 +2645,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i := 1; i < len(args); i++ {
 			keys[i-1] = string(args[i])
 		}
-		h.markDirtyKeys(destination)
+		h.markDirtyKeys(state, destination)
 		count, err := h.Db.SDiffStore(destination, keys...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2618,7 +2711,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			member := string(args[i+1])
 			members = append(members, store.ZSetMember{Member: member, Score: score})
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		if err := h.Db.ZAdd(key, members); err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -2629,7 +2722,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR wrong number of arguments for 'ZREM' command")
 		}
 		key := string(args[0])
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		count := 0
 		for i := 1; i < len(args); i++ {
 			member := string(args[i])
@@ -2660,7 +2753,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		count, err := h.Db.ZRemRangeByRank(key, start, stop)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2680,7 +2773,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR value is not a valid float")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		count, err := h.Db.ZRemRangeByScore(key, min, max, minExclusive, maxExclusive)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2700,7 +2793,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			}
 			count = c
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		members, err := h.Db.ZPopMax(key, count)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -2725,7 +2818,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			}
 			count = c
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		members, err := h.Db.ZPopMin(key, count)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -3060,7 +3153,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR value is not a valid float")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		newScore, err := h.Db.ZIncrBy(key, member, delta)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -3126,7 +3219,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
 			}
 		}
-		h.markDirtyKeys(destination)
+		h.markDirtyKeys(state, destination)
 		count, err := h.Db.ZUnionStore(destination, keys, weights, aggregate)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -3180,7 +3273,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
 			}
 		}
-		h.markDirtyKeys(destination)
+		h.markDirtyKeys(state, destination)
 		count, err := h.Db.ZInterStore(destination, keys, weights, aggregate)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -3203,7 +3296,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i := 0; i < numKeys; i++ {
 			keys[i] = string(args[2+i])
 		}
-		h.markDirtyKeys(destination)
+		h.markDirtyKeys(state, destination)
 		count, err := h.Db.ZDiffStore(destination, keys)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -3308,7 +3401,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		zSetName := string(args[0])
 		min := string(args[1])
 		max := string(args[2])
-		h.markDirtyKeys(zSetName)
+		h.markDirtyKeys(state, zSetName)
 		removed, err := h.Db.ZRemRangeByLex(zSetName, min, max)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -3360,10 +3453,12 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			},
 		}
 
-	// ASKING 命令（用于集群槽迁移）
 	case "ASKING":
-		// ASKING 命令标记当前连接已发送 ASKING，允许执行针对导入中槽的命令
-		h.clusterAsking = true
+		if state != nil {
+			state.clusterAsking = true
+		} else {
+			h.clusterAsking = true
+		}
 		logger.Logger.Debug().Msg("收到 ASKING 命令")
 		return proto.OK
 
@@ -4065,86 +4160,164 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 	// Transaction commands - 事务命令
 	case "MULTI":
-		// 开始事务
-		if h.transaction != nil && h.transaction.InTransaction {
-			return proto.NewError("ERR MULTI calls can not be nested")
-		}
-		if h.transaction == nil {
-			h.transaction = &TransactionState{
-				Commands:  make([]TransactionCommand, 0),
-				WatchKeys: make(map[string]struct{}),
-				DirtyKeys: make(map[string]struct{}),
+		if state != nil {
+			if state.inTransaction {
+				return proto.NewError("ERR MULTI calls can not be nested")
 			}
+			state.inTransaction = true
+			state.commands = make([]TransactionCommand, 0)
+			if state.transaction == nil {
+				state.transaction = &TransactionState{
+					Commands:  make([]TransactionCommand, 0),
+					WatchKeys: make(map[string]struct{}),
+					DirtyKeys: make(map[string]struct{}),
+				}
+			}
+			state.transaction.InTransaction = true
+			state.transaction.Commands = make([]TransactionCommand, 0)
+		} else {
+			if h.transaction != nil && h.transaction.InTransaction {
+				return proto.NewError("ERR MULTI calls can not be nested")
+			}
+			if h.transaction == nil {
+				h.transaction = &TransactionState{
+					Commands:  make([]TransactionCommand, 0),
+					WatchKeys: make(map[string]struct{}),
+					DirtyKeys: make(map[string]struct{}),
+				}
+			}
+			h.transaction.InTransaction = true
+			h.transaction.Commands = make([]TransactionCommand, 0)
 		}
-		h.transaction.InTransaction = true
-		h.transaction.Commands = make([]TransactionCommand, 0) // 清除排队的命令
-		// 注意：不重置 WatchKeys 和 IsWatching，允许 WATCH 在 MULTI 之前
 		return proto.NewSimpleString("OK")
 
 	case "EXEC":
+		if state != nil {
+			if !state.inTransaction {
+				return proto.NewError("ERR EXEC without MULTI")
+			}
+			if len(state.watchedKeys) > 0 {
+				for watchKey := range state.watchedKeys {
+					if _, dirty := state.dirtyKeys[watchKey]; dirty {
+						state.inTransaction = false
+						state.commands = nil
+						return proto.NilArray{}
+					}
+				}
+			}
+			results := make([]proto.RESP, len(state.commands))
+			for i, tc := range state.commands {
+				results[i] = h.executeQueuedCommand(tc.Command, tc.Args)
+			}
+			state.inTransaction = false
+			state.commands = nil
+			flatArgs := make([][]byte, len(results))
+			for i, r := range results {
+				flatArgs[i] = []byte(r.String())
+			}
+			return &proto.Array{Args: flatArgs}
+		}
 		if h.transaction == nil || !h.transaction.InTransaction {
 			return proto.NewError("ERR EXEC without MULTI")
 		}
-		// 检查 dirty keys（如果监视的键被修改，事务失败）
 		if h.transaction.IsWatching && len(h.transaction.WatchKeys) > 0 {
 			for watchKey := range h.transaction.WatchKeys {
 				if _, dirty := h.transaction.DirtyKeys[watchKey]; dirty {
-					// 键被修改，事务失败
 					h.resetTransaction()
-					return nil // 返回 nil 表示 WATCH 失败
+					return proto.NilArray{}
 				}
 			}
 		}
-		// 执行所有排队的命令
 		results := make([]proto.RESP, len(h.transaction.Commands))
 		for i, tc := range h.transaction.Commands {
 			results[i] = h.executeQueuedCommand(tc.Command, tc.Args)
 		}
 		h.resetTransaction()
-		flatArgs := make([][]byte, 0)
-		for _, r := range results {
-			flatArgs = append(flatArgs, []byte(r.String()))
+		flatArgs := make([][]byte, len(results))
+		for i, r := range results {
+			flatArgs[i] = []byte(r.String())
 		}
 		return &proto.Array{Args: flatArgs}
 
 	case "DISCARD":
-		if h.transaction == nil || !h.transaction.InTransaction {
-			return proto.NewError("ERR DISCARD without MULTI")
+		if state != nil {
+			if !state.inTransaction {
+				return proto.NewError("ERR DISCARD without MULTI")
+			}
+			state.inTransaction = false
+			state.commands = nil
+			state.transaction = nil
+		} else {
+			if h.transaction == nil || !h.transaction.InTransaction {
+				return proto.NewError("ERR DISCARD without MULTI")
+			}
+			h.resetTransaction()
 		}
-		h.resetTransaction()
 		return proto.NewSimpleString("OK")
 
 	case "WATCH":
 		if len(args) < 1 {
 			return proto.NewError("ERR wrong number of arguments for 'WATCH' command")
 		}
-		if h.transaction != nil && h.transaction.InTransaction && len(h.transaction.Commands) > 0 {
+		if (state != nil && state.inTransaction && len(state.commands) > 0) ||
+			(state == nil && h.transaction != nil && h.transaction.InTransaction && len(h.transaction.Commands) > 0) {
 			return proto.NewError("ERR WATCH inside MULTI is not allowed")
 		}
-		// 复用现有事务状态或创建新的
-		if h.transaction == nil {
-			h.transaction = &TransactionState{
-				Commands:   make([]TransactionCommand, 0),
-				WatchKeys:  make(map[string]struct{}),
-				IsWatching: true,
-				DirtyKeys:  make(map[string]struct{}),
+		if state != nil {
+			if state.watchedKeys == nil {
+				state.watchedKeys = make(map[string]struct{})
+				state.dirtyKeys = make(map[string]struct{})
 			}
+			h.watchMu.Lock()
+			if h.watchMonitors == nil {
+				h.watchMonitors = make(map[string]map[*connState]struct{})
+			}
+			for _, arg := range args {
+				key := string(arg)
+				state.watchedKeys[key] = struct{}{}
+				if h.watchMonitors[key] == nil {
+					h.watchMonitors[key] = make(map[*connState]struct{})
+				}
+				h.watchMonitors[key][state] = struct{}{}
+			}
+			h.watchMu.Unlock()
 		} else {
-			h.transaction.IsWatching = true
-			h.transaction.WatchKeys = make(map[string]struct{})
-		}
-		for _, arg := range args {
-			key := string(arg)
-			h.transaction.WatchKeys[key] = struct{}{}
+			if h.transaction == nil {
+				h.transaction = &TransactionState{
+					Commands:   make([]TransactionCommand, 0),
+					WatchKeys:  make(map[string]struct{}),
+					IsWatching: true,
+					DirtyKeys:  make(map[string]struct{}),
+				}
+			} else {
+				h.transaction.IsWatching = true
+				h.transaction.WatchKeys = make(map[string]struct{})
+			}
+			for _, arg := range args {
+				key := string(arg)
+				h.transaction.WatchKeys[key] = struct{}{}
+			}
 		}
 		return proto.NewInteger(int64(len(args)))
 
 	case "UNWATCH":
-		if h.transaction != nil {
-			h.transaction.IsWatching = false
-			h.transaction.WatchKeys = make(map[string]struct{})
+		if state != nil {
+			if state.watchedKeys != nil {
+				h.watchMu.Lock()
+				for key := range state.watchedKeys {
+					delete(h.watchMonitors, key)
+				}
+				h.watchMu.Unlock()
+				state.watchedKeys = make(map[string]struct{})
+				state.dirtyKeys = make(map[string]struct{})
+			}
+		} else {
+			if h.transaction != nil {
+				h.transaction.IsWatching = false
+				h.transaction.WatchKeys = make(map[string]struct{})
+			}
+			h.resetTransaction()
 		}
-		h.resetTransaction()
 		return proto.NewSimpleString("OK")
 
 	// ==================== GEOADD ====================
@@ -4166,7 +4339,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				Member: string(args[i+2]),
 			})
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		added, err := h.Db.GeoAdd(key, members)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -5511,7 +5684,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				xx = true
 			}
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		result, err := h.Db.JSONSet(key, path, value, nx, xx)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -5553,7 +5726,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i := 1; i < len(args); i++ {
 			paths = append(paths, string(args[i]))
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		count, err := h.Db.JSONDel(key, paths...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -5610,7 +5783,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i := 2; i < len(args); i++ {
 			values = append(values, string(args[i]))
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		count, err := h.Db.JSONArrAppend(key, path, values...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -5660,7 +5833,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR increment must be a valid number")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		result, err := h.Db.JSONNumIncrBy(key, path, increment)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -5676,7 +5849,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR multiplier must be a valid number")
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		result, err := h.Db.JSONNumMultBy(key, path, multiplier)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -5692,7 +5865,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if len(args) >= 2 {
 			path = string(args[1])
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		count, err := h.Db.JSONClear(key, path)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -5790,7 +5963,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				opts.OnDuplicate = string(args[4])
 			}
 		}
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		ts, err := h.Db.TSAdd(key, timestamp, value, opts)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -5853,7 +6026,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		key := string(args[0])
 		start := string(args[1])
 		stop := string(args[2])
-		h.markDirtyKeys(key)
+		h.markDirtyKeys(state, key)
 		deleted, err := h.Db.TSDel(key, start, stop)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
@@ -5926,7 +6099,15 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 	default:
 		// 如果在事务中，将命令加入队列
-		if h.transaction != nil {
+		if state != nil {
+			if state.inTransaction {
+				state.commands = append(state.commands, TransactionCommand{
+					Command: cmd,
+					Args:    args,
+				})
+				return proto.NewSimpleString("QUEUED")
+			}
+		} else if h.transaction != nil {
 			h.transaction.Commands = append(h.transaction.Commands, TransactionCommand{
 				Command: cmd,
 				Args:    args,

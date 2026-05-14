@@ -153,8 +153,9 @@ func (s *BotreonStore) MGet(keys ...string) ([]string, error) {
 	values := make([]string, len(keys))
 	err := s.db.View(func(txn *badger.Txn) error {
 		for i, key := range keys {
-			strKey := s.stringKey(key)
-			item, err := txn.Get([]byte(strKey))
+			// Check type first to avoid returning garbled data for non-string keys
+			typeKey := TypeOfKeyGet(key)
+			item, err := txn.Get(typeKey)
 			if err != nil {
 				if errors.Is(err, badger.ErrKeyNotFound) {
 					values[i] = "" // 键不存在返回空字符串
@@ -162,7 +163,26 @@ func (s *BotreonStore) MGet(keys ...string) ([]string, error) {
 				}
 				return err
 			}
-			val, err := s.getValueWithDecompression(item)
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(val)
+			if keyType != "" && keyType != KeyTypeString {
+				return ErrWrongType
+			}
+
+			// Read the string value
+			strKey := s.stringKey(key)
+			item, err = txn.Get([]byte(strKey))
+			if err != nil {
+				if errors.Is(err, badger.ErrKeyNotFound) {
+					values[i] = "" // 键不存在返回空字符串
+					continue
+				}
+				return err
+			}
+			val, err = s.getValueWithDecompression(item)
 			if err != nil {
 				return err
 			}

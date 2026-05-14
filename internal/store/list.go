@@ -1476,19 +1476,25 @@ func (s *BotreonStore) BRPOPLPUSHBlocking(source, destination string, timeout in
 		return value, nil
 	}
 
+	value, err := s.RPopLPush(source, destination)
+	if err == nil && value != "" {
+		return value, nil
+	}
+
 	timeoutCh := time.After(time.Duration(timeout) * time.Second)
+	resultCh := make(chan BlockingResult, 1)
+	s.registerBlockingPop(source, resultCh)
 
 	for {
-		value, err := s.RPopLPush(source, destination)
-		if err == nil && value != "" {
-			return value, nil
-		}
-
 		select {
+		case <-resultCh:
+			value, err := s.RPopLPush(source, destination)
+			if err == nil && value != "" {
+				return value, nil
+			}
+			s.registerBlockingPop(source, resultCh)
 		case <-timeoutCh:
 			return "", nil
-		default:
-			time.Sleep(10 * time.Millisecond)
 		}
 	}
 }
@@ -1499,19 +1505,25 @@ func (s *BotreonStore) BLMoveBlocking(source, destination, sourceDirection, dest
 		return s.LMove(source, destination, sourceDirection, destinationDirection)
 	}
 
+	value, err := s.LMove(source, destination, sourceDirection, destinationDirection)
+	if err == nil && value != "" {
+		return value, nil
+	}
+
 	timeoutCh := time.After(time.Duration(timeout) * time.Second)
+	resultCh := make(chan BlockingResult, 1)
+	s.registerBlockingPop(source, resultCh)
 
 	for {
-		value, err := s.LMove(source, destination, sourceDirection, destinationDirection)
-		if err == nil && value != "" {
-			return value, nil
-		}
-
 		select {
+		case <-resultCh:
+			value, err := s.LMove(source, destination, sourceDirection, destinationDirection)
+			if err == nil && value != "" {
+				return value, nil
+			}
+			s.registerBlockingPop(source, resultCh)
 		case <-timeoutCh:
 			return "", nil
-		default:
-			time.Sleep(10 * time.Millisecond)
 		}
 	}
 }
