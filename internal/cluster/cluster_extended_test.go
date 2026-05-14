@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/zeebo/assert"
@@ -13,12 +14,17 @@ func TestCluster_GetNodeBySlot(t *testing.T) {
 
 	// Create and add a node
 	node := NewNode("node1", "127.0.0.1:6379")
-	node.AddSlotRange(0, 100)
 	cluster.AddNode(node)
 
-	// Get node by slot - just verify no panic
-	_ = cluster.GetNodeBySlot(50)
-	assert.True(t, true)
+	// Assign slot range 0-100 to the node (updates cluster slot table)
+	err := cluster.AssignSlotRange(0, 100, "node1")
+	assert.NoError(t, err)
+
+	// Get node by slot 50
+	found := cluster.GetNodeBySlot(50)
+	assert.True(t, found != nil)
+	assert.Equal(t, "node1", found.ID)
+	assert.True(t, found.HasSlot(50))
 }
 
 // TestCluster_GetNodeByID tests GetNodeByID
@@ -96,12 +102,16 @@ func TestCluster_GetSlotOwner(t *testing.T) {
 
 	// Create and add a node
 	node := NewNode("node1", "127.0.0.1:6379")
-	node.AddSlotRange(0, 100)
 	cluster.AddNode(node)
 
-	// Get slot owner - just verify no panic
-	_ = cluster.GetSlotOwner(50)
-	assert.True(t, true)
+	// Assign slot range 0-100 to the node
+	err := cluster.AssignSlotRange(0, 100, "node1")
+	assert.NoError(t, err)
+
+	// Get slot owner
+	owner := cluster.GetSlotOwner(50)
+	assert.True(t, owner != nil)
+	assert.Equal(t, "node1", owner.ID)
 }
 
 // TestCluster_GetClusterNodes tests GetClusterNodes
@@ -113,9 +123,18 @@ func TestCluster_GetClusterNodes(t *testing.T) {
 	node := NewNode("node1", "127.0.0.1:6379")
 	cluster.AddNode(node)
 
-	// Get cluster nodes - just verify no panic
-	_ = cluster.GetClusterNodes()
-	assert.True(t, true)
+	// Get cluster nodes (returns formatted node lines like Redis CLUSTER NODES)
+	nodes := cluster.GetClusterNodes()
+	assert.True(t, len(nodes) > 0)
+	// Verify node1 appears in one of the node lines
+	found := false
+	for _, line := range nodes {
+		if strings.Contains(line, "node1") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found)
 }
 
 // TestCluster_GetClusterSlots tests GetClusterSlots
@@ -169,8 +188,10 @@ func TestCluster_UpdateNodeEpoch(t *testing.T) {
 	// Update node epoch
 	cluster.UpdateNodeEpoch("node1", 100)
 
-	// Should not panic
-	assert.True(t, true)
+	// Verify epoch was updated
+	updated := cluster.GetNodeByID("node1")
+	assert.True(t, updated != nil)
+	assert.Equal(t, uint64(100), updated.Epoch)
 }
 
 // TestCluster_ImportingSlots tests IsImportingSlot
@@ -178,9 +199,25 @@ func TestCluster_ImportingSlots(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	// Set importing slot - just verify no panic
+	// Add a source node to the cluster (required by SetSlotImporting to resolve node ID to address)
+	sourceNode := NewNode("source-node", "127.0.0.1:6380")
+	cluster.AddNode(sourceNode)
+
+	// Ensure slot 100 is owned by myself (IsImportingSlot checks this first)
+	cluster.AssignSlot(100, cluster.Myself.ID)
+
+	// Set importing slot
 	cluster.SetSlotImporting(100, "source-node")
-	assert.True(t, true)
+	assert.True(t, cluster.IsImportingSlot(100))
+	importing := cluster.GetImportingSlots()
+	found := false
+	for _, info := range importing {
+		if info.Slot == 100 && info.SourceNode == "127.0.0.1:6380" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found)
 }
 
 // TestCluster_MigratingSlots tests IsMigratingSlot
@@ -188,9 +225,25 @@ func TestCluster_MigratingSlots(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	// Set migrating slot - just verify no panic
+	// Add a target node to the cluster (required by SetSlotMigrating to resolve node ID to address)
+	targetNode := NewNode("target-node", "127.0.0.1:6381")
+	cluster.AddNode(targetNode)
+
+	// Ensure slot 100 is owned by myself (IsMigratingSlot checks this first)
+	cluster.AssignSlot(100, cluster.Myself.ID)
+
+	// Set migrating slot
 	cluster.SetSlotMigrating(100, "target-node")
-	assert.True(t, true)
+	assert.True(t, cluster.IsMigratingSlot(100))
+	migrating := cluster.GetMigratingSlots()
+	found := false
+	for _, info := range migrating {
+		if info.Slot == 100 && info.TargetNode == "127.0.0.1:6381" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found)
 }
 
 // TestCluster_ClearSlotMigration tests ClearSlotMigration
@@ -198,8 +251,14 @@ func TestCluster_ClearSlotMigration(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	// Set and clear migrating slot - just verify no panic
+	// Set and clear migrating slot
 	cluster.SetSlotMigrating(100, "target-node")
 	cluster.ClearSlotMigration(100)
-	assert.True(t, true)
+	assert.False(t, cluster.IsMigratingSlot(100))
+	migrating := cluster.GetMigratingSlots()
+	for _, info := range migrating {
+		if info.Slot == 100 {
+			t.Fatalf("slot 100 should be cleared but still in migrating list")
+		}
+	}
 }

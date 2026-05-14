@@ -14,9 +14,9 @@ func TestServerGeoCommands2(t *testing.T) {
 	defer handler.Db.Close()
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// GEOADD
@@ -73,7 +73,7 @@ func TestServerGeoCommands2(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -85,9 +85,9 @@ func TestServerHyperLogLogCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// PFADD
@@ -124,7 +124,7 @@ func TestServerHyperLogLogCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -136,9 +136,9 @@ func TestServerStreamCommands2(t *testing.T) {
 	defer handler.Db.Close()
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// XADD
@@ -215,7 +215,7 @@ func TestServerStreamCommands2(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -227,13 +227,13 @@ func TestServerSetCommands3(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Setup sets
-	handler.executeCommand("SADD", [][]byte{[]byte("set1"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
-	handler.executeCommand("SADD", [][]byte{[]byte("set2"), []byte("b"), []byte("c"), []byte("d")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SADD", [][]byte{[]byte("set1"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SADD", [][]byte{[]byte("set2"), []byte("b"), []byte("c"), []byte("d")}, "127.0.0.1:12345")
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// SINTER
@@ -310,7 +310,7 @@ func TestServerSetCommands3(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -329,9 +329,9 @@ func TestServerSortedSetCommands3(t *testing.T) {
 	})
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// ZRANK
@@ -408,7 +408,7 @@ func TestServerSortedSetCommands3(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}

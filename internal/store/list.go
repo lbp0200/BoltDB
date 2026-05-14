@@ -138,7 +138,7 @@ func (s *BotreonStore) LPush(key string, values ...string) (int, error) {
 	defer s.keyLockMgr.Unlock(key)
 
 	var finalLength uint64
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// Check if key already exists with a different type
 		item, err := txn.Get(TypeOfKeyGet(key))
 		if err == nil {
@@ -188,7 +188,7 @@ func (s *BotreonStore) LPush(key string, values ...string) (int, error) {
 		// 更新元数据
 		finalLength = length
 		return s.listUpdateMeta(txn, key, length, start, end)
-	})
+	}, 30)
 
 	// Notify blocking pop waiters
 	s.notifyBlockingPop(key, values[0])
@@ -199,7 +199,7 @@ func (s *BotreonStore) LPush(key string, values ...string) (int, error) {
 // RPOP 实现
 func (s *BotreonStore) RPop(key string) (string, error) {
 	var value string
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		length, start, end, err := s.listGetMeta(key)
 		if err != nil {
 			// 如果列表不存在，返回空字符串
@@ -253,7 +253,7 @@ func (s *BotreonStore) RPop(key string) (string, error) {
 
 		// 更新元数据
 		return s.listUpdateMeta(txn, key, length-1, start, newEnd)
-	})
+	}, 30)
 	return value, err
 }
 
@@ -275,7 +275,7 @@ func (s *BotreonStore) getNodeByIndex(txn *badger.Txn, key string, index int64) 
 
 	// 处理负数索引
 	if index < 0 {
-	// #nosec G115 - length is bounded by practical list size limits
+		// #nosec G115 - length is bounded by practical list size limits
 		index = int64(length) + index
 	}
 	// #nosec G115 - length is bounded by practical list size limits
@@ -311,7 +311,7 @@ func (s *BotreonStore) getNodeByIndex(txn *badger.Txn, key string, index int64) 
 		// 从尾部开始
 		_, _, end, _ := s.listGetMeta(key)
 		currentNodeID = end
-	// #nosec G115 - length is bounded by practical list size limits
+		// #nosec G115 - length is bounded by practical list size limits
 		currentIndex = int64(length) - 1
 		for currentIndex > index {
 			// 防止循环链表导致的无限循环
@@ -346,7 +346,7 @@ func (s *BotreonStore) RPush(key string, values ...string) (int, error) {
 	defer s.keyLockMgr.Unlock(key)
 
 	var finalLength uint64
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// Check if key already exists with a different type
 		item, err := txn.Get(TypeOfKeyGet(key))
 		if err == nil {
@@ -396,7 +396,7 @@ func (s *BotreonStore) RPush(key string, values ...string) (int, error) {
 		// 更新元数据
 		finalLength = length
 		return s.listUpdateMeta(txn, key, length, start, end)
-	})
+	}, 30)
 	// #nosec G115 - length is bounded by practical list size limits
 
 	// Notify blocking pop waiters
@@ -408,7 +408,7 @@ func (s *BotreonStore) RPush(key string, values ...string) (int, error) {
 // LPOP 实现 Redis LPOP 命令
 func (s *BotreonStore) LPop(key string) (string, error) {
 	var value string
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		length, start, end, err := s.listGetMeta(key)
 		if err != nil {
 			if length == 0 {
@@ -461,7 +461,7 @@ func (s *BotreonStore) LPop(key string) (string, error) {
 
 		// 更新元数据
 		return s.listUpdateMeta(txn, key, length-1, newStart, end)
-	})
+	}, 30)
 	return value, err
 }
 
@@ -493,17 +493,17 @@ func (s *BotreonStore) LRange(key string, start, stop int64) ([]string, error) {
 
 		// 处理负数索引
 		if start < 0 {
-		// #nosec G115 - length is bounded by practical list size limits
-		start = int64(length) + start
+			// #nosec G115 - length is bounded by practical list size limits
+			start = int64(length) + start
 		}
 		if stop < 0 {
-		// #nosec G115 - length is bounded by practical list size limits
-		stop = int64(length) + stop
+			// #nosec G115 - length is bounded by practical list size limits
+			stop = int64(length) + stop
 		}
 		if start < 0 {
 			start = 0
 		}
-	// #nosec G115 - length is bounded by practical list size limits
+		// #nosec G115 - length is bounded by practical list size limits
 		if stop >= int64(length) {
 			stop = int64(length) - 1
 		}
@@ -566,7 +566,7 @@ func (s *BotreonStore) LRange(key string, start, stop int64) ([]string, error) {
 
 // LSET 实现 Redis LSET 命令
 func (s *BotreonStore) LSet(key string, index int64, value string) error {
-	return s.db.Update(func(txn *badger.Txn) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
 		nodeID, _, err := s.getNodeByIndex(txn, key, index)
 		if err != nil {
 			return err
@@ -578,7 +578,7 @@ func (s *BotreonStore) LSet(key string, index int64, value string) error {
 		// 更新节点值
 		nodeKey := s.listKey(key, nodeID)
 		return txn.Set([]byte(nodeKey), []byte(value))
-	})
+	}, 30)
 }
 
 // LPos 实现 Redis LPOS 命令，返回元素在列表中的索引
@@ -649,7 +649,7 @@ func (s *BotreonStore) LPos(key string, element string, rank, count, maxlen int6
 
 // LTRIM 实现 Redis LTRIM 命令
 func (s *BotreonStore) LTrim(key string, start, stop int64) error {
-	return s.db.Update(func(txn *badger.Txn) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
 		length, startID, _, err := s.listGetMeta(key)
 		if err != nil {
 			return nil // 列表不存在，无需操作
@@ -660,17 +660,17 @@ func (s *BotreonStore) LTrim(key string, start, stop int64) error {
 
 		// 处理负数索引
 		if start < 0 {
-		// #nosec G115 - length is bounded by practical list size limits
-		start = int64(length) + start
+			// #nosec G115 - length is bounded by practical list size limits
+			start = int64(length) + start
 		}
 		if stop < 0 {
-		// #nosec G115 - length is bounded by practical list size limits
-		stop = int64(length) + stop
+			// #nosec G115 - length is bounded by practical list size limits
+			stop = int64(length) + stop
 		}
 		if start < 0 {
 			start = 0
 		}
-	// #nosec G115 - length is bounded by practical list size limits
+		// #nosec G115 - length is bounded by practical list size limits
 		if stop >= int64(length) {
 			stop = int64(length) - 1
 		}
@@ -757,10 +757,10 @@ func (s *BotreonStore) LTrim(key string, start, stop int64) error {
 		}
 
 		// 更新元数据
-	// #nosec G115 - stop and start are bounded by practical list size limits
+		// #nosec G115 - stop and start are bounded by practical list size limits
 		newLength := uint64(stop - start + 1)
 		return s.listUpdateMeta(txn, key, newLength, newStartID, newEndID)
-	})
+	}, 30)
 }
 
 // deleteNode 删除一个节点
@@ -804,8 +804,8 @@ func (s *BotreonStore) deleteList(txn *badger.Txn, key string) error {
 
 // LINSERT 实现 Redis LINSERT 命令
 func (s *BotreonStore) LInsert(key string, where string, pivot, value string) (int, error) {
-	count := 0
-	err := s.db.Update(func(txn *badger.Txn) error {
+	var newLength int
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		length, start, _, err := s.listGetMeta(key)
 		if err != nil || length == 0 {
 			return nil // 列表不存在或为空
@@ -843,7 +843,8 @@ func (s *BotreonStore) LInsert(key string, where string, pivot, value string) (i
 		}
 
 		if pivotNodeID == "" {
-			return nil // pivot不存在
+			newLength = -1 // pivot not found
+			return nil
 		}
 
 		// 创建新节点
@@ -918,16 +919,16 @@ func (s *BotreonStore) LInsert(key string, where string, pivot, value string) (i
 				return err
 			}
 		}
-		count = 1
+		newLength = int(length) + 1
 		return nil
-	})
-	return count, err
+	}, 30)
+	return newLength, err
 }
 
 // LREM 实现 Redis LREM 命令
 func (s *BotreonStore) LRem(key string, count int64, value string) (int, error) {
 	removed := 0
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		length, start, _, err := s.listGetMeta(key)
 		if err != nil || length == 0 {
 			return nil
@@ -939,7 +940,7 @@ func (s *BotreonStore) LRem(key string, count int64, value string) (int, error) 
 		visitedNodes := make(map[string]bool)
 
 		// 收集要删除的节点
-	// #nosec G115 - length is bounded by practical list size limits
+		// #nosec G115 - length is bounded by practical list size limits
 		for visitedCount < int(length) {
 			// 防止循环链表导致的无限循环
 			if visitedNodes[currentNodeID] {
@@ -977,8 +978,8 @@ func (s *BotreonStore) LRem(key string, count int64, value string) (int, error) 
 			visitedCount = 0
 			visitedNodes = make(map[string]bool)
 			nodesToRemove = []string{}
-		// #nosec G115 - length is bounded by practical list size limits
-		for visitedCount < int(length) {
+			// #nosec G115 - length is bounded by practical list size limits
+			for visitedCount < int(length) {
 				// 防止循环链表导致的无限循环
 				if visitedNodes[currentNodeID] {
 					break
@@ -1057,14 +1058,14 @@ func (s *BotreonStore) LRem(key string, count int64, value string) (int, error) 
 			return s.listUpdateMeta(txn, key, newLength, currentStart, currentEnd)
 		}
 		return nil
-	})
+	}, 30)
 	return removed, err
 }
 
 // RPOPLPUSH 实现 Redis RPOPLPUSH 命令
 func (s *BotreonStore) RPopLPush(source, destination string) (string, error) {
 	var value string
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// 从源列表弹出
 		sourceLength, sourceStart, sourceEnd, err := s.listGetMeta(source)
 		if err != nil || sourceLength == 0 {
@@ -1151,7 +1152,7 @@ func (s *BotreonStore) RPopLPush(source, destination string) (string, error) {
 
 		// 更新目标列表元数据
 		return s.listUpdateMeta(txn, destination, destLength+1, destStart, destEnd)
-	})
+	}, 30)
 	return value, err
 }
 

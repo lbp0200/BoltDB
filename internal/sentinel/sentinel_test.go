@@ -191,11 +191,11 @@ func TestSentinel_handleSdownMessage(t *testing.T) {
 
 	// Test sdown message
 	msg := &GossipMessage{
-		Type:         "sdown",
-		MasterName:   "mymaster",
-		SourceRunID:  "test-sentinel",
-		SdownCount:   1,
-		Timestamp:    time.Now(),
+		Type:        "sdown",
+		MasterName:  "mymaster",
+		SourceRunID: "test-sentinel",
+		SdownCount:  1,
+		Timestamp:   time.Now(),
 	}
 	s.handleSdownMessage(msg)
 
@@ -209,11 +209,11 @@ func TestSentinel_handleSdownMessage(t *testing.T) {
 	// Test reaching odown threshold - set quorum to 1 and sdownCount to 1
 	s.AddMaster("mymaster2", "127.0.0.1:6380", 1)
 	msg3 := &GossipMessage{
-		Type:         "sdown",
-		MasterName:   "mymaster2",
-		SourceRunID:  "test-sentinel",
-		SdownCount:   1,
-		Timestamp:    time.Now(),
+		Type:        "sdown",
+		MasterName:  "mymaster2",
+		SourceRunID: "test-sentinel",
+		SdownCount:  1,
+		Timestamp:   time.Now(),
 	}
 	s.handleSdownMessage(msg3)
 }
@@ -280,11 +280,11 @@ func TestSentinel_startGossipProcessor(t *testing.T) {
 
 	// Send a message through the gossip channel
 	msg := &GossipMessage{
-		Type:         "sdown",
-		MasterName:   "mymaster",
-		SourceRunID:  "test-sentinel",
-		SdownCount:   1,
-		Timestamp:    time.Now(),
+		Type:        "sdown",
+		MasterName:  "mymaster",
+		SourceRunID: "test-sentinel",
+		SdownCount:  1,
+		Timestamp:   time.Now(),
 	}
 
 	// Send message

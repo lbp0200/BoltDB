@@ -11,7 +11,7 @@ func TestRDBDecoder_New(t *testing.T) {
 	rdbData := []byte{
 		'R', 'E', 'D', 'I', 'S', '0', '0', '0', '9', // header
 		0xFE, 0x00, // database selector
-		0xFF, // EOF
+		0xFF,                   // EOF
 		0x00, 0x00, 0x00, 0x00, // checksum (placeholder)
 	}
 

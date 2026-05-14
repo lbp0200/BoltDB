@@ -65,10 +65,10 @@ func (m *mockMasterConn) Close() error {
 	return nil
 }
 
-func (m *mockMasterConn) LocalAddr() net.Addr  { return m.localAddr }
-func (m *mockMasterConn) RemoteAddr() net.Addr { return m.remoteAddr }
+func (m *mockMasterConn) LocalAddr() net.Addr                { return m.localAddr }
+func (m *mockMasterConn) RemoteAddr() net.Addr               { return m.remoteAddr }
 func (m *mockMasterConn) SetDeadline(t time.Time) error      { return nil }
-func (m *mockMasterConn) SetReadDeadline(t time.Time) error   { return nil }
+func (m *mockMasterConn) SetReadDeadline(t time.Time) error  { return nil }
 func (m *mockMasterConn) SetWriteDeadline(t time.Time) error { return nil }
 
 // 确保实现了接口
@@ -144,9 +144,9 @@ func TestMasterConnection_IsClosed(t *testing.T) {
 func TestMasterConnection_Close(t *testing.T) {
 	mock := newMockMasterConn()
 	mc := &MasterConnection{
-		Addr:    "127.0.0.1:6379",
-		Conn:    mock,
-		stopCh:  make(chan struct{}),
+		Addr:   "127.0.0.1:6379",
+		Conn:   mock,
+		stopCh: make(chan struct{}),
 	}
 	err := mc.Close()
 	if err != nil {
@@ -160,9 +160,9 @@ func TestMasterConnection_Close(t *testing.T) {
 func TestMasterConnection_Close_Double(t *testing.T) {
 	mock := newMockMasterConn()
 	mc := &MasterConnection{
-		Addr:    "127.0.0.1:6379",
-		Conn:    mock,
-		stopCh:  make(chan struct{}),
+		Addr:   "127.0.0.1:6379",
+		Conn:   mock,
+		stopCh: make(chan struct{}),
 	}
 	// First close
 	err := mc.Close()
@@ -179,11 +179,11 @@ func TestMasterConnection_Close_Double(t *testing.T) {
 func TestMasterConnection_SendCommand(t *testing.T) {
 	mock := newMockMasterConn()
 	mc := &MasterConnection{
-		Addr:    "127.0.0.1:6379",
-		Conn:    mock,
-		Reader:  bufio.NewReader(mock),
-		Writer:  bufio.NewWriter(mock),
-		stopCh:  make(chan struct{}),
+		Addr:   "127.0.0.1:6379",
+		Conn:   mock,
+		Reader: bufio.NewReader(mock),
+		Writer: bufio.NewWriter(mock),
+		stopCh: make(chan struct{}),
 	}
 	err := mc.SendCommand([][]byte{[]byte("PING")})
 	if err != nil {
@@ -200,11 +200,11 @@ func TestMasterConnection_ReadResponse_SimpleString(t *testing.T) {
 	mock := newMockMasterConn()
 	mock.readBuffer = []byte("+PONG\r\n")
 	mc := &MasterConnection{
-		Addr:    "127.0.0.1:6379",
-		Conn:    mock,
-		Reader:  bufio.NewReader(mock),
-		Writer:  bufio.NewWriter(mock),
-		stopCh:  make(chan struct{}),
+		Addr:   "127.0.0.1:6379",
+		Conn:   mock,
+		Reader: bufio.NewReader(mock),
+		Writer: bufio.NewWriter(mock),
+		stopCh: make(chan struct{}),
 	}
 	resp, err := mc.ReadResponse()
 	if err != nil {
@@ -220,11 +220,11 @@ func TestMasterConnection_ReadResponse_Error(t *testing.T) {
 	mock := newMockMasterConn()
 	mock.readBuffer = []byte("-ERR test error\r\n")
 	mc := &MasterConnection{
-		Addr:    "127.0.0.1:6379",
-		Conn:    mock,
-		Reader:  bufio.NewReader(mock),
-		Writer:  bufio.NewWriter(mock),
-		stopCh:  make(chan struct{}),
+		Addr:   "127.0.0.1:6379",
+		Conn:   mock,
+		Reader: bufio.NewReader(mock),
+		Writer: bufio.NewWriter(mock),
+		stopCh: make(chan struct{}),
 	}
 	resp, err := mc.ReadResponse()
 	if err != nil {
@@ -240,11 +240,11 @@ func TestMasterConnection_ReadResponse_Integer(t *testing.T) {
 	mock := newMockMasterConn()
 	mock.readBuffer = []byte(":1000\r\n")
 	mc := &MasterConnection{
-		Addr:    "127.0.0.1:6379",
-		Conn:    mock,
-		Reader:  bufio.NewReader(mock),
-		Writer:  bufio.NewWriter(mock),
-		stopCh:  make(chan struct{}),
+		Addr:   "127.0.0.1:6379",
+		Conn:   mock,
+		Reader: bufio.NewReader(mock),
+		Writer: bufio.NewWriter(mock),
+		stopCh: make(chan struct{}),
 	}
 	resp, err := mc.ReadResponse()
 	if err != nil {
@@ -261,11 +261,11 @@ func TestMasterConnection_ReadBulkString(t *testing.T) {
 	mock := newMockMasterConn()
 	mock.readBuffer = []byte("$5\r\nhello\r\n")
 	mc := &MasterConnection{
-		Addr:    "127.0.0.1:6379",
-		Conn:    mock,
-		Reader:  bufio.NewReader(mock),
-		Writer:  bufio.NewWriter(mock),
-		stopCh:  make(chan struct{}),
+		Addr:   "127.0.0.1:6379",
+		Conn:   mock,
+		Reader: bufio.NewReader(mock),
+		Writer: bufio.NewWriter(mock),
+		stopCh: make(chan struct{}),
 	}
 	data, err := mc.ReadBulkString()
 	if err != nil {
@@ -280,11 +280,11 @@ func TestMasterConnection_ReadBulkString_Null(t *testing.T) {
 	mock := newMockMasterConn()
 	mock.readBuffer = []byte("$-1\r\n")
 	mc := &MasterConnection{
-		Addr:    "127.0.0.1:6379",
-		Conn:    mock,
-		Reader:  bufio.NewReader(mock),
-		Writer:  bufio.NewWriter(mock),
-		stopCh:  make(chan struct{}),
+		Addr:   "127.0.0.1:6379",
+		Conn:   mock,
+		Reader: bufio.NewReader(mock),
+		Writer: bufio.NewWriter(mock),
+		stopCh: make(chan struct{}),
 	}
 	data, err := mc.ReadBulkString()
 	if err != nil {
@@ -313,11 +313,11 @@ func TestMasterConnection_ReadResponse_BulkString(t *testing.T) {
 func TestMasterConnection_SendCommand_MultipleArgs(t *testing.T) {
 	mock := newMockMasterConn()
 	mc := &MasterConnection{
-		Addr:    "127.0.0.1:6379",
-		Conn:    mock,
-		Reader:  bufio.NewReader(mock),
-		Writer:  bufio.NewWriter(mock),
-		stopCh:  make(chan struct{}),
+		Addr:   "127.0.0.1:6379",
+		Conn:   mock,
+		Reader: bufio.NewReader(mock),
+		Writer: bufio.NewWriter(mock),
+		stopCh: make(chan struct{}),
 	}
 	err := mc.SendCommand([][]byte{[]byte("SET"), []byte("key"), []byte("value")})
 	if err != nil {

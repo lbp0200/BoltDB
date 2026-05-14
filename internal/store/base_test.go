@@ -65,14 +65,10 @@ func setupTestStore(t *testing.T) *BotreonStore {
 	if err := sharedStore.ClearAllData(); err != nil {
 		t.Fatalf("ClearAllData failed: %v", err)
 	}
-	// Clear caches to prevent cross-test data contamination
 	if sharedStore.readCache != nil {
 		sharedStore.readCache.Clear()
 	}
-	if sharedStore.writeCache != nil {
-		sharedStore.writeCache.Clear()
-	}
-	
+
 	return sharedStore
 }
 

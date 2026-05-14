@@ -10,230 +10,230 @@ import (
 
 // TestXLen 测试 XLEN 命令
 func TestXLen(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试流
-	_, err := testClient.XAdd(ctx, &redis.XAddArgs{
+	_, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "mystream",
 		Values: map[string]any{"field1": "value1"},
 	}).Result()
 	assert.NoError(t, err)
-	_, err = testClient.XAdd(ctx, &redis.XAddArgs{
+	_, err = sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "mystream",
 		Values: map[string]any{"field2": "value2"},
 	}).Result()
 	assert.NoError(t, err)
-	_, err = testClient.XAdd(ctx, &redis.XAddArgs{
+	_, err = sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "mystream",
 		Values: map[string]any{"field3": "value3"},
 	}).Result()
 	assert.NoError(t, err)
 
 	// XLEN - 获取流长度
-	length, err := testClient.XLen(ctx, "mystream").Result()
+	length, err := sharedClient.XLen(ctx, "mystream").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(3), length)
 
 	// XLEN - 不存在的流
-	length, err = testClient.XLen(ctx, "nonexistent").Result()
+	length, err = sharedClient.XLen(ctx, "nonexistent").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), length)
 }
 
 // TestXDel 测试 XDEL 命令
 func TestXDel(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试流
-	id1, err := testClient.XAdd(ctx, &redis.XAddArgs{
+	id1, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "mydelstream",
 		Values: map[string]any{"field": "value1"},
 	}).Result()
 	assert.NoError(t, err)
-	_, err = testClient.XAdd(ctx, &redis.XAddArgs{
+	_, err = sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "mydelstream",
 		Values: map[string]any{"field": "value2"},
 	}).Result()
 	assert.NoError(t, err)
 
 	// XDEL - 删除消息
-	deleted, err := testClient.Do(ctx, "XDEL", "mydelstream", id1).Result()
+	deleted, err := sharedClient.Do(ctx, "XDEL", "mydelstream", id1).Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), deleted)
 
 	// 验证流长度
-	length, _ := testClient.XLen(ctx, "mydelstream").Result()
+	length, _ := sharedClient.XLen(ctx, "mydelstream").Result()
 	assert.Equal(t, int64(1), length)
 
 	// XDEL - 删除不存在的ID
-	deleted, err = testClient.Do(ctx, "XDEL", "mydelstream", "9999999999-0").Result()
+	deleted, err = sharedClient.Do(ctx, "XDEL", "mydelstream", "9999999999-0").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), deleted)
 }
 
 // TestXAck 测试 XACK 命令
 func TestXAck(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试流
-	id1, err := testClient.XAdd(ctx, &redis.XAddArgs{
+	id1, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "ackstream",
 		Values: map[string]any{"field": "value1"},
 	}).Result()
 	assert.NoError(t, err)
 
 	// 创建消费组
-	err = testClient.XGroupCreate(ctx, "ackstream", "mygroup", "0").Err()
+	err = sharedClient.XGroupCreate(ctx, "ackstream", "mygroup", "0").Err()
 	assert.NoError(t, err)
 
 	// 读取消息
-	_, err = testClient.Do(ctx, "XREADGROUP", "GROUP", "mygroup", "consumer1", "COUNT", "1", "STREAMS", "ackstream", "0").Result()
+	_, err = sharedClient.Do(ctx, "XREADGROUP", "GROUP", "mygroup", "consumer1", "COUNT", "1", "STREAMS", "ackstream", "0").Result()
 	assert.NoError(t, err)
 
 	// XACK - 确认消息
-	acked, err := testClient.Do(ctx, "XACK", "ackstream", "mygroup", id1).Result()
+	acked, err := sharedClient.Do(ctx, "XACK", "ackstream", "mygroup", id1).Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), acked)
 
 	// XACK - 确认不存在的消息
-	acked, err = testClient.Do(ctx, "XACK", "ackstream", "mygroup", "9999999999-0").Result()
+	acked, err = sharedClient.Do(ctx, "XACK", "ackstream", "mygroup", "9999999999-0").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), acked)
 }
 
 // TestXGroupCreate 测试 XGROUP CREATE 命令
 func TestXGroupCreate(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试流
-	_, err := testClient.XAdd(ctx, &redis.XAddArgs{
+	_, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "groupstream",
 		Values: map[string]any{"field": "value"},
 	}).Result()
 	assert.NoError(t, err)
 
 	// XGROUP CREATE - 创建消费组
-	result, err := testClient.Do(ctx, "XGROUP", "CREATE", "groupstream", "mygroup", "0").Result()
+	result, err := sharedClient.Do(ctx, "XGROUP", "CREATE", "groupstream", "mygroup", "0").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, "OK", result)
 
 	// XGROUP CREATE - 创建带MKSTREAM选项的组
-	result, err = testClient.Do(ctx, "XGROUP", "CREATE", "newstream", "newgroup", "$", "MKSTREAM").Result()
+	result, err = sharedClient.Do(ctx, "XGROUP", "CREATE", "newstream", "newgroup", "$", "MKSTREAM").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, "OK", result)
 
 	// 验证流被创建
-	length, _ := testClient.XLen(ctx, "newstream").Result()
+	length, _ := sharedClient.XLen(ctx, "newstream").Result()
 	assert.Equal(t, int64(0), length)
 }
 
 // TestXGroupDestroy 测试 XGROUP DESTROY 命令
 func TestXGroupDestroy(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试流并创建消费组
-	_, err := testClient.XAdd(ctx, &redis.XAddArgs{
+	_, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "dstream",
 		Values: map[string]any{"field": "value"},
 	}).Result()
 	assert.NoError(t, err)
 
-	err = testClient.XGroupCreate(ctx, "dstream", "mygroup", "0").Err()
+	err = sharedClient.XGroupCreate(ctx, "dstream", "mygroup", "0").Err()
 	assert.NoError(t, err)
 
 	// XGROUP DESTROY - 销毁消费组
-	result, err := testClient.Do(ctx, "XGROUP", "DESTROY", "dstream", "mygroup").Result()
+	result, err := sharedClient.Do(ctx, "XGROUP", "DESTROY", "dstream", "mygroup").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), result)
 
 	// 验证消费组已销毁
-	result, _ = testClient.Do(ctx, "XINFO", "GROUPS", "dstream").Result()
+	result, _ = sharedClient.Do(ctx, "XINFO", "GROUPS", "dstream").Result()
 	arr, _ := result.([]interface{})
 	assert.Equal(t, 0, len(arr))
 }
 
 // TestXGroupSetId 测试 XGROUP SETID 命令
 func TestXGroupSetId(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试流
-	_, err := testClient.XAdd(ctx, &redis.XAddArgs{
+	_, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "sidstream",
 		Values: map[string]any{"field": "value"},
 	}).Result()
 	assert.NoError(t, err)
 
 	// 创建消费组
-	err = testClient.XGroupCreate(ctx, "sidstream", "mygroup", "0").Err()
+	err = sharedClient.XGroupCreate(ctx, "sidstream", "mygroup", "0").Err()
 	assert.NoError(t, err)
 
 	// XGROUP SETID - 设置组ID
-	result, err := testClient.Do(ctx, "XGROUP", "SETID", "sidstream", "mygroup", "100").Result()
+	result, err := sharedClient.Do(ctx, "XGROUP", "SETID", "sidstream", "mygroup", "100").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, "OK", result)
 }
 
 // TestXGroupDelConsumer 测试 XGROUP DELCONSUMER 命令
 func TestXGroupDelConsumer(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试流并创建消费组
-	_, err := testClient.XAdd(ctx, &redis.XAddArgs{
+	_, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "cstream",
 		Values: map[string]any{"field": "value"},
 	}).Result()
 	assert.NoError(t, err)
 
-	err = testClient.XGroupCreate(ctx, "cstream", "mygroup", "0").Err()
+	err = sharedClient.XGroupCreate(ctx, "cstream", "mygroup", "0").Err()
 	assert.NoError(t, err)
 
 	// XGROUP DELCONSUMER - 删除消费者
-	result, err := testClient.Do(ctx, "XGROUP", "DELCONSUMER", "cstream", "mygroup", "consumer1").Result()
+	result, err := sharedClient.Do(ctx, "XGROUP", "DELCONSUMER", "cstream", "mygroup", "consumer1").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), result) // 消费者不存在
 }
 
 // TestXReadGroup 测试 XREADGROUP 命令
 func TestXReadGroup(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试流
-	_, err := testClient.XAdd(ctx, &redis.XAddArgs{
+	_, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "readstream",
 		Values: map[string]any{"field": "value1"},
 	}).Result()
 	assert.NoError(t, err)
 
 	// 创建消费组
-	err = testClient.XGroupCreate(ctx, "readstream", "mygroup", "0").Err()
+	err = sharedClient.XGroupCreate(ctx, "readstream", "mygroup", "0").Err()
 	assert.NoError(t, err)
 
 	// XREADGROUP - 从组读取
-	result, err := testClient.Do(ctx, "XREADGROUP", "GROUP", "mygroup", "consumer1", "COUNT", "1", "STREAMS", "readstream", ">").Result()
+	result, err := sharedClient.Do(ctx, "XREADGROUP", "GROUP", "mygroup", "consumer1", "COUNT", "1", "STREAMS", "readstream", ">").Result()
 	assert.NoError(t, err)
 
 	// Redis returns: [[streamKey, [[entryID, [field, value]]]]]
@@ -251,28 +251,28 @@ func TestXReadGroup(t *testing.T) {
 
 // TestXClaim 测试 XCLAIM 命令
 func TestXClaim(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试流
-	id1, err := testClient.XAdd(ctx, &redis.XAddArgs{
+	id1, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "claimstream",
 		Values: map[string]any{"field": "value1"},
 	}).Result()
 	assert.NoError(t, err)
 
 	// 创建消费组
-	err = testClient.XGroupCreate(ctx, "claimstream", "mygroup", "0").Err()
+	err = sharedClient.XGroupCreate(ctx, "claimstream", "mygroup", "0").Err()
 	assert.NoError(t, err)
 
 	// 读取消息
-	_, err = testClient.Do(ctx, "XREADGROUP", "GROUP", "mygroup", "consumer1", "STREAMS", "claimstream", ">").Result()
+	_, err = sharedClient.Do(ctx, "XREADGROUP", "GROUP", "mygroup", "consumer1", "STREAMS", "claimstream", ">").Result()
 	assert.NoError(t, err)
 
 	// XCLAIM - 认领消息
-	result, err := testClient.Do(ctx, "XCLAIM", "claimstream", "mygroup", "consumer2", "0", id1).Result()
+	result, err := sharedClient.Do(ctx, "XCLAIM", "claimstream", "mygroup", "consumer2", "0", id1).Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})
@@ -283,28 +283,28 @@ func TestXClaim(t *testing.T) {
 
 // TestXPending 测试 XPENDING 命令
 func TestXPending(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试流
-	_, err := testClient.XAdd(ctx, &redis.XAddArgs{
+	_, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "pendingstream",
 		Values: map[string]any{"field": "value1"},
 	}).Result()
 	assert.NoError(t, err)
 
 	// 创建消费组
-	err = testClient.XGroupCreate(ctx, "pendingstream", "mygroup", "0").Err()
+	err = sharedClient.XGroupCreate(ctx, "pendingstream", "mygroup", "0").Err()
 	assert.NoError(t, err)
 
 	// 读取消息
-	_, err = testClient.Do(ctx, "XREADGROUP", "GROUP", "mygroup", "consumer1", "STREAMS", "pendingstream", ">").Result()
+	_, err = sharedClient.Do(ctx, "XREADGROUP", "GROUP", "mygroup", "consumer1", "STREAMS", "pendingstream", ">").Result()
 	assert.NoError(t, err)
 
 	// XPENDING - 获取pending信息
-	result, err := testClient.Do(ctx, "XPENDING", "pendingstream", "mygroup").Result()
+	result, err := sharedClient.Do(ctx, "XPENDING", "pendingstream", "mygroup").Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})
@@ -315,24 +315,24 @@ func TestXPending(t *testing.T) {
 
 // TestXInfoGroups 测试 XINFO GROUPS 命令
 func TestXInfoGroups(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试流
-	_, err := testClient.XAdd(ctx, &redis.XAddArgs{
+	_, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "infostream",
 		Values: map[string]any{"field": "value"},
 	}).Result()
 	assert.NoError(t, err)
 
 	// 创建消费组
-	err = testClient.XGroupCreate(ctx, "infostream", "mygroup", "0").Err()
+	err = sharedClient.XGroupCreate(ctx, "infostream", "mygroup", "0").Err()
 	assert.NoError(t, err)
 
 	// XINFO GROUPS - 获取组信息
-	result, err := testClient.Do(ctx, "XINFO", "GROUPS", "infostream").Result()
+	result, err := sharedClient.Do(ctx, "XINFO", "GROUPS", "infostream").Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})
@@ -348,24 +348,24 @@ func TestXInfoGroups(t *testing.T) {
 
 // TestXInfoConsumers 测试 XINFO CONSUMERS 命令
 func TestXInfoConsumers(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试流
-	_, err := testClient.XAdd(ctx, &redis.XAddArgs{
+	_, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "constream",
 		Values: map[string]any{"field": "value"},
 	}).Result()
 	assert.NoError(t, err)
 
 	// 创建消费组
-	err = testClient.XGroupCreate(ctx, "constream", "mygroup", "0").Err()
+	err = sharedClient.XGroupCreate(ctx, "constream", "mygroup", "0").Err()
 	assert.NoError(t, err)
 
 	// XINFO CONSUMERS - 获取消费者信息
-	result, err := testClient.Do(ctx, "XINFO", "CONSUMERS", "constream", "mygroup").Result()
+	result, err := sharedClient.Do(ctx, "XINFO", "CONSUMERS", "constream", "mygroup").Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})
@@ -376,14 +376,14 @@ func TestXInfoConsumers(t *testing.T) {
 
 // TestXTrim 测试 XTRIM 命令
 func TestXTrim(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加多条消息
 	for i := 0; i < 10; i++ {
-		_, err := testClient.XAdd(ctx, &redis.XAddArgs{
+		_, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
 			Stream: "trimstream",
 			Values: map[string]any{"field": i},
 		}).Result()
@@ -391,36 +391,36 @@ func TestXTrim(t *testing.T) {
 	}
 
 	// XTRIM - 修剪流，只保留最后5条
-	result, err := testClient.Do(ctx, "XTRIM", "trimstream", "~", "5").Result()
+	result, err := sharedClient.Do(ctx, "XTRIM", "trimstream", "~", "5").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(5), result) // 删除了5条
 
 	// 验证长度
-	length, _ := testClient.XLen(ctx, "trimstream").Result()
+	length, _ := sharedClient.XLen(ctx, "trimstream").Result()
 	assert.Equal(t, int64(5), length)
 }
 
 // TestXRange 测试 XRANGE 命令
 func TestXRange(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试流
-	_, err := testClient.XAdd(ctx, &redis.XAddArgs{
+	_, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "rangestream",
 		Values: map[string]any{"field": "value1"},
 	}).Result()
 	assert.NoError(t, err)
-	_, err = testClient.XAdd(ctx, &redis.XAddArgs{
+	_, err = sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "rangestream",
 		Values: map[string]any{"field": "value2"},
 	}).Result()
 	assert.NoError(t, err)
 
 	// XRANGE - 范围读取
-	result, err := testClient.Do(ctx, "XRANGE", "rangestream", "-", "+").Result()
+	result, err := sharedClient.Do(ctx, "XRANGE", "rangestream", "-", "+").Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})
@@ -428,7 +428,7 @@ func TestXRange(t *testing.T) {
 	assert.Equal(t, 2, len(arr))
 
 	// XRANGE - 限制数量
-	result, err = testClient.Do(ctx, "XRANGE", "rangestream", "-", "+", "COUNT", "1").Result()
+	result, err = sharedClient.Do(ctx, "XRANGE", "rangestream", "-", "+", "COUNT", "1").Result()
 	assert.NoError(t, err)
 
 	arr, ok = result.([]interface{})
@@ -438,25 +438,25 @@ func TestXRange(t *testing.T) {
 
 // TestXRevRange 测试 XREVRANGE 命令
 func TestXRevRange(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试流
-	_, err := testClient.XAdd(ctx, &redis.XAddArgs{
+	_, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "revstream",
 		Values: map[string]any{"field": "value1"},
 	}).Result()
 	assert.NoError(t, err)
-	_, err = testClient.XAdd(ctx, &redis.XAddArgs{
+	_, err = sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "revstream",
 		Values: map[string]any{"field": "value2"},
 	}).Result()
 	assert.NoError(t, err)
 
 	// XREVRANGE - 逆序范围读取
-	result, err := testClient.Do(ctx, "XREVRANGE", "revstream", "+", "-").Result()
+	result, err := sharedClient.Do(ctx, "XREVRANGE", "revstream", "+", "-").Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})
@@ -467,20 +467,20 @@ func TestXRevRange(t *testing.T) {
 
 // TestXInfoStream 测试 XINFO STREAM 命令
 func TestXInfoStream(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试流
-	_, err := testClient.XAdd(ctx, &redis.XAddArgs{
+	_, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: "infostream",
 		Values: map[string]any{"field": "value"},
 	}).Result()
 	assert.NoError(t, err)
 
 	// XINFO STREAM - 获取流信息
-	result, err := testClient.Do(ctx, "XINFO", "STREAM", "infostream").Result()
+	result, err := sharedClient.Do(ctx, "XINFO", "STREAM", "infostream").Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})

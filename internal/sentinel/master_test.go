@@ -1,6 +1,7 @@
 package sentinel
 
 import (
+	"net"
 	"testing"
 	"time"
 
@@ -232,21 +233,27 @@ func TestMasterInstance_checkMaster(t *testing.T) {
 	assert.True(t, master.GetSdownCount() >= 0)
 }
 
-// TestMasterInstance_checkMaster_Recovery tests checkMaster when master recovers
 func TestMasterInstance_checkMaster_Recovery(t *testing.T) {
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
-	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.NoError(t, err)
+	defer ln.Close()
+
+	master := NewMasterInstance("test-master", ln.Addr().String(), 2)
+
+	// Start a goroutine that accepts then immediately closes, simulating a responsive master
+	go func() {
+		conn, err := ln.Accept()
+		if err == nil {
+			_ = conn.Close()
+		}
+	}()
 
 	// Set master to sdown state first
 	master.SetState("sdown")
 	master.IncrSdownCount()
-
-	// Now set lastPingTime to recent (so it's not down)
-	master.mu.Lock()
-	master.lastPingTime = time.Now()
-	master.mu.Unlock()
 
 	// Call checkMaster - should recover the master
 	master.checkMaster(sentinel)
@@ -261,7 +268,19 @@ func TestMasterInstance_checkMaster_AlreadySdown(t *testing.T) {
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
-	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.NoError(t, err)
+	defer ln.Close()
+
+	master := NewMasterInstance("test-master", ln.Addr().String(), 2)
+
+	// Start a goroutine that accepts then immediately closes, simulating a responsive master
+	go func() {
+		conn, err := ln.Accept()
+		if err == nil {
+			_ = conn.Close()
+		}
+	}()
 
 	// Set master to sdown state
 	master.SetState("sdown")
@@ -271,7 +290,7 @@ func TestMasterInstance_checkMaster_AlreadySdown(t *testing.T) {
 	master.lastPingTime = time.Now()
 	master.mu.Unlock()
 
-	// Call checkMaster - should recover
+	// Call checkMaster - should recover since master is listening
 	master.checkMaster(sentinel)
 
 	// State should be ok

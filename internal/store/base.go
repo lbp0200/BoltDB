@@ -17,7 +17,7 @@ func (s *BotreonStore) Del(key string) (int64, error) {
 	typeKey := TypeOfKeyGet(key)
 	var deleted int64
 
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		item, err := txn.Get(typeKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			return nil // 键不存在
@@ -93,7 +93,7 @@ func (s *BotreonStore) Del(key string) (int64, error) {
 		}
 		deleted = 1
 		return nil
-	})
+	}, 30)
 
 	return deleted, err
 }
@@ -103,13 +103,13 @@ func (s *BotreonStore) DelString(key string) error {
 	bKey := []byte(key)
 	badgerTypeKey := TypeOfKeyGet(key)
 	badgerValueKey := s.stringKey(string(bKey))
-	
+
 	// 清除读缓存
 	if s.readCache != nil {
 		s.readCache.Delete(key)
 	}
-	
-	return s.db.Update(func(txn *badger.Txn) error {
+
+	return s.retryUpdate(func(txn *badger.Txn) error {
 		errDel := txn.Delete(badgerTypeKey)
 		if errDel != nil {
 			return fmt.Errorf("%s,Del Badger Type Key:%v", logFuncTag, errDel)
@@ -119,7 +119,7 @@ func (s *BotreonStore) DelString(key string) error {
 			return fmt.Errorf("%s,Del Badger Value Key:%v", logFuncTag, errDel)
 		}
 		return nil
-	})
+	}, 30)
 }
 
 func deleteByPrefix(txn *badger.Txn, prefix []byte) error {
@@ -227,7 +227,7 @@ func (s *BotreonStore) Type(key string) (string, error) {
 // EXPIRE 实现 Redis EXPIRE 命令，设置键的过期时间（秒）
 func (s *BotreonStore) Expire(key string, seconds int) (bool, error) {
 	success := false
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		typeKey := TypeOfKeyGet(key)
 		item, err := txn.Get(typeKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -272,7 +272,7 @@ func (s *BotreonStore) Expire(key string, seconds int) (bool, error) {
 
 		success = true
 		return nil
-	})
+	}, 30)
 	return success, err
 }
 
@@ -291,7 +291,7 @@ func (s *BotreonStore) ExpireAt(key string, timestamp int64) (bool, error) {
 // PEXPIRE 实现 Redis PEXPIRE 命令，设置键的过期时间（毫秒）
 func (s *BotreonStore) PExpire(key string, milliseconds int64) (bool, error) {
 	success := false
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		typeKey := TypeOfKeyGet(key)
 		item, err := txn.Get(typeKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -336,7 +336,7 @@ func (s *BotreonStore) PExpire(key string, milliseconds int64) (bool, error) {
 
 		success = true
 		return nil
-	})
+	}, 30)
 	return success, err
 }
 
@@ -458,67 +458,52 @@ func (s *BotreonStore) PTTL(key string) (int64, error) {
 
 // PERSIST 实现 Redis PERSIST 命令，移除键的过期时间
 func (s *BotreonStore) Persist(key string) (bool, error) {
-	// 先读取键的类型和值键（在 View 事务中）
-	var valueKey []byte
 	var hasTTL bool
-	err := s.db.View(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		typeKey := TypeOfKeyGet(key)
 		item, err := txn.Get(typeKey)
-		if errors.Is(err, badger.ErrKeyNotFound) {
-			return ErrKeyNotFound // 键不存在
-		}
-		if err != nil {
-			return err
-		}
-		val, err := item.ValueCopy(nil)
-		if err != nil {
-			return err
-		}
-		keyType := string(val)
-
-		// 获取值键
-		vk, err := s.getKeyValueKey(key, keyType)
-		if err != nil {
-			return err
-		}
-		valueKey = vk
-
-		// 检查是否有TTL
-		valueItem, err := txn.Get(valueKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			return ErrKeyNotFound
 		}
 		if err != nil {
 			return err
 		}
-		hasTTL = valueItem.ExpiresAt() != 0
-		return nil
-	})
-	if err != nil {
-		return false, nil // 键不存在或没有TTL
-	}
-	if !hasTTL {
-		return false, nil
-	}
-
-	// 重新读取值并写入无TTL副本（在 Update 事务中）
-	var valBytes []byte
-	err = s.db.Update(func(txn *badger.Txn) error {
-		valueItem, err := txn.Get(valueKey)
+		typeVal, err := item.ValueCopy(nil)
 		if err != nil {
 			return err
 		}
-		valBytes, err = valueItem.ValueCopy(nil)
-		return err
-	})
+		keyType := string(typeVal)
+
+		vk, err := s.getKeyValueKey(key, keyType)
+		if err != nil {
+			return err
+		}
+
+		valueItem, err := txn.Get(vk)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return ErrKeyNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if valueItem.ExpiresAt() == 0 {
+			hasTTL = false
+			return nil
+		}
+		hasTTL = true
+		valBytes, err := valueItem.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		return txn.Set(vk, valBytes)
+	}, 30)
+	if errors.Is(err, ErrKeyNotFound) {
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
-
-	// 写入无TTL的值
-	return true, s.db.Update(func(txn *badger.Txn) error {
-		return txn.Set(valueKey, valBytes)
-	})
+	return hasTTL, nil
 }
 
 // RENAME 实现 Redis RENAME 命令，重命名键
@@ -528,7 +513,7 @@ func (s *BotreonStore) Rename(key, newKey string) error {
 		s.readCache.Delete(key)
 		s.readCache.Delete(newKey)
 	}
-	return s.db.Update(func(txn *badger.Txn) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
 		// 检查旧键是否存在
 		typeKey := TypeOfKeyGet(key)
 		item, err := txn.Get(typeKey)
@@ -688,7 +673,7 @@ func (s *BotreonStore) Rename(key, newKey string) error {
 			}
 			return txn.Delete(typeKey)
 		}
-	})
+	}, 30)
 }
 
 // copyKeysByPrefix 复制所有匹配前缀的键
@@ -751,7 +736,7 @@ func copyKeysByPrefix(txn *badger.Txn, oldPrefix []byte, oldKey, newKey, keyType
 // RENAMENX 实现 Redis RENAMENX 命令，仅当新键不存在时重命名
 func (s *BotreonStore) RenameNX(key, newKey string) (bool, error) {
 	success := false
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// 检查新键是否已存在
 		newTypeKey := TypeOfKeyGet(newKey)
 		_, err := txn.Get(newTypeKey)
@@ -769,7 +754,7 @@ func (s *BotreonStore) RenameNX(key, newKey string) (bool, error) {
 		}
 		success = true
 		return nil
-	})
+	}, 30)
 	return success, err
 }
 
@@ -1007,7 +992,6 @@ func (s *BotreonStore) ObjectEncoding(key string) (string, error) {
 		return "", err
 	}
 
-	// 返回对应类型的编码
 	switch keyType {
 	case KeyTypeString:
 		return "raw", nil // 简单字符串使用 raw 编码
@@ -1074,18 +1058,17 @@ func (s *BotreonStore) Dump(key string) ([]byte, error) {
 		valCopy, _ := item.ValueCopy(nil)
 		keyType := string(valCopy)
 
-		// 获取 TTL（毫秒）
+		// 获取 TTL（毫秒）— 从值键的 ExpiresAt 读取
 		var ttl int64 = 0
-		expireKey := []byte(key + ":EXPIRE")
-		expireItem, err := txn.Get(expireKey)
+		valueKey, err := s.getKeyValueKey(key, keyType)
 		if err == nil {
-			expireVal, _ := expireItem.ValueCopy(nil)
-			// 过期时间存储的是 Unix 纳秒时间戳
-			expireNS, _ := strconv.ParseInt(string(expireVal), 10, 64)
-			if expireNS > 0 {
-				now := time.Now().UnixNano()
-				if expireNS > now {
-					ttl = (expireNS - now) / 1_000_000 // 转换为毫秒
+			if valItem, err := txn.Get(valueKey); err == nil {
+				if expiresAt := valItem.ExpiresAt(); expiresAt > 0 {
+					nowNano := time.Now().UnixNano()
+					remaining := int64(expiresAt) - nowNano
+					if remaining > 0 {
+						ttl = remaining / 1_000_000 // 纳秒转毫秒
+					}
 				}
 			}
 		}
@@ -1547,7 +1530,7 @@ func (s *BotreonStore) Time() (int64, int64, error) {
 // 2. 清理孤立数据（没有TYPE_键的数据）
 // 3. 清理孤立TYPE_键（没有对应数据的TYPE_键）
 func (s *BotreonStore) NextStartup() error {
-	return s.db.Update(func(txn *badger.Txn) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
 		// 1. 清理孤立TYPE_键（没有对应数据的TYPE_键）
 		iter := txn.NewIterator(badger.DefaultIteratorOptions)
 		defer iter.Close()
@@ -1582,7 +1565,13 @@ func (s *BotreonStore) NextStartup() error {
 		// 2. 清理孤立数据（没有TYPE_键的数据）
 		// String: string:key
 		if err := cleanupOrphanedData(txn, []byte("string:")); err != nil {
-			// 记录日志
+			_ = err
+		}
+		if err := cleanupOrphanedListData(txn); err != nil {
+			_ = err
+		}
+		if err := cleanupOrphanedHashData(txn); err != nil {
+			_ = err
 		}
 		// List: list:key:
 		if err := cleanupOrphanedListData(txn); err != nil {
@@ -1602,7 +1591,7 @@ func (s *BotreonStore) NextStartup() error {
 		}
 
 		return nil
-	})
+	}, 30)
 }
 
 // checkDataExists 检查指定键的数据是否存在

@@ -8,13 +8,13 @@ import (
 // TestParseStreamID tests parseStreamID
 func TestParseStreamID(t *testing.T) {
 	tests := []struct {
-		name      string
-		id        string
-		wantTs    int64
-		wantSeq   int64
-		wantErr   bool
+		name    string
+		id      string
+		wantTs  int64
+		wantSeq int64
+		wantErr bool
 	}{
-		{"auto star", "*", 0, 0, false},                              // Will be time-based
+		{"auto star", "*", 0, 0, false}, // Will be time-based
 		{"timestamp only", "1234567890000", 1234567890000, 0, false},
 		{"timestamp-sequence", "1234567890000-5", 1234567890000, 5, false},
 		{"invalid plus", "+", 0, 0, true},

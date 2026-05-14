@@ -13,12 +13,12 @@ import (
 )
 
 const (
-	KeyTypeGeo         = "GEOHASH"
-	prefixKeyGeoBytes  = "geo:"
-	geoIndex           = ":index"
-	geoMeta            = ":meta"
-	geoMembers         = ":members"
-	earthRadiusMeters  = 6378137.0 // Earth semi-major axis in meters
+	KeyTypeGeo        = "GEOHASH"
+	prefixKeyGeoBytes = "geo:"
+	geoIndex          = ":index"
+	geoMeta           = ":meta"
+	geoMembers        = ":members"
+	earthRadiusMeters = 6378137.0 // Earth semi-major axis in meters
 )
 
 // GeoMember represents a geo member with coordinates
@@ -30,11 +30,11 @@ type GeoMember struct {
 
 // GeoSearchResult represents a search result with distance
 type GeoSearchResult struct {
-	Member  string
-	Lat     float64
-	Lon     float64
-	Dist    float64 // Distance in meters
-	Hash    string  // Geohash string
+	Member string
+	Lat    float64
+	Lon    float64
+	Dist   float64 // Distance in meters
+	Hash   string  // Geohash string
 }
 
 // encodeGeoHash encodes latitude and longitude into a 52-bit integer geohash
@@ -151,7 +151,7 @@ func geoHashToCoordKey(key string, hash uint64) []byte {
 // GeoAdd adds geographic locations to a sorted set
 func (s *BotreonStore) GeoAdd(key string, members []GeoMember) (int64, error) {
 	var added int64
-	err := s.retryUpdateSortedSet(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// Set type key
 		typeKey := TypeOfKeyGet(key)
 
@@ -285,7 +285,7 @@ func (s *BotreonStore) GeoAdd(key string, members []GeoMember) (int64, error) {
 
 // GeoPos returns the positions of all members
 func (s *BotreonStore) GeoPos(key string, members ...string) ([][2]float64, error) {
-	var results [] [2]float64
+	var results [][2]float64
 	err := s.db.View(func(txn *badger.Txn) error {
 		for _, member := range members {
 			hashKey := geoIndexKey(key, member)
@@ -622,7 +622,7 @@ func extractMembers(results []GeoSearchResult) []string {
 
 // GeoDel removes members from a geo set
 func (s *BotreonStore) GeoDel(key, member string) error {
-	return s.retryUpdateSortedSet(func(txn *badger.Txn) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
 		// Get hash first
 		hashKey := geoIndexKey(key, member)
 		item, err := txn.Get(hashKey)
@@ -698,9 +698,9 @@ func (s *BotreonStore) GeoRadiusByMember(key, member string, radius float64, uni
 	return s.GeoRadius(key, positions[0][1], positions[0][0], radius, unit, count, withDist, withHash, withCoord)
 }
 
-// retryUpdateSortedSet reuses the sorted set retry mechanism
+// retryUpdate reuses the sorted set retry mechanism
 func (s *BotreonStore) retryUpdateGeo(fn func(*badger.Txn) error, maxRetries int) error {
-	return s.retryUpdateSortedSet(fn, maxRetries)
+	return s.retryUpdate(fn, maxRetries)
 }
 
 // GeoMembers returns all members in a geo set

@@ -9,13 +9,13 @@ import (
 
 // Node 表示集群中的一个节点
 type Node struct {
-	ID       string   // 节点ID（40字符的十六进制字符串）
-	Addr     string   // 节点地址，格式: "host:port"
-	Flags    []string // 节点标志，如: "master", "slave", "myself", "fail"
-	MasterID string   // 如果是slave，指向master的ID
-	PingSent int64    // 最后一次ping发送时间（Unix时间戳，毫秒）
-	PongRecv int64    // 最后一次pong接收时间（Unix时间戳，毫秒）
-	Epoch    int64    // 配置纪元（config epoch）
+	ID       string      // 节点ID（40字符的十六进制字符串）
+	Addr     string      // 节点地址，格式: "host:port"
+	Flags    []string    // 节点标志，如: "master", "slave", "myself", "fail"
+	MasterID string      // 如果是slave，指向master的ID
+	PingSent int64       // 最后一次ping发送时间（Unix时间戳，毫秒）
+	PongRecv int64       // 最后一次pong接收时间（Unix时间戳，毫秒）
+	Epoch    int64       // 配置纪元（config epoch）
 	Slots    []SlotRange // 该节点负责的槽位范围
 	mu       sync.RWMutex
 	// 槽位迁移状态
@@ -252,4 +252,3 @@ func (n *Node) GetMigratingSlotTarget(slot uint32) string {
 	defer n.mu.RUnlock()
 	return n.migratingSlots[slot]
 }
-

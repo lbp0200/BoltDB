@@ -16,7 +16,6 @@ import (
 )
 
 const (
-	KeyTypeStream = "STREAM"
 	prefixStream  = "stream:"
 	streamMeta    = ":meta"
 	streamData    = ":data"
@@ -34,10 +33,10 @@ type StreamEntry struct {
 
 // StreamGroup represents a consumer group
 type StreamGroup struct {
-	Name              string
-	LastDeliveredID    string
-	Consumers         map[string]*StreamConsumer
-	Pending           map[string]*StreamPendingEntry // ID -> pending info
+	Name            string
+	LastDeliveredID string
+	Consumers       map[string]*StreamConsumer
+	Pending         map[string]*StreamPendingEntry // ID -> pending info
 }
 
 // StreamConsumer represents a consumer within a group
@@ -56,20 +55,20 @@ type StreamPendingEntry struct {
 
 // StreamInfo contains stream metadata
 type StreamInfo struct {
-	Length        int64
-	FirstID       string
-	LastID        string
-	MaxDeletedID  string
-	Groups        map[string]*StreamGroup
-	RadixTreeKeys int64
+	Length         int64
+	FirstID        string
+	LastID         string
+	MaxDeletedID   string
+	Groups         map[string]*StreamGroup
+	RadixTreeKeys  int64
 	RadixTreeNodes int64
 }
 
 // StreamXAddOptions contains options for XADD
 type StreamXAddOptions struct {
-	MaxLen      int64 // Maximum number of entries
-	MaxLenApprox int64 // Approximate maximum (more efficient)
-	MinID       string // Only add entries with ID >= minID
+	MaxLen       int64  // Maximum number of entries
+	MaxLenApprox int64  // Approximate maximum (more efficient)
+	MinID        string // Only add entries with ID >= minID
 }
 
 // parseStreamID parses a stream ID string to (timestamp, sequence)
@@ -202,11 +201,34 @@ func decodeStreamMeta(b []byte) (*streamMetaData, error) {
 	return m, nil
 }
 
+// CreateEmptyStream creates an empty stream with just the TYPE_ key and metadata
+func (s *BotreonStore) CreateEmptyStream(key string) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
+		// Set type key
+		typeKey := TypeOfKeyGet(key)
+		if err := txn.Set(typeKey, []byte(KeyTypeStream)); err != nil {
+			logger.Logger.Error().Err(err).Str("key", key).Msg("CreateEmptyStream: Failed to set type")
+			return err
+		}
+
+		// Create empty metadata
+		meta := &streamMetaData{
+			Length:       0,
+			FirstID:      0,
+			FirstSeq:     0,
+			LastID:       0,
+			LastSeq:      0,
+			MaxDeletedID: 0,
+		}
+		return txn.Set(streamKey(key), encodeStreamMeta(meta))
+	}, 30)
+}
+
 // XAdd adds a new entry to a stream
 func (s *BotreonStore) XAdd(key string, opts StreamXAddOptions, id string, fields map[string]string) (string, error) {
 	var resultID string
 
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// Set type key
 		typeKey := TypeOfKeyGet(key)
 		if err := txn.Set(typeKey, []byte(KeyTypeStream)); err != nil {
@@ -342,7 +364,7 @@ func (s *BotreonStore) XAdd(key string, opts StreamXAddOptions, id string, field
 
 		resultID = id
 		return nil
-	})
+	}, 30)
 
 	// Notify waiting stream readers
 	if err == nil && resultID != "" {
@@ -743,7 +765,7 @@ func (s *BotreonStore) XRevRange(key, start, stop string, count int64) ([]Stream
 func (s *BotreonStore) XDel(key string, ids ...string) (int64, error) {
 	var deleted int64
 
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		metaKey := streamKey(key)
 		var meta *streamMetaData
 
@@ -837,7 +859,7 @@ func (s *BotreonStore) XDel(key string, ids ...string) (int64, error) {
 		}
 
 		return nil
-	})
+	}, 30)
 
 	return deleted, err
 }
@@ -880,9 +902,9 @@ func (s *BotreonStore) XInfo(key string) (*StreamInfo, error) {
 		for groupIt.Seek(groupsPrefix); groupIt.ValidForPrefix(groupsPrefix); groupIt.Next() {
 			groupName := string(bytes.TrimPrefix(groupIt.Item().Key(), groupsPrefix))
 			groups[groupName] = &StreamGroup{
-				Name:   groupName,
+				Name:      groupName,
 				Consumers: make(map[string]*StreamConsumer),
-				Pending: make(map[string]*StreamPendingEntry),
+				Pending:   make(map[string]*StreamPendingEntry),
 			}
 		}
 		info.Groups = groups
@@ -897,7 +919,7 @@ func (s *BotreonStore) XInfo(key string) (*StreamInfo, error) {
 func (s *BotreonStore) XTrim(key string, maxLen int64, minID string) (int64, error) {
 	var trimmed int64
 
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		metaKey := streamKey(key)
 		var meta *streamMetaData
 
@@ -994,33 +1016,54 @@ func (s *BotreonStore) XTrim(key string, maxLen int64, minID string) (int64, err
 		}
 
 		return nil
-	})
+	}, 30)
 
 	return trimmed, err
 }
 
 // XGroupCreate creates a consumer group
 func (s *BotreonStore) XGroupCreate(key, group, startID string) error {
-	return s.db.Update(func(txn *badger.Txn) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
+		metaKey := streamKey(key)
+		typeKey := TypeOfKeyGet(key)
+
+		_, err := txn.Get(metaKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			_ = txn.Set(typeKey, []byte(KeyTypeStream))
+			meta := &streamMetaData{}
+			metaData, _ := json.Marshal(meta)
+			_ = txn.Set(metaKey, metaData)
+		} else if err != nil {
+			return err
+		} else {
+			typeItem, err := txn.Get(typeKey)
+			if err == nil {
+				typeVal, _ := typeItem.ValueCopy(nil)
+				if string(typeVal) != KeyTypeStream {
+					return ErrWrongType
+				}
+			}
+		}
+
 		groupKey := streamGroupDataKey(key, group)
 		groupData := &StreamGroup{
-			Name:           group,
+			Name:            group,
 			LastDeliveredID: startID,
-			Consumers:      make(map[string]*StreamConsumer),
-			Pending:        make(map[string]*StreamPendingEntry),
+			Consumers:       make(map[string]*StreamConsumer),
+			Pending:         make(map[string]*StreamPendingEntry),
 		}
 		data, err := json.Marshal(groupData)
 		if err != nil {
 			return err
 		}
 		return txn.Set(groupKey, data)
-	})
+	}, 30)
 }
 
 // XGroupDelConsumer removes a consumer from a group
 func (s *BotreonStore) XGroupDelConsumer(key, group, consumer string) (int64, error) {
 	var removed int64
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		groupKey := streamGroupDataKey(key, group)
 		item, err := txn.Get(groupKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -1054,21 +1097,21 @@ func (s *BotreonStore) XGroupDelConsumer(key, group, consumer string) (int64, er
 			return err
 		}
 		return txn.Set(groupKey, data)
-	})
+	}, 30)
 	return removed, err
 }
 
 // XGroupDestroy destroys a consumer group
 func (s *BotreonStore) XGroupDestroy(key, group string) error {
-	return s.db.Update(func(txn *badger.Txn) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
 		groupKey := streamGroupDataKey(key, group)
 		return txn.Delete(groupKey)
-	})
+	}, 30)
 }
 
 // XGroupSetID sets the last delivered ID for a group
 func (s *BotreonStore) XGroupSetID(key, group, id string) error {
-	return s.db.Update(func(txn *badger.Txn) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
 		groupKey := streamGroupDataKey(key, group)
 		item, err := txn.Get(groupKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -1091,14 +1134,14 @@ func (s *BotreonStore) XGroupSetID(key, group, id string) error {
 			return err
 		}
 		return txn.Set(groupKey, data)
-	})
+	}, 30)
 }
 
 // XReadGroup reads from a consumer group
 func (s *BotreonStore) XReadGroup(group, consumer string, count int64, block int64, keys ...string) ([]map[string][]StreamEntry, error) {
 	result := make([]map[string][]StreamEntry, 0)
 
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		now := time.Now().UnixNano() / int64(time.Millisecond)
 
 		for _, key := range keys {
@@ -1207,7 +1250,7 @@ func (s *BotreonStore) XReadGroup(group, consumer string, count int64, block int
 			}
 		}
 		return nil
-	})
+	}, 30)
 
 	return result, err
 }
@@ -1216,7 +1259,7 @@ func (s *BotreonStore) XReadGroup(group, consumer string, count int64, block int
 func (s *BotreonStore) XAck(key, group string, ids ...string) (int64, error) {
 	var acknowledged int64
 
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		groupKey := streamGroupDataKey(key, group)
 		item, err := txn.Get(groupKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -1245,7 +1288,7 @@ func (s *BotreonStore) XAck(key, group string, ids ...string) (int64, error) {
 			return err
 		}
 		return txn.Set(groupKey, data)
-	})
+	}, 30)
 
 	return acknowledged, err
 }
@@ -1284,7 +1327,7 @@ func (s *BotreonStore) XPending(key, group string) ([]StreamPendingEntry, error)
 func (s *BotreonStore) XClaim(key, group, consumer string, minIdleTime int64, ids ...string) ([]string, error) {
 	var claimed []string
 
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		groupKey := streamGroupDataKey(key, group)
 		item, err := txn.Get(groupKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -1323,7 +1366,7 @@ func (s *BotreonStore) XClaim(key, group, consumer string, minIdleTime int64, id
 			return err
 		}
 		return txn.Set(groupKey, data)
-	})
+	}, 30)
 
 	return claimed, err
 }
@@ -1438,15 +1481,15 @@ func (s *BotreonStore) GetStreamEntry(key, id string) (*StreamEntry, error) {
 
 // XAutoClaimOptions contains options for XAUTOCLAIM
 type XAutoClaimOptions struct {
-	Count   int64
-	JustID  bool
+	Count  int64
+	JustID bool
 }
 
 // XAutoClaimResult contains the result of XAUTOCLAIM
 type XAutoClaimResult struct {
-	NextID    string
+	NextID     string
 	ClaimedIDs []string
-	Messages  []StreamEntry
+	Messages   []StreamEntry
 }
 
 // XAutoClaim automatically claims pending messages
@@ -1454,7 +1497,7 @@ type XAutoClaimResult struct {
 func (s *BotreonStore) XAutoClaim(key, group, consumer string, minIdleTime int64, start string, opts XAutoClaimOptions) (*XAutoClaimResult, error) {
 	var result XAutoClaimResult
 
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		groupKey := streamGroupDataKey(key, group)
 		item, err := txn.Get(groupKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -1540,7 +1583,7 @@ func (s *BotreonStore) XAutoClaim(key, group, consumer string, minIdleTime int64
 			return err
 		}
 		return txn.Set(groupKey, data)
-	})
+	}, 30)
 
 	return &result, err
 }

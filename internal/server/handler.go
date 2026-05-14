@@ -19,6 +19,9 @@ import (
 	"github.com/lbp0200/BoltDB/internal/store"
 )
 
+// connState holds per-connection state (currently unused, reserved for future use)
+type connState struct{}
+
 type Handler struct {
 	Db          *store.BotreonStore
 	Cluster     *cluster.Cluster
@@ -57,10 +60,10 @@ type ClientInfo struct {
 // TransactionState 事务状态
 type TransactionState struct {
 	Commands      []TransactionCommand // 排队的命令
-	WatchKeys     map[string]struct{} // 监控的键
-	IsWatching    bool                // 是否处于监视状态
-	InTransaction bool                // 是否在事务中（MULTI 已执行）
-	DirtyKeys     map[string]struct{} // 被修改的键
+	WatchKeys     map[string]struct{}  // 监控的键
+	IsWatching    bool                 // 是否处于监视状态
+	InTransaction bool                 // 是否在事务中（MULTI 已执行）
+	DirtyKeys     map[string]struct{}  // 被修改的键
 }
 
 // TransactionCommand 事务中的命令
@@ -303,7 +306,7 @@ func (h *Handler) processRequest(req *proto.Array, reader *bufio.Reader, remoteA
 		return resp
 	}
 
-	resp := h.executeCommand(cmd, args[1:], remoteAddr)
+	resp := h.executeCommand(nil, cmd, args[1:], remoteAddr)
 	if resp == nil {
 		logger.Logger.Error().
 			Str("remote_addr", remoteAddr).
@@ -352,9 +355,9 @@ func getResponseType(resp proto.RESP) string {
 // 返回 ReplicationTakeoverSignal{} 表示连接已由复制接管，需要关闭处理循环但不关闭连接
 type ReplicationTakeoverSignal struct{}
 
-func (ReplicationTakeoverSignal) String() string           { return "replication-takeover" }
-func (ReplicationTakeoverSignal) Error() string            { return "replication takeover" }
-func (ReplicationTakeoverSignal) IsError() bool            { return false }
+func (ReplicationTakeoverSignal) String() string { return "replication-takeover" }
+func (ReplicationTakeoverSignal) Error() string  { return "replication takeover" }
+func (ReplicationTakeoverSignal) IsError() bool  { return false }
 
 func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.Conn, reader *bufio.Reader, writer *bufio.Writer) proto.RESP {
 	if len(args) < 2 {
@@ -509,7 +512,7 @@ func (h *Handler) handleSlaveReplicationConnection(slave *replication.SlaveConne
 	}
 }
 
-func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) proto.RESP {
+func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, remoteAddr string) proto.RESP {
 	switch cmd {
 	// 连接命令
 	case "PING":
@@ -1315,9 +1318,10 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 				absttl := false
 				for i := 3; i < len(args); i++ {
 					upper := strings.ToUpper(string(args[i]))
-					if upper == "REPLACE" {
+					switch upper {
+					case "REPLACE":
 						replace = true
-					} else if upper == "ABSTTL" {
+					case "ABSTTL":
 						absttl = true
 					}
 				}
@@ -2629,7 +2633,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		count := 0
 		for i := 1; i < len(args); i++ {
 			member := string(args[i])
-			err := h.Db.ZRem(key, member)
+			deleted, err := h.Db.ZRem(key, member)
 			if err != nil {
 				if errors.Is(err, store.ErrWrongType) {
 					return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -2639,309 +2643,9 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 				}
 				return proto.NewError(fmt.Sprintf("ERR %v", err))
 			}
-			count++
+			count += int(deleted)
 		}
-		// #nosec G115 - count is bounded by practical data size limits
 		return proto.NewInteger(int64(count))
-
-	case "ZCARD":
-		if len(args) < 1 {
-			return proto.NewError("ERR wrong number of arguments for 'ZCARD' command")
-		}
-		key := string(args[0])
-		count, err := h.Db.ZCard(key)
-		if err != nil {
-			if errors.Is(err, store.ErrWrongType) {
-				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
-			}
-			return proto.NewInteger(0)
-		}
-		return proto.NewInteger(count)
-
-	case "ZSCORE":
-		if len(args) < 2 {
-			return proto.NewError("ERR wrong number of arguments for 'ZSCORE' command")
-		}
-		key, member := string(args[0]), string(args[1])
-		score, exists, err := h.Db.ZScore(key, member)
-		if errors.Is(err, store.ErrWrongType) {
-			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
-		}
-		if err != nil || !exists {
-			return proto.NewBulkString(nil)
-		}
-		return proto.NewBulkString([]byte(fmt.Sprintf("%.10g", score)))
-
-	case "ZMSCORE":
-		if len(args) < 2 {
-			return proto.NewError("ERR wrong number of arguments for 'ZMSCORE' command")
-		}
-		key := string(args[0])
-		members := make([]string, len(args)-1)
-		for i := 1; i < len(args); i++ {
-			members[i-1] = string(args[i])
-		}
-		scores, err := h.Db.ZMScore(key, members...)
-		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
-		}
-		// 返回数组，每个元素是分数或 nil
-		result := make([][]byte, len(scores))
-		for i, score := range scores {
-			result[i] = []byte(fmt.Sprintf("%.10g", score))
-		}
-		return &proto.Array{Args: result}
-
-	case "ZRANGE":
-		if len(args) < 3 {
-			return proto.NewError("ERR wrong number of arguments for 'ZRANGE' command")
-		}
-		key := string(args[0])
-		start, err1 := strconv.ParseInt(string(args[1]), 10, 64)
-		stop, err2 := strconv.ParseInt(string(args[2]), 10, 64)
-		if err1 != nil || err2 != nil {
-			return proto.NewError("ERR value is not an integer or out of range")
-		}
-		// 检查是否有 WITHSCORES 选项
-		withScores := false
-		if len(args) >= 4 && strings.ToUpper(string(args[3])) == "WITHSCORES" {
-			withScores = true
-		}
-		members, err := h.Db.ZRange(key, start, stop)
-		if err != nil {
-			if errors.Is(err, store.ErrWrongType) {
-				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
-			}
-			return &proto.Array{Args: [][]byte{}}
-		}
-		results := make([][]byte, 0)
-		if withScores {
-			// 有 WITHSCORES：返回 member 和 score 的交替数组
-			for _, m := range members {
-				results = append(results, []byte(m.Member), []byte(fmt.Sprintf("%.10g", m.Score)))
-			}
-		} else {
-			// 没有 WITHSCORES：只返回 member 列表
-			for _, m := range members {
-				results = append(results, []byte(m.Member))
-			}
-		}
-		return &proto.Array{Args: results}
-
-	case "ZREVRANGE":
-		if len(args) < 3 {
-			return proto.NewError("ERR wrong number of arguments for 'ZREVRANGE' command")
-		}
-		key := string(args[0])
-		start, err1 := strconv.ParseInt(string(args[1]), 10, 64)
-		stop, err2 := strconv.ParseInt(string(args[2]), 10, 64)
-		if err1 != nil || err2 != nil {
-			return proto.NewError("ERR value is not an integer or out of range")
-		}
-		// 检查是否有 WITHSCORES 选项
-		withScores := false
-		if len(args) >= 4 && strings.ToUpper(string(args[3])) == "WITHSCORES" {
-			withScores = true
-		}
-		members, err := h.Db.ZRevRange(key, start, stop)
-		if err != nil {
-			return &proto.Array{Args: [][]byte{}}
-		}
-		results := make([][]byte, 0)
-		if withScores {
-			// 有 WITHSCORES：返回 member 和 score 的交替数组
-			for _, m := range members {
-				results = append(results, []byte(m.Member), []byte(fmt.Sprintf("%.10g", m.Score)))
-			}
-		} else {
-			// 没有 WITHSCORES：只返回 member 列表
-			for _, m := range members {
-				results = append(results, []byte(m.Member))
-			}
-		}
-		return &proto.Array{Args: results}
-
-	case "ZRANGEBYSCORE":
-		// ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
-		if len(args) < 3 {
-			return proto.NewError("ERR wrong number of arguments for 'ZRANGEBYSCORE' command")
-		}
-		key := string(args[0])
-		minStr := string(args[1])
-		maxStr := string(args[2])
-
-		// 解析分数范围（包含排除标志）
-		minScore, minExclusive, err := parseScoreExclusive(minStr)
-		if err != nil {
-			return proto.NewError("ERR min or max is not a float")
-		}
-		maxScore, maxExclusive, err := parseScoreExclusive(maxStr)
-		if err != nil {
-			return proto.NewError("ERR min or max is not a float")
-		}
-
-		// 解析可选参数
-		offset := 0
-		count := -1 // -1 表示返回所有
-		withScores := false
-
-		i := 3
-		for i < len(args) {
-			arg := strings.ToUpper(string(args[i]))
-			i++
-			if arg == "WITHSCORES" {
-				withScores = true
-			} else if arg == "LIMIT" {
-				if i+1 >= len(args) {
-					return proto.NewError("ERR syntax error")
-				}
-				offset, err = strconv.Atoi(string(args[i]))
-				i++
-				if err != nil {
-					return proto.NewError("ERR LIMIT offset is not an integer")
-				}
-				count, err = strconv.Atoi(string(args[i]))
-				i++
-				if err != nil {
-					return proto.NewError("ERR LIMIT count is not an integer")
-				}
-			}
-		}
-
-		members, err := h.Db.ZRangeByScore(key, minScore, maxScore, offset, count, minExclusive, maxExclusive)
-		if err != nil {
-			return &proto.Array{Args: [][]byte{}}
-		}
-
-		results := make([][]byte, 0)
-		if withScores {
-			for _, m := range members {
-				results = append(results, []byte(m.Member), []byte(fmt.Sprintf("%.10g", m.Score)))
-			}
-		} else {
-			for _, m := range members {
-				results = append(results, []byte(m.Member))
-			}
-		}
-		return &proto.Array{Args: results}
-
-	case "ZREVRANGEBYSCORE":
-		// ZREVRANGEBYSCORE key max min [WITHSCORES] [LIMIT offset count]
-		if len(args) < 3 {
-			return proto.NewError("ERR wrong number of arguments for 'ZREVRANGEBYSCORE' command")
-		}
-		key := string(args[0])
-		maxStr := string(args[1])
-		minStr := string(args[2])
-
-		// 解析分数范围（包含排除标志）
-		maxScore, maxExclusive, err := parseScoreExclusive(maxStr)
-		if err != nil {
-			return proto.NewError("ERR min or max is not a float")
-		}
-		minScore, minExclusive, err := parseScoreExclusive(minStr)
-		if err != nil {
-			return proto.NewError("ERR min or max is not a float")
-		}
-
-		// 解析可选参数
-		offset := 0
-		count := -1 // -1 表示返回所有
-		withScores := false
-
-		i := 3
-		for i < len(args) {
-			arg := strings.ToUpper(string(args[i]))
-			i++
-			if arg == "WITHSCORES" {
-				withScores = true
-			} else if arg == "LIMIT" {
-				if i+1 >= len(args) {
-					return proto.NewError("ERR syntax error")
-				}
-				offset, err = strconv.Atoi(string(args[i]))
-				i++
-				if err != nil {
-					return proto.NewError("ERR LIMIT offset is not an integer")
-				}
-				count, err = strconv.Atoi(string(args[i]))
-				i++
-				if err != nil {
-					return proto.NewError("ERR LIMIT count is not an integer")
-				}
-			}
-		}
-
-		members, err := h.Db.ZRevRangeByScore(key, maxScore, minScore, offset, count, minExclusive, maxExclusive)
-		if err != nil {
-			return &proto.Array{Args: [][]byte{}}
-		}
-
-		results := make([][]byte, 0)
-		if withScores {
-			for _, m := range members {
-				results = append(results, []byte(m.Member), []byte(fmt.Sprintf("%.10g", m.Score)))
-			}
-		} else {
-			for _, m := range members {
-				results = append(results, []byte(m.Member))
-			}
-		}
-		return &proto.Array{Args: results}
-
-	case "ZRANK":
-		if len(args) < 2 {
-			return proto.NewError("ERR wrong number of arguments for 'ZRANK' command")
-		}
-		key, member := string(args[0]), string(args[1])
-		rank, err := h.Db.ZRank(key, member)
-		if err != nil {
-			return proto.NewBulkString(nil)
-		}
-		return proto.NewInteger(rank)
-
-	case "ZREVRANK":
-		if len(args) < 2 {
-			return proto.NewError("ERR wrong number of arguments for 'ZREVRANK' command")
-		}
-		key, member := string(args[0]), string(args[1])
-		rank, err := h.Db.ZRevRank(key, member)
-		if err != nil {
-			return proto.NewBulkString(nil)
-		}
-		return proto.NewInteger(rank)
-
-	case "ZCOUNT":
-		if len(args) < 3 {
-			return proto.NewError("ERR wrong number of arguments for 'ZCOUNT' command")
-		}
-		key := string(args[0])
-		min, err1 := strconv.ParseFloat(string(args[1]), 64)
-		max, err2 := strconv.ParseFloat(string(args[2]), 64)
-		if err1 != nil || err2 != nil {
-			return proto.NewError("ERR value is not a valid float")
-		}
-		count, err := h.Db.ZCount(key, min, max)
-		if err != nil {
-			return proto.NewInteger(0)
-		}
-		return proto.NewInteger(count)
-
-	case "ZINCRBY":
-		if len(args) < 3 {
-			return proto.NewError("ERR wrong number of arguments for 'ZINCRBY' command")
-		}
-		key, member := string(args[0]), string(args[2])
-		increment, err := strconv.ParseFloat(string(args[1]), 64)
-		if err != nil {
-			return proto.NewError("ERR value is not a valid float")
-		}
-		h.markDirtyKeys(key)
-		score, err := h.Db.ZIncrBy(key, member, increment)
-		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
-		}
-		return proto.NewBulkString([]byte(fmt.Sprintf("%.10g", score)))
 
 	case "ZREMRANGEBYRANK":
 		if len(args) < 3 {
@@ -3068,6 +2772,312 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 			return &proto.Array{Args: [][]byte{}}
 		}
 		return &proto.Array{Args: [][]byte{[]byte(key), []byte(member.Member), []byte(fmt.Sprintf("%.10g", member.Score))}}
+
+	case "ZCARD":
+		if len(args) < 1 {
+			return proto.NewError("ERR wrong number of arguments for 'ZCARD' command")
+		}
+		key := string(args[0])
+		count, err := h.Db.ZCard(key)
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		return proto.NewInteger(int64(count))
+
+	case "ZSCORE":
+		if len(args) < 2 {
+			return proto.NewError("ERR wrong number of arguments for 'ZSCORE' command")
+		}
+		key, member := string(args[0]), string(args[1])
+		score, exists, err := h.Db.ZScore(key, member)
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		if !exists {
+			return proto.NewBulkString(nil)
+		}
+		return proto.NewBulkString([]byte(strconv.FormatFloat(score, 'f', -1, 64)))
+
+	case "ZRANK":
+		if len(args) < 2 {
+			return proto.NewError("ERR wrong number of arguments for 'ZRANK' command")
+		}
+		key, member := string(args[0]), string(args[1])
+		rank, err := h.Db.ZRank(key, member)
+		if err != nil {
+			if errors.Is(err, store.ErrKeyNotFound) || errors.Is(err, store.ErrMemberNotFound) {
+				return proto.NewBulkString(nil)
+			}
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		return proto.NewInteger(rank)
+
+	case "ZREVRANK":
+		if len(args) < 2 {
+			return proto.NewError("ERR wrong number of arguments for 'ZREVRANK' command")
+		}
+		key, member := string(args[0]), string(args[1])
+		rank, err := h.Db.ZRevRank(key, member)
+		if err != nil {
+			if errors.Is(err, store.ErrKeyNotFound) || errors.Is(err, store.ErrMemberNotFound) {
+				return proto.NewBulkString(nil)
+			}
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		return proto.NewInteger(rank)
+
+	case "ZCOUNT":
+		if len(args) < 3 {
+			return proto.NewError("ERR wrong number of arguments for 'ZCOUNT' command")
+		}
+		key := string(args[0])
+		minScore, err := strconv.ParseFloat(string(args[1]), 64)
+		if err != nil {
+			return proto.NewError("ERR value is not a valid float")
+		}
+		maxScore, err := strconv.ParseFloat(string(args[2]), 64)
+		if err != nil {
+			return proto.NewError("ERR value is not a valid float")
+		}
+		count, err := h.Db.ZCount(key, minScore, maxScore)
+		if err != nil {
+			if errors.Is(err, store.ErrKeyNotFound) {
+				return proto.NewInteger(0)
+			}
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		return proto.NewInteger(count)
+
+	case "ZMSCORE":
+		if len(args) < 2 {
+			return proto.NewError("ERR wrong number of arguments for 'ZMSCORE' command")
+		}
+		key := string(args[0])
+		members := make([]string, len(args)-1)
+		for i := 1; i < len(args); i++ {
+			members[i-1] = string(args[i])
+		}
+		scores, err := h.Db.ZMScore(key, members...)
+		if err != nil {
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		results := make([][]byte, len(scores))
+		for i, s := range scores {
+			results[i] = []byte(strconv.FormatFloat(s, 'f', -1, 64))
+		}
+		return &proto.Array{Args: results}
+
+	case "ZRANGE":
+		if len(args) < 3 {
+			return proto.NewError("ERR wrong number of arguments for 'ZRANGE' command")
+		}
+		key := string(args[0])
+		start, err := strconv.ParseInt(string(args[1]), 10, 64)
+		if err != nil {
+			return proto.NewError("ERR value is not an integer or out of range")
+		}
+		stop, err := strconv.ParseInt(string(args[2]), 10, 64)
+		if err != nil {
+			return proto.NewError("ERR value is not an integer or out of range")
+		}
+		withScores := false
+		for i := 3; i < len(args); i++ {
+			if strings.ToUpper(string(args[i])) == "WITHSCORES" {
+				withScores = true
+			}
+		}
+		members, err := h.Db.ZRange(key, start, stop)
+		if err != nil {
+			if errors.Is(err, store.ErrKeyNotFound) {
+				return &proto.Array{Args: [][]byte{}}
+			}
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		if withScores {
+			results := make([][]byte, 0, len(members)*2)
+			for _, m := range members {
+				results = append(results, []byte(m.Member), []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)))
+			}
+			return &proto.Array{Args: results}
+		}
+		results := make([][]byte, len(members))
+		for i, m := range members {
+			results[i] = []byte(m.Member)
+		}
+		return &proto.Array{Args: results}
+
+	case "ZREVRANGE":
+		if len(args) < 3 {
+			return proto.NewError("ERR wrong number of arguments for 'ZREVRANGE' command")
+		}
+		key := string(args[0])
+		start, err := strconv.ParseInt(string(args[1]), 10, 64)
+		if err != nil {
+			return proto.NewError("ERR value is not an integer or out of range")
+		}
+		stop, err := strconv.ParseInt(string(args[2]), 10, 64)
+		if err != nil {
+			return proto.NewError("ERR value is not an integer or out of range")
+		}
+		withScores := false
+		for i := 3; i < len(args); i++ {
+			if strings.ToUpper(string(args[i])) == "WITHSCORES" {
+				withScores = true
+			}
+		}
+		members, err := h.Db.ZRevRange(key, start, stop)
+		if err != nil {
+			if errors.Is(err, store.ErrKeyNotFound) {
+				return &proto.Array{Args: [][]byte{}}
+			}
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		if withScores {
+			results := make([][]byte, 0, len(members)*2)
+			for _, m := range members {
+				results = append(results, []byte(m.Member), []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)))
+			}
+			return &proto.Array{Args: results}
+		}
+		results := make([][]byte, len(members))
+		for i, m := range members {
+			results[i] = []byte(m.Member)
+		}
+		return &proto.Array{Args: results}
+
+	case "ZRANGEBYSCORE":
+		if len(args) < 3 {
+			return proto.NewError("ERR wrong number of arguments for 'ZRANGEBYSCORE' command")
+		}
+		zsetName := string(args[0])
+		minScore, minExclusive, err := parseScoreExclusive(string(args[1]))
+		if err != nil {
+			return proto.NewError("ERR value is not a valid float")
+		}
+		maxScore, maxExclusive, err := parseScoreExclusive(string(args[2]))
+		if err != nil {
+			return proto.NewError("ERR value is not a valid float")
+		}
+		offset := 0
+		count := -1
+		for i := 3; i < len(args); i++ {
+			opt := strings.ToUpper(string(args[i]))
+			if opt == "LIMIT" && i+2 < len(args) {
+				offset, _ = strconv.Atoi(string(args[i+1]))
+				count, _ = strconv.Atoi(string(args[i+2]))
+				break
+			}
+		}
+		members, err := h.Db.ZRangeByScore(zsetName, minScore, maxScore, offset, count, minExclusive, maxExclusive)
+		if err != nil {
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		if len(members) == 0 {
+			return &proto.Array{Args: [][]byte{}}
+		}
+		withScores := false
+		for i := 3; i < len(args); i++ {
+			if strings.ToUpper(string(args[i])) == "WITHSCORES" {
+				withScores = true
+				break
+			}
+		}
+		if withScores {
+			results := make([][]byte, 0, len(members)*2)
+			for _, m := range members {
+				results = append(results, []byte(m.Member), []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)))
+			}
+			return &proto.Array{Args: results}
+		}
+		results := make([][]byte, len(members))
+		for i, m := range members {
+			results[i] = []byte(m.Member)
+		}
+		return &proto.Array{Args: results}
+
+	case "ZREVRANGEBYSCORE":
+		if len(args) < 3 {
+			return proto.NewError("ERR wrong number of arguments for 'ZREVRANGEBYSCORE' command")
+		}
+		zsetName := string(args[0])
+		maxScore, maxExclusive, err := parseScoreExclusive(string(args[1]))
+		if err != nil {
+			return proto.NewError("ERR value is not a valid float")
+		}
+		minScore, minExclusive, err := parseScoreExclusive(string(args[2]))
+		if err != nil {
+			return proto.NewError("ERR value is not a valid float")
+		}
+		offset := 0
+		count := -1
+		for i := 3; i < len(args); i++ {
+			opt := strings.ToUpper(string(args[i]))
+			if opt == "LIMIT" && i+2 < len(args) {
+				offset, _ = strconv.Atoi(string(args[i+1]))
+				count, _ = strconv.Atoi(string(args[i+2]))
+				break
+			}
+		}
+		members, err := h.Db.ZRevRangeByScore(zsetName, maxScore, minScore, offset, count, minExclusive, maxExclusive)
+		if err != nil {
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		if len(members) == 0 {
+			return &proto.Array{Args: [][]byte{}}
+		}
+		withScores := false
+		for i := 3; i < len(args); i++ {
+			if strings.ToUpper(string(args[i])) == "WITHSCORES" {
+				withScores = true
+				break
+			}
+		}
+		if withScores {
+			results := make([][]byte, 0, len(members)*2)
+			for _, m := range members {
+				results = append(results, []byte(m.Member), []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)))
+			}
+			return &proto.Array{Args: results}
+		}
+		results := make([][]byte, len(members))
+		for i, m := range members {
+			results[i] = []byte(m.Member)
+		}
+		return &proto.Array{Args: results}
+
+	case "ZINCRBY":
+		if len(args) < 3 {
+			return proto.NewError("ERR wrong number of arguments for 'ZINCRBY' command")
+		}
+		key, member := string(args[0]), string(args[2])
+		delta, err := strconv.ParseFloat(string(args[1]), 64)
+		if err != nil {
+			return proto.NewError("ERR value is not a valid float")
+		}
+		h.markDirtyKeys(key)
+		newScore, err := h.Db.ZIncrBy(key, member, delta)
+		if err != nil {
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		return proto.NewBulkString([]byte(strconv.FormatFloat(newScore, 'f', -1, 64)))
+
+	case "ZRANDMEMBER":
+		if len(args) < 1 {
+			return proto.NewError("ERR wrong number of arguments for 'ZRANDMEMBER' command")
+		}
+		return proto.NewError("ERR command 'ZRANDMEMBER' not implemented")
+
+	case "ZMPOP":
+		if len(args) < 2 {
+			return proto.NewError("ERR wrong number of arguments for 'ZMPOP' command")
+		}
+		return proto.NewError("ERR command 'ZMPOP' not implemented")
 
 	case "ZUNIONSTORE":
 		if len(args) < 3 {
@@ -4061,9 +4071,9 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		}
 		if h.transaction == nil {
 			h.transaction = &TransactionState{
-				Commands:   make([]TransactionCommand, 0),
-				WatchKeys:  make(map[string]struct{}),
-				DirtyKeys:  make(map[string]struct{}),
+				Commands:  make([]TransactionCommand, 0),
+				WatchKeys: make(map[string]struct{}),
+				DirtyKeys: make(map[string]struct{}),
 			}
 		}
 		h.transaction.InTransaction = true
@@ -4235,7 +4245,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		var centerLon, centerLat float64
 		var radius float64
 		var unit string
-		var count int = 0
+		var count int
 		var withDist, withHash, withCoord bool
 
 		i := 1
@@ -4367,7 +4377,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		var centerLon, centerLat float64
 		var radius float64
 		var unit string
-		var count int = 0
+		var count int
 		var storeDist bool
 
 		i := 2
@@ -5269,7 +5279,7 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		// Parse options
 		var offset, count int64 = 0, -1
 		var getPatterns []string
-		var asc bool = true
+		var asc = true
 		var alpha bool
 		var destKey string
 		var byPattern string
@@ -5424,16 +5434,10 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 				values = []string{}
 			} else if offset < int64(len(values)) {
 				values = values[offset:]
-				if len(scores) > 0 {
-					scores = scores[offset:]
-				}
 			}
 		}
 		if count >= 0 && int64(len(values)) > count {
 			values = values[:count]
-			if len(scores) > 0 {
-				scores = scores[:count]
-			}
 		}
 
 		// Apply GET patterns
@@ -5500,9 +5504,10 @@ func (h *Handler) executeCommand(cmd string, args [][]byte, remoteAddr string) p
 		// Parse optional NX/XX arguments
 		for i := 3; i < len(args); i++ {
 			opt := strings.ToUpper(string(args[i]))
-			if opt == "NX" {
+			switch opt {
+			case "NX":
 				nx = true
-			} else if opt == "XX" {
+			case "XX":
 				xx = true
 			}
 		}
@@ -5942,26 +5947,19 @@ func boolToInt(b bool) int {
 // parseScore parses Redis-style score bounds including special values
 // Supports: "-inf", "+inf", "(", "[", and numeric values
 func parseScore(s string) (float64, error) {
-	// 处理特殊值
 	switch s {
 	case "-inf":
 		return float64(math.Inf(-1)), nil
 	case "+inf", "inf":
 		return float64(math.Inf(1)), nil
 	case "-inf(", "-inf[":
-		// Exclusive -inf is same as inclusive -inf for float comparison
 		return float64(math.Inf(-1)), nil
 	case "+inf(", "+inf[":
 		return float64(math.Inf(1)), nil
 	}
-
-	// 处理带括号的排除边界 (value
 	if len(s) > 0 && s[0] == '(' {
-		// 对于排除边界，我们需要在比较时特殊处理
-		// 这里简单处理，返回原值的前缀（不包括括号）
 		s = s[1:]
 	}
-
 	return strconv.ParseFloat(s, 64)
 }
 
@@ -6004,7 +6002,7 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		value, err := h.Db.Get(key)
 		if err != nil {
 			if errors.Is(err, store.ErrKeyNotFound) {
-				return nil
+				return proto.NewBulkString(nil)
 			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -6104,14 +6102,14 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		key := string(args[0])
 		val, _ := h.Db.LPop(key)
 		if val == "" {
-			return nil
+			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString([]byte(val))
 	case "RPOP":
 		key := string(args[0])
 		val, _ := h.Db.RPop(key)
 		if val == "" {
-			return nil
+			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString([]byte(val))
 	case "LLEN":
@@ -6137,7 +6135,7 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		key, field := string(args[0]), string(args[1])
 		val, _ := h.Db.HGet(key, field)
 		if len(val) == 0 {
-			return nil
+			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString(val)
 	case "HGETALL":
@@ -6203,7 +6201,7 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 	case "ZREM":
 		key := string(args[0])
 		member := string(args[1])
-		_ = h.Db.ZRem(key, member)
+		_, _ = h.Db.ZRem(key, member)
 		return proto.NewInteger(1)
 	case "ZCARD":
 		key := string(args[0])

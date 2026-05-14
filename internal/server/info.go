@@ -8,7 +8,7 @@ import (
 )
 
 // Version 版本号，通过 ldflags 注入
-var Version = "8.1.6"
+var Version = "8.1.7"
 
 // GitCommitID Git commit ID，通过 ldflags 注入
 var GitCommitID = ""
@@ -49,13 +49,14 @@ func (h *Handler) buildInfoResponse(section string) string {
 			role := h.Replication.GetRole()
 			builder.WriteString("role:" + role + "\n")
 
-			if role == "master" {
+			switch role {
+			case "master":
 				builder.WriteString("connected_slaves:" + strconv.Itoa(h.Replication.GetSlaveCount()) + "\n")
 				builder.WriteString("master_replid:" + h.Replication.GetReplicationID() + "\n")
 				builder.WriteString("master_repl_offset:" + strconv.FormatInt(h.Replication.GetMasterReplOffset(), 10) + "\n")
 				builder.WriteString("second_repl_offset:-1\n")
 				builder.WriteString("repl_backlog_active:1\n")
-				builder.WriteString("repl_backlog_size:1048576\n") // 1MB
+				builder.WriteString("repl_backlog_size:1048576\n")
 				builder.WriteString("repl_backlog_first_byte_offset:0\n")
 				builder.WriteString("repl_backlog_histlen:0\n")
 
@@ -63,7 +64,7 @@ func (h *Handler) buildInfoResponse(section string) string {
 				for i, slave := range slaves {
 					builder.WriteString("slave" + strconv.Itoa(i) + ":ip=" + slave.Addr + ",port=6379,state=online,offset=" + strconv.FormatInt(slave.GetReplOffset(), 10) + ",lag=0\n")
 				}
-			} else if role == "slave" {
+			case "slave":
 				masterAddr := h.Replication.GetMasterAddr()
 				if masterAddr != "" {
 					builder.WriteString("master_host:" + strings.Split(masterAddr, ":")[0] + "\n")
@@ -84,14 +85,12 @@ func (h *Handler) buildInfoResponse(section string) string {
 				builder.WriteString("repl_backlog_size:0\n")
 				builder.WriteString("repl_backlog_first_byte_offset:0\n")
 				builder.WriteString("repl_backlog_histlen:0\n")
+			case "sentinel":
+				builder.WriteString("connected_slaves:0\n")
+				builder.WriteString("master_replid:8371b4fb5d6973276c54b0f0ab738c2e6f00fa8d\n")
+				builder.WriteString("master_repl_offset:0\n")
+				builder.WriteString("second_repl_offset:-1\n")
 			}
-		} else {
-			builder.WriteString("role:master\n")
-			builder.WriteString("connected_slaves:0\n")
-			builder.WriteString("master_replid:8371b4fb5d6973276c54b0f0ab738c2e6f00fa8d\n")
-			builder.WriteString("master_repl_offset:0\n")
-			builder.WriteString("second_repl_offset:-1\n")
-			builder.WriteString("repl_backlog_active:0\n")
 		}
 		builder.WriteString("\n")
 	}

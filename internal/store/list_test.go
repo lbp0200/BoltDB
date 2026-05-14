@@ -10,7 +10,6 @@ import (
 func TestLPush(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	key := "mylist"
 
 	// 单个元素
@@ -37,7 +36,6 @@ func TestLPush(t *testing.T) {
 // TestRPush 测试 RPUSH 命令
 func TestRPush(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	key := "mylist"
 
@@ -69,7 +67,6 @@ func TestRPush(t *testing.T) {
 func TestLPop(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	key := "mylist"
 
 	// 设置初始值
@@ -99,7 +96,6 @@ func TestLPop(t *testing.T) {
 // TestRPop 测试 RPOP 命令
 func TestRPop(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	key := "mylist"
 
@@ -131,7 +127,6 @@ func TestRPop(t *testing.T) {
 func TestLLen(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	key := "mylist"
 
 	// 空列表
@@ -149,7 +144,6 @@ func TestLLen(t *testing.T) {
 // TestLIndex 测试 LINDEX 命令
 func TestLIndex(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	key := "mylist"
 
@@ -188,7 +182,6 @@ func TestLIndex(t *testing.T) {
 func TestLRange(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	key := "mylist"
 
 	// 设置值
@@ -219,7 +212,6 @@ func TestLRange(t *testing.T) {
 func TestLSet(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	key := "mylist"
 
 	// 设置值
@@ -241,7 +233,6 @@ func TestLSet(t *testing.T) {
 // TestLTrim 测试 LTRIM 命令
 func TestLTrim(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	key := "mylist"
 
@@ -268,7 +259,6 @@ func TestLTrim(t *testing.T) {
 func TestLInsert(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	key := "mylist"
 
 	// 设置值
@@ -277,7 +267,8 @@ func TestLInsert(t *testing.T) {
 	// BEFORE插入
 	count, err := store.LInsert(key, "BEFORE", "b", "x")
 	assert.NoError(t, err)
-	assert.Equal(t, 1, count)
+	// LINSERT returns new list length after successful insert
+	assert.Equal(t, 4, count)
 
 	values, _ := store.LRange(key, 0, -1)
 	assert.Equal(t, []string{"a", "x", "b", "c"}, values)
@@ -285,7 +276,8 @@ func TestLInsert(t *testing.T) {
 	// AFTER插入
 	count, err = store.LInsert(key, "AFTER", "b", "y")
 	assert.NoError(t, err)
-	assert.Equal(t, 1, count)
+	// LINSERT returns new list length after successful insert
+	assert.Equal(t, 5, count)
 
 	values, _ = store.LRange(key, 0, -1)
 	assert.Equal(t, []string{"a", "x", "b", "y", "c"}, values)
@@ -293,13 +285,13 @@ func TestLInsert(t *testing.T) {
 	// pivot不存在
 	count, err = store.LInsert(key, "BEFORE", "z", "w")
 	assert.NoError(t, err)
-	assert.Equal(t, 0, count)
+	// LINSERT returns -1 when pivot is not found
+	assert.Equal(t, -1, count)
 }
 
 // TestLRem 测试 LREM 命令
 func TestLRem(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	key := "mylist"
 
@@ -336,7 +328,6 @@ func TestLRem(t *testing.T) {
 func TestRPopLPush(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	source := "source"
 	dest := "dest"
 
@@ -369,7 +360,6 @@ func TestRPopLPush(t *testing.T) {
 func TestListEdgeCases(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	key := "mylist"
 
 	// 空列表操作
@@ -398,7 +388,6 @@ func TestListEdgeCases(t *testing.T) {
 func TestLPUSHX(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	key := "test_lpushx"
 
 	// 键不存在，应该返回0
@@ -421,7 +410,6 @@ func TestLPUSHX(t *testing.T) {
 
 func TestRPUSHX(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	key := "test_rpushx"
 
@@ -446,7 +434,6 @@ func TestRPUSHX(t *testing.T) {
 func TestBLPOP(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// 测试非空列表
 	store.LPush("list1", "value1")
 	key, value, err := store.BLPOP([]string{"list1", "list2"}, 0)
@@ -463,7 +450,6 @@ func TestBLPOP(t *testing.T) {
 
 func TestBRPOP(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// 测试非空列表
 	store.RPush("list1", "value1")
@@ -482,7 +468,6 @@ func TestBRPOP(t *testing.T) {
 func TestBRPOPLPUSH(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// 测试非空列表
 	store.RPush("source", "value1")
 	value, err := store.BRPOPLPUSH("source", "dest", 0)
@@ -497,7 +482,6 @@ func TestBRPOPLPUSH(t *testing.T) {
 // TestLPos 测试 LPOS 命令
 func TestLPos(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// Create a list with duplicate values
 	store.RPush("mylist", "a", "b", "c", "b", "a")
@@ -529,7 +513,6 @@ func TestLPos(t *testing.T) {
 func TestLMove(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// Create source list
 	store.RPush("source", "a", "b", "c")
 
@@ -557,7 +540,6 @@ func TestLMove(t *testing.T) {
 func TestBLMove(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// Test BLMOVE with existing element
 	store.RPush("source", "value1")
 	value, err := store.BLMove("source", "dest", "LEFT", "RIGHT", 1)
@@ -572,7 +554,6 @@ func TestBLMove(t *testing.T) {
 // TestListWrongType tests that LPush/RPush returns ErrWrongType when key exists with different type
 func TestListWrongType(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// Create a hash key first
 	err := store.HSet("myhash", "field1", "value1")

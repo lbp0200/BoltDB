@@ -205,7 +205,7 @@ func (cc *ClusterCommands) handleMeet(args []string) (string, error) {
 	}
 
 	addr := fmt.Sprintf("%s:%d", ip, port)
-	
+
 	// 创建新节点（简化实现，实际应该通过握手获取节点ID）
 	nodeID, err := generateNodeID()
 	if err != nil {
@@ -248,7 +248,7 @@ func (cc *ClusterCommands) handleReplicate(args []string) (string, error) {
 	// 将当前节点设置为slave
 	cc.cluster.Myself.MasterID = masterID
 	cc.cluster.Myself.Flags = []string{"slave", "myself"}
-	
+
 	// 移除当前节点的槽位分配
 	for i := uint32(0); i < SlotCount; i++ {
 		if cc.cluster.Slots[i] == cc.cluster.Myself {
@@ -443,14 +443,14 @@ func (cc *ClusterCommands) handleReset(args []string) (string, error) {
 // clusterStats 用于存储集群调用统计
 type clusterStats struct {
 	CommandsProcessed int64
-	NetInputBytes    int64
-	NetOutputBytes   int64
-	mu               sync.RWMutex
+	NetInputBytes     int64
+	NetOutputBytes    int64
+	mu                sync.RWMutex
 }
 
 var globalClusterStats = &clusterStats{
 	CommandsProcessed: 0,
-	NetInputBytes:    0,
+	NetInputBytes:     0,
 	NetOutputBytes:    0,
 }
 
@@ -493,4 +493,3 @@ func (cc *ClusterCommands) handleTotalKeys(args []string) (int64, error) {
 	// 由于BoltDB/BadgerDB的键不存储槽位信息，这里无法准确统计
 	return 0, nil
 }
-

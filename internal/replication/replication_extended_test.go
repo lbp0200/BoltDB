@@ -141,9 +141,9 @@ func TestReplicationManagerExtended_UpdateSlaveAckOffset(t *testing.T) {
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
 
-	// Update slave ack offset - should not panic
+	assert.Equal(t, 0, rm.GetSlaveCount())
 	rm.UpdateSlaveAckOffset("slave1", 100)
-	assert.True(t, true)
+	assert.Equal(t, 0, rm.GetSlaveCount())
 }
 
 // TestReplicationManager_LoadRDB tests LoadRDB
@@ -152,8 +152,6 @@ func TestReplicationManager_LoadRDB(t *testing.T) {
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
 
-	// LoadRDB with empty data - should not panic
 	err := rm.LoadRDB([]byte{})
-	_ = err
-	assert.True(t, true)
+	assert.Error(t, err)
 }

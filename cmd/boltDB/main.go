@@ -4,6 +4,8 @@ import (
 	"flag"
 	"net"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/lbp0200/BoltDB/internal/backup"
 	"github.com/lbp0200/BoltDB/internal/cluster"
@@ -16,12 +18,12 @@ import (
 
 // Command-line flags - defined at package level for testability
 var (
-	addrFlag             = flag.String("addr", ":6337", "listen addr")
-	dbPathFlag           = flag.String("dir", os.TempDir(), "badger dir")
-	logLevelFlag         = flag.String("log-level", "", "log level: DEBUG, INFO, WARNING, ERROR (default: WARNING, or from BOLTDB_LOG_LEVEL env)")
-	clusterEnabledFlag   = flag.Bool("cluster", false, "enable cluster mode")
-	replicaofFlag        = flag.String("replicaof", "", "replicaof master host:port")
-	skipStartupCleanup   = flag.Bool("skip-startup-cleanup", false, "skip startup cleanup (data integrity check)")
+	addrFlag           = flag.String("addr", ":6337", "listen addr")
+	dbPathFlag         = flag.String("dir", os.TempDir(), "badger dir")
+	logLevelFlag       = flag.String("log-level", "", "log level: DEBUG, INFO, WARNING, ERROR (default: WARNING, or from BOLTDB_LOG_LEVEL env)")
+	clusterEnabledFlag = flag.Bool("cluster", false, "enable cluster mode")
+	replicaofFlag      = flag.String("replicaof", "", "replicaof master host:port")
+	skipStartupCleanup = flag.Bool("skip-startup-cleanup", false, "skip startup cleanup (data integrity check)")
 )
 
 func main() {
@@ -37,7 +39,7 @@ func main() {
 		logger.Logger.Fatal().Err(err).Msg("Failed to create store")
 	}
 	defer func() {
-		if err := db.Close(); err != nil {
+		if err := db.CloseWithTimeout(store.CloseTimeout); err != nil {
 			logger.Logger.Error().Err(err).Msg("failed to close database")
 		}
 	}()
@@ -93,10 +95,21 @@ func main() {
 	tcpAddr := ln.Addr().(*net.TCPAddr)
 	handler.Port = tcpAddr.Port
 
-	// 启动信息使用 WARN 级别，确保默认配置下也能显示
 	logger.Warning("BoltDB 服务器启动，监听地址: %s", *addrFlag)
 	logger.Warning("当前日志级别: %s", logger.GetLevelString())
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigCh
+		logger.Logger.Info().Str("signal", sig.String()).Msg("收到关闭信号，正在关闭服务器...")
+		_ = ln.Close()
+	}()
+
 	if err := handler.ServeTCP(ln); err != nil {
-		logger.Logger.Fatal().Err(err).Msg("Server failed")
+		logger.Logger.Info().Msg("服务器已停止")
 	}
+
+	replMgr.Stop()
 }

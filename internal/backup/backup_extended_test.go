@@ -79,10 +79,8 @@ func TestBackupManager_BGSave(t *testing.T) {
 	// Set some data
 	db.Set("key1", "value1")
 
-	// BGSave should not panic
 	err = bm.BGSave()
-	_ = err
-	assert.True(t, true)
+	assert.NoError(t, err)
 }
 
 // TestBackupManager_BackupBadger tests BackupBadger
@@ -97,10 +95,8 @@ func TestBackupManager_BackupBadger(t *testing.T) {
 	// Set some data
 	db.Set("key1", "value1")
 
-	// BackupBadger - just verify no panic
 	_, err = bm.BackupBadger()
-	_ = err
-	assert.True(t, true)
+	assert.NoError(t, err)
 }
 
 // TestBackupManager_BackupRDB tests BackupRDB
@@ -115,10 +111,8 @@ func TestBackupManager_BackupRDB(t *testing.T) {
 	// Set some data
 	db.Set("key1", "value1")
 
-	// BackupRDB - just verify no panic
 	_, err = bm.BackupRDB()
-	_ = err
-	assert.True(t, true)
+	assert.NoError(t, err)
 }
 
 // TestBackupManager_BackupBoth tests BackupBoth
@@ -133,10 +127,8 @@ func TestBackupManager_BackupBoth(t *testing.T) {
 	// Set some data
 	db.Set("key1", "value1")
 
-	// BackupBoth - just verify no panic
 	_, err = bm.BackupBoth()
-	_ = err
-	assert.True(t, true)
+	assert.NoError(t, err)
 }
 
 // TestRDBBackupManager_Backup tests RDBBackupManager Backup
@@ -151,10 +143,8 @@ func TestRDBBackupManager_Backup(t *testing.T) {
 	// Set some data
 	db.Set("key1", "value1")
 
-	// Backup - just verify no panic
 	_, err = rbm.Backup(t.TempDir())
-	_ = err
-	assert.True(t, true)
+	assert.NoError(t, err)
 }
 
 // TestRDBBackupManager_BackupWithCompression tests BackupWithCompression
@@ -169,10 +159,8 @@ func TestRDBBackupManager_BackupWithCompression(t *testing.T) {
 	// Set some data
 	db.Set("key1", "value1")
 
-	// BackupWithCompression - just verify no panic
 	_, err = rbm.BackupWithCompression(t.TempDir())
-	_ = err
-	assert.True(t, true)
+	assert.NoError(t, err)
 }
 
 // TestRDBBackupManager_GetBackupInfo tests GetBackupInfo

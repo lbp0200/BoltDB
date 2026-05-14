@@ -39,7 +39,7 @@ jobs:
         run: go build ./...
 
       - name: Test with coverage
-        run: go test -timeout 30s -short -coverprofile=coverage.out -covermode=atomic ./... 2>&1 | grep -v "badger" || true
+        run: go test -race -timeout 30s -short -coverprofile=coverage.out -covermode=atomic ./... 2>&1 | grep -v "badger" || true
 
       - name: Upload coverage
         if: always()

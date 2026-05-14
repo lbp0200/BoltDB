@@ -8,19 +8,19 @@ import (
 
 // PubSubManager Pub/Sub管理器
 type PubSubManager struct {
-	mu           sync.RWMutex
-	channels     map[string]map[*Subscriber]bool // 频道 -> 订阅者映射
-	patterns     map[string]map[*Subscriber]bool // 模式 -> 订阅者映射
-	subscribers  map[*Subscriber]bool             // 所有订阅者
+	mu          sync.RWMutex
+	channels    map[string]map[*Subscriber]bool // 频道 -> 订阅者映射
+	patterns    map[string]map[*Subscriber]bool // 模式 -> 订阅者映射
+	subscribers map[*Subscriber]bool            // 所有订阅者
 }
 
 // Subscriber 订阅者
 type Subscriber struct {
-	ID       string
-	Channels map[string]bool
-	Patterns map[string]bool
+	ID        string
+	Channels  map[string]bool
+	Patterns  map[string]bool
 	MessageCh chan *Message
-	mu       sync.RWMutex
+	mu        sync.RWMutex
 }
 
 // Message 消息
@@ -269,6 +269,21 @@ func (psm *PubSubManager) RemoveSubscriber(subscriber *Subscriber) {
 	close(subscriber.MessageCh)
 }
 
+// Clear 清空所有订阅状态，用于测试隔离
+func (psm *PubSubManager) Clear() {
+	psm.mu.Lock()
+	defer psm.mu.Unlock()
+
+	// 关闭所有订阅者的消息通道并移除订阅者
+	for sub := range psm.subscribers {
+		close(sub.MessageCh)
+	}
+
+	// 重置所有映射
+	psm.channels = make(map[string]map[*Subscriber]bool)
+	psm.patterns = make(map[string]map[*Subscriber]bool)
+	psm.subscribers = make(map[*Subscriber]bool)
+}
 
 // GetChannels 获取所有频道
 func (psm *PubSubManager) GetChannels(pattern string) []string {

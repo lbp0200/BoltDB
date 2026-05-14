@@ -20,9 +20,7 @@ func FuzzExecuteReplicatedCommand(f *testing.F) {
 		}
 		defer testStore.Close()
 
-		// Parse the data as command
-		// Just ensure it doesn't panic
-		executeReplicatedCommand(testStore, [][]byte{[]byte(data)})
+		_ = executeReplicatedCommand(testStore, [][]byte{[]byte(data)})
 	})
 }
 

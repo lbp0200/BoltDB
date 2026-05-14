@@ -295,7 +295,6 @@ func TestZRevRank(t *testing.T) {
 func TestZRange(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	zSetName := "myset"
 
 	// 准备数据
@@ -327,7 +326,6 @@ func TestZRange(t *testing.T) {
 func TestZRevRange(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	zSetName := "myset"
 
 	// 准备数据
@@ -354,7 +352,6 @@ func TestZRevRange(t *testing.T) {
 
 func TestZRangeByScore(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	zSetName := "myset"
 
@@ -383,7 +380,6 @@ func TestZRangeByScore(t *testing.T) {
 func TestZRevRangeByScore(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	zSetName := "myset"
 
 	// 准备数据
@@ -405,7 +401,6 @@ func TestZRevRangeByScore(t *testing.T) {
 func TestZRem(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	zSetName := "myset"
 
 	// 准备数据
@@ -415,7 +410,7 @@ func TestZRem(t *testing.T) {
 	})
 
 	// 删除成员
-	err := store.ZRem(zSetName, "member1")
+	_, err := store.ZRem(zSetName, "member1")
 	assert.NoError(t, err)
 
 	// 验证成员已删除
@@ -427,13 +422,12 @@ func TestZRem(t *testing.T) {
 	assert.Equal(t, int64(1), card)
 
 	// 删除不存在的成员
-	err = store.ZRem(zSetName, "nonexistent")
+	_, err = store.ZRem(zSetName, "nonexistent")
 	assert.NoError(t, err)
 }
 
 func TestZRemRangeByRank(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	zSetName := "myset"
 
@@ -461,7 +455,6 @@ func TestZRemRangeByRank(t *testing.T) {
 func TestZRemRangeByScore(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	zSetName := "myset"
 
 	// 准备数据
@@ -484,7 +477,6 @@ func TestZRemRangeByScore(t *testing.T) {
 
 func TestZPopMax(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	zSetName := "myset"
 
@@ -517,7 +509,6 @@ func TestZPopMax(t *testing.T) {
 func TestZPopMin(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	zSetName := "myset"
 
 	// 准备数据
@@ -549,7 +540,6 @@ func TestZPopMin(t *testing.T) {
 func TestZSetDel(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	zSetName := "myset"
 
 	// 准备数据
@@ -572,7 +562,6 @@ func TestZSetDel(t *testing.T) {
 
 func TestSortedSetEdgeCases(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	zSetName := "myset"
 
@@ -619,7 +608,6 @@ func TestSortedSetEdgeCases(t *testing.T) {
 func TestSortedSetOperations(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	zSetName := "myset"
 
 	// 综合测试：添加、更新、查询、删除
@@ -650,14 +638,13 @@ func TestSortedSetOperations(t *testing.T) {
 	assert.True(t, len(scoreMembers) > 0)
 
 	// 删除成员
-	_ = store.ZRem(zSetName, "member2")
+	_, _ = store.ZRem(zSetName, "member2")
 	card, _ := store.ZCard(zSetName)
 	assert.Equal(t, int64(2), card)
 }
 
 func TestZUnionStore(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// 创建两个有序集合
 	_ = store.ZAdd("zset1", []ZSetMember{
@@ -677,7 +664,7 @@ func TestZUnionStore(t *testing.T) {
 	// 验证结果
 	members, _ := store.ZRange("dest", 0, -1)
 	assert.Equal(t, 3, len(members))
-	
+
 	// 验证b的分数是2.0+3.0=5.0
 	score, exists, _ := store.ZScore("dest", "b")
 	assert.True(t, exists)
@@ -687,7 +674,7 @@ func TestZUnionStore(t *testing.T) {
 	count, err = store.ZUnionStore("dest2", []string{"zset1", "zset2"}, nil, "MIN")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(3), count)
-	
+
 	score, exists, _ = store.ZScore("dest2", "b")
 	assert.True(t, exists)
 	assert.Equal(t, 2.0, score) // MIN(2.0, 3.0) = 2.0
@@ -696,7 +683,7 @@ func TestZUnionStore(t *testing.T) {
 	count, err = store.ZUnionStore("dest3", []string{"zset1", "zset2"}, []float64{2.0, 1.0}, "")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(3), count)
-	
+
 	score, exists, _ = store.ZScore("dest3", "a")
 	assert.True(t, exists)
 	assert.Equal(t, 2.0, score) // 1.0 * 2.0 = 2.0
@@ -704,7 +691,6 @@ func TestZUnionStore(t *testing.T) {
 
 func TestZInterStore(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// 创建两个有序集合
 	_ = store.ZAdd("zset1", []ZSetMember{
@@ -725,7 +711,7 @@ func TestZInterStore(t *testing.T) {
 	members, _ := store.ZRange("dest", 0, -1)
 	assert.Equal(t, 1, len(members))
 	assert.Equal(t, "b", members[0].Member)
-	
+
 	// 验证b的分数是2.0+3.0=5.0
 	score, exists, _ := store.ZScore("dest", "b")
 	assert.True(t, exists)
@@ -734,7 +720,6 @@ func TestZInterStore(t *testing.T) {
 
 func TestZDiffStore(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// 创建两个有序集合
 	store.ZAdd("zset1", []ZSetMember{
@@ -761,7 +746,6 @@ func TestZDiffStore(t *testing.T) {
 func TestZLexCount(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// 创建有序集合（相同分数，按字典序）
 	store.ZAdd("zset", []ZSetMember{
 		{Member: "a", Score: 1.0},
@@ -782,7 +766,6 @@ func TestZLexCount(t *testing.T) {
 
 func TestZRangeByLex(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// 创建有序集合（相同分数，按字典序）
 	store.ZAdd("zset", []ZSetMember{
@@ -811,7 +794,6 @@ func TestZRangeByLex(t *testing.T) {
 func TestZRevRangeByLex(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// 创建有序集合
 	store.ZAdd("zset", []ZSetMember{
 		{Member: "a", Score: 1.0},
@@ -830,7 +812,6 @@ func TestZRevRangeByLex(t *testing.T) {
 
 func TestZRemRangeByLex(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// 创建有序集合
 	store.ZAdd("zset", []ZSetMember{
@@ -855,7 +836,6 @@ func TestZRemRangeByLex(t *testing.T) {
 func TestZMScore(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// 创建有序集合
 	store.ZAdd("zset", []ZSetMember{
 		{Member: "a", Score: 1.0},
@@ -876,7 +856,6 @@ func TestZMScore(t *testing.T) {
 // TestBZPopMax 测试 BZPOPMAX 命令
 func TestBZPopMax(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// Add elements to sorted set
 	store.ZAdd("zset", []ZSetMember{
@@ -901,7 +880,6 @@ func TestBZPopMax(t *testing.T) {
 func TestBZPopMin(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// Add elements to sorted set
 	store.ZAdd("zset", []ZSetMember{
 		{Member: "a", Score: 1.0},
@@ -924,7 +902,6 @@ func TestBZPopMin(t *testing.T) {
 // TestZScan 测试 ZSCAN 命令
 func TestZScan(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// Add elements to sorted set
 	for i := 0; i < 50; i++ {

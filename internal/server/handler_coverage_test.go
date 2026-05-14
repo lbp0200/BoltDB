@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
@@ -12,7 +13,7 @@ func TestExecuteCommand_PING_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("PING", nil, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "PING", nil, "127.0.0.1:12345")
 	ss, ok := resp.(*proto.SimpleString)
 	assert.True(t, ok)
 	assert.Equal(t, "PONG", string(*ss))
@@ -23,7 +24,7 @@ func TestExecuteCommand_ECHO_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("ECHO", [][]byte{[]byte("hello")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "ECHO", [][]byte{[]byte("hello")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "hello", string(*bs))
@@ -34,7 +35,7 @@ func TestExecuteCommand_ECHO_NoArgs_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("ECHO", [][]byte{}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "ECHO", [][]byte{}, "127.0.0.1:12345")
 	_, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 }
@@ -44,7 +45,7 @@ func TestExecuteCommand_ROLE_Master_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("ROLE", nil, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "ROLE", nil, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 2, len(arr.Args))
@@ -62,7 +63,7 @@ func TestExecuteCommand_CLIENT_LIST_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("CLIENT", [][]byte{[]byte("LIST")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "CLIENT", [][]byte{[]byte("LIST")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.True(t, len(*bs) > 0)
@@ -74,7 +75,7 @@ func TestExecuteCommand_CLIENT_GETNAME_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Without name set
-	resp := handler.executeCommand("CLIENT", [][]byte{[]byte("GETNAME")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "CLIENT", [][]byte{[]byte("GETNAME")}, "127.0.0.1:12345")
 	// Should return nil bulk string
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
@@ -87,7 +88,7 @@ func TestExecuteCommand_CLIENT_SETNAME_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("CLIENT", [][]byte{[]byte("SETNAME"), []byte("testclient")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "CLIENT", [][]byte{[]byte("SETNAME"), []byte("testclient")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 }
 
@@ -96,7 +97,7 @@ func TestExecuteCommand_CLIENT_SETNAME_NoArgs_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("CLIENT", [][]byte{[]byte("SETNAME")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "CLIENT", [][]byte{[]byte("SETNAME")}, "127.0.0.1:12345")
 	_, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 }
@@ -110,7 +111,7 @@ func TestExecuteCommand_DBSIZE_Coverage(t *testing.T) {
 	handler.Db.Set("key1", "value1")
 	handler.Db.Set("key2", "value2")
 
-	resp := handler.executeCommand("DBSIZE", nil, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "DBSIZE", nil, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -121,7 +122,7 @@ func TestExecuteCommand_DBSIZE_Empty_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("DBSIZE", nil, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "DBSIZE", nil, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
@@ -136,11 +137,11 @@ func TestExecuteCommand_FLUSHDB_Coverage(t *testing.T) {
 	handler.Db.Set("key1", "value1")
 	handler.Db.Set("key2", "value2")
 
-	resp := handler.executeCommand("FLUSHDB", nil, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "FLUSHDB", nil, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 
 	// Verify database is empty
-	dbsize := handler.executeCommand("DBSIZE", nil, "127.0.0.1:12345")
+	dbsize := handler.executeCommand(nil, "DBSIZE", nil, "127.0.0.1:12345")
 	integer, _ := dbsize.(*proto.Integer)
 	assert.Equal(t, int64(0), int64(*integer))
 }
@@ -153,7 +154,7 @@ func TestExecuteCommand_FLUSHALL_Coverage(t *testing.T) {
 	// Add some data
 	handler.Db.Set("key1", "value1")
 
-	resp := handler.executeCommand("FLUSHALL", nil, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "FLUSHALL", nil, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 }
 
@@ -162,7 +163,7 @@ func TestExecuteCommand_LASTSAVE_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("LASTSAVE", nil, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "LASTSAVE", nil, "127.0.0.1:12345")
 	// Just verify it doesn't panic and returns something
 	assert.True(t, resp != nil)
 }
@@ -172,7 +173,7 @@ func TestExecuteCommand_UNKNOWN_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("UNKNOWNCMD", nil, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "UNKNOWNCMD", nil, "127.0.0.1:12345")
 	_, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 }
@@ -185,7 +186,7 @@ func TestExecuteCommand_EXPIRE_Coverage(t *testing.T) {
 	// Set a key first
 	handler.Db.Set("mykey", "myvalue")
 
-	resp := handler.executeCommand("EXPIRE", [][]byte{[]byte("mykey"), []byte("60")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "EXPIRE", [][]byte{[]byte("mykey"), []byte("60")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -196,7 +197,7 @@ func TestExecuteCommand_EXPIRE_KeyNotExists_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("EXPIRE", [][]byte{[]byte("nonexistent"), []byte("60")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "EXPIRE", [][]byte{[]byte("nonexistent"), []byte("60")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
@@ -210,11 +211,16 @@ func TestExecuteCommand_PERSIST_Coverage(t *testing.T) {
 	// Set a key without TTL first
 	handler.Db.Set("mykey", "myvalue")
 
-	resp := handler.executeCommand("PERSIST", [][]byte{[]byte("mykey")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "PERSIST", [][]byte{[]byte("mykey")}, "127.0.0.1:12345")
 	// PERSIST on key without TTL should return 0
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
+
+	// Verify TTL is still not set (key remains persistent)
+	ttlResp := handler.executeCommand(nil, "TTL", [][]byte{[]byte("mykey")}, "127.0.0.1:12345")
+	ttlInt, _ := ttlResp.(*proto.Integer)
+	assert.Equal(t, int64(-1), int64(*ttlInt))
 }
 
 // TestExecuteCommand_PERSIST_NoTTL tests PERSIST on key without TTL
@@ -225,7 +231,7 @@ func TestExecuteCommand_PERSIST_NoTTL_Coverage(t *testing.T) {
 	// Set a key without TTL
 	handler.Db.Set("mykey", "myvalue")
 
-	resp := handler.executeCommand("PERSIST", [][]byte{[]byte("mykey")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "PERSIST", [][]byte{[]byte("mykey")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
@@ -239,7 +245,7 @@ func TestExecuteCommand_TTL_Coverage(t *testing.T) {
 	// Set a key without TTL first
 	handler.Db.Set("mykey", "myvalue")
 
-	resp := handler.executeCommand("TTL", [][]byte{[]byte("mykey")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "TTL", [][]byte{[]byte("mykey")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	// Without TTL should return -1
@@ -254,7 +260,7 @@ func TestExecuteCommand_TTL_NoExpiry_Coverage(t *testing.T) {
 	// Set a key without TTL
 	handler.Db.Set("mykey", "myvalue")
 
-	resp := handler.executeCommand("TTL", [][]byte{[]byte("mykey")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "TTL", [][]byte{[]byte("mykey")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(-1), int64(*integer))
@@ -265,7 +271,7 @@ func TestExecuteCommand_TTL_KeyNotExists_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("TTL", [][]byte{[]byte("nonexistent")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "TTL", [][]byte{[]byte("nonexistent")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(-2), int64(*integer))
@@ -279,7 +285,7 @@ func TestExecuteCommand_PTTL_Coverage(t *testing.T) {
 	// Set a key without TTL first
 	handler.Db.Set("mykey", "myvalue")
 
-	resp := handler.executeCommand("PTTL", [][]byte{[]byte("mykey")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "PTTL", [][]byte{[]byte("mykey")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	// Without TTL should return -1
@@ -291,7 +297,7 @@ func TestExecuteCommand_SETEX_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("SETEX", [][]byte{[]byte("mykey"), []byte("60"), []byte("myvalue")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "SETEX", [][]byte{[]byte("mykey"), []byte("60"), []byte("myvalue")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 
 	// Verify value was set
@@ -305,7 +311,7 @@ func TestExecuteCommand_PSETEX_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("PSETEX", [][]byte{[]byte("mykey"), []byte("60000"), []byte("myvalue")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "PSETEX", [][]byte{[]byte("mykey"), []byte("60000"), []byte("myvalue")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 
 	// Verify value was set
@@ -314,16 +320,21 @@ func TestExecuteCommand_PSETEX_Coverage(t *testing.T) {
 	assert.Equal(t, "myvalue", val)
 }
 
-// TestExecuteCommand_SETNX tests SETNX command
+// TestExecuteCommand_SETNX_Coverage tests SETNX command
 func TestExecuteCommand_SETNX_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// Set key that doesn't exist
-	resp := handler.executeCommand("SETNX", [][]byte{[]byte("newkey"), []byte("value")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "SETNX", [][]byte{[]byte("newkey"), []byte("value")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
+
+	// Verify value was set
+	val, err := handler.Db.Get("newkey")
+	assert.NoError(t, err)
+	assert.Equal(t, "value", val)
 }
 
 // TestExecuteCommand_SETNX_Exists tests SETNX on existing key
@@ -335,7 +346,7 @@ func TestExecuteCommand_SETNX_Exists_Coverage(t *testing.T) {
 	handler.Db.Set("existingkey", "oldvalue")
 
 	// Try SETNX
-	resp := handler.executeCommand("SETNX", [][]byte{[]byte("existingkey"), []byte("newvalue")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "SETNX", [][]byte{[]byte("existingkey"), []byte("newvalue")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
@@ -350,10 +361,19 @@ func TestExecuteCommand_MSETNX_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("MSETNX", [][]byte{[]byte("key1"), []byte("value1"), []byte("key2"), []byte("value2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "MSETNX", [][]byte{[]byte("key1"), []byte("value1"), []byte("key2"), []byte("value2")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
+
+	// Verify all keys were set
+	val1, err := handler.Db.Get("key1")
+	assert.NoError(t, err)
+	assert.Equal(t, "value1", val1)
+
+	val2, err := handler.Db.Get("key2")
+	assert.NoError(t, err)
+	assert.Equal(t, "value2", val2)
 }
 
 // TestExecuteCommand_GETSET tests GETSET command
@@ -365,7 +385,7 @@ func TestExecuteCommand_GETSET_Coverage(t *testing.T) {
 	handler.Db.Set("mykey", "oldvalue")
 
 	// GETSET
-	resp := handler.executeCommand("GETSET", [][]byte{[]byte("mykey"), []byte("newvalue")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "GETSET", [][]byte{[]byte("mykey"), []byte("newvalue")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "oldvalue", string(*bs))
@@ -382,7 +402,7 @@ func TestExecuteCommand_STRLEN_Coverage(t *testing.T) {
 
 	handler.Db.Set("mykey", "hello")
 
-	resp := handler.executeCommand("STRLEN", [][]byte{[]byte("mykey")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "STRLEN", [][]byte{[]byte("mykey")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(5), int64(*integer))
@@ -393,7 +413,7 @@ func TestExecuteCommand_STRLEN_KeyNotExists_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("STRLEN", [][]byte{[]byte("nonexistent")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "STRLEN", [][]byte{[]byte("nonexistent")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
@@ -406,7 +426,7 @@ func TestExecuteCommand_APPEND_Coverage(t *testing.T) {
 
 	handler.Db.Set("mykey", "hello")
 
-	resp := handler.executeCommand("APPEND", [][]byte{[]byte("mykey"), []byte(" world")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "APPEND", [][]byte{[]byte("mykey"), []byte(" world")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(11), int64(*integer))
@@ -421,10 +441,15 @@ func TestExecuteCommand_APPEND_NewKey_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("APPEND", [][]byte{[]byte("newkey"), []byte("value")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "APPEND", [][]byte{[]byte("newkey"), []byte("value")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(5), int64(*integer))
+
+	// Verify key was created with the value
+	val, err := handler.Db.Get("newkey")
+	assert.NoError(t, err)
+	assert.Equal(t, "value", val)
 }
 
 // TestExecuteCommand_GETRANGE tests GETRANGE command
@@ -434,7 +459,7 @@ func TestExecuteCommand_GETRANGE_Coverage(t *testing.T) {
 
 	handler.Db.Set("mykey", "hello world")
 
-	resp := handler.executeCommand("GETRANGE", [][]byte{[]byte("mykey"), []byte("0"), []byte("4")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "GETRANGE", [][]byte{[]byte("mykey"), []byte("0"), []byte("4")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "hello", string(*bs))
@@ -447,7 +472,7 @@ func TestExecuteCommand_GETRANGE_Negative_Coverage(t *testing.T) {
 
 	handler.Db.Set("mykey", "hello world")
 
-	resp := handler.executeCommand("GETRANGE", [][]byte{[]byte("mykey"), []byte("-6"), []byte("-1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "GETRANGE", [][]byte{[]byte("mykey"), []byte("-6"), []byte("-1")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, " world", string(*bs))
@@ -460,7 +485,7 @@ func TestExecuteCommand_SETRANGE_Coverage(t *testing.T) {
 
 	handler.Db.Set("mykey", "hello world")
 
-	resp := handler.executeCommand("SETRANGE", [][]byte{[]byte("mykey"), []byte("6"), []byte("go")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "SETRANGE", [][]byte{[]byte("mykey"), []byte("6"), []byte("go")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(11), int64(*integer))
@@ -477,10 +502,14 @@ func TestExecuteCommand_SETRANGE_Expand_Coverage(t *testing.T) {
 
 	handler.Db.Set("mykey", "hi")
 
-	resp := handler.executeCommand("SETRANGE", [][]byte{[]byte("mykey"), []byte("5"), []byte("world")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "SETRANGE", [][]byte{[]byte("mykey"), []byte("5"), []byte("world")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(10), int64(*integer))
+
+	// Verify value was expanded correctly: "hi\x00\x00\x00world"
+	val, _ := handler.Db.Get("mykey")
+	assert.Equal(t, "hi\x00\x00\x00world", val)
 }
 
 // TestExecuteCommand_PFADD tests PFADD command
@@ -488,10 +517,15 @@ func TestExecuteCommand_PFADD_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("PFADD", [][]byte{[]byte("myhyperloglog"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "PFADD", [][]byte{[]byte("myhyperloglog"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
+
+	// Verify cardinality count
+	countResp := handler.executeCommand(nil, "PFCOUNT", [][]byte{[]byte("myhyperloglog")}, "127.0.0.1:12345")
+	countInt, _ := countResp.(*proto.Integer)
+	assert.Equal(t, int64(3), int64(*countInt))
 }
 
 // TestExecuteCommand_PFCOUNT tests PFCOUNT command
@@ -499,9 +533,9 @@ func TestExecuteCommand_PFCOUNT_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand("PFADD", [][]byte{[]byte("myhyperloglog"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "PFADD", [][]byte{[]byte("myhyperloglog"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("PFCOUNT", [][]byte{[]byte("myhyperloglog")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "PFCOUNT", [][]byte{[]byte("myhyperloglog")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.True(t, int64(*integer) > 0)
@@ -512,11 +546,16 @@ func TestExecuteCommand_PFMERGE_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand("PFADD", [][]byte{[]byte("key1"), []byte("a"), []byte("b")}, "127.0.0.1:12345")
-	handler.executeCommand("PFADD", [][]byte{[]byte("key2"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "PFADD", [][]byte{[]byte("key1"), []byte("a"), []byte("b")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "PFADD", [][]byte{[]byte("key2"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("PFMERGE", [][]byte{[]byte("dest"), []byte("key1"), []byte("key2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "PFMERGE", [][]byte{[]byte("dest"), []byte("key1"), []byte("key2")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
+
+	// Verify dest has combined cardinality of 3 (a, b, c)
+	countResp := handler.executeCommand(nil, "PFCOUNT", [][]byte{[]byte("dest")}, "127.0.0.1:12345")
+	countInt, _ := countResp.(*proto.Integer)
+	assert.Equal(t, int64(3), int64(*countInt))
 }
 
 // TestExecuteCommand_RENAME tests RENAME command
@@ -526,7 +565,7 @@ func TestExecuteCommand_RENAME_Coverage(t *testing.T) {
 
 	handler.Db.Set("oldkey", "value")
 
-	resp := handler.executeCommand("RENAME", [][]byte{[]byte("oldkey"), []byte("newkey")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "RENAME", [][]byte{[]byte("oldkey"), []byte("newkey")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 
 	// Verify old key is gone
@@ -546,10 +585,19 @@ func TestExecuteCommand_RENAMENX_Coverage(t *testing.T) {
 	handler.Db.Set("key1", "value1")
 	handler.Db.Set("key2", "value2")
 
-	// When target exists, should return error
-	resp := handler.executeCommand("RENAMENX", [][]byte{[]byte("key1"), []byte("key2")}, "127.0.0.1:12345")
-	// In this case, it may still return OK, just check the result
-	_ = resp
+	// When target exists, RENAMENX should return 0 and NOT rename
+	resp := handler.executeCommand(nil, "RENAMENX", [][]byte{[]byte("key1"), []byte("key2")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+
+	// Verify key1 still exists with original value
+	val1, _ := handler.Db.Get("key1")
+	assert.Equal(t, "value1", val1)
+
+	// Verify key2 still has its original value (unchanged)
+	val2, _ := handler.Db.Get("key2")
+	assert.Equal(t, "value2", val2)
 }
 
 // TestExecuteCommand_COPY tests COPY command
@@ -559,7 +607,7 @@ func TestExecuteCommand_COPY_Coverage(t *testing.T) {
 
 	handler.Db.Set("sourcekey", "value")
 
-	resp := handler.executeCommand("COPY", [][]byte{[]byte("sourcekey"), []byte("destkey")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "COPY", [][]byte{[]byte("sourcekey"), []byte("destkey")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -579,7 +627,7 @@ func TestExecuteCommand_TYPE_Coverage(t *testing.T) {
 
 	handler.Db.Set("stringkey", "value")
 
-	resp := handler.executeCommand("TYPE", [][]byte{[]byte("stringkey")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "TYPE", [][]byte{[]byte("stringkey")}, "127.0.0.1:12345")
 	ss, ok := resp.(*proto.SimpleString)
 	assert.True(t, ok)
 	assert.Equal(t, "string", string(*ss))
@@ -590,7 +638,7 @@ func TestExecuteCommand_TYPE_None_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("TYPE", [][]byte{[]byte("nonexistent")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "TYPE", [][]byte{[]byte("nonexistent")}, "127.0.0.1:12345")
 	ss, ok := resp.(*proto.SimpleString)
 	assert.True(t, ok)
 	assert.Equal(t, "none", string(*ss))
@@ -604,10 +652,19 @@ func TestExecuteCommand_TOUCH_Coverage(t *testing.T) {
 	handler.Db.Set("key1", "value1")
 	handler.Db.Set("key2", "value2")
 
-	resp := handler.executeCommand("TOUCH", [][]byte{[]byte("key1"), []byte("key2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "TOUCH", [][]byte{[]byte("key1"), []byte("key2")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
+
+	// Verify keys still exist with their values
+	val1, err := handler.Db.Get("key1")
+	assert.NoError(t, err)
+	assert.Equal(t, "value1", val1)
+
+	val2, err := handler.Db.Get("key2")
+	assert.NoError(t, err)
+	assert.Equal(t, "value2", val2)
 }
 
 // TestExecuteCommand_SLOWLOG_GET tests SLOWLOG GET command
@@ -615,7 +672,7 @@ func TestExecuteCommand_SLOWLOG_GET_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("SLOWLOG", [][]byte{[]byte("GET")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "SLOWLOG", [][]byte{[]byte("GET")}, "127.0.0.1:12345")
 	// Should return an array
 	_, ok := resp.(*proto.Array)
 	assert.True(t, ok)
@@ -626,7 +683,7 @@ func TestExecuteCommand_SLOWLOG_LEN_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("SLOWLOG", [][]byte{[]byte("LEN")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "SLOWLOG", [][]byte{[]byte("LEN")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.True(t, int64(*integer) >= 0)
@@ -642,7 +699,7 @@ func TestExecuteCommand_LOLWUT_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("LOLWUT", nil, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "LOLWUT", nil, "127.0.0.1:12345")
 	// Should return something
 	assert.True(t, resp != nil)
 }
@@ -652,7 +709,7 @@ func TestExecuteCommand_LATENCY_LATEST_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("LATENCY", [][]byte{[]byte("LATEST")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "LATENCY", [][]byte{[]byte("LATEST")}, "127.0.0.1:12345")
 	// Should return an array
 	_, ok := resp.(*proto.Array)
 	assert.True(t, ok)
@@ -663,7 +720,7 @@ func TestExecuteCommand_MODULE_LIST_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("MODULE", [][]byte{[]byte("LIST")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "MODULE", [][]byte{[]byte("LIST")}, "127.0.0.1:12345")
 	// Should return empty array if no modules
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
@@ -675,7 +732,7 @@ func TestExecuteCommand_READONLY_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("READONLY", nil, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "READONLY", nil, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 }
 
@@ -684,7 +741,7 @@ func TestExecuteCommand_READWRITE_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("READWRITE", nil, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "READWRITE", nil, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 }
 
@@ -693,9 +750,15 @@ func TestExecuteCommand_XADD_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("XADD", [][]byte{[]byte("mystream"), []byte("*"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
-	_, ok := resp.(*proto.BulkString)
+	resp := handler.executeCommand(nil, "XADD", [][]byte{[]byte("mystream"), []byte("*"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
+	assert.True(t, len(*bs) > 0)
+
+	// Verify stream length increased
+	lenResp := handler.executeCommand(nil, "XLEN", [][]byte{[]byte("mystream")}, "127.0.0.1:12345")
+	lenInt, _ := lenResp.(*proto.Integer)
+	assert.Equal(t, int64(1), int64(*lenInt))
 }
 
 // TestExecuteCommand_XLEN tests XLEN command
@@ -704,9 +767,9 @@ func TestExecuteCommand_XLEN_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add an entry first
-	handler.executeCommand("XADD", [][]byte{[]byte("mystream"), []byte("*"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "XADD", [][]byte{[]byte("mystream"), []byte("*"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("XLEN", [][]byte{[]byte("mystream")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "XLEN", [][]byte{[]byte("mystream")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.True(t, int64(*integer) > 0)
@@ -718,11 +781,29 @@ func TestExecuteCommand_XRANGE_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add an entry first
-	handler.executeCommand("XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
 
-	// Just verify the command executes without error
-	resp := handler.executeCommand("XRANGE", [][]byte{[]byte("mystream"), []byte("-"), []byte("+")}, "127.0.0.1:12345")
-	assert.True(t, resp != nil)
+	resp := handler.executeCommand(nil, "XRANGE", [][]byte{[]byte("mystream"), []byte("-"), []byte("+")}, "127.0.0.1:12345")
+	nestedArr, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.True(t, len(nestedArr.Elems) > 0)
+
+	// Verify returned entry contains expected field-value pair
+	if len(nestedArr.Elems) > 0 {
+		entry, ok := nestedArr.Elems[0].(*proto.NestedArray)
+		if ok && len(entry.Elems) >= 2 {
+			// entry.Elems[0] is ID, entry.Elems[1] is [field, value, ...]
+			fieldValueArr, ok := entry.Elems[1].(*proto.NestedArray)
+			if ok && len(fieldValueArr.Elems) >= 2 {
+				fieldBs, ok1 := fieldValueArr.Elems[0].(*proto.BulkString)
+				valueBs, ok2 := fieldValueArr.Elems[1].(*proto.BulkString)
+				if ok1 && ok2 {
+					assert.Equal(t, "field", string(*fieldBs))
+					assert.Equal(t, "value", string(*valueBs))
+				}
+			}
+		}
+	}
 }
 
 // TestExecuteCommand_XREAD tests XREAD command
@@ -731,11 +812,19 @@ func TestExecuteCommand_XREAD_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add an entry first
-	handler.executeCommand("XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("XREAD", [][]byte{[]byte("COUNT"), []byte("1"), []byte("STREAMS"), []byte("mystream"), []byte("0")}, "127.0.0.1:12345")
-	_, ok := resp.(*proto.Array)
+	resp := handler.executeCommand(nil, "XREAD", [][]byte{[]byte("COUNT"), []byte("1"), []byte("STREAMS"), []byte("mystream"), []byte("0")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
+	// XREAD returns flat array: [streamKey, entryID, field, value, ...]
+	assert.True(t, len(arr.Args) >= 4)
+	if len(arr.Args) >= 4 {
+		assert.Equal(t, "mystream", string(arr.Args[0]))
+		assert.Equal(t, "1", string(arr.Args[1]))
+		assert.Equal(t, "field", string(arr.Args[2]))
+		assert.Equal(t, "value", string(arr.Args[3]))
+	}
 }
 
 // TestExecuteCommand_XGROUP_CREATE tests XGROUP CREATE command
@@ -744,10 +833,36 @@ func TestExecuteCommand_XGROUP_CREATE_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add an entry first
-	handler.executeCommand("XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("XGROUP", [][]byte{[]byte("CREATE"), []byte("mystream"), []byte("mygroup"), []byte("0")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "XGROUP", [][]byte{[]byte("CREATE"), []byte("mystream"), []byte("mygroup"), []byte("0")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
+
+	// Verify group was created using XINFO GROUPS
+	infoResp := handler.executeCommand(nil, "XINFO", [][]byte{[]byte("GROUPS"), []byte("mystream")}, "127.0.0.1:12345")
+	infoArr, ok := infoResp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.True(t, len(infoArr.Elems) >= 1) // At least one group entry
+	// Verify group name in first group entry
+	if len(infoArr.Elems) >= 1 {
+		groupEntry, ok := infoArr.Elems[0].(*proto.NestedArray)
+		if ok {
+			// groupEntry is [name, consumers, pending, ...] alternating key/value
+			// Check name field
+			for i := 0; i < len(groupEntry.Elems)-1; i += 2 {
+				keyBs, ok1 := groupEntry.Elems[i].(*proto.BulkString)
+				valBs, ok2 := groupEntry.Elems[i+1].(*proto.BulkString)
+				if ok1 && ok2 {
+					key := string(*keyBs)
+					if key == "name" {
+						val := string(*valBs)
+						assert.Equal(t, "mygroup", val)
+						break
+					}
+				}
+			}
+		}
+	}
 }
 
 // TestExecuteCommand_XDEL tests XDEL command
@@ -756,12 +871,23 @@ func TestExecuteCommand_XDEL_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add an entry first
-	handler.executeCommand("XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("XDEL", [][]byte{[]byte("mystream"), []byte("1")}, "127.0.0.1:12345")
+	// Verify entry exists
+	beforeLen := handler.executeCommand(nil, "XLEN", [][]byte{[]byte("mystream")}, "127.0.0.1:12345")
+	beforeInt, _ := beforeLen.(*proto.Integer)
+	assert.Equal(t, int64(1), int64(*beforeInt))
+
+	// Delete the entry
+	resp := handler.executeCommand(nil, "XDEL", [][]byte{[]byte("mystream"), []byte("1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.True(t, int64(*integer) > 0)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// Verify entry was deleted (length now 0)
+	afterLen := handler.executeCommand(nil, "XLEN", [][]byte{[]byte("mystream")}, "127.0.0.1:12345")
+	afterInt, _ := afterLen.(*proto.Integer)
+	assert.Equal(t, int64(0), int64(*afterInt))
 }
 
 // TestExecuteCommand_GEOADD tests GEOADD command
@@ -769,10 +895,22 @@ func TestExecuteCommand_GEOADD_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("GEOADD", [][]byte{[]byte("mygeo"), []byte("-122.4194"), []byte("37.7749"), []byte("SanFrancisco")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "GEOADD", [][]byte{[]byte("mygeo"), []byte("-122.4194"), []byte("37.7749"), []byte("SanFrancisco")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.True(t, int64(*integer) > 0)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// Verify member was added using GEOPOS
+	geoResp := handler.executeCommand(nil, "GEOPOS", [][]byte{[]byte("mygeo"), []byte("SanFrancisco")}, "127.0.0.1:12345")
+	geoArr, ok := geoResp.(*proto.Array)
+	assert.True(t, ok)
+	assert.True(t, len(geoArr.Args) >= 1)
+	// GEOPOS returns [longitude, latitude] or nil if not found
+	if len(geoArr.Args) >= 1 && geoArr.Args[0] != nil {
+		// Values are returned as bulk strings
+		// We just verify non-nil response indicates member exists
+		assert.True(t, len(geoArr.Args[0]) > 0)
+	}
 }
 
 // TestExecuteCommand_GEODIST tests GEODIST command
@@ -781,10 +919,10 @@ func TestExecuteCommand_GEODIST_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add entries
-	handler.executeCommand("GEOADD", [][]byte{[]byte("mygeo"), []byte("-122.4194"), []byte("37.7749"), []byte("SF")}, "127.0.0.1:12345")
-	handler.executeCommand("GEOADD", [][]byte{[]byte("mygeo"), []byte("-0.1278"), []byte("51.5074"), []byte("London")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "GEOADD", [][]byte{[]byte("mygeo"), []byte("-122.4194"), []byte("37.7749"), []byte("SF")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "GEOADD", [][]byte{[]byte("mygeo"), []byte("-0.1278"), []byte("51.5074"), []byte("London")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("GEODIST", [][]byte{[]byte("mygeo"), []byte("SF"), []byte("London")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "GEODIST", [][]byte{[]byte("mygeo"), []byte("SF"), []byte("London")}, "127.0.0.1:12345")
 	_, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 }
@@ -795,12 +933,16 @@ func TestExecuteCommand_GEOHASH_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add an entry
-	handler.executeCommand("GEOADD", [][]byte{[]byte("mygeo"), []byte("-122.4194"), []byte("37.7749"), []byte("SF")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "GEOADD", [][]byte{[]byte("mygeo"), []byte("-122.4194"), []byte("37.7749"), []byte("SF")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("GEOHASH", [][]byte{[]byte("mygeo"), []byte("SF")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "GEOHASH", [][]byte{[]byte("mygeo"), []byte("SF")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.True(t, len(arr.Args) > 0)
+	// Verify returned hash is a non-empty string
+	if len(arr.Args) > 0 {
+		assert.True(t, len(arr.Args[0]) > 0)
+	}
 }
 
 // TestExecuteCommand_GEOPOS tests GEOPOS command
@@ -809,12 +951,17 @@ func TestExecuteCommand_GEOPOS_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add an entry
-	handler.executeCommand("GEOADD", [][]byte{[]byte("mygeo"), []byte("-122.4194"), []byte("37.7749"), []byte("SF")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "GEOADD", [][]byte{[]byte("mygeo"), []byte("-122.4194"), []byte("37.7749"), []byte("SF")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("GEOPOS", [][]byte{[]byte("mygeo"), []byte("SF")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "GEOPOS", [][]byte{[]byte("mygeo"), []byte("SF")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.True(t, len(arr.Args) > 0)
+	// Verify position returned as "lat,lon" string
+	if len(arr.Args) > 0 {
+		assert.True(t, arr.Args[0] != nil)
+		assert.True(t, len(arr.Args[0]) > 0)
+	}
 }
 
 // TestExecuteCommand_GEOSEARCH tests GEOSEARCH command
@@ -823,11 +970,16 @@ func TestExecuteCommand_GEOSEARCH_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add entries
-	handler.executeCommand("GEOADD", [][]byte{[]byte("mygeo"), []byte("-122.4194"), []byte("37.7749"), []byte("SF")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "GEOADD", [][]byte{[]byte("mygeo"), []byte("-122.4194"), []byte("37.7749"), []byte("SF")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("GEOSEARCH", [][]byte{[]byte("mygeo"), []byte("FROMLONLAT"), []byte("-122.4194"), []byte("37.7749"), []byte("BYRADIUS"), []byte("100"), []byte("km")}, "127.0.0.1:12345")
-	_, ok := resp.(*proto.Array)
+	resp := handler.executeCommand(nil, "GEOSEARCH", [][]byte{[]byte("mygeo"), []byte("FROMLONLAT"), []byte("-122.4194"), []byte("37.7749"), []byte("BYRADIUS"), []byte("100"), []byte("km")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
+	assert.True(t, len(arr.Args) > 0)
+	// Verify SF is in results
+	if len(arr.Args) > 0 {
+		assert.Equal(t, "SF", string(arr.Args[0]))
+	}
 }
 
 // TestExecuteCommand_XINFO_STREAMS tests XINFO STREAM command
@@ -836,11 +988,17 @@ func TestExecuteCommand_XINFO_STREAMS_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add an entry
-	handler.executeCommand("XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("XINFO", [][]byte{[]byte("STREAM"), []byte("mystream")}, "127.0.0.1:12345")
-	_, ok := resp.(*proto.Array)
+	resp := handler.executeCommand(nil, "XINFO", [][]byte{[]byte("STREAM"), []byte("mystream")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
+	assert.True(t, len(arr.Args) > 0)
+	// Verify stream info contains length field
+	// Format: [length, first-entry-id, last-entry-id, ...]
+	if len(arr.Args) > 0 {
+		assert.Equal(t, "length", string(arr.Args[0]))
+	}
 }
 
 // TestExecuteCommand_XTRIM tests XTRIM command
@@ -849,12 +1007,23 @@ func TestExecuteCommand_XTRIM_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add entries
-	handler.executeCommand("XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("field"), []byte("value1")}, "127.0.0.1:12345")
-	handler.executeCommand("XADD", [][]byte{[]byte("mystream"), []byte("2"), []byte("field"), []byte("value2")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("field"), []byte("value1")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "XADD", [][]byte{[]byte("mystream"), []byte("2"), []byte("field"), []byte("value2")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("XTRIM", [][]byte{[]byte("mystream"), []byte("MAXLEN"), []byte("1")}, "127.0.0.1:12345")
+	// Verify we have 2 entries
+	beforeLen := handler.executeCommand(nil, "XLEN", [][]byte{[]byte("mystream")}, "127.0.0.1:12345")
+	beforeInt, _ := beforeLen.(*proto.Integer)
+	assert.Equal(t, int64(2), int64(*beforeInt))
+
+	// Trim to max length 1
+	resp := handler.executeCommand(nil, "XTRIM", [][]byte{[]byte("mystream"), []byte("MAXLEN"), []byte("1")}, "127.0.0.1:12345")
 	_, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
+
+	// Verify stream length decreased to 1
+	afterLen := handler.executeCommand(nil, "XLEN", [][]byte{[]byte("mystream")}, "127.0.0.1:12345")
+	afterInt, _ := afterLen.(*proto.Integer)
+	assert.Equal(t, int64(1), int64(*afterInt))
 }
 
 // TestExecuteCommand_XACK tests XACK command
@@ -863,12 +1032,28 @@ func TestExecuteCommand_XACK_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Setup stream and group
-	handler.executeCommand("XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
-	handler.executeCommand("XGROUP", [][]byte{[]byte("CREATE"), []byte("mystream"), []byte("mygroup"), []byte("0")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "XGROUP", [][]byte{[]byte("CREATE"), []byte("mystream"), []byte("mygroup"), []byte("0")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("XACK", [][]byte{[]byte("mystream"), []byte("mygroup"), []byte("1")}, "127.0.0.1:12345")
-	_, ok := resp.(*proto.Integer)
+	// Read message to make it pending
+	handler.executeCommand(nil, "XREADGROUP", [][]byte{[]byte("GROUP"), []byte("mygroup"), []byte("consumer1"), []byte("COUNT"), []byte("1"), []byte("STREAMS"), []byte("mystream"), []byte(">")}, "127.0.0.1:12345")
+
+	// Acknowledge the message
+	resp := handler.executeCommand(nil, "XACK", [][]byte{[]byte("mystream"), []byte("mygroup"), []byte("1")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// Verify pending count decreased to 0 using XPENDING
+	pendingResp := handler.executeCommand(nil, "XPENDING", [][]byte{[]byte("mystream"), []byte("mygroup")}, "127.0.0.1:12345")
+	pendingArr, ok := pendingResp.(*proto.NestedArray)
+	assert.True(t, ok)
+	// XPENDING returns [pendingCount, minID, maxID, [entries...]]
+	if len(pendingArr.Elems) >= 1 {
+		countVal, ok := pendingArr.Elems[0].(proto.Integer)
+		assert.True(t, ok)
+		assert.Equal(t, int64(0), int64(countVal))
+	}
 }
 
 // TestExecuteCommand_LPOS tests LPOS command
@@ -877,12 +1062,13 @@ func TestExecuteCommand_LPOS_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add a list
-	handler.executeCommand("RPUSH", [][]byte{[]byte("mylist"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "RPUSH", [][]byte{[]byte("mylist"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("LPOS", [][]byte{[]byte("mylist"), []byte("b")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "LPOS", [][]byte{[]byte("mylist"), []byte("b")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.True(t, int64(*integer) >= 0)
+	// b is at index 1 (0-based)
+	assert.Equal(t, int64(1), int64(*integer))
 }
 
 // TestExecuteCommand_LMOVE tests LMOVE command
@@ -891,11 +1077,20 @@ func TestExecuteCommand_LMOVE_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add a list
-	handler.executeCommand("RPUSH", [][]byte{[]byte("mylist"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "RPUSH", [][]byte{[]byte("mylist"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("LMOVE", [][]byte{[]byte("mylist"), []byte("mylist2"), []byte("RIGHT"), []byte("LEFT")}, "127.0.0.1:12345")
-	// Just verify it returns something
-	assert.True(t, resp != nil)
+	resp := handler.executeCommand(nil, "LMOVE", [][]byte{[]byte("mylist"), []byte("mylist2"), []byte("RIGHT"), []byte("LEFT")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "c", string(*bs))
+
+	// Verify c was moved from mylist to mylist2
+	// mylist should now have a, b (in that order from RPUSH)
+	list1Val, _ := handler.Db.LRange("mylist", 0, -1)
+	assert.Equal(t, []string{"a", "b"}, list1Val)
+	// mylist2 should have c at left
+	list2Val, _ := handler.Db.LRange("mylist2", 0, -1)
+	assert.Equal(t, []string{"c"}, list2Val)
 }
 
 // TestExecuteCommand_SINTERCARD tests SINTERCARD command
@@ -904,13 +1099,14 @@ func TestExecuteCommand_SINTERCARD_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add sets
-	handler.executeCommand("SADD", [][]byte{[]byte("set1"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
-	handler.executeCommand("SADD", [][]byte{[]byte("set2"), []byte("b"), []byte("c"), []byte("d")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SADD", [][]byte{[]byte("set1"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SADD", [][]byte{[]byte("set2"), []byte("b"), []byte("c"), []byte("d")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("SINTERCARD", [][]byte{[]byte("set1"), []byte("set2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "SINTERCARD", [][]byte{[]byte("set1"), []byte("set2")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.True(t, int64(*integer) >= 0)
+	// Intersection of {a,b,c} and {b,c,d} is {b,c} = 2
+	assert.Equal(t, int64(2), int64(*integer))
 }
 
 // TestExecuteCommand_SDIFFSTORE tests SDIFFSTORE command
@@ -919,13 +1115,22 @@ func TestExecuteCommand_SDIFFSTORE_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add sets
-	handler.executeCommand("SADD", [][]byte{[]byte("set1"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
-	handler.executeCommand("SADD", [][]byte{[]byte("set2"), []byte("b"), []byte("c"), []byte("d")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SADD", [][]byte{[]byte("set1"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SADD", [][]byte{[]byte("set2"), []byte("b"), []byte("c"), []byte("d")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("SDIFFSTORE", [][]byte{[]byte("dest"), []byte("set1"), []byte("set2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "SDIFFSTORE", [][]byte{[]byte("dest"), []byte("set1"), []byte("set2")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.True(t, int64(*integer) >= 0)
+	// set1 - set2 = {a} -> count = 1
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// Verify dest contains exactly 'a'
+	destResp := handler.executeCommand(nil, "SMEMBERS", [][]byte{[]byte("dest")}, "127.0.0.1:12345")
+	destArr, _ := destResp.(*proto.Array)
+	assert.Equal(t, 1, len(destArr.Args))
+	if len(destArr.Args) > 0 {
+		assert.Equal(t, "a", string(destArr.Args[0]))
+	}
 }
 
 // TestExecuteCommand_ZMPOP tests ZMPOP command
@@ -934,11 +1139,22 @@ func TestExecuteCommand_ZMPOP_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add sorted set
-	handler.executeCommand("ZADD", [][]byte{[]byte("zset1"), []byte("1"), []byte("one"), []byte("2"), []byte("two")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "ZADD", [][]byte{[]byte("zset1"), []byte("1"), []byte("one"), []byte("2"), []byte("two")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("ZMPOP", [][]byte{[]byte("1"), []byte("zset1"), []byte("MIN")}, "127.0.0.1:12345")
-	// Just verify it returns something
-	assert.True(t, resp != nil)
+	// ZMPOP may not be fully implemented
+	resp := handler.executeCommand(nil, "ZMPOP", [][]byte{[]byte("1"), []byte("zset1"), []byte("MIN")}, "127.0.0.1:12345")
+	if err, ok := resp.(*proto.Error); ok {
+		// Command not implemented - that's acceptable for coverage test
+		assert.True(t, strings.Contains(string(*err), "unknown command") || strings.Contains(string(*err), "ERR"))
+		return
+	}
+
+	// If implemented, verify successful response structure
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	if ok && len(arr.Args) >= 2 {
+		assert.Equal(t, "zset1", string(arr.Args[0]))
+	}
 }
 
 // TestExecuteCommand_LMPOP tests LMPOP command
@@ -947,11 +1163,29 @@ func TestExecuteCommand_LMPOP_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add list
-	handler.executeCommand("RPUSH", [][]byte{[]byte("list1"), []byte("a"), []byte("b")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "RPUSH", [][]byte{[]byte("list1"), []byte("a"), []byte("b")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("LMPOP", [][]byte{[]byte("1"), []byte("list1"), []byte("RIGHT")}, "127.0.0.1:12345")
-	// Just verify it returns something
-	assert.True(t, resp != nil)
+	// LMPOP may not be fully implemented
+	resp := handler.executeCommand(nil, "LMPOP", [][]byte{[]byte("1"), []byte("list1"), []byte("RIGHT")}, "127.0.0.1:12345")
+	if err, ok := resp.(*proto.Error); ok {
+		// Command not implemented - acceptable
+		assert.True(t, strings.Contains(string(*err), "unknown command") || strings.Contains(string(*err), "ERR"))
+		return
+	}
+
+	// If implemented, verify element was popped
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	if ok && len(arr.Args) >= 2 {
+		assert.Equal(t, "list1", string(arr.Args[0]))
+		// Args[1] is the popped element as bulk string ([]byte)
+		assert.Equal(t, "b", string(arr.Args[1]))
+	}
+
+	// Verify list length decreased
+	llen := handler.executeCommand(nil, "LLEN", [][]byte{[]byte("list1")}, "127.0.0.1:12345")
+	llenInt, _ := llen.(*proto.Integer)
+	assert.Equal(t, int64(1), int64(*llenInt))
 }
 
 // TestExecuteCommand_ZRANDMEMBER tests ZRANDMEMBER command
@@ -960,10 +1194,27 @@ func TestExecuteCommand_ZRANDMEMBER_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add sorted set
-	handler.executeCommand("ZADD", [][]byte{[]byte("zset1"), []byte("1"), []byte("one"), []byte("2"), []byte("two")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "ZADD", [][]byte{[]byte("zset1"), []byte("1"), []byte("one"), []byte("2"), []byte("two")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("ZRANDMEMBER", [][]byte{[]byte("zset1")}, "127.0.0.1:12345")
-	assert.True(t, resp != nil)
+	resp := handler.executeCommand(nil, "ZRANDMEMBER", [][]byte{[]byte("zset1")}, "127.0.0.1:12345")
+	// ZRANDMEMBER may return BulkString or Array depending on implementation
+	// Handle unknown command case
+	if errResp, ok := resp.(*proto.Error); ok {
+		// Command not implemented - this is acceptable for coverage tests
+		assert.True(t, strings.Contains(string(*errResp), "unknown command") || strings.Contains(string(*errResp), "ERR"))
+		return
+	}
+	// If implemented, verify response type
+	if arr, ok := resp.(*proto.Array); ok {
+		assert.True(t, len(arr.Args) > 0)
+		if len(arr.Args) > 0 {
+			member := string(arr.Args[0])
+			assert.True(t, member == "one" || member == "two")
+		}
+	} else if bs, ok := resp.(*proto.BulkString); ok {
+		member := string(*bs)
+		assert.True(t, member == "one" || member == "two")
+	}
 }
 
 // TestExecuteCommand_HRANDMEMBER tests HRANDMEMBER command
@@ -972,10 +1223,20 @@ func TestExecuteCommand_HRANDMEMBER_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Add hash
-	handler.executeCommand("HSET", [][]byte{[]byte("myhash"), []byte("field1"), []byte("value1")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "HSET", [][]byte{[]byte("myhash"), []byte("field1"), []byte("value1"), []byte("field2"), []byte("value2")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("HRANDMEMBER", [][]byte{[]byte("myhash")}, "127.0.0.1:12345")
-	assert.True(t, resp != nil)
+	resp := handler.executeCommand(nil, "HRANDMEMBER", [][]byte{[]byte("myhash")}, "127.0.0.1:12345")
+	// Handle unknown command case
+	if errResp, ok := resp.(*proto.Error); ok {
+		// Command not implemented - this is acceptable for coverage tests
+		assert.True(t, strings.Contains(string(*errResp), "unknown command") || strings.Contains(string(*errResp), "ERR"))
+		return
+	}
+	// If implemented, verify response
+	if bs, ok := resp.(*proto.BulkString); ok {
+		val := string(*bs)
+		assert.True(t, val == "value1" || val == "value2")
+	}
 }
 
 // TestExecuteCommand_LCS tests LCS command
@@ -984,10 +1245,10 @@ func TestExecuteCommand_LCS_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Set strings
-	handler.executeCommand("SET", [][]byte{[]byte("key1"), []byte("hello world")}, "127.0.0.1:12345")
-	handler.executeCommand("SET", [][]byte{[]byte("key2"), []byte("hello world")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SET", [][]byte{[]byte("key1"), []byte("hello world")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SET", [][]byte{[]byte("key2"), []byte("hello world")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand("LCS", [][]byte{[]byte("key1"), []byte("key2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "LCS", [][]byte{[]byte("key1"), []byte("key2")}, "127.0.0.1:12345")
 	assert.True(t, resp != nil)
 }
 
@@ -996,7 +1257,7 @@ func TestExecuteCommand_SADD_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("SADD", [][]byte{[]byte("myset"), []byte("member1"), []byte("member2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "SADD", [][]byte{[]byte("myset"), []byte("member1"), []byte("member2")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.True(t, int64(*integer) >= 0)
@@ -1007,8 +1268,8 @@ func TestExecuteCommand_SREM_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand("SADD", [][]byte{[]byte("myset"), []byte("member1"), []byte("member2")}, "127.0.0.1:12345")
-	resp := handler.executeCommand("SREM", [][]byte{[]byte("myset"), []byte("member1")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SADD", [][]byte{[]byte("myset"), []byte("member1"), []byte("member2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "SREM", [][]byte{[]byte("myset"), []byte("member1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.True(t, int64(*integer) >= 0)
@@ -1019,8 +1280,8 @@ func TestExecuteCommand_SMEMBERS_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand("SADD", [][]byte{[]byte("myset"), []byte("member1"), []byte("member2")}, "127.0.0.1:12345")
-	resp := handler.executeCommand("SMEMBERS", [][]byte{[]byte("myset")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SADD", [][]byte{[]byte("myset"), []byte("member1"), []byte("member2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "SMEMBERS", [][]byte{[]byte("myset")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.True(t, len(arr.Args) > 0)
@@ -1031,7 +1292,7 @@ func TestExecuteCommand_HSET_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("HSET", [][]byte{[]byte("myhash"), []byte("field1"), []byte("value1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "HSET", [][]byte{[]byte("myhash"), []byte("field1"), []byte("value1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.True(t, int64(*integer) >= 0)
@@ -1042,8 +1303,8 @@ func TestExecuteCommand_HGET_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand("HSET", [][]byte{[]byte("myhash"), []byte("field1"), []byte("value1")}, "127.0.0.1:12345")
-	resp := handler.executeCommand("HGET", [][]byte{[]byte("myhash"), []byte("field1")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "HSET", [][]byte{[]byte("myhash"), []byte("field1"), []byte("value1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "HGET", [][]byte{[]byte("myhash"), []byte("field1")}, "127.0.0.1:12345")
 	_, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 }
@@ -1053,8 +1314,8 @@ func TestExecuteCommand_HDEL_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand("HSET", [][]byte{[]byte("myhash"), []byte("field1"), []byte("value1")}, "127.0.0.1:12345")
-	resp := handler.executeCommand("HDEL", [][]byte{[]byte("myhash"), []byte("field1")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "HSET", [][]byte{[]byte("myhash"), []byte("field1"), []byte("value1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "HDEL", [][]byte{[]byte("myhash"), []byte("field1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.True(t, int64(*integer) >= 0)
@@ -1065,7 +1326,7 @@ func TestExecuteCommand_ZADD_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand("ZADD", [][]byte{[]byte("myzset"), []byte("1"), []byte("member1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "ZADD", [][]byte{[]byte("myzset"), []byte("1"), []byte("member1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.True(t, int64(*integer) >= 0)
@@ -1076,8 +1337,8 @@ func TestExecuteCommand_ZREM_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand("ZADD", [][]byte{[]byte("myzset"), []byte("1"), []byte("member1")}, "127.0.0.1:12345")
-	resp := handler.executeCommand("ZREM", [][]byte{[]byte("myzset"), []byte("member1")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "ZADD", [][]byte{[]byte("myzset"), []byte("1"), []byte("member1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "ZREM", [][]byte{[]byte("myzset"), []byte("member1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.True(t, int64(*integer) >= 0)
@@ -1088,8 +1349,8 @@ func TestExecuteCommand_ZSCORE_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand("ZADD", [][]byte{[]byte("myzset"), []byte("1"), []byte("member1")}, "127.0.0.1:12345")
-	resp := handler.executeCommand("ZSCORE", [][]byte{[]byte("myzset"), []byte("member1")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "ZADD", [][]byte{[]byte("myzset"), []byte("1"), []byte("member1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "ZSCORE", [][]byte{[]byte("myzset"), []byte("member1")}, "127.0.0.1:12345")
 	_, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 }
@@ -1099,8 +1360,8 @@ func TestExecuteCommand_ZRANGE_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand("ZADD", [][]byte{[]byte("myzset"), []byte("1"), []byte("member1")}, "127.0.0.1:12345")
-	resp := handler.executeCommand("ZRANGE", [][]byte{[]byte("myzset"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "ZADD", [][]byte{[]byte("myzset"), []byte("1"), []byte("member1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "ZRANGE", [][]byte{[]byte("myzset"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.True(t, len(arr.Args) > 0)
@@ -1111,8 +1372,8 @@ func TestExecuteCommand_ZCOUNT_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand("ZADD", [][]byte{[]byte("myzset"), []byte("1"), []byte("member1")}, "127.0.0.1:12345")
-	resp := handler.executeCommand("ZCOUNT", [][]byte{[]byte("myzset"), []byte("0"), []byte("10")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "ZADD", [][]byte{[]byte("myzset"), []byte("1"), []byte("member1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "ZCOUNT", [][]byte{[]byte("myzset"), []byte("0"), []byte("10")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.True(t, int64(*integer) >= 0)
@@ -1152,7 +1413,9 @@ func TestExecuteQueuedCommand(t *testing.T) {
 			cmd:  "GET",
 			args: [][]byte{[]byte("nonexistent")},
 			validate: func(t *testing.T, resp proto.RESP) {
-				assert.Nil(t, resp)
+				bs, ok := resp.(*proto.BulkString)
+				assert.True(t, ok)
+				assert.Nil(t, *bs)
 			},
 		},
 		{
@@ -1338,7 +1601,9 @@ func TestExecuteQueuedCommand(t *testing.T) {
 			cmd:  "HGET",
 			args: [][]byte{[]byte("myhash"), []byte("nonexistent")},
 			validate: func(t *testing.T, resp proto.RESP) {
-				assert.Nil(t, resp)
+				bs, ok := resp.(*proto.BulkString)
+				assert.True(t, ok)
+				assert.Nil(t, *bs)
 			},
 		},
 		{

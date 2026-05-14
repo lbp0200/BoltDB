@@ -5,27 +5,17 @@ import (
 	"sync"
 )
 
-// KeyLockManager 提供基于 key 的锁管理
 type KeyLockManager struct {
-	mu       sync.RWMutex
-	locks    map[uint32]*keyLock
 	shards   int
-	keyLocks []sync.RWMutex // 分片锁，减少竞争
+	keyLocks []sync.RWMutex
 }
 
-// keyLock 单个 key 的锁
-type keyLock struct {
-	mu sync.Mutex
-}
-
-// NewKeyLockManager 创建新的 key 锁管理器
 func NewKeyLockManager(shards int) *KeyLockManager {
 	if shards <= 0 {
-		shards = 256 // 默认 256 个分片
+		shards = 256
 	}
 	return &KeyLockManager{
-		locks:  make(map[uint32]*keyLock),
-		shards: shards,
+		shards:   shards,
 		keyLocks: make([]sync.RWMutex, shards),
 	}
 }

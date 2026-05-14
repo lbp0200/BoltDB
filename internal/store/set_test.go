@@ -10,7 +10,6 @@ import (
 func TestSAdd(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	key := "myset"
 
 	// 添加单个成员
@@ -36,7 +35,6 @@ func TestSAdd(t *testing.T) {
 // TestSAddWrongType tests that SADD returns ErrWrongType when key exists with different type
 func TestSAddWrongType(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// Create a hash key first
 	err := store.HSet("myhash", "field1", "value1")
@@ -74,7 +72,6 @@ func TestSAddWrongType(t *testing.T) {
 func TestSRem(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	key := "myset"
 
 	// 准备数据
@@ -103,7 +100,6 @@ func TestSRem(t *testing.T) {
 func TestSCard(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	key := "myset"
 
 	// 空集合
@@ -120,7 +116,6 @@ func TestSCard(t *testing.T) {
 
 func TestSIsMember(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	key := "myset"
 
@@ -145,7 +140,6 @@ func TestSIsMember(t *testing.T) {
 
 func TestSMembers(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	key := "myset"
 
@@ -173,7 +167,6 @@ func TestSMembers(t *testing.T) {
 func TestSPop(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	key := "myset"
 
 	// 空集合
@@ -200,7 +193,6 @@ func TestSPop(t *testing.T) {
 
 func TestSPopN(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	key := "myset"
 
@@ -235,7 +227,6 @@ func TestSPopN(t *testing.T) {
 func TestSRandMember(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	key := "myset"
 
 	// 空集合
@@ -262,7 +253,6 @@ func TestSRandMember(t *testing.T) {
 
 func TestSRandMemberN(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	key := "myset"
 
@@ -293,7 +283,6 @@ func TestSRandMemberN(t *testing.T) {
 
 func TestSMove(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	source := "source"
 	dest := "dest"
@@ -333,7 +322,6 @@ func TestSMove(t *testing.T) {
 
 func TestSInter(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	key1 := "set1"
 	key2 := "set2"
@@ -378,7 +366,6 @@ func TestSInter(t *testing.T) {
 func TestSUnion(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	key1 := "set1"
 	key2 := "set2"
 	key3 := "set3"
@@ -416,7 +403,6 @@ func TestSUnion(t *testing.T) {
 func TestSDiff(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	key1 := "set1"
 	key2 := "set2"
 	key3 := "set3"
@@ -451,7 +437,6 @@ func TestSDiff(t *testing.T) {
 
 func TestSInterStore(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	key1 := "set1"
 	key2 := "set2"
@@ -489,7 +474,6 @@ func TestSInterStore(t *testing.T) {
 
 func TestSUnionStore(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	key1 := "set1"
 	key2 := "set2"
@@ -529,7 +513,6 @@ func TestSUnionStore(t *testing.T) {
 func TestSDiffStore(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	key1 := "set1"
 	key2 := "set2"
 	dest := "dest"
@@ -562,7 +545,6 @@ func TestSDiffStore(t *testing.T) {
 func TestSetEdgeCases(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// 测试空集合操作
 	count, _ := store.SCard("empty")
 	assert.Equal(t, uint64(0), count)
@@ -593,7 +575,6 @@ func TestSetEdgeCases(t *testing.T) {
 func TestSMIsMember(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// Create a set
 	store.SAdd("myset", "a", "b", "c")
 
@@ -614,7 +595,6 @@ func TestSMIsMember(t *testing.T) {
 // TestSInterCard 测试 SINTERCARD 命令
 func TestSInterCard(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// Create sets
 	store.SAdd("set1", "a", "b", "c")
@@ -640,7 +620,6 @@ func TestSInterCard(t *testing.T) {
 // TestSScan 测试 SSCAN 命令
 func TestSScan(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// Create a set with many members
 	for i := 0; i < 100; i++ {

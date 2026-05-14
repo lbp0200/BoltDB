@@ -18,10 +18,10 @@ type SlaveConnection struct {
 	Conn          net.Conn
 	Reader        *bufio.Reader
 	Writer        *bufio.Writer
-	ReplOffset    int64  // 从节点的复制偏移量
-	ReplAckOffset int64  // 从节点确认的偏移量
-	Ready         bool   // 是否准备好接收命令
-	LastAckTime   int64  // 最后一次ACK时间
+	ReplOffset    int64 // 从节点的复制偏移量
+	ReplAckOffset int64 // 从节点确认的偏移量
+	Ready         bool  // 是否准备好接收命令
+	LastAckTime   int64 // 最后一次ACK时间
 	mu            sync.RWMutex
 	closeOnce     sync.Once
 }
@@ -37,9 +37,9 @@ func NewSlaveConnection(conn net.Conn) *SlaveConnection {
 		Reader:        bufio.NewReader(conn),
 		Writer:        bufio.NewWriter(conn),
 		ReplOffset:    0,
-		ReplAckOffset:  0,
+		ReplAckOffset: 0,
 		Ready:         false,
-		LastAckTime:    time.Now().Unix(),
+		LastAckTime:   time.Now().Unix(),
 	}
 }
 

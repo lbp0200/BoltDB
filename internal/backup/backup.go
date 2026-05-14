@@ -4,17 +4,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lbp0200/BoltDB/internal/logger"
 	"github.com/lbp0200/BoltDB/internal/store"
 )
 
 // BackupManager 统一的备份管理器
 type BackupManager struct {
-	store           *store.BotreonStore
-	badgerMgr       *BadgerBackupManager
-	rdbMgr          *RDBBackupManager
-	lastSaveTime    int64
-	lastSaveTimeMu  sync.RWMutex
-	backupDir       string
+	store          *store.BotreonStore
+	badgerMgr      *BadgerBackupManager
+	rdbMgr         *RDBBackupManager
+	lastSaveTime   int64
+	lastSaveTimeMu sync.RWMutex
+	backupDir      string
 }
 
 // NewBackupManager 创建新的备份管理器
@@ -47,8 +48,7 @@ func (bm *BackupManager) BGSave() error {
 	// 在goroutine中执行备份
 	go func() {
 		if err := bm.Save(); err != nil {
-			// 记录错误日志
-			return
+			logger.Logger.Error().Err(err).Msg("BGSAVE failed")
 		}
 	}()
 

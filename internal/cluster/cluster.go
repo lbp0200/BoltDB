@@ -11,12 +11,12 @@ import (
 
 // Cluster 表示Redis集群
 type Cluster struct {
-	Myself    *Node              // 当前节点
-	Nodes     map[string]*Node   // 所有节点，key为节点ID
-	Slots     [SlotCount]*Node   // 槽位到节点的映射
-	Store     *store.BotreonStore // 数据存储
-	Epoch     int64              // 当前配置纪元
-	mu        sync.RWMutex       // 保护集群状态的锁
+	Myself *Node               // 当前节点
+	Nodes  map[string]*Node    // 所有节点，key为节点ID
+	Slots  [SlotCount]*Node    // 槽位到节点的映射
+	Store  *store.BotreonStore // 数据存储
+	Epoch  int64               // 当前配置纪元
+	mu     sync.RWMutex        // 保护集群状态的锁
 }
 
 // NewCluster 创建新集群
@@ -36,9 +36,9 @@ func NewCluster(store *store.BotreonStore, nodeID, addr string) (*Cluster, error
 
 	cluster := &Cluster{
 		Myself: myself,
-		Nodes:   make(map[string]*Node),
-		Store:   store,
-		Epoch:   0,
+		Nodes:  make(map[string]*Node),
+		Store:  store,
+		Epoch:  0,
 	}
 	cluster.Nodes[nodeID] = myself
 
@@ -419,4 +419,3 @@ func (c *Cluster) GetAskRedirect(key string) *RedirectError {
 
 	return nil
 }
-

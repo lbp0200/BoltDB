@@ -59,4 +59,3 @@ func (c *Cluster) GetRedirectAddress(slot uint32) (string, error) {
 	}
 	return node.Addr, nil
 }
-

@@ -25,10 +25,14 @@ func BytesToUint64(b []byte) uint64 {
 }
 
 func ProtectGoroutine(goFunc func()) {
-	if err := recover(); err != nil {
-		logger.Logger.Error().Interface("error", err).Msg("ProtectGoroutine: recovered from panic")
-	}
-	go goFunc()
+	go func() {
+		defer func() {
+			if err := recover(); err != nil {
+				logger.Logger.Error().Interface("error", err).Msg("ProtectGoroutine: recovered from panic")
+			}
+		}()
+		goFunc()
+	}()
 }
 
 // BytesToFloat64 将字节数组转换为 float64

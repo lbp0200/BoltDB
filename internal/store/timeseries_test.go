@@ -12,7 +12,6 @@ func TestTSCreate(t *testing.T) {
 	s := setupTestStore(t)
 	var err error
 
-
 	// Test basic creation
 	err = s.TSCreate("ts1", TSCreateOptions{})
 	assert.NoError(t, err)
@@ -39,7 +38,6 @@ func TestTSAdd(t *testing.T) {
 	s := setupTestStore(t)
 	var err error
 
-
 	// Add data points
 	ts1, err := s.TSAdd("ts1", time.Now().UnixNano()/int64(time.Millisecond), 25.5, TSAddOptions{})
 	assert.NoError(t, err)
@@ -63,7 +61,6 @@ func TestTSAdd(t *testing.T) {
 func TestTSGet(t *testing.T) {
 	s := setupTestStore(t)
 	var err error
-
 
 	// Add data points
 	now := time.Now().UnixNano() / int64(time.Millisecond)
@@ -90,7 +87,6 @@ func TestTSGet(t *testing.T) {
 func TestTSRange(t *testing.T) {
 	s := setupTestStore(t)
 	var err error
-
 
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 	// Add data points
@@ -128,7 +124,6 @@ func TestTSDel(t *testing.T) {
 	s := setupTestStore(t)
 	var err error
 
-
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 	// Add data points
 	s.TSAdd("ts1", now, 10.0, TSAddOptions{})
@@ -160,7 +155,6 @@ func TestTSInfo(t *testing.T) {
 	s := setupTestStore(t)
 	var err error
 
-
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 	s.TSAdd("ts1", now, 10.0, TSAddOptions{})
 	s.TSAdd("ts1", now+1000, 20.0, TSAddOptions{})
@@ -183,7 +177,6 @@ func TestTSLen(t *testing.T) {
 	s := setupTestStore(t)
 	var err error
 
-
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 	s.TSAdd("ts1", now, 10.0, TSAddOptions{})
 	s.TSAdd("ts1", now+1000, 20.0, TSAddOptions{})
@@ -201,7 +194,6 @@ func TestTSLen(t *testing.T) {
 func TestTSMGet(t *testing.T) {
 	s := setupTestStore(t)
 	var err error
-
 
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 	s.TSAdd("ts1", now, 10.0, TSAddOptions{})
@@ -224,7 +216,6 @@ func TestTSMGet(t *testing.T) {
 func TestTSDuplicatePolicy(t *testing.T) {
 	s := setupTestStore(t)
 	var err error
-
 
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 	timestamp := now
@@ -260,7 +251,6 @@ func TestTSType(t *testing.T) {
 	s := setupTestStore(t)
 	var err error
 
-
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 	s.TSAdd("ts1", now, 10.0, TSAddOptions{})
 
@@ -279,7 +269,6 @@ func TestTSAutoTimestamp(t *testing.T) {
 	s := setupTestStore(t)
 	var err error
 
-
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 
 	// Add with auto timestamp
@@ -292,7 +281,6 @@ func TestTSAutoTimestamp(t *testing.T) {
 func TestTSAddWrongType(t *testing.T) {
 	s := setupTestStore(t)
 	var err error
-
 
 	// Create a string key
 	err = s.Set("mystring", "value")

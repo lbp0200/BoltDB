@@ -8,7 +8,6 @@ func TestJSONSet(t *testing.T) {
 	db := setupTestStore(t)
 	var err error
 
-
 	// Test JSON.SET with simple object
 	result, err := db.JSONSet("user:1", "$", `{"name":"John","age":30}`, false, false)
 	if err != nil {
@@ -234,13 +233,47 @@ func TestJSONDebugMemory(t *testing.T) {
 		t.Fatalf("JSON.SET failed: %v", err)
 	}
 
-	// Test JSON.DEBUG MEMORY
+	// Test JSON.DEBUG MEMORY with root path
 	memory, err := db.JSONDebugMemory("user:1", "$")
 	if err != nil {
 		t.Fatalf("JSON.DEBUG MEMORY failed: %v", err)
 	}
 	if memory <= 0 {
 		t.Errorf("Expected positive memory, got %d", memory)
+	}
+}
+
+func TestJSONDebugMemoryPath(t *testing.T) {
+	db := setupTestStore(t)
+
+	// Set up nested object
+	_, err := db.JSONSet("user:2", "$", `{"name":"Alice","age":25,"address":{"city":"NYC","zip":"10001"}}`, false, false)
+	if err != nil {
+		t.Fatalf("JSON.SET failed: %v", err)
+	}
+
+	// Test with sub-path - name field
+	nameMemory, err := db.JSONDebugMemory("user:2", "$.name")
+	if err != nil {
+		t.Fatalf("JSON.DEBUG MEMORY with path failed: %v", err)
+	}
+	if nameMemory <= 0 {
+		t.Errorf("Expected positive memory for name field, got %d", nameMemory)
+	}
+
+	// name is a string "Alice" (7 bytes including quotes), should be smaller than full object
+	fullMemory, err := db.JSONDebugMemory("user:2", "$")
+	if err != nil {
+		t.Fatalf("JSON.DEBUG MEMORY full failed: %v", err)
+	}
+	if nameMemory >= fullMemory {
+		t.Errorf("Expected name field memory (%d) < full memory (%d)", nameMemory, fullMemory)
+	}
+
+	// Non-existent path should return error
+	_, err = db.JSONDebugMemory("user:2", "$.nonexistent")
+	if err == nil {
+		t.Error("Expected error for non-existent path")
 	}
 }
 

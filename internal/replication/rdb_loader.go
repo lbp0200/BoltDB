@@ -106,14 +106,15 @@ func (dec *RDBDecoder) readExpireTime() (int64, error) {
 	}
 
 	expireType := dec.buf.Next(1)[0]
-	if expireType == 0xFC {
+	switch expireType {
+	case 0xFC:
 		// 毫秒精度
 		var ms int64
 		if err := binary.Read(dec.buf, binary.LittleEndian, &ms); err != nil {
 			return 0, err
 		}
 		return ms, nil
-	} else if expireType == 0xFD {
+	case 0xFD:
 		// 秒精度
 		var sec int32
 		if err := binary.Read(dec.buf, binary.LittleEndian, &sec); err != nil {
@@ -155,7 +156,10 @@ func (rm *ReplicationManager) LoadRDB(data []byte) error {
 		if expireTime > 0 {
 			if expireTime > 0xFFFFFFFF {
 				// 毫秒精度
-				ttl = time.Duration(expireTime*1000*1000) * time.Nanosecond
+				now := time.Now().UnixMilli()
+				if expireTime > now {
+					ttl = time.Duration(expireTime-now) * time.Millisecond
+				}
 			} else {
 				// 秒精度
 				expireAt := time.Unix(int64(expireTime), 0)
@@ -186,12 +190,13 @@ func (rm *ReplicationManager) LoadRDB(data []byte) error {
 				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取字符串值失败，跳过")
 				continue
 			}
-			if err := rm.store.Set(key, value); err != nil {
-				logger.Logger.Warn().Str("key", key).Err(err).Msg("存储字符串值失败")
-				continue
-			}
 			if ttl > 0 {
 				_ = rm.store.SetWithTTL(key, value, ttl)
+			} else {
+				if err := rm.store.Set(key, value); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("存储字符串值失败")
+					continue
+				}
 			}
 
 		case 1: // LIST
@@ -209,11 +214,13 @@ func (rm *ReplicationManager) LoadRDB(data []byte) error {
 				}
 				values = append(values, val)
 			}
-			// 使用RPUSH构建列表
 			for _, v := range values {
 				if _, err := rm.store.RPush(key, v); err != nil {
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("存储列表值失败")
 				}
+			}
+			if ttl > 0 {
+				_, _ = rm.store.PExpire(key, int64(ttl.Milliseconds()))
 			}
 
 		case 2: // SET
@@ -231,6 +238,9 @@ func (rm *ReplicationManager) LoadRDB(data []byte) error {
 				if _, err := rm.store.SAdd(key, member); err != nil {
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("存储集合值失败")
 				}
+			}
+			if ttl > 0 {
+				_, _ = rm.store.PExpire(key, int64(ttl.Milliseconds()))
 			}
 
 		case 3: // HASH
@@ -253,6 +263,9 @@ func (rm *ReplicationManager) LoadRDB(data []byte) error {
 				if err := rm.store.HSet(key, field, value); err != nil {
 					logger.Logger.Warn().Str("key", key).Str("field", field).Err(err).Msg("存储哈希值失败")
 				}
+			}
+			if ttl > 0 {
+				_, _ = rm.store.PExpire(key, int64(ttl.Milliseconds()))
 			}
 
 		case 4: // ZSET (SortedSet)
@@ -284,6 +297,9 @@ func (rm *ReplicationManager) LoadRDB(data []byte) error {
 				if err := rm.store.ZAdd(key, members); err != nil {
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("存储有序集合值失败")
 				}
+			}
+			if ttl > 0 {
+				_, _ = rm.store.PExpire(key, int64(ttl.Milliseconds()))
 			}
 
 		case 0xFE: // DATABASE SELECTOR
@@ -326,7 +342,11 @@ func LoadRDBWithStore(data []byte, s *store.BotreonStore) error {
 		var ttl time.Duration
 		if expireTime > 0 {
 			if expireTime > 0xFFFFFFFF {
-				ttl = time.Duration(expireTime*1000*1000) * time.Nanosecond
+				// 毫秒精度
+				now := time.Now().UnixMilli()
+				if expireTime > now {
+					ttl = time.Duration(expireTime-now) * time.Millisecond
+				}
 			} else {
 				expireAt := time.Unix(int64(expireTime), 0)
 				if expireAt.After(time.Now()) {
@@ -356,12 +376,13 @@ func LoadRDBWithStore(data []byte, s *store.BotreonStore) error {
 				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取字符串值失败，跳过")
 				continue
 			}
-			if err := s.Set(key, value); err != nil {
-				logger.Logger.Warn().Str("key", key).Err(err).Msg("存储字符串值失败")
-				continue
-			}
 			if ttl > 0 {
 				_ = s.SetWithTTL(key, value, ttl)
+			} else {
+				if err := s.Set(key, value); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("存储字符串值失败")
+					continue
+				}
 			}
 
 		case 1: // LIST
@@ -380,6 +401,9 @@ func LoadRDBWithStore(data []byte, s *store.BotreonStore) error {
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("存储列表值失败")
 				}
 			}
+			if ttl > 0 {
+				_, _ = s.PExpire(key, int64(ttl.Milliseconds()))
+			}
 
 		case 2: // SET
 			length, err := dec.readLength()
@@ -396,6 +420,9 @@ func LoadRDBWithStore(data []byte, s *store.BotreonStore) error {
 				if _, err := s.SAdd(key, member); err != nil {
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("存储集合值失败")
 				}
+			}
+			if ttl > 0 {
+				_, _ = s.PExpire(key, int64(ttl.Milliseconds()))
 			}
 
 		case 3: // HASH
@@ -418,6 +445,9 @@ func LoadRDBWithStore(data []byte, s *store.BotreonStore) error {
 				if err := s.HSet(key, field, value); err != nil {
 					logger.Logger.Warn().Str("key", key).Str("field", field).Err(err).Msg("存储哈希值失败")
 				}
+			}
+			if ttl > 0 {
+				_, _ = s.PExpire(key, int64(ttl.Milliseconds()))
 			}
 
 		case 4: // ZSET
@@ -449,6 +479,9 @@ func LoadRDBWithStore(data []byte, s *store.BotreonStore) error {
 				if err := s.ZAdd(key, members); err != nil {
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("存储有序集合值失败")
 				}
+			}
+			if ttl > 0 {
+				_, _ = s.PExpire(key, int64(ttl.Milliseconds()))
 			}
 
 		case 0xFE:

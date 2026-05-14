@@ -74,7 +74,7 @@ func (s *BotreonStore) JSONSet(key, path, value string, nx, xx bool) (string, er
 		s.readCache.Delete(key)
 	}
 
-	err = s.db.Update(func(txn *badger.Txn) error {
+	err = s.retryUpdate(func(txn *badger.Txn) error {
 		// Check if key already exists with a different type
 		item, err := txn.Get(TypeOfKeyGet(key))
 		if err == nil {
@@ -95,7 +95,7 @@ func (s *BotreonStore) JSONSet(key, path, value string, nx, xx bool) (string, er
 		}
 		// Set JSON value
 		return txn.Set([]byte(s.jsonKey(key)), jsonData)
-	})
+	}, 30)
 
 	if err != nil {
 		return "", err
@@ -208,12 +208,12 @@ func (s *BotreonStore) JSONDel(key string, paths ...string) (int64, error) {
 			s.readCache.Delete(key)
 		}
 
-		err = s.db.Update(func(txn *badger.Txn) error {
+		err = s.retryUpdate(func(txn *badger.Txn) error {
 			if err := txn.Delete(TypeOfKeyGet(key)); err != nil {
 				return err
 			}
 			return txn.Delete([]byte(jsonKey))
-		})
+		}, 30)
 		if err != nil {
 			return 0, err
 		}
@@ -370,9 +370,9 @@ func (s *BotreonStore) JSONArrAppend(key, path string, values ...string) (int64,
 		s.readCache.Delete(key)
 	}
 
-	err = s.db.Update(func(txn *badger.Txn) error {
+	err = s.retryUpdate(func(txn *badger.Txn) error {
 		return txn.Set([]byte(jsonKey), newData)
-	})
+	}, 30)
 	if err != nil {
 		return 0, err
 	}
@@ -577,9 +577,9 @@ func (s *BotreonStore) JSONNumIncrBy(key, path string, increment float64) (float
 		s.readCache.Delete(key)
 	}
 
-	err = s.db.Update(func(txn *badger.Txn) error {
+	err = s.retryUpdate(func(txn *badger.Txn) error {
 		return txn.Set([]byte(jsonKey), newData)
-	})
+	}, 30)
 	if err != nil {
 		return 0, err
 	}
@@ -676,9 +676,9 @@ func (s *BotreonStore) JSONNumMultBy(key, path string, multiplier float64) (floa
 		s.readCache.Delete(key)
 	}
 
-	err = s.db.Update(func(txn *badger.Txn) error {
+	err = s.retryUpdate(func(txn *badger.Txn) error {
 		return txn.Set([]byte(jsonKey), newData)
-	})
+	}, 30)
 	if err != nil {
 		return 0, err
 	}
@@ -741,9 +741,9 @@ func (s *BotreonStore) JSONClear(key, path string) (int64, error) {
 		s.readCache.Delete(key)
 	}
 
-	err = s.db.Update(func(txn *badger.Txn) error {
+	err = s.retryUpdate(func(txn *badger.Txn) error {
 		return txn.Set([]byte(jsonKey), newData)
-	})
+	}, 30)
 	if err != nil {
 		return 0, err
 	}
@@ -753,8 +753,7 @@ func (s *BotreonStore) JSONClear(key, path string) (int64, error) {
 
 // JSONDebug implements JSON.DEBUG command
 // JSON.DEBUG MEMORY key [path]
-func (s *BotreonStore) JSONDebugMemory(key, _ string) (int64, error) {
-	// TODO: Implement path-based memory calculation
+func (s *BotreonStore) JSONDebugMemory(key, path string) (int64, error) {
 	jsonKey := s.jsonKey(key)
 	var jsonData []byte
 
@@ -780,8 +779,29 @@ func (s *BotreonStore) JSONDebugMemory(key, _ string) (int64, error) {
 		return 0, err
 	}
 
-	// Return the size of JSON data
-	return int64(len(jsonData)), nil
+	// If path is root, return full JSON data size
+	if path == "$" || path == "" {
+		return int64(len(jsonData)), nil
+	}
+
+	// Parse JSON and extract value at path
+	var root interface{}
+	if err := json.Unmarshal(jsonData, &root); err != nil {
+		return 0, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	val, err := getValueByPath(root, path)
+	if err != nil {
+		return 0, err
+	}
+
+	// Serialize the value back to JSON and measure its size
+	serialized, err := json.Marshal(val)
+	if err != nil {
+		return 0, fmt.Errorf("failed to serialize path value: %w", err)
+	}
+
+	return int64(len(serialized)), nil
 }
 
 // getValueByPath gets a value from JSON by path (simplified JSONPath)

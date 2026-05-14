@@ -251,7 +251,6 @@ func StartSlaveReplication(rm *ReplicationManager, store *store.BotreonStore, ma
 			logger.Logger.Info().Msg("开始增量同步，接收命令流")
 		}
 
-		// 持续接收命令并执行
 		for {
 			req, err := proto.ReadRESP(masterConn.Reader)
 			if err != nil {
@@ -259,14 +258,17 @@ func StartSlaveReplication(rm *ReplicationManager, store *store.BotreonStore, ma
 				break
 			}
 
-			// 执行命令
 			logger.Logger.Debug().
 				Int("arg_count", len(req.Args)).
 				Str("cmd", string(req.Args[0])).
 				Msg("从主节点收到命令")
 
-			// 执行命令并更新偏移量
-			executeReplicatedCommand(store, req.Args)
+			if err := executeReplicatedCommand(store, req.Args); err != nil {
+				logger.Logger.Error().Err(err).
+					Str("cmd", string(req.Args[0])).
+					Msg("执行复制命令失败")
+				break
+			}
 			cmdBytes := serializeCommand(req.Args)
 			rm.IncrementReplOffset(int64(len(cmdBytes)))
 		}
@@ -293,10 +295,9 @@ func StopSlaveReplication(rm *ReplicationManager) {
 	}
 }
 
-// executeReplicatedCommand 执行从主节点接收到的复制命令
-func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) {
+func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 	if len(args) == 0 {
-		return
+		return nil
 	}
 
 	cmd := strings.ToUpper(string(args[0]))
@@ -306,31 +307,29 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) {
 		if len(args) >= 3 {
 			key := string(args[1])
 			value := string(args[2])
-			// 检查是否有EX或PX选项
 			if len(args) > 3 {
 				opt := strings.ToUpper(string(args[3]))
 				if opt == "EX" && len(args) >= 5 {
-					// EX seconds
 					if sec, err := strconv.ParseInt(string(args[4]), 10, 64); err == nil {
-						_ = s.SetWithTTL(key, value, time.Duration(sec)*time.Second)
-						return
+						return s.SetWithTTL(key, value, time.Duration(sec)*time.Second)
 					}
 				} else if opt == "PX" && len(args) >= 5 {
-					// PX milliseconds
 					if ms, err := strconv.ParseInt(string(args[4]), 10, 64); err == nil {
-						_ = s.SetWithTTL(key, value, time.Duration(ms)*time.Millisecond)
-						return
+						return s.SetWithTTL(key, value, time.Duration(ms)*time.Millisecond)
 					}
 				}
 			}
-			_ = s.Set(key, value)
+			return s.Set(key, value)
 		}
 
 	case "DEL":
 		if len(args) >= 2 {
 			for i := 1; i < len(args); i++ {
-				_, _ = s.Del(string(args[i]))
+				if _, err := s.Del(string(args[i])); err != nil {
+					return fmt.Errorf("DEL %s: %w", string(args[i]), err)
+				}
 			}
+			return nil
 		}
 
 	case "INCR", "INCRBY":
@@ -342,7 +341,8 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) {
 					delta = d
 				}
 			}
-			_, _ = s.INCRBY(key, delta)
+			_, err := s.INCRBY(key, delta)
+			return err
 		}
 
 	case "DECR", "DECRBY":
@@ -354,46 +354,57 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) {
 					delta = d
 				}
 			}
-			_, _ = s.DECRBY(key, delta)
+			_, err := s.DECRBY(key, delta)
+			return err
 		}
 
 	case "APPEND":
 		if len(args) >= 3 {
 			key := string(args[1])
 			value := string(args[2])
-			_, _ = s.APPEND(key, value)
+			_, err := s.APPEND(key, value)
+			return err
 		}
 
 	case "RPUSH":
 		if len(args) >= 3 {
 			key := string(args[1])
 			for i := 2; i < len(args); i++ {
-				_, _ = s.RPush(key, string(args[i]))
+				if _, err := s.RPush(key, string(args[i])); err != nil {
+					return fmt.Errorf("RPUSH %s: %w", key, err)
+				}
 			}
+			return nil
 		}
 
 	case "LPUSH":
 		if len(args) >= 3 {
 			key := string(args[1])
 			for i := 2; i < len(args); i++ {
-				_, _ = s.LPush(key, string(args[i]))
+				if _, err := s.LPush(key, string(args[i])); err != nil {
+					return fmt.Errorf("LPUSH %s: %w", key, err)
+				}
 			}
+			return nil
 		}
 
 	case "LSET":
 		if len(args) >= 4 {
 			key := string(args[1])
 			if index, err := strconv.ParseInt(string(args[2]), 10, 64); err == nil {
-				_ = s.LSet(key, index, string(args[3]))
+				return s.LSet(key, index, string(args[3]))
 			}
+			return nil
 		}
 
 	case "LREM":
 		if len(args) >= 4 {
 			key := string(args[1])
 			if count, err := strconv.ParseInt(string(args[2]), 10, 64); err == nil {
-				_, _ = s.LRem(key, count, string(args[3]))
+				_, err := s.LRem(key, count, string(args[3]))
+				return err
 			}
+			return nil
 		}
 
 	case "LTRIM":
@@ -401,25 +412,32 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) {
 			key := string(args[1])
 			if start, err := strconv.ParseInt(string(args[2]), 10, 64); err == nil {
 				if stop, err := strconv.ParseInt(string(args[3]), 10, 64); err == nil {
-					_ = s.LTrim(key, start, stop)
+					return s.LTrim(key, start, stop)
 				}
 			}
+			return nil
 		}
 
 	case "SADD":
 		if len(args) >= 3 {
 			key := string(args[1])
 			for i := 2; i < len(args); i++ {
-				_, _ = s.SAdd(key, string(args[i]))
+				if _, err := s.SAdd(key, string(args[i])); err != nil {
+					return fmt.Errorf("SADD %s: %w", key, err)
+				}
 			}
+			return nil
 		}
 
 	case "SREM":
 		if len(args) >= 3 {
 			key := string(args[1])
 			for i := 2; i < len(args); i++ {
-				_, _ = s.SRem(key, string(args[i]))
+				if _, err := s.SRem(key, string(args[i])); err != nil {
+					return fmt.Errorf("SREM %s: %w", key, err)
+				}
 			}
+			return nil
 		}
 
 	case "SMOVE":
@@ -427,13 +445,15 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) {
 			src := string(args[1])
 			dst := string(args[2])
 			member := string(args[3])
-			_, _ = s.SMove(src, dst, member)
+			_, err := s.SMove(src, dst, member)
+			return err
 		}
 
 	case "SPOP":
 		if len(args) >= 2 {
 			key := string(args[1])
-			_, _ = s.SPop(key)
+			_, err := s.SPop(key)
+			return err
 		}
 
 	case "HSET":
@@ -441,15 +461,18 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) {
 			key := string(args[1])
 			field := string(args[2])
 			value := string(args[3])
-			_ = s.HSet(key, field, value)
+			return s.HSet(key, field, value)
 		}
 
 	case "HMSET":
 		if len(args) >= 4 {
 			key := string(args[1])
 			for i := 2; i+1 < len(args); i += 2 {
-				_ = s.HSet(key, string(args[i]), string(args[i+1]))
+				if err := s.HSet(key, string(args[i]), string(args[i+1])); err != nil {
+					return fmt.Errorf("HMSET %s: %w", key, err)
+				}
 			}
+			return nil
 		}
 
 	case "HINCRBY":
@@ -457,8 +480,10 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) {
 			key := string(args[1])
 			field := string(args[2])
 			if delta, err := strconv.ParseInt(string(args[3]), 10, 64); err == nil {
-				_, _ = s.HIncrBy(key, field, delta)
+				_, err := s.HIncrBy(key, field, delta)
+				return err
 			}
+			return nil
 		}
 
 	case "HINCRBYFLOAT":
@@ -466,8 +491,10 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) {
 			key := string(args[1])
 			field := string(args[2])
 			if delta, err := strconv.ParseFloat(string(args[3]), 64); err == nil {
-				_, _ = s.HIncrByFloat(key, field, delta)
+				_, err := s.HIncrByFloat(key, field, delta)
+				return err
 			}
+			return nil
 		}
 
 	case "HDEL":
@@ -477,7 +504,8 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) {
 			for i := 2; i < len(args); i++ {
 				fields = append(fields, string(args[i]))
 			}
-			_, _ = s.HDel(key, fields...)
+			_, err := s.HDel(key, fields...)
+			return err
 		}
 
 	case "ZADD":
@@ -493,8 +521,9 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) {
 				}
 			}
 			if len(members) > 0 {
-				_ = s.ZAdd(key, members)
+				return s.ZAdd(key, members)
 			}
+			return nil
 		}
 
 	case "ZINCRBY":
@@ -502,23 +531,30 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) {
 			key := string(args[1])
 			if delta, err := strconv.ParseFloat(string(args[2]), 64); err == nil {
 				member := string(args[3])
-				_, _ = s.ZIncrBy(key, member, delta)
+				_, err := s.ZIncrBy(key, member, delta)
+				return err
 			}
+			return nil
 		}
 
 	case "ZREM":
 		if len(args) >= 3 {
 			key := string(args[1])
 			for i := 2; i < len(args); i++ {
-				_ = s.ZRem(key, string(args[i]))
+				if _, err := s.ZRem(key, string(args[i])); err != nil {
+					return fmt.Errorf("ZREM %s: %w", key, err)
+				}
 			}
+			return nil
 		}
 
 	case "ZPOPMAX", "ZPOPMIN":
-		// 这些命令需要特殊处理，暂时跳过
 		logger.Logger.Debug().Str("cmd", cmd).Msg("忽略不支持的复制命令")
+		return nil
 
 	default:
 		logger.Logger.Debug().Str("cmd", cmd).Msg("收到未处理的复制命令")
+		return nil
 	}
+	return nil
 }

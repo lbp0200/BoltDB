@@ -51,7 +51,7 @@ func (enc *RDBEncoder) WriteKeyValue(key string, value interface{}, keyType stri
 		now := time.Now().Unix()
 		expireTime := now + ttl
 		enc.buf.WriteByte(0xFD) // FD = expire time in seconds
-	// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
+		// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
 		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTime))
 	}
 
@@ -107,7 +107,7 @@ func (enc *RDBEncoder) WriteStringKeyValue(key, value string, ttl int64) error {
 		now := time.Now().Unix()
 		expireTime := now + ttl
 		enc.buf.WriteByte(0xFD)
-	// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
+		// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
 		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTime))
 	}
 
@@ -123,7 +123,7 @@ func (enc *RDBEncoder) WriteListKeyValue(key string, values []string, ttl int64)
 		now := time.Now().Unix()
 		expireTime := now + ttl
 		enc.buf.WriteByte(0xFD)
-	// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
+		// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
 		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTime))
 	}
 
@@ -142,7 +142,7 @@ func (enc *RDBEncoder) WriteHashKeyValue(key string, fields map[string][]byte, t
 		now := time.Now().Unix()
 		expireTime := now + ttl
 		enc.buf.WriteByte(0xFD)
-	// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
+		// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
 		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTime))
 	}
 
@@ -162,7 +162,7 @@ func (enc *RDBEncoder) WriteSetKeyValue(key string, members []string, ttl int64)
 		now := time.Now().Unix()
 		expireTime := now + ttl
 		enc.buf.WriteByte(0xFD)
-	// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
+		// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
 		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTime))
 	}
 
@@ -181,7 +181,7 @@ func (enc *RDBEncoder) WriteSortedSetKeyValue(key string, members []*store.ZSetM
 		now := time.Now().Unix()
 		expireTime := now + ttl
 		enc.buf.WriteByte(0xFD)
-	// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
+		// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
 		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTime))
 	}
 
@@ -238,7 +238,7 @@ func (enc *RDBEncoder) writeLength(length uint64) {
 	} else {
 		// 32位长度
 		enc.buf.WriteByte(0x80)
-	// #nosec G115 - length is bounded by practical RDB size limits
+		// #nosec G115 - length is bounded by practical RDB size limits
 		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(length))
 	}
 }
@@ -271,14 +271,30 @@ func GenerateRDB(s *store.BotreonStore) ([]byte, error) {
 			}
 			keyType := string(typeVal)
 
-			// 获取TTL
+			// 获取TTL（TYPE_ 键不含 TTL，需从对应值键读取）
 			ttl := int64(0)
-			if item.ExpiresAt() > 0 {
-			// #nosec G115 - expiresAt is a valid Unix timestamp within int64 range
-				expireTime := time.Unix(int64(item.ExpiresAt()), 0)
-				now := time.Now()
-				if expireTime.After(now) {
-					ttl = int64(expireTime.Sub(now).Seconds())
+			var valueKey []byte
+			switch keyType {
+			case store.KeyTypeString:
+				valueKey = []byte("string:" + key)
+			case store.KeyTypeList:
+				valueKey = []byte("list:" + key + ":length")
+			case store.KeyTypeHash:
+				valueKey = []byte("hash:" + key + ":count")
+			case store.KeyTypeSet:
+				valueKey = []byte("set:" + key + ":count")
+			case store.KeyTypeSortedSet:
+				valueKey = []byte("zset:" + key + ":meta")
+			}
+			if valueKey != nil {
+				if valItem, err := txn.Get(valueKey); err == nil {
+					if expiresAt := valItem.ExpiresAt(); expiresAt > 0 {
+						expireTime := time.Unix(int64(expiresAt), 0)
+						now := time.Now()
+						if expireTime.After(now) {
+							ttl = int64(expireTime.Sub(now).Seconds())
+						}
+					}
 				}
 			}
 
@@ -328,8 +344,8 @@ func GenerateRDB(s *store.BotreonStore) ([]byte, error) {
 					now := time.Now().Unix()
 					expireTime := now + ttl
 					enc.buf.WriteByte(0xFD)
-				// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
-		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTime))
+					// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
+					_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTime))
 				}
 				enc.buf.WriteByte(4) // ZSET type
 				enc.writeString(key)
@@ -358,4 +374,3 @@ func GenerateRDB(s *store.BotreonStore) ([]byte, error) {
 
 	return enc.Bytes(), nil
 }
-

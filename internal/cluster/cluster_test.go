@@ -615,4 +615,3 @@ func TestNodeUpdatePing(t *testing.T) {
 	node.UpdatePing()
 	// Just verify it doesn't panic and completes
 }
-

@@ -6,6 +6,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lbp0200/BoltDB/internal/logger"
@@ -13,35 +14,36 @@ import (
 
 // GossipConfig gossip协议配置
 type GossipConfig struct {
-	Port            int
-	RunID           string
-	HelloInterval   time.Duration
-	PingInterval    time.Duration
-	PeerTimeout     time.Duration
-	MaxPeers       int
+	Port          int
+	RunID         string
+	HelloInterval time.Duration
+	PingInterval  time.Duration
+	PeerTimeout   time.Duration
+	MaxPeers      int
 }
 
 // DefaultGossipConfig 默认配置
 func DefaultGossipConfig() *GossipConfig {
 	return &GossipConfig{
-		Port:            0, // 随机端口
-		HelloInterval:   2 * time.Second,
-		PingInterval:    5 * time.Second,
-		PeerTimeout:     30 * time.Second,
-		MaxPeers:        10,
+		Port:          0, // 随机端口
+		HelloInterval: 2 * time.Second,
+		PingInterval:  5 * time.Second,
+		PeerTimeout:   30 * time.Second,
+		MaxPeers:      10,
 	}
 }
 
 // GossipPeer 远程哨兵对等体
 type GossipPeer struct {
-	Addr       string
-	RunID      string
-	LastSeen   time.Time
-	HelloSent  bool
+	Addr      string
+	RunID     string
+	LastSeen  time.Time
+	HelloSent bool
 }
 
 // GossipProtocol gossip协议管理器
 type GossipProtocol struct {
+	mu       sync.RWMutex
 	sentinel *Sentinel
 	config   *GossipConfig
 	listener net.Listener
@@ -84,7 +86,6 @@ func (gp *GossipProtocol) Start() error {
 	return nil
 }
 
-// Stop 停止gossip协议
 func (gp *GossipProtocol) Stop() {
 	close(gp.stopCh)
 
@@ -94,9 +95,11 @@ func (gp *GossipProtocol) Stop() {
 		}
 	}
 
-	for _, peer := range gp.peers {
-		gp.removePeer(peer.Addr)
+	gp.mu.Lock()
+	for addr := range gp.peers {
+		delete(gp.peers, addr)
 	}
+	gp.mu.Unlock()
 }
 
 // GetPort 获取监听端口
@@ -301,8 +304,10 @@ func (gp *GossipProtocol) handleMasters(conn net.Conn) {
 	}
 }
 
-// addOrUpdatePeer 添加或更新对等体
 func (gp *GossipProtocol) addOrUpdatePeer(addr, runID string) {
+	gp.mu.Lock()
+	defer gp.mu.Unlock()
+
 	if _, exists := gp.peers[addr]; !exists && len(gp.peers) >= gp.config.MaxPeers {
 		return
 	}
@@ -314,15 +319,18 @@ func (gp *GossipProtocol) addOrUpdatePeer(addr, runID string) {
 	}
 }
 
-// touchPeer 更新对等体的最后活跃时间
 func (gp *GossipProtocol) touchPeer(addr string) {
+	gp.mu.Lock()
+	defer gp.mu.Unlock()
+
 	if peer, exists := gp.peers[addr]; exists {
 		peer.LastSeen = time.Now()
 	}
 }
 
-// removePeer 移除对等体
 func (gp *GossipProtocol) removePeer(addr string) {
+	gp.mu.Lock()
+	defer gp.mu.Unlock()
 	delete(gp.peers, addr)
 }
 
@@ -341,11 +349,13 @@ func (gp *GossipProtocol) managePeers() {
 	}
 }
 
-// sendHellos 发送HELLO消息到所有已知对等体
 func (gp *GossipProtocol) sendHellos() {
+	gp.mu.Lock()
+	defer gp.mu.Unlock()
+
 	for addr, peer := range gp.peers {
 		if time.Since(peer.LastSeen) > gp.config.PeerTimeout {
-			gp.removePeer(addr)
+			delete(gp.peers, addr)
 			continue
 		}
 
@@ -395,21 +405,26 @@ func (gp *GossipProtocol) sendMessage(conn net.Conn, message string) error {
 	return err
 }
 
-// BroadcastSdown 广播SDOWN消息到所有对等体
 func (gp *GossipProtocol) BroadcastSdown(masterName string, sdownCount int) {
-	message := "SDOWN " + masterName + " " + strconv.Itoa(sdownCount) + "\n"
-
+	gp.mu.RLock()
+	addrs := make([]string, 0, len(gp.peers))
 	for addr := range gp.peers {
+		addrs = append(addrs, addr)
+	}
+	gp.mu.RUnlock()
+
+	message := "SDOWN " + masterName + " " + strconv.Itoa(sdownCount) + "\n"
+	for _, addr := range addrs {
 		go func(peerAddr string) {
 			conn, err := net.DialTimeout("tcp", peerAddr, 5*time.Second)
 			if err != nil {
 				return
 			}
 			defer func() {
-		if err := conn.Close(); err != nil {
-			logger.Logger.Debug().Err(err).Msg("Failed to close gossip connection")
-		}
-	}()
+				if err := conn.Close(); err != nil {
+					logger.Logger.Debug().Err(err).Msg("Failed to close gossip connection")
+				}
+			}()
 
 			if err := gp.sendMessage(conn, message); err != nil {
 				logger.Logger.Warn().Err(err).Msg("Failed to broadcast SDOWN message")
@@ -418,7 +433,8 @@ func (gp *GossipProtocol) BroadcastSdown(masterName string, sdownCount int) {
 	}
 }
 
-// GetPeersCount 获取对等体数量
 func (gp *GossipProtocol) GetPeersCount() int {
+	gp.mu.RLock()
+	defer gp.mu.RUnlock()
 	return len(gp.peers)
 }

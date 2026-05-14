@@ -17,24 +17,6 @@ var ErrWrongType = errors.New("WRONGTYPE Operation against a key holding the wro
 // ErrMemberNotFound is returned when member is not found in sorted set
 var ErrMemberNotFound = errors.New("member not found")
 
-// 哈希操作
-//func (s *BotreonStore) HSet(key, field string, value interface{}) error {
-//	logFuncTag := "BotreonStoreHSet"
-//	baggerTypeKey := TypeOfKeyGet(key)
-//	bValue, err := helper.InterfaceToBytes(value)
-//	if err != nil {
-//		return fmt.Errorf("%s,%v", logFuncTag, err)
-//	}
-//	hkey := s.hashKey(key, field)
-//	return s.db.Update(func(txn *badger.Txn) error {
-//		err := txn.Set(hkey, bValue)
-//		if err != nil {
-//			return err
-//		}
-//		return txn.Set(baggerTypeKey, []byte(KeyTypeHash))
-//	})
-//}
-
 // 修改 HSet 维护计数器
 func (s *BotreonStore) HSet(key, field string, value interface{}) error {
 	logFuncTag := "BotreonStoreHSet"
@@ -89,7 +71,7 @@ func (s *BotreonStore) HSet(key, field string, value interface{}) error {
 	}
 
 	// 然后在Update事务中写入
-	return s.db.Update(func(txn *badger.Txn) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
 		// 检查字段是否存在
 		exists := false
 		if _, err := txn.Get(hkey); err == nil {
@@ -126,7 +108,7 @@ func (s *BotreonStore) HSet(key, field string, value interface{}) error {
 			currentCount++
 		}
 		return txn.Set(countKey, helper.Uint64ToBytes(currentCount))
-	})
+	}, 30)
 }
 func (s *BotreonStore) HGet(key, field string) ([]byte, error) {
 	// Check key type before retrieving field
@@ -178,7 +160,7 @@ func (s *BotreonStore) hashCountKey(key string) []byte {
 // HDel 实现 Redis HDEL 命令
 func (s *BotreonStore) HDel(key string, fields ...string) (int, error) {
 	deletedCount := 0
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// Check if key already exists with a different type
 		typeKey := TypeOfKeyGet(key)
 		typeItem, typeErr := txn.Get(typeKey)
@@ -227,7 +209,7 @@ func (s *BotreonStore) HDel(key string, fields ...string) (int, error) {
 			return txn.Set(countKey, helper.Uint64ToBytes(currentCount))
 		}
 		return nil
-	})
+	}, 30)
 	return deletedCount, err
 }
 
@@ -390,7 +372,7 @@ func (s *BotreonStore) HVals(key string) ([][]byte, error) {
 // HMSet 实现 Redis HMSET 命令，批量设置多个字段
 func (s *BotreonStore) HMSet(key string, fieldValues map[string]interface{}) error {
 	typeKey := TypeOfKeyGet(key)
-	return s.db.Update(func(txn *badger.Txn) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
 		if err := txn.Set(typeKey, []byte(KeyTypeHash)); err != nil {
 			return err
 		}
@@ -459,7 +441,7 @@ func (s *BotreonStore) HMSet(key string, fieldValues map[string]interface{}) err
 			return txn.Set(countKey, helper.Uint64ToBytes(currentCount))
 		}
 		return nil
-	})
+	}, 30)
 }
 
 // HMGet 实现 Redis HMGET 命令，批量获取多个字段值
@@ -519,7 +501,7 @@ func (s *BotreonStore) HSetNX(key, field string, value interface{}) (bool, error
 		}
 	}
 	hkey := s.hashKey(key, field)
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// 检查字段是否存在
 		_, getErr := txn.Get(hkey)
 		if getErr == nil {
@@ -556,15 +538,18 @@ func (s *BotreonStore) HSetNX(key, field string, value interface{}) (bool, error
 
 		success = true
 		return nil
-	})
+	}, 30)
 	return success, err
 }
 
 // HIncrBy 实现 Redis HINCRBY 命令，将字段值增加整数
 func (s *BotreonStore) HIncrBy(key, field string, increment int64) (int64, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
+
 	var result int64
 	typeKey := TypeOfKeyGet(key)
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// Check if key already exists with a different type
 		typeItem, typeErr := txn.Get(typeKey)
 		if typeErr == nil {
@@ -632,15 +617,18 @@ func (s *BotreonStore) HIncrBy(key, field string, increment int64) (int64, error
 		}
 
 		return nil
-	})
+	}, 30)
 	return result, err
 }
 
 // HIncrByFloat 实现 Redis HINCRBYFLOAT 命令，将字段值增加浮点数
 func (s *BotreonStore) HIncrByFloat(key, field string, increment float64) (float64, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
+
 	var result float64
 	typeKey := TypeOfKeyGet(key)
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// Check if key already exists with a different type
 		typeItem, typeErr := txn.Get(typeKey)
 		if typeErr == nil {
@@ -708,7 +696,7 @@ func (s *BotreonStore) HIncrByFloat(key, field string, increment float64) (float
 		}
 
 		return nil
-	})
+	}, 30)
 	return result, err
 }
 

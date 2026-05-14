@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"compress/gzip"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -71,20 +72,34 @@ func (rbm *RDBBackupManager) BackupWithCompression(backupDir string) (string, er
 		return "", fmt.Errorf("generate RDB failed: %w", err)
 	}
 
-	// 压缩数据（简化实现，实际应该使用gzip）
-	// 这里暂时不压缩，直接保存
-	compressedData := rdbData
+	// 创建目标文件
+	f, err := os.OpenFile(filepath.Clean(backupFile), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return "", fmt.Errorf("create backup file failed: %w", err)
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			logger.Logger.Error().Err(err).Str("backup_file", backupFile).Msg("failed to close backup file")
+		}
+	}()
 
-	// 写入文件
-	if err := os.WriteFile(backupFile, compressedData, 0600); err != nil {
-		logger.Logger.Error().Err(err).Str("backup_file", backupFile).Msg("write compressed RDB file failed")
-		return "", fmt.Errorf("write compressed RDB file failed: %w", err)
+	// 使用 gzip 压缩写入
+	gzWriter, err := gzip.NewWriterLevel(f, gzip.DefaultCompression)
+	if err != nil {
+		return "", fmt.Errorf("create gzip writer failed: %w", err)
+	}
+
+	if _, err := gzWriter.Write(rdbData); err != nil {
+		return "", fmt.Errorf("write compressed data failed: %w", err)
+	}
+
+	if err := gzWriter.Close(); err != nil {
+		return "", fmt.Errorf("close gzip writer failed: %w", err)
 	}
 
 	logger.Logger.Info().
 		Str("backup_file", backupFile).
 		Int("original_size", len(rdbData)).
-		Int("compressed_size", len(compressedData)).
 		Msg("压缩RDB备份完成")
 
 	return backupFile, nil
@@ -121,7 +136,7 @@ func (rbm *RDBBackupManager) GetBackupInfo(backupFile string) (map[string]interf
 	return info, nil
 }
 
-// ListRDBBackups 列出RDB备份
+// ListRDBBackups 列出RDB备份（包括 .rdb 和 .rdb.gz 文件）
 func ListRDBBackups(backupDir string) ([]string, error) {
 	files, err := os.ReadDir(backupDir)
 	if err != nil {
@@ -131,7 +146,11 @@ func ListRDBBackups(backupDir string) ([]string, error) {
 
 	var backups []string
 	for _, file := range files {
-		if !file.IsDir() && filepath.Ext(file.Name()) == ".rdb" {
+		if file.IsDir() {
+			continue
+		}
+		ext := filepath.Ext(file.Name())
+		if ext == ".rdb" || ext == ".gz" && filepath.Ext(file.Name()[:len(file.Name())-3]) == ".rdb" {
 			backups = append(backups, filepath.Join(backupDir, file.Name()))
 		}
 	}

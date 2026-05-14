@@ -8,52 +8,32 @@ import (
 	"github.com/zeebo/assert"
 )
 
-// TestNetwork_SendPing tests SendPing with invalid address
 func TestNetwork_SendPing(t *testing.T) {
-	// Test with invalid address
 	ok, err := SendPing("invalid-address")
-	// Should fail or return false
-	_ = ok
-	_ = err
-	assert.True(t, true)
+	assert.Error(t, err)
+	assert.False(t, ok)
 }
 
-// TestNetwork_SendInfoReplication tests SendInfoReplication with invalid address
 func TestNetwork_SendInfoReplication(t *testing.T) {
-	// Test with invalid address
 	info, err := SendInfoReplication("invalid-address")
-	// Should fail
-	_ = info
-	_ = err
-	assert.True(t, true)
+	assert.Error(t, err)
+	assert.Equal(t, "", info)
 }
 
-// TestNetwork_GetRole tests GetRole with invalid address
 func TestNetwork_GetRole(t *testing.T) {
-	// Test with invalid address
 	role, err := GetRole("invalid-address")
-	// Should fail
-	_ = role
-	_ = err
-	assert.True(t, true)
+	assert.Error(t, err)
+	assert.Equal(t, "", role)
 }
 
-// TestNetwork_SendSlaveOfNoOne tests SendSlaveOfNoOne with invalid address
 func TestNetwork_SendSlaveOfNoOne(t *testing.T) {
-	// Test with invalid address
 	err := SendSlaveOfNoOne("invalid-address")
-	// Should fail
-	_ = err
-	assert.True(t, true)
+	assert.Error(t, err)
 }
 
-// TestNetwork_SendReplicaOf tests SendReplicaOf with invalid address
 func TestNetwork_SendReplicaOf(t *testing.T) {
-	// Test with invalid address
 	err := SendReplicaOf("invalid-address", "invalid-master")
-	// Should fail
-	_ = err
-	assert.True(t, true)
+	assert.Error(t, err)
 }
 
 // TestSentinelConnection_Close tests Close method
@@ -78,78 +58,72 @@ func TestSentinelConnection_Close(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestSentinelConnection_SendCommand tests SendCommand method
 func TestSentinelConnection_SendCommand(t *testing.T) {
-	// Create a listener
 	listener, err := net.Listen("tcp", "localhost:0")
 	assert.NoError(t, err)
 	defer listener.Close()
 
-	// Accept connection in goroutine
-	done := make(chan struct{})
-	var serverConn net.Conn
+	type acceptResult struct {
+		conn net.Conn
+		err  error
+	}
+	accepted := make(chan acceptResult, 1)
 	go func() {
-		defer close(done)
-		serverConn, err = listener.Accept()
+		c, e := listener.Accept()
+		accepted <- acceptResult{c, e}
 	}()
 
-	// Connect client
 	conn, err := net.Dial("tcp", listener.Addr().String())
 	assert.NoError(t, err)
 	defer conn.Close()
 
-	// Wait for server to accept
-	<-done
-	defer serverConn.Close()
+	r := <-accepted
+	assert.NoError(t, r.err)
+	defer r.conn.Close()
 
-	// Create SentinelConnection with reader/writer
 	sc := &SentinelConnection{
 		conn:   conn,
 		reader: bufio.NewReader(conn),
 		writer: bufio.NewWriter(conn),
 	}
 
-	// Test SendCommand
 	err = sc.SendCommand("*1\r\n$4\r\nPING\r\n")
 	assert.NoError(t, err)
 }
 
-// TestSentinelConnection_ReadResponse tests ReadResponse method
 func TestSentinelConnection_ReadResponse(t *testing.T) {
-	// Create a listener
 	listener, err := net.Listen("tcp", "localhost:0")
 	assert.NoError(t, err)
 	defer listener.Close()
 
-	// Accept connection
-	done := make(chan struct{})
-	var serverConn net.Conn
+	type acceptResult struct {
+		conn net.Conn
+		err  error
+	}
+	accepted := make(chan acceptResult, 1)
 	go func() {
-		defer close(done)
-		serverConn, err = listener.Accept()
+		c, e := listener.Accept()
+		accepted <- acceptResult{c, e}
 	}()
 
-	// Connect client
 	conn, err := net.Dial("tcp", listener.Addr().String())
 	assert.NoError(t, err)
 	defer conn.Close()
 
-	// Wait for server to accept
-	<-done
+	r := <-accepted
+	assert.NoError(t, r.err)
+	serverConn := r.conn
 	defer serverConn.Close()
 
-	// Write a response from server
 	_, err = serverConn.Write([]byte("+PONG\r\n"))
 	assert.NoError(t, err)
 
-	// Create SentinelConnection with reader
 	sc := &SentinelConnection{
 		conn:   conn,
 		reader: bufio.NewReader(conn),
 		writer: bufio.NewWriter(conn),
 	}
 
-	// Test ReadResponse
 	resp, err := sc.ReadResponse()
 	assert.NoError(t, err)
 	assert.True(t, resp == "+PONG")

@@ -15,8 +15,8 @@ func BenchmarkCompression(b *testing.B) {
 	data := []byte(largeValue)
 
 	testCases := []struct {
-		name      string
-		algo      CompressionType
+		name string
+		algo CompressionType
 	}{
 		{"LZ4", CompressionLZ4},
 		{"Snappy", CompressionSnappy},
@@ -112,7 +112,6 @@ func BenchmarkStoreCompression(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-		
 
 			largeValue := strings.Repeat("This is a test string that will be compressed. ", 100)
 			key := "bench_key"
@@ -192,7 +191,6 @@ func TestCompressionDefaultIsSnappy(t *testing.T) {
 	store, err := NewBotreonStore(dbPath)
 	assert.NoError(t, err)
 
-
 	// 验证默认压缩算法是 Snappy
 	assert.Equal(t, CompressionSnappy, store.GetCompression())
 }
@@ -233,7 +231,7 @@ func TestCompressionHash(t *testing.T) {
 
 func TestCompressionBackwardCompatibility(t *testing.T) {
 	dbPath := t.TempDir()
-	
+
 	// 先不使用压缩写入数据
 	store1, err := NewBotreonStoreWithCompression(dbPath, CompressionNone)
 	assert.NoError(t, err)
@@ -304,4 +302,3 @@ func TestCompressionSwitch(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, largeValue, value2)
 }
-

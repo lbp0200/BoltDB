@@ -1,11 +1,13 @@
 package backup
 
 import (
+	"compress/gzip"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/lbp0200/BoltDB/internal/logger"
+	"github.com/lbp0200/BoltDB/internal/replication"
 	"github.com/lbp0200/BoltDB/internal/store"
 )
 
@@ -27,43 +29,93 @@ func (rm *RestoreManager) RestoreFromBadger(backupFile string) error {
 	return badgerMgr.Restore(backupFile)
 }
 
-// RestoreFromRDB 从RDB文件恢复（简化实现）
+// RestoreFromRDB 从RDB文件恢复
 func (rm *RestoreManager) RestoreFromRDB(rdbFile string) error {
-	// RDB解析和恢复是复杂的功能，这里提供框架
-	// 实际实现需要解析RDB格式并逐个恢复键值对
-
-	logger.Logger.Info().
-		Str("rdb_file", rdbFile).
-		Msg("RDB恢复功能（待实现完整解析）")
-
-	// 读取RDB文件
 	rdbFile = filepath.Clean(rdbFile)
-	rdbData, err := os.ReadFile(rdbFile)
+	logger.Logger.Info().Str("rdb_file", rdbFile).Msg("开始从RDB文件恢复")
+
+	// 检测是否为 gzip 压缩文件
+	var rdbData []byte
+	file, err := os.Open(rdbFile)
 	if err != nil {
-		logger.Logger.Error().Err(err).Str("rdb_file", rdbFile).Msg("read RDB file failed")
-		return fmt.Errorf("read RDB file failed: %w", err)
+		logger.Logger.Error().Err(err).Str("rdb_file", rdbFile).Msg("打开RDB文件失败")
+		return fmt.Errorf("open RDB file failed: %w", err)
+	}
+	defer func() {
+		if err := file.Close(); err != nil {
+			logger.Logger.Error().Err(err).Str("rdb_file", rdbFile).Msg("关闭RDB文件失败")
+		}
+	}()
+
+	// 读取前两个字节判断是否为 gzip 格式
+	header := make([]byte, 2)
+	if _, err := file.Read(header); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("read RDB file header failed: %w", err)
+	}
+	_ = file.Close()
+
+	if header[0] == 0x1F && header[1] == 0x8B {
+		// gzip 压缩格式
+		logger.Logger.Info().Msg("检测到gzip压缩格式，先解压")
+		rdbData, err = rm.readCompressedRDB(rdbFile)
+	} else {
+		// 普通 RDB 格式
+		rdbData, err = os.ReadFile(rdbFile)
+	}
+	if err != nil {
+		return err
 	}
 
-	// 验证RDB文件头
-	if len(rdbData) < 9 {
-		logger.Logger.Error().Int("data_len", len(rdbData)).Msg("invalid RDB file: too short")
-		return fmt.Errorf("invalid RDB file: too short")
+	logger.Logger.Info().Int("size", len(rdbData)).Msg("RDB文件读取成功，开始解析")
+
+	// 使用 replication.LoadRDBWithStore 解析并加载RDB数据
+	if err := replication.LoadRDBWithStore(rdbData, rm.store); err != nil {
+		logger.Logger.Error().Err(err).Msg("RDB恢复失败")
+		return fmt.Errorf("RDB restore failed: %w", err)
 	}
 
-	magic := string(rdbData[0:5])
-	if magic != "REDIS" {
-		logger.Logger.Error().Str("magic", magic).Msg("invalid RDB file: bad magic")
-		return fmt.Errorf("invalid RDB file: bad magic")
+	logger.Logger.Info().Msg("RDB恢复完成")
+	return nil
+}
+
+// readCompressedRDB 读取压缩的RDB文件
+func (rm *RestoreManager) readCompressedRDB(rdbFile string) ([]byte, error) {
+	f, err := os.Open(filepath.Clean(rdbFile))
+	if err != nil {
+		return nil, fmt.Errorf("open compressed RDB file failed: %w", err)
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			logger.Logger.Error().Err(err).Str("rdb_file", rdbFile).Msg("关闭压缩RDB文件失败")
+		}
+	}()
+
+	gzReader, err := gzip.NewReader(f)
+	if err != nil {
+		return nil, fmt.Errorf("create gzip reader failed: %w", err)
+	}
+	defer func() {
+		if err := gzReader.Close(); err != nil {
+			logger.Logger.Error().Err(err).Msg("关闭gzip读取器失败")
+		}
+	}()
+
+	// 读取所有解压后的数据
+	var decompressed []byte
+	buf := make([]byte, 32*1024) // 32KB buffer
+	for {
+		n, err := gzReader.Read(buf)
+		if n > 0 {
+			decompressed = append(decompressed, buf[:n]...)
+		}
+		if err != nil {
+			break
+		}
 	}
 
-	version := string(rdbData[5:9])
-	logger.Logger.Info().
-		Str("rdb_version", version).
-		Msg("RDB文件版本")
-
-	// TODO: 实现完整的RDB解析和恢复
-	// 这里暂时只记录日志
-	return fmt.Errorf("RDB restore not fully implemented yet")
+	logger.Logger.Info().Int("decompressed_size", len(decompressed)).Msg("gzip解压完成")
+	return decompressed, nil
 }
 
 // RestoreFromPath 从路径恢复（自动检测格式）
@@ -73,7 +125,17 @@ func (rm *RestoreManager) RestoreFromPath(backupPath string) error {
 		return fmt.Errorf("backup file not found: %s", backupPath)
 	}
 
-	ext := filepath.Ext(backupPath)
+	name := filepath.Base(backupPath)
+	ext := filepath.Ext(name)
+
+	// 处理 .rdb.gz 后缀
+	if ext == ".gz" && len(name) > 3 {
+		innerExt := filepath.Ext(name[:len(name)-3])
+		if innerExt == ".rdb" {
+			return rm.RestoreFromRDB(backupPath)
+		}
+	}
+
 	switch ext {
 	case ".rdb":
 		return rm.RestoreFromRDB(backupPath)

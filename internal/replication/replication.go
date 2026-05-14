@@ -17,30 +17,30 @@ const (
 
 // ReplicationManager 管理主从复制
 type ReplicationManager struct {
-	mu              sync.RWMutex
-	role            string                    // "master" | "slave"
-	masterAddr      string                    // 主节点地址(当role=slave时)
-	masterConn      *MasterConnection         // 到主节点的连接(当role=slave时)
-	slaves          map[string]*SlaveConnection // 从节点连接(当role=master时)
-	backlog         *ReplicationBacklog       // 复制积压缓冲区
-	masterReplOffset int64                    // 主节点复制偏移量
-	replId          string                    // 复制ID(主节点运行ID)
-	store           *store.BotreonStore       // 数据存储
-	stopCh          chan struct{}             // 停止信号
-	closeOnce       sync.Once                 // 确保关闭只执行一次
+	mu               sync.RWMutex
+	role             string                      // "master" | "slave"
+	masterAddr       string                      // 主节点地址(当role=slave时)
+	masterConn       *MasterConnection           // 到主节点的连接(当role=slave时)
+	slaves           map[string]*SlaveConnection // 从节点连接(当role=master时)
+	backlog          *ReplicationBacklog         // 复制积压缓冲区
+	masterReplOffset int64                       // 主节点复制偏移量
+	replId           string                      // 复制ID(主节点运行ID)
+	store            *store.BotreonStore         // 数据存储
+	stopCh           chan struct{}               // 停止信号
+	closeOnce        sync.Once                   // 确保关闭只执行一次
 }
 
 // NewReplicationManager 创建新的复制管理器
 func NewReplicationManager(store *store.BotreonStore) *ReplicationManager {
 	replId, _ := generateReplicationID()
 	rm := &ReplicationManager{
-		role:            RoleMaster,
-		slaves:          make(map[string]*SlaveConnection),
-		backlog:         NewReplicationBacklog(1024 * 1024), // 1MB backlog
+		role:             RoleMaster,
+		slaves:           make(map[string]*SlaveConnection),
+		backlog:          NewReplicationBacklog(1024 * 1024), // 1MB backlog
 		masterReplOffset: 0,
-		replId:          replId,
-		store:           store,
-		stopCh:          make(chan struct{}),
+		replId:           replId,
+		store:            store,
+		stopCh:           make(chan struct{}),
 	}
 	return rm
 }

@@ -18,7 +18,6 @@ func setupTestStoreBenchmark(b *testing.B) *BotreonStore {
 func BenchmarkStringSet(b *testing.B) {
 	store := setupTestStoreBenchmark(b)
 
-
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = store.Set("key", "value")
@@ -28,7 +27,6 @@ func BenchmarkStringSet(b *testing.B) {
 // BenchmarkStringGet benchmarks string Get operations
 func BenchmarkStringGet(b *testing.B) {
 	store := setupTestStoreBenchmark(b)
-
 
 	// Pre-populate
 	for i := 0; i < 1000; i++ {
@@ -45,7 +43,6 @@ func BenchmarkStringGet(b *testing.B) {
 func BenchmarkZAdd(b *testing.B) {
 	store := setupTestStoreBenchmark(b)
 
-
 	members := []ZSetMember{{Member: "member", Score: 1.0}}
 
 	b.ResetTimer()
@@ -57,7 +54,6 @@ func BenchmarkZAdd(b *testing.B) {
 // BenchmarkZRange benchmarks sorted set ZRange operations
 func BenchmarkZRange(b *testing.B) {
 	store := setupTestStoreBenchmark(b)
-
 
 	// Pre-populate
 	members := make([]ZSetMember, 100)
@@ -76,7 +72,6 @@ func BenchmarkZRange(b *testing.B) {
 func BenchmarkLPush(b *testing.B) {
 	store := setupTestStoreBenchmark(b)
 
-
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = store.LPush("list", "value")
@@ -87,7 +82,6 @@ func BenchmarkLPush(b *testing.B) {
 func BenchmarkRPush(b *testing.B) {
 	store := setupTestStoreBenchmark(b)
 
-
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = store.RPush("list", "value")
@@ -97,7 +91,6 @@ func BenchmarkRPush(b *testing.B) {
 // BenchmarkLRange benchmarks list LRange operations
 func BenchmarkLRange(b *testing.B) {
 	store := setupTestStoreBenchmark(b)
-
 
 	// Pre-populate
 	for i := 0; i < 100; i++ {
@@ -114,7 +107,6 @@ func BenchmarkLRange(b *testing.B) {
 func BenchmarkHSet(b *testing.B) {
 	store := setupTestStoreBenchmark(b)
 
-
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = store.HSet("hash", "field", "value")
@@ -124,7 +116,6 @@ func BenchmarkHSet(b *testing.B) {
 // BenchmarkHGet benchmarks hash HGet operations
 func BenchmarkHGet(b *testing.B) {
 	store := setupTestStoreBenchmark(b)
-
 
 	// Pre-populate
 	for i := 0; i < 1000; i++ {
@@ -141,7 +132,6 @@ func BenchmarkHGet(b *testing.B) {
 func BenchmarkSAdd(b *testing.B) {
 	store := setupTestStoreBenchmark(b)
 
-
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = store.SAdd("set", "member")
@@ -151,7 +141,6 @@ func BenchmarkSAdd(b *testing.B) {
 // BenchmarkSMembers benchmarks set SMembers operations
 func BenchmarkSMembers(b *testing.B) {
 	store := setupTestStoreBenchmark(b)
-
 
 	// Pre-populate
 	for i := 0; i < 100; i++ {
@@ -167,7 +156,6 @@ func BenchmarkSMembers(b *testing.B) {
 // BenchmarkDel benchmarks Delete operations
 func BenchmarkDel(b *testing.B) {
 	store := setupTestStoreBenchmark(b)
-
 
 	// Pre-populate
 	for i := 0; i < 100; i++ {
@@ -187,7 +175,6 @@ func BenchmarkDel(b *testing.B) {
 // BenchmarkExists benchmarks Exists operations
 func BenchmarkExists(b *testing.B) {
 	store := setupTestStoreBenchmark(b)
-
 
 	// Pre-populate
 	for i := 0; i < 1000; i++ {

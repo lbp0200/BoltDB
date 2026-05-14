@@ -10,7 +10,6 @@ import (
 func TestGeoAdd(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// Add geo points
 	added, err := store.GeoAdd("mygeo", []GeoMember{
 		{Member: "Paris", Lat: 48.8566, Lon: 2.3521},
@@ -23,7 +22,6 @@ func TestGeoAdd(t *testing.T) {
 // TestGeoAddWrongType tests that GeoAdd returns ErrWrongType when key exists with different type
 func TestGeoAddWrongType(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// First set a string key
 	err := store.Set("mykey", "value")
@@ -92,7 +90,6 @@ func TestGeoAddWrongType(t *testing.T) {
 func TestGeoPos(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// Add geo points
 	_, _ = store.GeoAdd("mygeo", []GeoMember{
 		{Member: "Paris", Lat: 48.8566, Lon: 2.3521},
@@ -107,7 +104,6 @@ func TestGeoPos(t *testing.T) {
 // TestGeoHash tests GeoHash function
 func TestGeoHash(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// Add geo points
 	_, _ = store.GeoAdd("mygeo", []GeoMember{
@@ -125,7 +121,6 @@ func TestGeoHash(t *testing.T) {
 func TestGeoDist(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// Add geo points
 	_, _ = store.GeoAdd("mygeo", []GeoMember{
 		{Member: "Paris", Lat: 48.8566, Lon: 2.3521},
@@ -141,7 +136,6 @@ func TestGeoDist(t *testing.T) {
 // TestGeoRadius tests GeoRadius function
 func TestGeoRadius(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// Add geo points
 	_, _ = store.GeoAdd("mygeo", []GeoMember{
@@ -159,7 +153,6 @@ func TestGeoRadius(t *testing.T) {
 func TestGeoMembers(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// Add geo points
 	_, _ = store.GeoAdd("mygeo", []GeoMember{
 		{Member: "Paris", Lat: 48.8566, Lon: 2.3521},
@@ -176,7 +169,6 @@ func TestGeoMembers(t *testing.T) {
 func TestGeoCard(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// Test empty key
 	count, err := store.GeoCard("emptygeo")
 	assert.NoError(t, err)
@@ -186,7 +178,6 @@ func TestGeoCard(t *testing.T) {
 // TestGeoRadiusByMember tests GeoRadiusByMember function
 func TestGeoRadiusByMember(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// Add geo points
 	_, _ = store.GeoAdd("mygeo", []GeoMember{

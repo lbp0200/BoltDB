@@ -5,8 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
-	"strings"
-	"time"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/lbp0200/BoltDB/internal/logger"
@@ -102,45 +100,12 @@ func keyBadgerGet(prefix string, key []byte) []byte {
 	return append([]byte(prefix), key...)
 }
 
-// retryUpdate 重试执行 BadgerDB Update 操作，处理事务冲突
-func (s *BotreonStore) retryUpdateSortedSet(fn func(*badger.Txn) error, maxRetries int) error {
-	var err error
-	for i := 0; i < maxRetries; i++ {
-		err = s.db.Update(fn)
-		if err == nil {
-			return nil
-		}
-		// 检查是否是事务冲突错误
-		errStr := err.Error()
-		if strings.Contains(errStr, "Transaction Conflict") ||
-			strings.Contains(errStr, "conflict") ||
-			strings.Contains(errStr, "Conflict") {
-		// 指数退避 + 随机抖动：避免所有请求同时重试
-			// 基础退避：1ms, 2ms, 4ms, 8ms, 16ms, 32ms...
-		// #nosec G115 - i is bounded by maxRetries (small value)
-		baseBackoff := time.Duration(1<<uint(i)) * time.Millisecond
-		// 最大退避时间：30ms（优化：减少单次重试的最大等待时间，提高响应速度）
-		if baseBackoff > 30*time.Millisecond {
-			baseBackoff = 30 * time.Millisecond
-		}
-			// 添加随机抖动（0-50%），避免雷群效应
-			jitter := time.Duration(randomFloat64() * float64(baseBackoff) * 0.5)
-			backoff := baseBackoff + jitter
-			time.Sleep(backoff)
-			continue
-		}
-		// 其他错误直接返回
-		return err
-	}
-	return err
-}
-
 // ZAdd 添加或更新成员分数
 func (s *BotreonStore) ZAdd(zSetName string, members []ZSetMember) error {
 	if len(members) == 0 {
 		return nil
 	}
-	return s.retryUpdateSortedSet(func(txn *badger.Txn) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
 		badgerTypeKey := TypeOfKeyGet(zSetName)
 
 		// Check if key already exists with a different type
@@ -333,8 +298,10 @@ func (s *BotreonStore) ZRangeByScore(zSetName string, minScore, maxScore float64
 }
 
 // ZRem 删除成员
-func (s *BotreonStore) ZRem(zSetName, member string) error {
-	return s.retryUpdateSortedSet(func(txn *badger.Txn) error {
+
+func (s *BotreonStore) ZRem(zSetName, member string) (int64, error) {
+	var deleted int64 = 0
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// Check if key already exists with a different type
 		badgerTypeKey := TypeOfKeyGet(zSetName)
 		typeItem, typeErr := txn.Get(badgerTypeKey)
@@ -410,7 +377,13 @@ func (s *BotreonStore) ZRem(zSetName, member string) error {
 				logger.Logger.Error().Err(err).Msg("ZRem: Failed to delete meta")
 				return err
 			}
+			// 删除 TYPE_ 键（与 Redis 行为一致：空的有序集合不存在）
+			if err := txn.Delete(badgerTypeKey); err != nil {
+				logger.Logger.Error().Err(err).Msg("ZRem: Failed to delete type key")
+				return err
+			}
 			logger.Logger.Debug().Str("member", member).Str("zset_name", zSetName).Msg("ZRem: Deleted member, set empty")
+			deleted = 1
 			return nil
 		}
 		if err := txn.Set(metaKey, encodeMeta(meta)); err != nil {
@@ -424,8 +397,13 @@ func (s *BotreonStore) ZRem(zSetName, member string) error {
 			Str("zset_name", zSetName).
 			Int64("card", meta.Card).
 			Msg("ZRem: Successfully removed member")
+		deleted = 1
 		return nil
 	}, 20) // 最多重试 20 次（优化：减少重试次数）
+	if err != nil {
+		return 0, err
+	}
+	return deleted, nil
 }
 
 // ZScore 获取成员分数
@@ -602,7 +580,7 @@ func (s *BotreonStore) ZRange(zSetName string, start, stop int64) ([]*ZSetMember
 
 // ZSetDel 删除整个排序集
 func (s *BotreonStore) ZSetDel(zSetName string) error {
-	return s.retryUpdateSortedSet(func(txn *badger.Txn) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
 		dataPrefix := []byte(zSetName + sortedSetData)
 		indexPrefix := []byte(zSetName + sortedSetIndex)
 		opts := badger.DefaultIteratorOptions
@@ -733,7 +711,7 @@ func (s *BotreonStore) ZCount(zSetName string, minScore, maxScore float64) (int6
 // ZIncrBy 实现 Redis ZINCRBY 命令，增加成员的分数
 func (s *BotreonStore) ZIncrBy(zSetName, member string, increment float64) (float64, error) {
 	var newScore float64
-	err := s.retryUpdateSortedSet(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		badgerTypeKey := TypeOfKeyGet(zSetName)
 		if err := txn.Set(badgerTypeKey, []byte(KeyTypeSortedSet)); err != nil {
 			return err
@@ -994,7 +972,7 @@ func (s *BotreonStore) ZRemRangeByRank(zSetName string, start, stop int64) (int6
 	// 删除每个成员
 	var removed int64
 	for _, member := range members {
-		if err := s.ZRem(zSetName, member.Member); err != nil {
+		if _, err := s.ZRem(zSetName, member.Member); err != nil {
 			return removed, err
 		}
 		removed++
@@ -1013,7 +991,7 @@ func (s *BotreonStore) ZRemRangeByScore(zSetName string, minScore, maxScore floa
 	// 删除每个成员
 	var removed int64
 	for _, member := range members {
-		if err := s.ZRem(zSetName, member.Member); err != nil {
+		if _, err := s.ZRem(zSetName, member.Member); err != nil {
 			return removed, err
 		}
 		removed++
@@ -1032,7 +1010,7 @@ func (s *BotreonStore) ZPopMax(zSetName string, count int) ([]ZSetMember, error)
 	// 删除并返回
 	var results []ZSetMember
 	for _, member := range members {
-		if err := s.ZRem(zSetName, member.Member); err != nil {
+		if _, err := s.ZRem(zSetName, member.Member); err != nil {
 			return results, err
 		}
 		results = append(results, ZSetMember{Member: member.Member, Score: member.Score})
@@ -1051,7 +1029,7 @@ func (s *BotreonStore) ZPopMin(zSetName string, count int) ([]ZSetMember, error)
 	// 删除并返回
 	var results []ZSetMember
 	for _, member := range members {
-		if err := s.ZRem(zSetName, member.Member); err != nil {
+		if _, err := s.ZRem(zSetName, member.Member); err != nil {
 			return results, err
 		}
 		results = append(results, ZSetMember{Member: member.Member, Score: member.Score})
@@ -1417,7 +1395,7 @@ func (s *BotreonStore) ZRevRangeByLex(zSetName, max, min string, offset, count i
 // ZRemRangeByLex 实现 Redis ZREMRANGEBYLEX 命令，移除有序集合中成员值介于min和max之间的成员（字典序）
 func (s *BotreonStore) ZRemRangeByLex(zSetName, min, max string) (int64, error) {
 	var removed int64
-	err := s.retryUpdateSortedSet(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// 获取范围内的成员
 		members, err := s.ZRangeByLex(zSetName, min, max, 0, 0)
 		if err != nil {
@@ -1426,7 +1404,7 @@ func (s *BotreonStore) ZRemRangeByLex(zSetName, min, max string) (int64, error) 
 
 		// 删除每个成员
 		for _, member := range members {
-			if err := s.ZRem(zSetName, member); err != nil {
+			if _, err := s.ZRem(zSetName, member); err != nil {
 				return err
 			}
 			removed++

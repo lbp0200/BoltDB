@@ -1,6 +1,7 @@
 package sentinel
 
 import (
+	"net"
 	"sync"
 	"time"
 
@@ -9,17 +10,17 @@ import (
 
 // MasterInstance 主节点实例
 type MasterInstance struct {
-	mu            sync.RWMutex
-	name          string
-	addr          string
-	quorum        int
-	slaves        []*SlaveInstance
-	sentinels     []*SentinelInstance
-	state         string // "ok" | "odown" | "sdown" | "failover"
-	lastPingTime  time.Time
-	lastPongTime  time.Time
-	downAfter     time.Duration
-	stopCh        chan struct{}
+	mu           sync.RWMutex
+	name         string
+	addr         string
+	quorum       int
+	slaves       []*SlaveInstance
+	sentinels    []*SentinelInstance
+	state        string // "ok" | "odown" | "sdown" | "failover"
+	lastPingTime time.Time
+	lastPongTime time.Time
+	downAfter    time.Duration
+	stopCh       chan struct{}
 	// 主观下线计数
 	sdownCount int
 	// 已知哨兵数量
@@ -28,6 +29,7 @@ type MasterInstance struct {
 
 // NewMasterInstance 创建新的主节点实例
 func NewMasterInstance(name, addr string, quorum int) *MasterInstance {
+	now := time.Now()
 	return &MasterInstance{
 		name:               name,
 		addr:               addr,
@@ -36,6 +38,8 @@ func NewMasterInstance(name, addr string, quorum int) *MasterInstance {
 		sentinels:          make([]*SentinelInstance, 0),
 		state:              "ok",
 		downAfter:          30 * time.Second,
+		lastPingTime:       now,
+		lastPongTime:       now,
 		stopCh:             make(chan struct{}),
 		sdownCount:         0,
 		knownSentinelCount: 1,
@@ -57,22 +61,19 @@ func (mi *MasterInstance) StartMonitoring(sentinel *Sentinel) {
 	}
 }
 
-// checkMaster 检查主节点状态
+// checkMaster 检查主节点状态（通过 TCP 连接探测）
 func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
-	// 发送PING
+	conn, err := net.DialTimeout("tcp", mi.addr, 5*time.Second)
+
 	mi.mu.Lock()
-	mi.lastPingTime = time.Now()
-	mi.mu.Unlock()
+	defer mi.mu.Unlock()
 
-	// 检查是否超时
-	elapsed := time.Since(mi.lastPingTime)
-
-	if elapsed > mi.downAfter {
-		// 主节点可能下线
-		mi.mu.Lock()
-		if mi.state == "ok" {
-			mi.state = "sdown" // 主观下线
+	if err != nil {
+		// 连接失败，检查是否超过 downAfter 未收到 pong
+		if mi.state == "ok" && time.Since(mi.lastPongTime) > mi.downAfter {
+			mi.state = "sdown"
 			mi.sdownCount++
+			mi.lastPingTime = time.Now()
 			logger.Logger.Warn().
 				Str("master_name", mi.name).
 				Str("master_addr", mi.addr).
@@ -80,22 +81,21 @@ func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
 				Int("quorum", mi.quorum).
 				Msg("主节点主观下线")
 
-			// 尝试同步sdown状态到其他哨兵
 			sentinel.BroadcastSdown(mi.name)
 		}
-		mi.mu.Unlock()
-	} else {
-		// 主节点在线
-		mi.mu.Lock()
-		if mi.state == "sdown" {
-			mi.state = "ok"
-			mi.sdownCount = 0
-			logger.Logger.Info().
-				Str("master_name", mi.name).
-				Str("master_addr", mi.addr).
-				Msg("主节点恢复")
-		}
-		mi.mu.Unlock()
+		return
+	}
+	_ = conn.Close()
+
+	mi.lastPongTime = time.Now()
+
+	if mi.state == "sdown" {
+		mi.state = "ok"
+		mi.sdownCount = 0
+		logger.Logger.Info().
+			Str("master_name", mi.name).
+			Str("master_addr", mi.addr).
+			Msg("主节点恢复")
 	}
 }
 
@@ -142,8 +142,9 @@ func (mi *MasterInstance) GetName() string {
 	return mi.name
 }
 
-// GetAddr 获取地址
 func (mi *MasterInstance) GetAddr() string {
+	mi.mu.RLock()
+	defer mi.mu.RUnlock()
 	return mi.addr
 }
 

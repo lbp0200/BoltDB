@@ -10,7 +10,6 @@ import (
 func TestSetAndGet(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// Test SET
 	err := store.Set("key1", "value1")
 	assert.NoError(t, err)
@@ -30,7 +29,6 @@ func TestSetAndGet(t *testing.T) {
 func TestSetEX(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	err := store.SetEX("key1", "value1", 1)
 	assert.NoError(t, err)
 
@@ -43,7 +41,6 @@ func TestSetEX(t *testing.T) {
 // TestPSETEX 测试 PSETEX 命令
 func TestPSETEX(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// 使用较长的TTL以确保在测试期间不会过期
 	err := store.PSETEX("key1", "value1", 10000)
@@ -58,7 +55,6 @@ func TestPSETEX(t *testing.T) {
 // TestSetNX 测试 SETNX 命令
 func TestSetNX(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// 第一次设置应该成功
 	success, err := store.SetNX("key1", "value1")
@@ -84,7 +80,6 @@ func TestSetNX(t *testing.T) {
 // TestGetSet 测试 GETSET 命令
 func TestGetSet(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// 设置初始值
 	err := store.Set("key1", "oldvalue")
@@ -114,7 +109,6 @@ func TestGetSet(t *testing.T) {
 func TestMGet(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// 设置多个键
 	err := store.Set("key1", "value1")
 	assert.NoError(t, err)
@@ -134,7 +128,6 @@ func TestMGet(t *testing.T) {
 func TestMSet(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// 设置多个键值对
 	err := store.MSet("key1", "value1", "key2", "value2", "key3", "value3")
 	assert.NoError(t, err)
@@ -151,7 +144,6 @@ func TestMSet(t *testing.T) {
 // TestMSetNX 测试 MSETNX 命令
 func TestMSetNX(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// 第一次设置应该成功（所有键都不存在）
 	success, err := store.MSetNX("key1", "value1", "key2", "value2")
@@ -180,7 +172,6 @@ func TestMSetNX(t *testing.T) {
 func TestINCR(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// 对不存在的键执行 INCR
 	value, err := store.INCR("counter")
 	assert.NoError(t, err)
@@ -201,7 +192,6 @@ func TestINCR(t *testing.T) {
 func TestINCRBY(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// 设置初始值
 	err := store.Set("counter", "10")
 	assert.NoError(t, err)
@@ -220,7 +210,6 @@ func TestINCRBY(t *testing.T) {
 // TestDECR 测试 DECR 命令
 func TestDECR(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// 设置初始值
 	err := store.Set("counter", "10")
@@ -241,7 +230,6 @@ func TestDECR(t *testing.T) {
 func TestDECRBY(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// 设置初始值
 	err := store.Set("counter", "10")
 	assert.NoError(t, err)
@@ -260,7 +248,6 @@ func TestDECRBY(t *testing.T) {
 // TestINCRBYFLOAT 测试 INCRBYFLOAT 命令
 func TestINCRBYFLOAT(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// 设置初始值
 	err := store.Set("float", "10.5")
@@ -286,7 +273,6 @@ func TestINCRBYFLOAT(t *testing.T) {
 // TestAPPEND 测试 APPEND 命令
 func TestAPPEND(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// 设置初始值
 	err := store.Set("key1", "Hello")
@@ -316,7 +302,6 @@ func TestAPPEND(t *testing.T) {
 func TestStrLen(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// 设置值
 	err := store.Set("key1", "Hello")
 	assert.NoError(t, err)
@@ -335,7 +320,6 @@ func TestStrLen(t *testing.T) {
 // TestGetRange 测试 GETRANGE 命令
 func TestGetRange(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// 设置值
 	err := store.Set("key1", "Hello World")
@@ -366,7 +350,6 @@ func TestGetRange(t *testing.T) {
 func TestSetRange(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// 设置初始值
 	err := store.Set("key1", "Hello World")
 	assert.NoError(t, err)
@@ -395,7 +378,6 @@ func TestSetRange(t *testing.T) {
 func TestGetBit(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// 设置值 "A" = 0x41 = 01000001
 	err := store.Set("key1", "A")
 	assert.NoError(t, err)
@@ -423,7 +405,6 @@ func TestGetBit(t *testing.T) {
 // TestSetBit 测试 SETBIT 命令
 func TestSetBit(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// 设置值 "A" = 0x41 = 01000001
 	err := store.Set("key1", "A")
@@ -454,7 +435,6 @@ func TestSetBit(t *testing.T) {
 func TestBitCount(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// 设置值 "A" = 0x41 = 01000001 (2个1)
 	err := store.Set("key1", "A")
 	assert.NoError(t, err)
@@ -478,7 +458,6 @@ func TestBitCount(t *testing.T) {
 // TestBitOp 测试 BITOP 命令
 func TestBitOp(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// 设置值
 	err := store.Set("key1", "\x01") // 00000001
@@ -527,7 +506,6 @@ func TestBitOp(t *testing.T) {
 func TestBitPos(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// 设置值 "\x00\xFF" = 00000000 11111111
 	err := store.Set("key1", "\x00\xFF")
 	assert.NoError(t, err)
@@ -551,7 +529,6 @@ func TestBitPos(t *testing.T) {
 // TestStringEdgeCases 测试边界情况
 func TestStringEdgeCases(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// 空字符串
 	err := store.Set("empty", "")
@@ -580,7 +557,6 @@ func TestStringEdgeCases(t *testing.T) {
 func TestBitLen(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// Test with value
 	err := store.Set("bits", "hi") // 'h' = 0x68 = 01101000, 'i' = 0x69 = 01101001
 	assert.NoError(t, err)
@@ -594,10 +570,73 @@ func TestBitLen(t *testing.T) {
 	_ = length // just ensure it doesn't panic
 }
 
+// TestBitFieldDebug 测试 BITFIELD 调试
+func TestBitFieldDebug(t *testing.T) {
+	store := setupTestStore(t)
+
+	// 测试 SET 后立即 GET
+	_, err := store.BitField("testbyte", []string{"SET", "u8", "0", "65"})
+	assert.NoError(t, err)
+	t.Logf("SET u8 0 = 65 completed")
+
+	// GET 应该返回之前存储的值（SET 返回旧值）
+	getResult, err := store.BitField("testbyte", []string{"GET", "u8", "0"})
+	assert.NoError(t, err)
+	got, ok := getResult[0].(int64)
+	assert.True(t, ok)
+	t.Logf("GET u8 0 after SET 65 = %d (expected 65)", got)
+	assert.Equal(t, int64(65), got)
+
+	// 用 Get 验证实际存储的字节
+	val, err := store.Get("testbyte")
+	assert.NoError(t, err)
+	if len(val) > 0 {
+		t.Logf("Get returns byte: 0x%02x (%d)", val[0], val[0])
+		assert.Equal(t, uint8(0x41), val[0])
+	}
+
+	// 测试用 Set 设置字符串 "A" 然后 BitField 读取
+	err = store.Set("testbyte2", "A") // 0x41 = 65
+	assert.NoError(t, err)
+
+	val2, err := store.Get("testbyte2")
+	assert.NoError(t, err)
+	t.Logf("Set 'A' then Get: 0x%02x", val2[0])
+
+	result2, err := store.BitField("testbyte2", []string{"GET", "u8", "0"})
+	assert.NoError(t, err)
+	got2, ok := result2[0].(int64)
+	assert.True(t, ok)
+	t.Logf("BitField GET u8 0 = %d (expected 65 = 0x41)", got2)
+	assert.Equal(t, int64(65), got2)
+
+	// 测试有符号数
+	// 127 = 0x7F = 01111111 (bit 7 = 0, 正数)
+	_, err = store.BitField("signed1", []string{"SET", "i8", "0", "127"})
+	assert.NoError(t, err)
+	result3, err := store.BitField("signed1", []string{"GET", "i8", "0"})
+	assert.NoError(t, err)
+	got3, ok := result3[0].(int64)
+	assert.True(t, ok)
+	t.Logf("GET i8 0 of 127 = %d (expected 127, positive)", got3)
+	assert.Equal(t, int64(127), got3)
+
+	// -128 = 0x80 = 10000000 (bit 7 = 1, 负数)
+	_, err = store.BitField("signed2", []string{"SET", "i8", "0", "18446744073709551488"}) // -128 as unsigned
+	// Use INCRBY to wrap to -128
+	_, err = store.BitField("signed3", []string{"SET", "u8", "0", "128"})
+	assert.NoError(t, err)
+	result4, err := store.BitField("signed3", []string{"GET", "i8", "0"})
+	assert.NoError(t, err)
+	got4, ok := result4[0].(int64)
+	assert.True(t, ok)
+	t.Logf("GET i8 0 of byte 128 (0x80) = %d (expected -128, negative)", got4)
+	assert.Equal(t, int64(-128), got4)
+}
+
 // TestBitField 测试 BITFIELD 命令
 func TestBitField(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// Test GET operation on non-existent key
 	result, err := store.BitField("key", []string{"GET", "u8", "0"})
@@ -637,7 +676,6 @@ func TestBitField(t *testing.T) {
 func TestBitFieldOverflow(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// Test with 16-bit
 	err := store.Set("key16", "ab")
 	assert.NoError(t, err)
@@ -652,7 +690,6 @@ func TestBitFieldOverflow(t *testing.T) {
 // TestSetWrongType tests that SET returns ErrWrongType when key exists with different type
 func TestSetWrongType(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// Create a hash key first
 	err := store.HSet("myhash", "field1", "value1")

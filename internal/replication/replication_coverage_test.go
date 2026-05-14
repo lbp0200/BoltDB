@@ -56,7 +56,7 @@ func TestExecuteReplicatedCommand_SET(t *testing.T) {
 	defer testStore.Close()
 
 	// Test SET command
-	executeReplicatedCommand(testStore, [][]byte{[]byte("SET"), []byte("testkey"), []byte("testvalue")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("SET"), []byte("testkey"), []byte("testvalue")})
 
 	// Verify the value was set
 	val, err := testStore.Get("testkey")
@@ -408,11 +408,11 @@ func TestSetMasterConnection(t *testing.T) {
 	// Create a mock master connection
 	mock := newMockMasterConn()
 	mc := &MasterConnection{
-		Addr:    "127.0.0.1:6379",
-		Conn:    mock,
-		Reader:  bufio.NewReader(mock),
-		Writer:  bufio.NewWriter(mock),
-		stopCh:  make(chan struct{}),
+		Addr:   "127.0.0.1:6379",
+		Conn:   mock,
+		Reader: bufio.NewReader(mock),
+		Writer: bufio.NewWriter(mock),
+		stopCh: make(chan struct{}),
 	}
 
 	// Set the master connection

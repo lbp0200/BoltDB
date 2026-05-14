@@ -13,14 +13,14 @@ func TestServerStringCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	// First set up initial values
-	handler.executeCommand("SET", [][]byte{[]byte("key1"), []byte("hello")}, "127.0.0.1:12345")
-	handler.executeCommand("SET", [][]byte{[]byte("counter"), []byte("0")}, "127.0.0.1:12345")
-	handler.executeCommand("SET", [][]byte{[]byte("floatkey"), []byte("0")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SET", [][]byte{[]byte("key1"), []byte("hello")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SET", [][]byte{[]byte("counter"), []byte("0")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SET", [][]byte{[]byte("floatkey"), []byte("0")}, "127.0.0.1:12345")
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// Note: APPEND, STRLEN, SETRANGE, GETRANGE tests disabled due to implementation differences
@@ -132,7 +132,7 @@ func TestServerStringCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -144,12 +144,12 @@ func TestServerKeyCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Set up test data
-	handler.executeCommand("SET", [][]byte{[]byte("testkey"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SET", [][]byte{[]byte("testkey"), []byte("value")}, "127.0.0.1:12345")
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// EXPIRE
@@ -264,7 +264,7 @@ func TestServerKeyCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -276,9 +276,9 @@ func TestServerHashCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// HSET
@@ -415,7 +415,7 @@ func TestServerHashCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -427,9 +427,9 @@ func TestServerSetCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// SADD
@@ -502,7 +502,7 @@ func TestServerSetCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -514,9 +514,9 @@ func TestServerSortedSetCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// ZADD
@@ -622,7 +622,7 @@ func TestServerSortedSetCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -634,9 +634,9 @@ func TestServerListCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// LPUSH
@@ -720,7 +720,7 @@ func TestServerListCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}

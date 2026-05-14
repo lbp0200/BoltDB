@@ -45,15 +45,6 @@ func TestNewHyperLogLog(t *testing.T) {
 	}
 }
 
-// TestHyperLogLogRegisterCount tests registerCount
-func TestHyperLogLogRegisterCount(t *testing.T) {
-	hll := newHyperLogLog()
-	count := hll.registerCount()
-	if count != 16384 {
-		t.Errorf("registerCount() = %d, want 16384", count)
-	}
-}
-
 // TestHashData tests hashData
 func TestHashData(t *testing.T) {
 	tests := []struct {
@@ -267,7 +258,6 @@ func TestHyperLogLogMerge(t *testing.T) {
 func TestPFAdd(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// Test basic PFAdd
 	count, err := store.PFAdd("hll1", "a", "b", "c")
 	if err != nil {
@@ -299,7 +289,6 @@ func TestPFAdd(t *testing.T) {
 // TestPFCount tests the store-level PFCount function
 func TestPFCount(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// Add elements to first HLL
 	store.PFAdd("hll1", "a", "b", "c")
@@ -339,7 +328,6 @@ func TestPFCount(t *testing.T) {
 func TestPFMerge(t *testing.T) {
 	store := setupTestStore(t)
 
-
 	// Create two HLLs
 	store.PFAdd("hll1", "a", "b", "c")
 	store.PFAdd("hll2", "d", "e", "f")
@@ -363,7 +351,6 @@ func TestPFMerge(t *testing.T) {
 // TestPFInfo tests the store-level PFInfo function
 func TestPFInfo(t *testing.T) {
 	store := setupTestStore(t)
-
 
 	// Test PFInfo on non-existent key
 	_, err := store.PFInfo("nonexistent")

@@ -53,15 +53,11 @@ func TestNode_MultipleSlotRanges(t *testing.T) {
 	assert.Equal(t, 2, len(ranges))
 }
 
-// TestNode_Role tests node role
 func TestNode_Role(t *testing.T) {
 	node := NewNode("node1", "127.0.0.1:6379")
 
-	// Just verify no panic when checking role
-	// Actual role behavior depends on node state
-	_ = node.IsMaster()
-	_ = node.IsSlave()
-	assert.True(t, true)
+	assert.False(t, node.IsMaster())
+	assert.False(t, node.IsSlave())
 }
 
 // TestNode_Myself tests IsMyself
@@ -150,15 +146,13 @@ func TestNode_ClearSlotMigration(t *testing.T) {
 	assert.False(t, node.IsMigratingSlot(100))
 }
 
-// TestNode_UpdatePong tests UpdatePong
 func TestNode_UpdatePong(t *testing.T) {
 	node := NewNode("node1", "127.0.0.1:6379")
+	assert.Equal(t, int64(0), node.PongRecv)
 
-	// Update pong
 	node.UpdatePong()
 
-	// Should not fail - just verify no panic
-	assert.True(t, true)
+	assert.True(t, node.PongRecv > 0)
 }
 
 // TestNode_IsFailed tests IsFailed

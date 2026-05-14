@@ -10,14 +10,14 @@ import (
 
 // Sentinel 哨兵实例
 type Sentinel struct {
-	mu            sync.RWMutex
-	masters       map[string]*MasterInstance
-	quorum        int
-	downAfter     time.Duration
-	parallelSync  int
-	runID         string
-	configEpoch   int64
-	stopCh        chan struct{}
+	mu           sync.RWMutex
+	masters      map[string]*MasterInstance
+	quorum       int
+	downAfter    time.Duration
+	parallelSync int
+	runID        string
+	configEpoch  int64
+	stopCh       chan struct{}
 	// 其他哨兵地址列表
 	otherSentinels []string
 	// gossip消息通道

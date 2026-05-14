@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -19,7 +20,6 @@ func randomFloat64() float64 {
 	return float64(binary.BigEndian.Uint64(b)) / (1 << 64)
 }
 
-// retryUpdate 重试执行 BadgerDB Update 操作，处理事务冲突
 func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int) error {
 	var err error
 	for i := 0; i < maxRetries; i++ {
@@ -27,30 +27,22 @@ func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int) e
 		if err == nil {
 			return nil
 		}
-		// 检查是否是事务冲突错误
-		// BadgerDB 在事务冲突时会返回包含 "Transaction Conflict" 的错误
 		errStr := err.Error()
 		if strings.Contains(errStr, "Transaction Conflict") ||
 			strings.Contains(errStr, "conflict") ||
 			strings.Contains(errStr, "Conflict") {
-			// 指数退避 + 随机抖动：避免所有请求同时重试
-			// 基础退避：1ms, 2ms, 4ms, 8ms, 16ms, 32ms...
-			// #nosec G115 - i is bounded by maxRetries (small value)
 			baseBackoff := time.Duration(1<<uint(i)) * time.Millisecond
-			// 最大退避时间：50ms（高并发时需要更长等待）
 			if baseBackoff > 50*time.Millisecond {
 				baseBackoff = 50 * time.Millisecond
 			}
-			// 添加随机抖动（0-50%），避免雷群效应
 			jitter := time.Duration(randomFloat64() * float64(baseBackoff) * 0.5)
 			backoff := baseBackoff + jitter
 			time.Sleep(backoff)
 			continue
 		}
-		// 其他错误直接返回
 		return err
 	}
-	return err
+	return fmt.Errorf("max retries exhausted (%d): %w", maxRetries, err)
 }
 
 // setKey 方法用于生成存储在 Badger 数据库中的键
@@ -316,7 +308,7 @@ func (s *BotreonStore) SPop(key string) (string, error) {
 		}
 
 		// 随机选择一个索引（0 到 count-1）
-	// #nosec G115 - count is bounded by practical set size limits
+		// #nosec G115 - count is bounded by practical set size limits
 		targetIndex := randomIntn(int(count))
 
 		// 使用迭代器遍历到目标索引位置
@@ -398,7 +390,7 @@ func (s *BotreonStore) SPopN(key string, count int) ([]string, error) {
 				countBytes, _ := item.ValueCopy(nil)
 				currentCount := helper.BytesToUint64(countBytes)
 				// #nosec G115 - count is bounded by practical set size limits
-			if currentCount >= uint64(count) {
+				if currentCount >= uint64(count) {
 					currentCount -= uint64(count)
 					return txn.Set([]byte(countKey), helper.Uint64ToBytes(currentCount))
 				}
@@ -467,7 +459,7 @@ func (s *BotreonStore) SRandMemberN(key string, count int) ([]string, error) {
 // SMove 实现 Redis SMOVE 命令，将成员从源集合移动到目标集合
 func (s *BotreonStore) SMove(source, destination, member string) (bool, error) {
 	moved := false
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// 检查成员是否在源集合中
 		sourceMemberKey := s.setKey(source, "member", member)
 		_, err := txn.Get([]byte(sourceMemberKey))
@@ -527,7 +519,7 @@ func (s *BotreonStore) SMove(source, destination, member string) (bool, error) {
 
 		moved = true
 		return nil
-	})
+	}, 30)
 	return moved, err
 }
 
@@ -633,7 +625,7 @@ func (s *BotreonStore) SDiff(keys ...string) ([]string, error) {
 // SInterStore 实现 Redis SINTERSTORE 命令，计算交集并存储到目标集合
 func (s *BotreonStore) SInterStore(destination string, keys ...string) (int, error) {
 	var count int
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// 在事务中计算交集
 		var result []string
 		if len(keys) > 0 {
@@ -688,16 +680,16 @@ func (s *BotreonStore) SInterStore(destination string, keys ...string) (int, err
 		// 更新计数器
 		count = len(result)
 		countKey := s.setKey(destination, "count")
-	// #nosec G115 - count is bounded by practical set size limits
+		// #nosec G115 - count is bounded by practical set size limits
 		return txn.Set([]byte(countKey), helper.Uint64ToBytes(uint64(count)))
-	})
+	}, 30)
 	return count, err
 }
 
 // SUnionStore 实现 Redis SUNIONSTORE 命令，计算并集并存储到目标集合
 func (s *BotreonStore) SUnionStore(destination string, keys ...string) (int, error) {
 	var count int
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// 在事务中计算并集
 		var result []string
 		seen := make(map[string]bool)
@@ -739,16 +731,16 @@ func (s *BotreonStore) SUnionStore(destination string, keys ...string) (int, err
 		// 更新计数器
 		count = len(result)
 		countKey := s.setKey(destination, "count")
-	// #nosec G115 - count is bounded by practical set size limits
+		// #nosec G115 - count is bounded by practical set size limits
 		return txn.Set([]byte(countKey), helper.Uint64ToBytes(uint64(count)))
-	})
+	}, 30)
 	return count, err
 }
 
 // SDiffStore 实现 Redis SDIFFSTORE 命令，计算差集并存储到目标集合
 func (s *BotreonStore) SDiffStore(destination string, keys ...string) (int, error) {
 	var count int
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// 在事务中计算差集
 		var result []string
 		if len(keys) > 0 {
@@ -803,9 +795,9 @@ func (s *BotreonStore) SDiffStore(destination string, keys ...string) (int, erro
 		// 更新计数器
 		count = len(result)
 		countKey := s.setKey(destination, "count")
-	// #nosec G115 - count is bounded by practical set size limits
+		// #nosec G115 - count is bounded by practical set size limits
 		return txn.Set([]byte(countKey), helper.Uint64ToBytes(uint64(count)))
-	})
+	}, 30)
 	return count, err
 }
 
@@ -871,8 +863,8 @@ func (s *BotreonStore) SInterCard(keys ...string) (int64, error) {
 
 // SScanResult 定义 SSCAN 命令的返回结果
 type SScanResult struct {
-	Cursor   uint64
-	Members  []string
+	Cursor  uint64
+	Members []string
 }
 
 // SScan 实现 Redis SSCAN 命令，增量迭代集合的成员

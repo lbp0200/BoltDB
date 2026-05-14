@@ -10,18 +10,18 @@ import (
 
 // TestScan 测试 SCAN 命令
 func TestScan(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试数据
 	for i := 0; i < 20; i++ {
-		_ = testClient.Set(ctx, "scankey:"+string(rune('a'+i)), "value", 0).Err()
+		_ = sharedClient.Set(ctx, "scankey:"+string(rune('a'+i)), "value", 0).Err()
 	}
 
 	// SCAN - 基本迭代（使用原始命令）
-	result, err := testClient.Do(ctx, "SCAN", "0").Result()
+	result, err := sharedClient.Do(ctx, "SCAN", "0").Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})
@@ -39,19 +39,19 @@ func TestScan(t *testing.T) {
 
 // TestScanMatch 测试 SCAN MATCH 命令
 func TestScanMatch(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试数据
 	for i := 0; i < 10; i++ {
-		_ = testClient.Set(ctx, "test:scan:match:"+string(rune('a'+i)), "value", 0).Err()
-		_ = testClient.Set(ctx, "other:scan:match:"+string(rune('a'+i)), "value", 0).Err()
+		_ = sharedClient.Set(ctx, "test:scan:match:"+string(rune('a'+i)), "value", 0).Err()
+		_ = sharedClient.Set(ctx, "other:scan:match:"+string(rune('a'+i)), "value", 0).Err()
 	}
 
 	// SCAN with MATCH
-	result, err := testClient.Do(ctx, "SCAN", "0", "MATCH", "test:*").Result()
+	result, err := sharedClient.Do(ctx, "SCAN", "0", "MATCH", "test:*").Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})
@@ -67,18 +67,18 @@ func TestScanMatch(t *testing.T) {
 
 // TestScanCount 测试 SCAN COUNT 命令
 func TestScanCount(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试数据
 	for i := 0; i < 50; i++ {
-		_ = testClient.Set(ctx, "countkey:"+string(rune('a'+i%26)), "value", 0).Err()
+		_ = sharedClient.Set(ctx, "countkey:"+string(rune('a'+i%26)), "value", 0).Err()
 	}
 
 	// SCAN with COUNT
-	result, err := testClient.Do(ctx, "SCAN", "0", "COUNT", "20").Result()
+	result, err := sharedClient.Do(ctx, "SCAN", "0", "COUNT", "20").Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})
@@ -92,20 +92,20 @@ func TestScanCount(t *testing.T) {
 
 // TestScanType 测试 SCAN TYPE 命令
 func TestScanType(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加不同类型的键
-	_ = testClient.Set(ctx, "stringkey", "value", 0).Err()
-	_ = testClient.LPush(ctx, "listkey", "value").Err()
-	_ = testClient.HSet(ctx, "hashkey", "field", "value").Err()
-	_ = testClient.SAdd(ctx, "setkey", "value").Err()
-	_ = testClient.ZAdd(ctx, "zsetkey", redis.Z{Score: 1, Member: "value"}).Err()
+	_ = sharedClient.Set(ctx, "stringkey", "value", 0).Err()
+	_ = sharedClient.LPush(ctx, "listkey", "value").Err()
+	_ = sharedClient.HSet(ctx, "hashkey", "field", "value").Err()
+	_ = sharedClient.SAdd(ctx, "setkey", "value").Err()
+	_ = sharedClient.ZAdd(ctx, "zsetkey", redis.Z{Score: 1, Member: "value"}).Err()
 
 	// SCAN with TYPE - 只扫描string类型
-	result, err := testClient.Do(ctx, "SCAN", "0", "TYPE", "string").Result()
+	result, err := sharedClient.Do(ctx, "SCAN", "0", "TYPE", "string").Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})
@@ -126,17 +126,17 @@ func TestScanType(t *testing.T) {
 
 // TestDump 测试 DUMP 命令
 func TestDump(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 测试 String 类型
-	err := testClient.Set(ctx, "dump:string", "hello world", 0).Err()
+	err := sharedClient.Set(ctx, "dump:string", "hello world", 0).Err()
 	assert.NoError(t, err)
 
 	// 使用 Do() 直接获取原始 RESP 响应
-	result, err := testClient.Do(ctx, "DUMP", "dump:string").Result()
+	result, err := sharedClient.Do(ctx, "DUMP", "dump:string").Result()
 	assert.NoError(t, err)
 
 	// go-redis 会将 bulk string 转换为 string
@@ -152,47 +152,47 @@ func TestDump(t *testing.T) {
 	assert.Equal(t, byte('S'), dumpData[4])
 
 	// 测试 List 类型
-	err = testClient.RPush(ctx, "dump:list", "a", "b", "c").Err()
+	err = sharedClient.RPush(ctx, "dump:list", "a", "b", "c").Err()
 	assert.NoError(t, err)
 
-	result, err = testClient.Do(ctx, "DUMP", "dump:list").Result()
+	result, err = sharedClient.Do(ctx, "DUMP", "dump:list").Result()
 	assert.NoError(t, err)
 	dumpData, ok = result.(string)
 	assert.True(t, ok)
 	assert.Equal(t, true, len(dumpData) > 10)
 
 	// 测试 Hash 类型
-	err = testClient.HSet(ctx, "dump:hash", "field1", "value1", "field2", "value2").Err()
+	err = sharedClient.HSet(ctx, "dump:hash", "field1", "value1", "field2", "value2").Err()
 	assert.NoError(t, err)
 
-	result, err = testClient.Do(ctx, "DUMP", "dump:hash").Result()
+	result, err = sharedClient.Do(ctx, "DUMP", "dump:hash").Result()
 	assert.NoError(t, err)
 	dumpData, ok = result.(string)
 	assert.True(t, ok)
 	assert.Equal(t, true, len(dumpData) > 10)
 
 	// 测试 Set 类型
-	err = testClient.SAdd(ctx, "dump:set", "member1", "member2").Err()
+	err = sharedClient.SAdd(ctx, "dump:set", "member1", "member2").Err()
 	assert.NoError(t, err)
 
-	result, err = testClient.Do(ctx, "DUMP", "dump:set").Result()
+	result, err = sharedClient.Do(ctx, "DUMP", "dump:set").Result()
 	assert.NoError(t, err)
 	dumpData, ok = result.(string)
 	assert.True(t, ok)
 	assert.Equal(t, true, len(dumpData) > 10)
 
 	// 测试 ZSet 类型
-	err = testClient.ZAdd(ctx, "dump:zset", redis.Z{Score: 1, Member: "m1"}, redis.Z{Score: 2, Member: "m2"}).Err()
+	err = sharedClient.ZAdd(ctx, "dump:zset", redis.Z{Score: 1, Member: "m1"}, redis.Z{Score: 2, Member: "m2"}).Err()
 	assert.NoError(t, err)
 
-	result, err = testClient.Do(ctx, "DUMP", "dump:zset").Result()
+	result, err = sharedClient.Do(ctx, "DUMP", "dump:zset").Result()
 	assert.NoError(t, err)
 	dumpData, ok = result.(string)
 	assert.True(t, ok)
 	assert.Equal(t, true, len(dumpData) > 10)
 
 	// 测试不存在的键
-	result, err = testClient.Do(ctx, "DUMP", "nonexistent").Result()
+	result, err = sharedClient.Do(ctx, "DUMP", "nonexistent").Result()
 	// go-redis returns error for nil bulk string
 	if err != nil {
 		assert.Equal(t, "redis: nil", err.Error())
@@ -203,95 +203,95 @@ func TestDump(t *testing.T) {
 
 // TestRestore 测试 RESTORE 命令
 func TestRestore(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 测试 String 类型的 DUMP/RESTORE
 	t.Run("String", func(t *testing.T) {
-		err := testClient.Set(ctx, "restore:string", "hello world", 0).Err()
+		err := sharedClient.Set(ctx, "restore:string", "hello world", 0).Err()
 		assert.NoError(t, err)
 
-		dumpResult, err := testClient.Do(ctx, "DUMP", "restore:string").Result()
+		dumpResult, err := sharedClient.Do(ctx, "DUMP", "restore:string").Result()
 		assert.NoError(t, err)
 		dumpData := dumpResult.(string)
 
-		err = testClient.Del(ctx, "restore:string").Err()
+		err = sharedClient.Del(ctx, "restore:string").Err()
 		assert.NoError(t, err)
 
-		restoreResult, err := testClient.Do(ctx, "RESTORE", "restored:string", dumpData).Result()
+		restoreResult, err := sharedClient.Do(ctx, "RESTORE", "restored:string", dumpData).Result()
 		assert.NoError(t, err)
 		assert.Equal(t, "OK", restoreResult)
 
-		value, err := testClient.Get(ctx, "restored:string").Result()
+		value, err := sharedClient.Get(ctx, "restored:string").Result()
 		assert.NoError(t, err)
 		assert.Equal(t, "hello world", value)
 	})
 
 	// 测试 List 类型的 DUMP/RESTORE
 	t.Run("List", func(t *testing.T) {
-		err := testClient.RPush(ctx, "restore:list", "a", "b", "c").Err()
+		err := sharedClient.RPush(ctx, "restore:list", "a", "b", "c").Err()
 		assert.NoError(t, err)
 
-		dumpResult, err := testClient.Do(ctx, "DUMP", "restore:list").Result()
+		dumpResult, err := sharedClient.Do(ctx, "DUMP", "restore:list").Result()
 		assert.NoError(t, err)
 		dumpData := dumpResult.(string)
 
-		err = testClient.Del(ctx, "restore:list").Err()
+		err = sharedClient.Del(ctx, "restore:list").Err()
 		assert.NoError(t, err)
 
-		restoreResult, err := testClient.Do(ctx, "RESTORE", "restored:list", dumpData).Result()
+		restoreResult, err := sharedClient.Do(ctx, "RESTORE", "restored:list", dumpData).Result()
 		assert.NoError(t, err)
 		assert.Equal(t, "OK", restoreResult)
 
-		values, err := testClient.LRange(ctx, "restored:list", 0, -1).Result()
+		values, err := sharedClient.LRange(ctx, "restored:list", 0, -1).Result()
 		assert.NoError(t, err)
 		assert.Equal(t, []string{"a", "b", "c"}, values)
 	})
 
 	// 测试 Hash 类型的 DUMP/RESTORE
 	t.Run("Hash", func(t *testing.T) {
-		err := testClient.HSet(ctx, "restore:hash", "field1", "value1", "field2", "value2").Err()
+		err := sharedClient.HSet(ctx, "restore:hash", "field1", "value1", "field2", "value2").Err()
 		assert.NoError(t, err)
 
-		dumpResult, err := testClient.Do(ctx, "DUMP", "restore:hash").Result()
+		dumpResult, err := sharedClient.Do(ctx, "DUMP", "restore:hash").Result()
 		assert.NoError(t, err)
 		dumpData := dumpResult.(string)
 
-		err = testClient.Del(ctx, "restore:hash").Err()
+		err = sharedClient.Del(ctx, "restore:hash").Err()
 		assert.NoError(t, err)
 
-		restoreResult, err := testClient.Do(ctx, "RESTORE", "restored:hash", dumpData).Result()
+		restoreResult, err := sharedClient.Do(ctx, "RESTORE", "restored:hash", dumpData).Result()
 		assert.NoError(t, err)
 		assert.Equal(t, "OK", restoreResult)
 
-		val1, err := testClient.HGet(ctx, "restored:hash", "field1").Result()
+		val1, err := sharedClient.HGet(ctx, "restored:hash", "field1").Result()
 		assert.NoError(t, err)
 		assert.Equal(t, "value1", val1)
 
-		val2, err := testClient.HGet(ctx, "restored:hash", "field2").Result()
+		val2, err := sharedClient.HGet(ctx, "restored:hash", "field2").Result()
 		assert.NoError(t, err)
 		assert.Equal(t, "value2", val2)
 	})
 
 	// 测试 Set 类型的 DUMP/RESTORE
 	t.Run("Set", func(t *testing.T) {
-		err := testClient.SAdd(ctx, "restore:set", "member1", "member2", "member3").Err()
+		err := sharedClient.SAdd(ctx, "restore:set", "member1", "member2", "member3").Err()
 		assert.NoError(t, err)
 
-		dumpResult, err := testClient.Do(ctx, "DUMP", "restore:set").Result()
+		dumpResult, err := sharedClient.Do(ctx, "DUMP", "restore:set").Result()
 		assert.NoError(t, err)
 		dumpData := dumpResult.(string)
 
-		err = testClient.Del(ctx, "restore:set").Err()
+		err = sharedClient.Del(ctx, "restore:set").Err()
 		assert.NoError(t, err)
 
-		restoreResult, err := testClient.Do(ctx, "RESTORE", "restored:set", dumpData).Result()
+		restoreResult, err := sharedClient.Do(ctx, "RESTORE", "restored:set", dumpData).Result()
 		assert.NoError(t, err)
 		assert.Equal(t, "OK", restoreResult)
 
-		members, err := testClient.SMembers(ctx, "restored:set").Result()
+		members, err := sharedClient.SMembers(ctx, "restored:set").Result()
 		assert.NoError(t, err)
 		assert.Equal(t, 3, len(members))
 	})
@@ -299,7 +299,7 @@ func TestRestore(t *testing.T) {
 	// 测试 ZSet 类型的 DUMP/RESTORE
 	t.Run("ZSet", func(t *testing.T) {
 		// 添加有序集合成员
-		err := testClient.ZAdd(ctx, "zsettest", redis.Z{
+		err := sharedClient.ZAdd(ctx, "zsettest", redis.Z{
 			Score:  1.0,
 			Member: "member1",
 		}, redis.Z{
@@ -312,24 +312,24 @@ func TestRestore(t *testing.T) {
 		assert.NoError(t, err)
 
 		// 验证原始数据存在
-		originalMembers, err := testClient.ZRangeWithScores(ctx, "zsettest", 0, -1).Result()
+		originalMembers, err := sharedClient.ZRangeWithScores(ctx, "zsettest", 0, -1).Result()
 		assert.NoError(t, err)
 		assert.Equal(t, 3, len(originalMembers))
 
-		dumpResult, err := testClient.Do(ctx, "DUMP", "zsettest").Result()
+		dumpResult, err := sharedClient.Do(ctx, "DUMP", "zsettest").Result()
 		assert.NoError(t, err)
 		dumpData := dumpResult.(string)
 		assert.True(t, len(dumpData) > 0)
 
-		err = testClient.Del(ctx, "zsettest").Err()
+		err = sharedClient.Del(ctx, "zsettest").Err()
 		assert.NoError(t, err)
 
-		restoreResult, err := testClient.Do(ctx, "RESTORE", "zsetsaved", dumpData).Result()
+		restoreResult, err := sharedClient.Do(ctx, "RESTORE", "zsetsaved", dumpData).Result()
 		assert.NoError(t, err)
 		assert.Equal(t, "OK", restoreResult)
 
 		// 验证恢复的数据
-		members, err := testClient.ZRangeWithScores(ctx, "zsetsaved", 0, -1).Result()
+		members, err := sharedClient.ZRangeWithScores(ctx, "zsetsaved", 0, -1).Result()
 		assert.NoError(t, err)
 		assert.Equal(t, 3, len(members))
 		assert.Equal(t, "member1", members[0].Member)
@@ -342,38 +342,38 @@ func TestRestore(t *testing.T) {
 
 	// 测试 REPLACE 选项
 	t.Run("Replace", func(t *testing.T) {
-		err := testClient.Set(ctx, "replace:key", "original", 0).Err()
+		err := sharedClient.Set(ctx, "replace:key", "original", 0).Err()
 		assert.NoError(t, err)
 
 		// 创建另一个键并 DUMP
-		err = testClient.Set(ctx, "replace:source", "newvalue", 0).Err()
+		err = sharedClient.Set(ctx, "replace:source", "newvalue", 0).Err()
 		assert.NoError(t, err)
 
-		dumpResult, err := testClient.Do(ctx, "DUMP", "replace:source").Result()
+		dumpResult, err := sharedClient.Do(ctx, "DUMP", "replace:source").Result()
 		assert.NoError(t, err)
 		dumpData := dumpResult.(string)
 
 		// 使用 REPLACE 恢复
-		restoreResult, err := testClient.Do(ctx, "RESTORE", "replace:key", dumpData, "REPLACE").Result()
+		restoreResult, err := sharedClient.Do(ctx, "RESTORE", "replace:key", dumpData, "REPLACE").Result()
 		assert.NoError(t, err)
 		assert.Equal(t, "OK", restoreResult)
 
-		value, err := testClient.Get(ctx, "replace:key").Result()
+		value, err := sharedClient.Get(ctx, "replace:key").Result()
 		assert.NoError(t, err)
 		assert.Equal(t, "newvalue", value)
 	})
 
 	// 测试 REPLACE 时不存在的键报错
 	t.Run("ReplaceError", func(t *testing.T) {
-		err := testClient.Set(ctx, "noreplace:source", "value", 0).Err()
+		err := sharedClient.Set(ctx, "noreplace:source", "value", 0).Err()
 		assert.NoError(t, err)
 
-		dumpResult, err := testClient.Do(ctx, "DUMP", "noreplace:source").Result()
+		dumpResult, err := sharedClient.Do(ctx, "DUMP", "noreplace:source").Result()
 		assert.NoError(t, err)
 		dumpData := dumpResult.(string)
 
 		// 尝试恢复到一个不存在的键（不需要 REPLACE）
-		restoreResult, err := testClient.Do(ctx, "RESTORE", "noreplace:newkey", dumpData).Result()
+		restoreResult, err := sharedClient.Do(ctx, "RESTORE", "noreplace:newkey", dumpData).Result()
 		assert.NoError(t, err)
 		assert.Equal(t, "OK", restoreResult)
 	})
@@ -381,16 +381,16 @@ func TestRestore(t *testing.T) {
 
 // TestSort 测试 SORT 命令
 func TestSortBasic(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试数据
-	_ = testClient.RPush(ctx, "sortlist", "3", "1", "2", "5", "4").Err()
+	_ = sharedClient.RPush(ctx, "sortlist", "3", "1", "2", "5", "4").Err()
 
 	// SORT - 基本排序（使用原始命令）
-	result, err := testClient.Do(ctx, "SORT", "sortlist").Result()
+	result, err := sharedClient.Do(ctx, "SORT", "sortlist").Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})
@@ -400,16 +400,16 @@ func TestSortBasic(t *testing.T) {
 
 // TestSortAlpha 测试 SORT ALPHA 命令
 func TestSortAlpha(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试数据（字母）
-	_ = testClient.RPush(ctx, "sortalpha", "c", "a", "b", "e", "d").Err()
+	_ = sharedClient.RPush(ctx, "sortalpha", "c", "a", "b", "e", "d").Err()
 
 	// SORT ALPHA - 字母排序
-	result, err := testClient.Do(ctx, "SORT", "sortalpha", "ALPHA").Result()
+	result, err := sharedClient.Do(ctx, "SORT", "sortalpha", "ALPHA").Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})
@@ -419,19 +419,19 @@ func TestSortAlpha(t *testing.T) {
 
 // TestSortBy 测试 SORT BY 命令
 func TestSortBy(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试数据
-	_ = testClient.RPush(ctx, "sortby", "a", "b", "c").Err()
-	_ = testClient.Set(ctx, "weight_a", "30", 0).Err()
-	_ = testClient.Set(ctx, "weight_b", "10", 0).Err()
-	_ = testClient.Set(ctx, "weight_c", "20", 0).Err()
+	_ = sharedClient.RPush(ctx, "sortby", "a", "b", "c").Err()
+	_ = sharedClient.Set(ctx, "weight_a", "30", 0).Err()
+	_ = sharedClient.Set(ctx, "weight_b", "10", 0).Err()
+	_ = sharedClient.Set(ctx, "weight_c", "20", 0).Err()
 
 	// SORT BY - 按外部键排序
-	result, err := testClient.Do(ctx, "SORT", "sortby", "BY", "weight_*").Result()
+	result, err := sharedClient.Do(ctx, "SORT", "sortby", "BY", "weight_*").Result()
 	assert.NoError(t, err)
 	// 按weight排序: b(10), c(20), a(30)
 	arr, ok := result.([]interface{})
@@ -441,18 +441,18 @@ func TestSortBy(t *testing.T) {
 
 // TestSortGet 测试 SORT GET 命令
 func TestSortGet(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试数据
-	_ = testClient.RPush(ctx, "sortget", "a", "b").Err()
-	_ = testClient.Set(ctx, "data_a", "value_a", 0).Err()
-	_ = testClient.Set(ctx, "data_b", "value_b", 0).Err()
+	_ = sharedClient.RPush(ctx, "sortget", "a", "b").Err()
+	_ = sharedClient.Set(ctx, "data_a", "value_a", 0).Err()
+	_ = sharedClient.Set(ctx, "data_b", "value_b", 0).Err()
 
 	// SORT GET - 获取外部键
-	result, err := testClient.Do(ctx, "SORT", "sortget", "GET", "data_*").Result()
+	result, err := sharedClient.Do(ctx, "SORT", "sortget", "GET", "data_*").Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})
@@ -462,36 +462,36 @@ func TestSortGet(t *testing.T) {
 
 // TestSortStore 测试 SORT STORE 命令
 func TestSortStore(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 添加测试数据
-	_ = testClient.RPush(ctx, "sortstore", "3", "1", "2").Err()
+	_ = sharedClient.RPush(ctx, "sortstore", "3", "1", "2").Err()
 
 	// SORT STORE - 存储排序结果
-	result, err := testClient.Do(ctx, "SORT", "sortstore", "STORE", "sortedresult").Result()
+	result, err := sharedClient.Do(ctx, "SORT", "sortstore", "STORE", "sortedresult").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(3), result)
 
 	// 验证结果
-	members, _ := testClient.LRange(ctx, "sortedresult", 0, -1).Result()
+	members, _ := sharedClient.LRange(ctx, "sortedresult", 0, -1).Result()
 	assert.Equal(t, []string{"1", "2", "3"}, members)
 }
 
 // TestObjectRefCount 测试 OBJECT REFCOUNT 命令
 func TestObjectRefCount(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 设置测试数据
-	_ = testClient.Set(ctx, "objkey", "value", 0).Err()
+	_ = sharedClient.Set(ctx, "objkey", "value", 0).Err()
 
 	// OBJECT REFCOUNT
-	result, err := testClient.Do(ctx, "OBJECT", "REFCOUNT", "objkey").Result()
+	result, err := sharedClient.Do(ctx, "OBJECT", "REFCOUNT", "objkey").Result()
 	assert.NoError(t, err)
 	refcount, ok := result.(int64)
 	assert.True(t, ok)
@@ -500,16 +500,16 @@ func TestObjectRefCount(t *testing.T) {
 
 // TestObjectEncoding 测试 OBJECT ENCODING 命令
 func TestObjectEncoding(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 设置测试数据
-	_ = testClient.Set(ctx, "encodestring", "value", 0).Err()
+	_ = sharedClient.Set(ctx, "encodestring", "value", 0).Err()
 
 	// OBJECT ENCODING
-	result, err := testClient.Do(ctx, "OBJECT", "ENCODING", "encodestring").Result()
+	result, err := sharedClient.Do(ctx, "OBJECT", "ENCODING", "encodestring").Result()
 	assert.NoError(t, err)
 
 	encoding, ok := result.(string)
@@ -518,7 +518,7 @@ func TestObjectEncoding(t *testing.T) {
 
 	// OBJECT ENCODING - 不存在的键
 	// 注意：go-redis 将 nil 响应转换为错误 "redis: nil"，需要特殊处理
-	result, err = testClient.Do(ctx, "OBJECT", "ENCODING", "nonexistent").Result()
+	result, err = sharedClient.Do(ctx, "OBJECT", "ENCODING", "nonexistent").Result()
 	if err != nil {
 		assert.Equal(t, "redis: nil", err.Error())
 	}
@@ -527,16 +527,16 @@ func TestObjectEncoding(t *testing.T) {
 
 // TestObjectIdleTime 测试 OBJECT IDLETIME 命令
 func TestObjectIdleTime(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 设置测试数据
-	_ = testClient.Set(ctx, "idletime", "value", 0).Err()
+	_ = sharedClient.Set(ctx, "idletime", "value", 0).Err()
 
 	// OBJECT IDLETIME
-	result, err := testClient.Do(ctx, "OBJECT", "IDLETIME", "idletime").Result()
+	result, err := sharedClient.Do(ctx, "OBJECT", "IDLETIME", "idletime").Result()
 	assert.NoError(t, err)
 
 	idletime, ok := result.(int64)
@@ -546,16 +546,16 @@ func TestObjectIdleTime(t *testing.T) {
 
 // TestObjectFreq 测试 OBJECT FREQ 命令
 func TestObjectFreq(t *testing.T) {
-	setupTestServer(t)
-	defer teardownTestServer(t)
+	setupTest(t)
+	defer teardownTest(t)
 
 	ctx := context.Background()
 
 	// 设置测试数据
-	_ = testClient.Set(ctx, "freqkey", "value", 0).Err()
+	_ = sharedClient.Set(ctx, "freqkey", "value", 0).Err()
 
 	// OBJECT FREQ
-	result, err := testClient.Do(ctx, "OBJECT", "FREQ", "freqkey").Result()
+	result, err := sharedClient.Do(ctx, "OBJECT", "FREQ", "freqkey").Result()
 	assert.NoError(t, err)
 	// LFU频率应该是0（刚创建）
 	assert.Equal(t, int64(0), result)

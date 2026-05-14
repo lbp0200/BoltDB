@@ -8,8 +8,8 @@ import (
 // ReplicationBacklog 复制积压缓冲区
 type ReplicationBacklog struct {
 	buffer []byte
-	offset int64  // 当前偏移量
-	size   int64  // 缓冲区大小
+	offset int64 // 当前偏移量
+	size   int64 // 缓冲区大小
 	mu     sync.RWMutex
 }
 

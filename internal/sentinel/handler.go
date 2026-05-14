@@ -13,9 +13,9 @@ import (
 
 // SentinelHandler 哨兵命令处理器
 type SentinelHandler struct {
-	sentinel      *Sentinel
+	sentinel       *Sentinel
 	configProvider *ConfigProvider
-	failoverMgr   *FailoverManager
+	failoverMgr    *FailoverManager
 }
 
 // NewSentinelHandler 创建新的哨兵处理器

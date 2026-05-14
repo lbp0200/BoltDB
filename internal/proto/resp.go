@@ -35,6 +35,11 @@ func (b *BulkString) String() string {
 	return "$" + strconv.Itoa(len(*b)) + "\r\n" + string(*b) + "\r\n"
 }
 
+// NilArray represents a nil RESP array (*-1\r\n), used for EXEC watch failure
+type NilArray struct{}
+
+func (n NilArray) String() string { return "*-1\r\n" }
+
 type SimpleString string
 
 func (s SimpleString) String() string { return "+" + string(s) + "\r\n" }

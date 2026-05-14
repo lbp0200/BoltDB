@@ -13,8 +13,8 @@ func TestServerInfoCommand(t *testing.T) {
 	defer handler.Db.Close()
 
 	tests := []struct {
-		name string
-		args [][]byte
+		name  string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		{
@@ -77,9 +77,9 @@ func TestServerInfoCommand(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var resp proto.RESP
 			if tt.args == nil {
-				resp = handler.executeCommand("INFO", nil, "127.0.0.1:12345")
+				resp = handler.executeCommand(nil, "INFO", nil, "127.0.0.1:12345")
 			} else {
-				resp = handler.executeCommand("INFO", tt.args, "127.0.0.1:12345")
+				resp = handler.executeCommand(nil, "INFO", tt.args, "127.0.0.1:12345")
 			}
 			tt.check(t, resp)
 		})
@@ -92,12 +92,12 @@ func TestServerManagementCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Set up some data first
-	handler.executeCommand("SET", [][]byte{[]byte("key1"), []byte("value1")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SET", [][]byte{[]byte("key1"), []byte("value1")}, "127.0.0.1:12345")
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// DBSIZE
@@ -137,9 +137,9 @@ func TestServerManagementCommands(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var resp proto.RESP
 			if tt.args == nil {
-				resp = handler.executeCommand(tt.cmd, nil, "127.0.0.1:12345")
+				resp = handler.executeCommand(nil, tt.cmd, nil, "127.0.0.1:12345")
 			} else {
-				resp = handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+				resp = handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			}
 			tt.check(t, resp)
 		})
@@ -152,9 +152,9 @@ func TestServerConnectionCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// ECHO
@@ -183,9 +183,9 @@ func TestServerConnectionCommands(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var resp proto.RESP
 			if tt.args == nil {
-				resp = handler.executeCommand(tt.cmd, nil, "127.0.0.1:12345")
+				resp = handler.executeCommand(nil, tt.cmd, nil, "127.0.0.1:12345")
 			} else {
-				resp = handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+				resp = handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			}
 			tt.check(t, resp)
 		})
@@ -198,7 +198,7 @@ func TestServerSlowLogCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	// SLOWLOG LEN
-	resp := handler.executeCommand("SLOWLOG", [][]byte{[]byte("LEN")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(nil, "SLOWLOG", [][]byte{[]byte("LEN")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.True(t, int64(*integer) >= 0)

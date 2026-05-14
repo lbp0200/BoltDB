@@ -296,6 +296,7 @@ func TestConcurrentPublish(t *testing.T) {
 	psm.Subscribe(sub, "channel")
 
 	var wg sync.WaitGroup
+	var mu sync.Mutex
 	published := 0
 
 	// Concurrent publishes
@@ -304,13 +305,17 @@ func TestConcurrentPublish(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			count := psm.Publish("channel", []byte("msg"))
+			mu.Lock()
 			published += count
+			mu.Unlock()
 		}(i)
 	}
 	wg.Wait()
 
 	// Should receive all messages (or some may be dropped if channel is full)
+	mu.Lock()
 	assert.Equal(t, 10, published)
+	mu.Unlock()
 }
 
 func TestSubscriberCount(t *testing.T) {

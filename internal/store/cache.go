@@ -35,27 +35,28 @@ func NewLRUCache(maxSize int, ttl time.Duration) *LRUCache {
 	}
 }
 
-// Get 获取缓存值
 func (c *LRUCache) Get(key string) ([]byte, bool) {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-
 	entry, exists := c.cache[key]
 	if !exists {
+		c.mu.RUnlock()
 		return nil, false
 	}
 
-	// 检查是否过期
 	if entry.IsExpired() {
-		// 异步删除过期项
-		go c.delete(key)
+		c.mu.RUnlock()
+		c.Delete(key)
 		return nil, false
 	}
 
-	// 更新访问顺序（移动到末尾）
-	c.updateAccessOrder(key)
+	value := entry.Value
+	c.mu.RUnlock()
 
-	return entry.Value, true
+	c.mu.Lock()
+	c.updateAccessOrder(key)
+	c.mu.Unlock()
+
+	return value, true
 }
 
 // Set 设置缓存值

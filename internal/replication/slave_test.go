@@ -46,10 +46,10 @@ func (m *mockConn) Close() error {
 	return nil
 }
 
-func (m *mockConn) LocalAddr() net.Addr  { return m.localAddr }
-func (m *mockConn) RemoteAddr() net.Addr { return m.remoteAddr }
+func (m *mockConn) LocalAddr() net.Addr                { return m.localAddr }
+func (m *mockConn) RemoteAddr() net.Addr               { return m.remoteAddr }
 func (m *mockConn) SetDeadline(t time.Time) error      { return nil }
-func (m *mockConn) SetReadDeadline(t time.Time) error   { return nil }
+func (m *mockConn) SetReadDeadline(t time.Time) error  { return nil }
 func (m *mockConn) SetWriteDeadline(t time.Time) error { return nil }
 
 func TestSlaveConnection_New(t *testing.T) {

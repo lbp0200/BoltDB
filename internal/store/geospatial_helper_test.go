@@ -252,11 +252,11 @@ func TestExpandBoundingBox(t *testing.T) {
 // TestCalculateDistance tests calculateDistance
 func TestCalculateDistance(t *testing.T) {
 	tests := []struct {
-		name          string
-		lat1, lon1    float64
-		lat2, lon2    float64
-		minExpected   float64 // minimum expected distance in meters
-		maxExpected   float64 // maximum expected distance in meters
+		name        string
+		lat1, lon1  float64
+		lat2, lon2  float64
+		minExpected float64 // minimum expected distance in meters
+		maxExpected float64 // maximum expected distance in meters
 	}{
 		{
 			name:        "same point",

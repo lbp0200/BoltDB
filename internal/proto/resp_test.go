@@ -143,8 +143,8 @@ func TestReadRESPArray(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			name:  "simple command",
-			input: "*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n",
+			name:     "simple command",
+			input:    "*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n",
 			expected: &Array{Args: [][]byte{[]byte("SET"), []byte("key"), []byte("value")}},
 			wantErr:  false,
 		},
@@ -155,8 +155,8 @@ func TestReadRESPArray(t *testing.T) {
 			wantErr:  false,
 		},
 		{
-			name:  "command with nil",
-			input: "*2\r\n$3\r\nCMD\r\n$-1\r\n",
+			name:     "command with nil",
+			input:    "*2\r\n$3\r\nCMD\r\n$-1\r\n",
 			expected: &Array{Args: [][]byte{[]byte("CMD"), nil}},
 			wantErr:  false,
 		},

@@ -13,9 +13,9 @@ func TestServerBitCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// SETBIT
@@ -77,7 +77,7 @@ func TestServerBitCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -101,7 +101,7 @@ func TestServerTransactionCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			// Just verify it returns a valid RESP response
 			_, ok := resp.(proto.RESP)
 			assert.True(t, ok)
@@ -115,9 +115,9 @@ func TestServerGeoCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// GEOADD
@@ -157,7 +157,7 @@ func TestServerGeoCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -169,9 +169,9 @@ func TestServerStreamCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// XADD
@@ -211,7 +211,7 @@ func TestServerStreamCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -223,13 +223,13 @@ func TestServerScanCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Set some keys
-	handler.executeCommand("SET", [][]byte{[]byte("key1"), []byte("value1")}, "127.0.0.1:12345")
-	handler.executeCommand("SET", [][]byte{[]byte("key2"), []byte("value2")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SET", [][]byte{[]byte("key1"), []byte("value1")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SET", [][]byte{[]byte("key2"), []byte("value2")}, "127.0.0.1:12345")
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// SCAN
@@ -280,7 +280,7 @@ func TestServerScanCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -292,12 +292,12 @@ func TestServerObjectCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Set a key
-	handler.executeCommand("SET", [][]byte{[]byte("objkey"), []byte("objvalue")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SET", [][]byte{[]byte("objkey"), []byte("objvalue")}, "127.0.0.1:12345")
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// OBJECT REFCOUNT
@@ -337,7 +337,7 @@ func TestServerObjectCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -349,9 +349,9 @@ func TestServerClientCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// CLIENT LIST
@@ -400,7 +400,7 @@ func TestServerClientCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -412,9 +412,9 @@ func TestServerConfigCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// CONFIG GET
@@ -443,7 +443,7 @@ func TestServerConfigCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -455,9 +455,9 @@ func TestServerClusterCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// CLUSTER INFO (when cluster is not enabled)
@@ -508,7 +508,7 @@ func TestServerClusterCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -520,9 +520,9 @@ func TestServerReplConfCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// REPLCONF LISTENING-PORT
@@ -551,7 +551,7 @@ func TestServerReplConfCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -563,9 +563,9 @@ func TestServerSaveCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// SAVE (synchronous)
@@ -596,9 +596,9 @@ func TestServerSaveCommands(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var resp proto.RESP
 			if tt.args == nil {
-				resp = handler.executeCommand(tt.cmd, nil, "127.0.0.1:12345")
+				resp = handler.executeCommand(nil, tt.cmd, nil, "127.0.0.1:12345")
 			} else {
-				resp = handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+				resp = handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			}
 			tt.check(t, resp)
 		})

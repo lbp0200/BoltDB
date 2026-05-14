@@ -13,13 +13,13 @@ func TestServerMoreStringCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Setup initial values
-	handler.executeCommand("SET", [][]byte{[]byte("strkey"), []byte("hello")}, "127.0.0.1:12345")
-	handler.executeCommand("SET", [][]byte{[]byte("rangekey"), []byte("HelloWorld")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SET", [][]byte{[]byte("strkey"), []byte("hello")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SET", [][]byte{[]byte("rangekey"), []byte("HelloWorld")}, "127.0.0.1:12345")
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// STRLEN
@@ -108,7 +108,7 @@ func TestServerMoreStringCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -120,12 +120,12 @@ func TestServerKeyExpirationCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Setup key
-	handler.executeCommand("SET", [][]byte{[]byte("exkey"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SET", [][]byte{[]byte("exkey"), []byte("value")}, "127.0.0.1:12345")
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// EXPIRE
@@ -209,7 +209,7 @@ func TestServerKeyExpirationCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -221,15 +221,15 @@ func TestServerTypeAndExistsCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Setup keys
-	handler.executeCommand("SET", [][]byte{[]byte("stringkey"), []byte("value")}, "127.0.0.1:12345")
-	handler.executeCommand("HSET", [][]byte{[]byte("hashkey"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
-	handler.executeCommand("LPUSH", [][]byte{[]byte("listkey"), []byte("value")}, "127.0.0.1:12345")
-	handler.executeCommand("SADD", [][]byte{[]byte("setkey"), []byte("member")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SET", [][]byte{[]byte("stringkey"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "HSET", [][]byte{[]byte("hashkey"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "LPUSH", [][]byte{[]byte("listkey"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(nil, "SADD", [][]byte{[]byte("setkey"), []byte("member")}, "127.0.0.1:12345")
 
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
 		// TYPE for string
@@ -313,7 +313,7 @@ func TestServerTypeAndExistsCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}

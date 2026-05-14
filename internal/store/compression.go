@@ -16,9 +16,9 @@ import (
 type CompressionType string
 
 const (
-	CompressionNone  CompressionType = "none"   // 不压缩
-	CompressionLZ4   CompressionType = "lz4"    // LZ4压缩
-	CompressionZSTD  CompressionType = "zstd"  // ZSTD压缩
+	CompressionNone   CompressionType = "none"   // 不压缩
+	CompressionLZ4    CompressionType = "lz4"    // LZ4压缩
+	CompressionZSTD   CompressionType = "zstd"   // ZSTD压缩
 	CompressionSnappy CompressionType = "snappy" // Snappy压缩（默认）
 )
 
@@ -75,10 +75,10 @@ func decompressData(data []byte) ([]byte, error) {
 func compressLZ4(data []byte) ([]byte, error) {
 	var buf bytes.Buffer
 	writer := lz4.NewWriter(&buf)
-	
+
 	// 设置压缩级别（可选，lz4默认是快速压缩）
 	// writer.Header.CompressionLevel = lz4.Level1
-	
+
 	if _, err := writer.Write(data); err != nil {
 		return nil, fmt.Errorf("lz4 compress write error: %w", err)
 	}
@@ -90,7 +90,7 @@ func compressLZ4(data []byte) ([]byte, error) {
 	result := make([]byte, len(compressionMagicLZ4)+buf.Len())
 	copy(result, compressionMagicLZ4)
 	copy(result[len(compressionMagicLZ4):], buf.Bytes())
-	
+
 	return result, nil
 }
 
@@ -98,11 +98,11 @@ func compressLZ4(data []byte) ([]byte, error) {
 func decompressLZ4(data []byte) ([]byte, error) {
 	reader := lz4.NewReader(bytes.NewReader(data))
 	var buf bytes.Buffer
-	
+
 	if _, err := buf.ReadFrom(reader); err != nil {
 		return nil, fmt.Errorf("lz4 decompress error: %w", err)
 	}
-	
+
 	return buf.Bytes(), nil
 }
 
@@ -119,12 +119,12 @@ func compressZSTD(data []byte) ([]byte, error) {
 	}()
 
 	compressed := encoder.EncodeAll(data, nil)
-	
+
 	// 添加压缩标记
 	result := make([]byte, len(compressionMagicZSTD)+len(compressed))
 	copy(result, compressionMagicZSTD)
 	copy(result[len(compressionMagicZSTD):], compressed)
-	
+
 	return result, nil
 }
 
@@ -140,7 +140,7 @@ func decompressZSTD(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("zstd decompress error: %w", err)
 	}
-	
+
 	return decompressed, nil
 }
 
@@ -230,4 +230,3 @@ func (s *BotreonStore) getValueWithDecompression(item *badger.Item) ([]byte, err
 	}
 	return decompressData(value)
 }
-

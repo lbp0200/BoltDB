@@ -103,8 +103,6 @@ func TestBackupManager_Save2(t *testing.T) {
 	// Save
 	err = bm.Save()
 	assert.NoError(t, err)
-
-	assert.True(t, true)
 }
 
 // TestBackupManager_LastSave2 tests LastSave

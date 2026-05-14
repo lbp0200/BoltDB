@@ -16,15 +16,15 @@ import (
 
 // MasterConnection 表示到主节点的连接
 type MasterConnection struct {
-	Addr          string
-	Conn          net.Conn
-	Reader        *bufio.Reader
-	Writer        *bufio.Writer
-	ReplOffset    int64
-	ReplId        string
-	mu            sync.RWMutex
-	stopCh        chan struct{}
-	closeOnce     sync.Once
+	Addr       string
+	Conn       net.Conn
+	Reader     *bufio.Reader
+	Writer     *bufio.Writer
+	ReplOffset int64
+	ReplId     string
+	mu         sync.RWMutex
+	stopCh     chan struct{}
+	closeOnce  sync.Once
 }
 
 // NewMasterConnection 创建新的主节点连接
@@ -198,7 +198,7 @@ func (mc *MasterConnection) readUntilEOF() ([]byte, error) {
 			isHex := true
 			for j := 0; j < eofMarkLen; j++ {
 				c := data[dataLen-eofMarkLen+j]
-				if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+				if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
 					isHex = false
 					break
 				}

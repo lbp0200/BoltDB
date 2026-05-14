@@ -10,20 +10,17 @@ import (
 
 // HyperLogLog 实现（基于 14 位寄存器的稀疏编码优化）
 const (
-	hllSparseEncoding     = 1
-	hllDenseEncoding      = 2
-	hllRegisterBits       = 14                        // 每个寄存器使用 14 位
-	hllRegisterCount      = 1 << hllRegisterBits      // 16384 个寄存器
-	hllRegisterMask       = hllRegisterCount - 1      // 0x3FFF
-	hllCachedBytesChanged = 1024                      // 稀疏编码阈值
-	hllP                 = 1 << (hllRegisterBits - 2) // 2^12 = 4096，用于偏差校正
-	hllAlpha             = 0.721347520444481703739965215 // 调和平均数常数
+	hllRegisterBits  = 14
+	hllRegisterCount = 1 << hllRegisterBits
+	hllRegisterMask  = hllRegisterCount - 1
+	hllP             = 1 << (hllRegisterBits - 2)
+	hllAlpha         = 0.721347520444481703739965215
 )
 
 // HyperLogLog 结构
 type HyperLogLog struct {
-	 registers []uint8 // 每个寄存器 6 位 (存储 count)
-	 encoding  byte    // 0=未初始化, 1=稀疏, 2=密集
+	registers []uint8 // 每个寄存器 6 位 (存储 count)
+	encoding  byte    // 0=未初始化, 1=稀疏, 2=密集
 }
 
 // encodeRegister 将 6 位 count 编码到字节
@@ -43,27 +40,26 @@ func newHyperLogLog() *HyperLogLog {
 	}
 }
 
-// Estimate 估计基数
 func (h *HyperLogLog) Estimate() float64 {
 	if h.encoding == 0 {
 		return 0
 	}
 
 	sum := 0.0
-	switch h.encoding {
-	case 1: // 稀疏编码
-		// 稀疏编码格式: [offset:14bits][count:6bits]
-		// 这里简化处理，假设每个寄存器初始为 0
-		sum = float64(h.registerCount()) * hllAlpha / float64(1<<hllRegisterBits-hllRegisterCount)
-	case 2: // 密集编码
+	if h.encoding == 2 {
 		for _, reg := range h.registers {
 			count := decodeRegister(reg)
-			sum += 1.0 / float64(uint64(1) << count)
+			sum += 1.0 / float64(uint64(1)<<count)
 		}
+	} else {
+		return 0
+	}
+
+	if sum == 0 {
+		return 0
 	}
 
 	estimate := hllP / sum
-	// 线性计数处理小基数情况
 	zeros := h.countZeros()
 	if zeros > 0 {
 		linearCount := float64(hllRegisterCount) * math.Log(float64(hllRegisterCount)/float64(zeros))
@@ -72,11 +68,6 @@ func (h *HyperLogLog) Estimate() float64 {
 		}
 	}
 	return estimate
-}
-
-// registerCount 返回已设置的寄存器数量
-func (h *HyperLogLog) registerCount() int {
-	return hllRegisterCount
 }
 
 // countZeros 计算零寄存器数量（用于线性计数）
@@ -179,7 +170,7 @@ func (h *HyperLogLog) merge(other *HyperLogLog) bool {
 func (s *BotreonStore) PFAdd(key string, elements ...string) (int64, error) {
 	var changed int64
 
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// 设置类型
 		typeKey := TypeOfKeyGet(key)
 		if err := txn.Set(typeKey, []byte("hyperloglog")); err != nil {
@@ -201,7 +192,7 @@ func (s *BotreonStore) PFAdd(key string, elements ...string) (int64, error) {
 
 		// 保存
 		return s.saveHLL(txn, key, hll)
-	})
+	}, 30)
 
 	return changed, err
 }
@@ -219,7 +210,7 @@ func (s *BotreonStore) getOrCreateHLL(txn *badger.Txn, key string) (*HyperLogLog
 			return nil, err
 		}
 		hll = &HyperLogLog{
-			encoding: val[0],
+			encoding:  val[0],
 			registers: val[1:],
 		}
 	} else if err != badger.ErrKeyNotFound {
@@ -282,7 +273,7 @@ func (s *BotreonStore) pfCountOne(key string) (int64, error) {
 		}
 
 		hll := &HyperLogLog{
-			encoding: val[0],
+			encoding:  val[0],
 			registers: val[1:],
 		}
 		estimate = hll.Estimate()
@@ -329,7 +320,7 @@ func (s *BotreonStore) pfCountMultiple(keys []string) (int64, error) {
 			}
 
 			other := &HyperLogLog{
-				encoding: val[0],
+				encoding:  val[0],
 				registers: val[1:],
 			}
 
@@ -356,7 +347,7 @@ func (s *BotreonStore) pfCountMultiple(keys []string) (int64, error) {
 
 // PFMerge 实现 Redis PFMERGE 命令
 func (s *BotreonStore) PFMerge(destKey string, sourceKeys ...string) error {
-	return s.db.Update(func(txn *badger.Txn) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
 		// 设置目标键类型
 		typeKey := TypeOfKeyGet(destKey)
 		if err := txn.Set(typeKey, []byte("hyperloglog")); err != nil {
@@ -380,7 +371,7 @@ func (s *BotreonStore) PFMerge(destKey string, sourceKeys ...string) error {
 
 		// 保存目标
 		return s.saveHLL(txn, destKey, destHLL)
-	})
+	}, 30)
 }
 
 // PFInfo 实现 Redis PFINFO 命令（可选）
@@ -414,7 +405,7 @@ func (s *BotreonStore) PFInfo(key string) (map[string]int64, error) {
 		}
 
 		hll := &HyperLogLog{
-			encoding: val[0],
+			encoding:  val[0],
 			registers: val[1:],
 		}
 

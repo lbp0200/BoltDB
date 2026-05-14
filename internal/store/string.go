@@ -1,12 +1,10 @@
 package store
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"math"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -15,41 +13,6 @@ import (
 // ErrKeyNotFound 表示键不存在
 var ErrKeyNotFound = errors.New("key not found")
 
-// randomFloat64 生成 [0, 1) 范围的随机浮点数
-func randomFloat64String() float64 {
-	b := make([]byte, 8)
-	_, _ = rand.Read(b)
-	return float64(b[0]) / 256
-}
-
-// retryUpdateWithFn 重试执行 BadgerDB Update 操作，处理事务冲突
-func (s *BotreonStore) retryUpdateWithFn(fn func(*badger.Txn) error, maxRetries int) error {
-	var err error
-	for i := 0; i < maxRetries; i++ {
-		err = s.db.Update(fn)
-		if err == nil {
-			return nil
-		}
-		// 检查是否是事务冲突错误
-		errStr := err.Error()
-		if strings.Contains(errStr, "Transaction Conflict") ||
-			strings.Contains(errStr, "conflict") ||
-			strings.Contains(errStr, "Conflict") {
-			// 指数退避 + 随机抖动
-			baseBackoff := time.Duration(1<<uint(i)) * time.Millisecond
-			if baseBackoff > 50*time.Millisecond {
-				baseBackoff = 50 * time.Millisecond
-			}
-			jitter := time.Duration(randomFloat64String() * float64(baseBackoff) * 0.5)
-			backoff := baseBackoff + jitter
-			time.Sleep(backoff)
-			continue
-		}
-		return err
-	}
-	return err
-}
-
 // stringKey 方法用于生成存储在 Badger 数据库中的键
 func (s *BotreonStore) stringKey(key string) string {
 	return fmt.Sprintf("%s:%s", KeyTypeString, key)
@@ -57,16 +20,11 @@ func (s *BotreonStore) stringKey(key string) string {
 
 // Set 实现 Redis SET 命令
 func (s *BotreonStore) Set(key string, value string) error {
-	// 先更新写缓存
-	if s.writeCache != nil {
-		s.writeCache.Set(key, []byte(value))
-	}
-	// 同时更新读缓存（避免后续读取时缓存未命中）
 	if s.readCache != nil {
 		s.readCache.Set(key, []byte(value))
 	}
 
-	return s.db.Update(func(txn *badger.Txn) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
 		// Check if key already exists with a different type
 		badgerTypeKey := TypeOfKeyGet(key)
 		item, err := txn.Get(badgerTypeKey)
@@ -88,12 +46,12 @@ func (s *BotreonStore) Set(key string, value string) error {
 		}
 		strKey := s.stringKey(key)
 		return s.setValueWithCompression(txn, []byte(strKey), []byte(value))
-	})
+	}, 30)
 }
 
 // SetWithTTL 字符串操作，设置键值对并设置过期时间
 func (s *BotreonStore) SetWithTTL(key, value string, ttl time.Duration) error {
-	return s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// Check if key already exists with a different type
 		typeKey := TypeOfKeyGet(key)
 		item, err := txn.Get(typeKey)
@@ -115,7 +73,11 @@ func (s *BotreonStore) SetWithTTL(key, value string, ttl time.Duration) error {
 		}
 		strKey := s.stringKey(key)
 		return s.setEntryWithCompression(txn, []byte(strKey), []byte(value), ttl)
-	})
+	}, 30)
+	if err == nil && s.readCache != nil {
+		s.readCache.Set(key, []byte(value))
+	}
+	return err
 }
 
 // SetEX 实现 Redis SETEX 命令，设置键值对并设置过期时间（秒）
@@ -131,7 +93,7 @@ func (s *BotreonStore) PSETEX(key string, value string, milliseconds int64) erro
 // SetNX 实现 Redis SETNX 命令，仅当键不存在时设置
 func (s *BotreonStore) SetNX(key string, value string) (bool, error) {
 	success := false
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		strKey := s.stringKey(key)
 		_, err := txn.Get([]byte(strKey))
 		if err == nil {
@@ -150,15 +112,17 @@ func (s *BotreonStore) SetNX(key string, value string) (bool, error) {
 		}
 		success = true
 		return nil
-	})
+	}, 30)
 	return success, err
 }
 
 // GetSet 实现 Redis GETSET 命令，设置新值并返回旧值
 func (s *BotreonStore) GetSet(key string, value string) (string, error) {
-	// 先读取旧值（在 View 事务中）
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
+
 	var oldValue string
-	err := s.db.View(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		strKey := s.stringKey(key)
 		item, err := txn.Get([]byte(strKey))
 		if err == nil {
@@ -170,13 +134,18 @@ func (s *BotreonStore) GetSet(key string, value string) (string, error) {
 		} else if !errors.Is(err, badger.ErrKeyNotFound) {
 			return err
 		}
-		return nil
-	})
+		if err := txn.Set(TypeOfKeyGet(key), []byte(KeyTypeString)); err != nil {
+			return err
+		}
+		return s.setValueWithCompression(txn, []byte(strKey), []byte(value))
+	}, 30)
 	if err != nil {
 		return "", err
 	}
-	// 然后写入新值（在单独的 Update 事务中）
-	return oldValue, s.Set(key, value)
+	if s.readCache != nil {
+		s.readCache.Set(key, []byte(value))
+	}
+	return oldValue, nil
 }
 
 // MGet 实现 Redis MGET 命令，获取多个键的值
@@ -209,7 +178,7 @@ func (s *BotreonStore) MSet(keyValues ...string) error {
 	if len(keyValues)%2 != 0 {
 		return errors.New("MSET requires an even number of arguments")
 	}
-	return s.db.Update(func(txn *badger.Txn) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
 		for i := 0; i < len(keyValues); i += 2 {
 			key := keyValues[i]
 			value := keyValues[i+1]
@@ -222,7 +191,7 @@ func (s *BotreonStore) MSet(keyValues ...string) error {
 			}
 		}
 		return nil
-	})
+	}, 30)
 }
 
 // MSetNX 实现 Redis MSETNX 命令，仅当所有键都不存在时设置多个键值对
@@ -231,7 +200,7 @@ func (s *BotreonStore) MSetNX(keyValues ...string) (bool, error) {
 		return false, errors.New("MSETNX requires an even number of arguments")
 	}
 	success := false
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// 先检查所有键是否都不存在
 		for i := 0; i < len(keyValues); i += 2 {
 			key := keyValues[i]
@@ -259,7 +228,7 @@ func (s *BotreonStore) MSetNX(keyValues ...string) (bool, error) {
 		}
 		success = true
 		return nil
-	})
+	}, 30)
 	return success, err
 }
 
@@ -340,23 +309,7 @@ func (s *BotreonStore) setIntValue(txn *badger.Txn, key string, value int64) err
 
 // INCR 实现 Redis INCR 命令，将键的值加1
 func (s *BotreonStore) INCR(key string) (int64, error) {
-	s.keyLockMgr.Lock(key)
-	defer s.keyLockMgr.Unlock(key)
-
-	var newValue int64
-	err := s.db.Update(func(txn *badger.Txn) error {
-		oldValue, err := s.getIntValue(txn, key)
-		if err != nil {
-			return err
-		}
-		// Check for overflow: if oldValue is max int64, increment would overflow
-		if oldValue >= math.MaxInt64 {
-			return fmt.Errorf("increment overflow")
-		}
-		newValue = oldValue + 1
-		return s.setIntValue(txn, key, newValue)
-	})
-	return newValue, err
+	return s.INCRBY(key, 1)
 }
 
 // INCRBY 实现 Redis INCRBY 命令，将键的值增加指定整数
@@ -365,7 +318,7 @@ func (s *BotreonStore) INCRBY(key string, increment int64) (int64, error) {
 	defer s.keyLockMgr.Unlock(key)
 
 	var newValue int64
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// Check if key exists with a different type before overwriting
 		typeKey := TypeOfKeyGet(key)
 		item, err := txn.Get(typeKey)
@@ -395,7 +348,7 @@ func (s *BotreonStore) INCRBY(key string, increment int64) (int64, error) {
 		}
 		newValue = oldValue + increment
 		return s.setIntValue(txn, key, newValue)
-	})
+	}, 30)
 	return newValue, err
 }
 
@@ -411,20 +364,44 @@ func (s *BotreonStore) DECRBY(key string, decrement int64) (int64, error) {
 
 // INCRBYFLOAT 实现 Redis INCRBYFLOAT 命令，将键的值增加指定浮点数
 func (s *BotreonStore) INCRBYFLOAT(key string, increment float64) (float64, error) {
-	// 先读取旧值（在 View 事务中）
-	oldValue, err := s.Get(key)
-	if err != nil && !errors.Is(err, ErrKeyNotFound) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
+
+	var newValue float64
+	var newValueStr string
+	err := s.retryUpdate(func(txn *badger.Txn) error {
+		strKey := s.stringKey(key)
+		item, err := txn.Get([]byte(strKey))
+		var oldFloat float64
+		if err == nil {
+			val, err := s.getValueWithDecompression(item)
+			if err != nil {
+				return err
+			}
+			oldFloat, err = strconv.ParseFloat(string(val), 64)
+			if err != nil {
+				return errors.New("value is not a valid float")
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
+		newValue = oldFloat + increment
+		if math.IsInf(newValue, 0) || math.IsNaN(newValue) {
+			return fmt.Errorf("increment would produce NaN or Infinity")
+		}
+		newValueStr = strconv.FormatFloat(newValue, 'f', -1, 64)
+		if err := txn.Set(TypeOfKeyGet(key), []byte(KeyTypeString)); err != nil {
+			return err
+		}
+		return s.setValueWithCompression(txn, []byte(strKey), []byte(newValueStr))
+	}, 30)
+	if err != nil {
 		return 0, err
 	}
-	oldFloat, _ := strconv.ParseFloat(oldValue, 64)
-	newValue := oldFloat + increment
-	// 检查溢出
-	if math.IsInf(newValue, 0) || math.IsNaN(newValue) {
-		return 0, fmt.Errorf("increment would produce NaN or Infinity")
+	if s.readCache != nil {
+		s.readCache.Set(key, []byte(newValueStr))
 	}
-	// 写入新值
-	newValueStr := strconv.FormatFloat(newValue, 'f', -1, 64)
-	return newValue, s.Set(key, newValueStr)
+	return newValue, nil
 }
 
 // APPEND 实现 Redis APPEND 命令，追加字符串
@@ -531,11 +508,14 @@ func (s *BotreonStore) GetRange(key string, start, end int) (string, error) {
 
 // SetRange 实现 Redis SETRANGE 命令，设置字符串的子串
 func (s *BotreonStore) SetRange(key string, offset int, value string) (int, error) {
-	// 先读取旧值（在 View 事务中）
-	var existingValue string
-	err := s.db.View(func(txn *badger.Txn) error {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
+
+	var newLength int
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		strKey := s.stringKey(key)
 		item, err := txn.Get([]byte(strKey))
+		var existingValue string
 		if err == nil {
 			val, err := s.getValueWithDecompression(item)
 			if err != nil {
@@ -545,27 +525,30 @@ func (s *BotreonStore) SetRange(key string, offset int, value string) (int, erro
 		} else if !errors.Is(err, badger.ErrKeyNotFound) {
 			return err
 		}
-		return nil
-	})
+		if offset > len(existingValue) {
+			existingValue += string(make([]byte, offset-len(existingValue)))
+		}
+		var newValue string
+		if offset > 0 {
+			newValue = existingValue[:offset]
+		}
+		newValue += value
+		if offset+len(value) < len(existingValue) {
+			newValue += existingValue[offset+len(value):]
+		}
+		newLength = len(newValue)
+		if err := txn.Set(TypeOfKeyGet(key), []byte(KeyTypeString)); err != nil {
+			return err
+		}
+		return s.setValueWithCompression(txn, []byte(strKey), []byte(newValue))
+	}, 30)
 	if err != nil {
 		return 0, err
 	}
-	// 如果offset超出当前长度，用null字节填充
-	if offset > len(existingValue) {
-		existingValue += string(make([]byte, offset-len(existingValue)))
+	if s.readCache != nil {
+		s.readCache.Delete(key)
 	}
-	// 构建新字符串
-	var newValue string
-	if offset > 0 {
-		newValue = existingValue[:offset]
-	}
-	newValue += value
-	if offset+len(value) < len(existingValue) {
-		newValue += existingValue[offset+len(value):]
-	}
-	newLength := len(newValue)
-	// 写入新值
-	return newLength, s.Set(key, newValue)
+	return newLength, nil
 }
 
 // getStringBytes 获取字符串的字节数组
@@ -616,7 +599,7 @@ func (s *BotreonStore) SetBit(key string, offset int, value int) (int, error) {
 		s.readCache.Delete(key)
 	}
 	var oldBit int
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		data, err := s.getStringBytes(txn, key)
 		if err != nil {
 			return err
@@ -647,7 +630,7 @@ func (s *BotreonStore) SetBit(key string, offset int, value int) (int, error) {
 		}
 		strKey := s.stringKey(key)
 		return s.setValueWithCompression(txn, []byte(strKey), data)
-	})
+	}, 30)
 	return oldBit, err
 }
 
@@ -704,7 +687,7 @@ func (s *BotreonStore) BitOp(op string, destKey string, keys ...string) (int, er
 		s.readCache.Delete(destKey)
 	}
 	var resultLength int
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		if len(keys) == 0 {
 			return errors.New("BITOP requires at least one source key")
 		}
@@ -780,7 +763,7 @@ func (s *BotreonStore) BitOp(op string, destKey string, keys ...string) (int, er
 		}
 		strKey := s.stringKey(destKey)
 		return txn.Set([]byte(strKey), result)
-	})
+	}, 30)
 	return resultLength, err
 }
 
@@ -861,13 +844,13 @@ func (s *BotreonStore) BitLen(key string) (int, error) {
 
 // BitFieldResult represents the result of a BITFIELD operation
 type BitFieldResult struct {
-	Value int64 // The result value (nil if overflow)
-	Overshifted bool // Whether the result was overflowed/undershifted
+	Value       int64 // The result value (nil if overflow)
+	Overshifted bool  // Whether the result was overflowed/undershifted
 }
 
 // BitFieldResultWithOverflow wraps a result with overflow information
 type BitFieldResultWithOverflow struct {
-	Value int64
+	Value    int64
 	Overflow string // "overflow", "sat", "fail"
 }
 
@@ -898,11 +881,11 @@ func parseBitFieldType(typeStr string) (isSigned bool, bits int, err error) {
 func (s *BotreonStore) BitField(key string, operations []string) ([]interface{}, error) {
 	// Parse operations
 	type operation struct {
-		op string // "GET", "SET", "INCRBY"
+		op       string // "GET", "SET", "INCRBY"
 		isSigned bool
-		bits int
-		offset int64
-		value int64
+		bits     int
+		offset   int64
+		value    int64
 	}
 
 	ops := make([]operation, 0, len(operations))
@@ -949,18 +932,18 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 		}
 
 		ops = append(ops, operation{
-			op: opName,
+			op:       opName,
 			isSigned: isSigned,
-			bits: bits,
-			offset: offset,
-			value: value,
+			bits:     bits,
+			offset:   offset,
+			value:    value,
 		})
 	}
 
 	// Execute operations in a transaction
 	results := make([]interface{}, 0, len(ops))
 
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// First, get the current value
 		data, err := s.getStringBytes(txn, key)
 		if err != nil {
@@ -994,13 +977,13 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 				data = newData
 			}
 
-			// Extract value from data
+			// Extract value from data (LSB first: offset 0 = bit 0, offset 1 = bit 1, etc.)
 			var extractedValue int64 = 0
 			for j := 0; j < op.bits; j++ {
 				currentBitOffset := bitOffset + int64(j)
 				currentByteIndex := int(currentBitOffset) / 8
 				currentBitIndex := uint(currentBitOffset) % 8
-				if currentByteIndex < len(data) && (data[currentByteIndex]&(1<<(7-currentBitIndex))) != 0 {
+				if currentByteIndex < len(data) && (data[currentByteIndex]&(1<<currentBitIndex)) != 0 {
 					extractedValue |= int64(1) << uint(j)
 				}
 			}
@@ -1008,11 +991,12 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 			// For signed types, convert from unsigned to signed
 			if op.isSigned {
 				// Check if the sign bit is set
-				signBit := int64(1) << uint(op.bits-1)
+				signBit := int64(1) << (uint(op.bits) - 1)
 				if (extractedValue & signBit) != 0 {
-					// Negative number: convert to negative
-					mask := int64(1)<<uint(op.bits) - 1
-					extractedValue = extractedValue | ^mask
+					// Sign extend: fill all bits above op.bits with 1s
+					// mask = all 1s for bits >= op.bits (e.g., 0xFF...80 for 8 bits)
+					mask := ^(int64(1) << uint(op.bits)) + 1
+					extractedValue = extractedValue | mask
 				}
 			}
 
@@ -1022,16 +1006,16 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 				resultValue = extractedValue
 				results = append(results, resultValue)
 			case "SET":
-				// Write value to data
+				// Write value to data (LSB first)
 				for j := 0; j < op.bits; j++ {
 					currentBitOffset := bitOffset + int64(j)
 					currentByteIndex := int(currentBitOffset) / 8
 					currentBitIndex := uint(currentBitOffset) % 8
 					bitValue := (op.value >> uint(j)) & 1
 					if bitValue == 1 {
-						data[currentByteIndex] |= (1 << (7 - currentBitIndex))
+						data[currentByteIndex] |= (1 << currentBitIndex)
 					} else {
-						data[currentByteIndex] &^= (1 << (7 - currentBitIndex))
+						data[currentByteIndex] &^= (1 << currentBitIndex)
 					}
 				}
 				resultValue = extractedValue
@@ -1064,16 +1048,16 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 					}
 				}
 
-				// Write new value to data
+				// Write new value to data (LSB first)
 				for j := 0; j < op.bits; j++ {
 					currentBitOffset := bitOffset + int64(j)
 					currentByteIndex := int(currentBitOffset) / 8
 					currentBitIndex := uint(currentBitOffset) % 8
 					bitValue := (newValue >> uint(j)) & 1
 					if bitValue == 1 {
-						data[currentByteIndex] |= (1 << (7 - currentBitIndex))
+						data[currentByteIndex] |= (1 << currentBitIndex)
 					} else {
-						data[currentByteIndex] &^= (1 << (7 - currentBitIndex))
+						data[currentByteIndex] &^= (1 << currentBitIndex)
 					}
 				}
 				results = append(results, newValue)
@@ -1112,7 +1096,7 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 		}
 
 		return nil
-	})
+	}, 30)
 
 	return results, err
 }

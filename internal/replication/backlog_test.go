@@ -19,13 +19,13 @@ func TestBacklog_Append(t *testing.T) {
 	// 第一次追加，返回的是追加前的偏移量
 	data1 := []byte("hello")
 	offset1 := backlog.Append(data1)
-	assert.Equal(t, int64(0), offset1)        // 追加前偏移量是0
+	assert.Equal(t, int64(0), offset1) // 追加前偏移量是0
 	assert.Equal(t, int64(5), backlog.GetCurrentOffset())
 
 	// 第二次追加
 	data2 := []byte("world")
 	offset2 := backlog.Append(data2)
-	assert.Equal(t, int64(5), offset2)         // 追加前偏移量是5
+	assert.Equal(t, int64(5), offset2) // 追加前偏移量是5
 	assert.Equal(t, int64(10), backlog.GetCurrentOffset())
 }
 
@@ -97,7 +97,7 @@ func TestBacklog_GetRange_Circular(t *testing.T) {
 	// 填满缓冲区
 	backlog.Append([]byte("abcdefghij")) // offset=10
 	// 触发循环
-	backlog.Append([]byte("xy"))         // offset=2 (循环)
+	backlog.Append([]byte("xy")) // offset=2 (循环)
 
 	// buffer = "xycdefghij", offset=2
 	// availableStart = max(0, 2-10) = 0

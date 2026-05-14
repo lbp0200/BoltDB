@@ -29,3 +29,9 @@ boltDB-*
 
 # Worktrees
 .worktrees/
+
+# AtomCode agent cache
+.atomcode/
+
+# AI agent generated docs
+AGENTS.md

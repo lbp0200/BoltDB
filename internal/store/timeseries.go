@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	prefixTS = "ts:"
+	prefixTS = "TS:"
 )
 
 // TimeSeriesDataPoint represents a single data point in a time series
@@ -24,19 +24,19 @@ type TimeSeriesDataPoint struct {
 
 // TimeSeriesInfo contains metadata about a time series
 type TimeSeriesInfo struct {
-	TotalSamples   int64   // Total number of data points
-	MemoryUsage    int64   // Estimated memory usage
-	LastTimestamp  int64   // Last timestamp
-	FirstTimestamp int64   // First timestamp
-	RetentionTime  int64   // Retention time in milliseconds (0 = unlimited)
-	Encoding       string  // Encoding type
-	ChunkCount     int64   // Number of chunks
+	TotalSamples   int64  // Total number of data points
+	MemoryUsage    int64  // Estimated memory usage
+	LastTimestamp  int64  // Last timestamp
+	FirstTimestamp int64  // First timestamp
+	RetentionTime  int64  // Retention time in milliseconds (0 = unlimited)
+	Encoding       string // Encoding type
+	ChunkCount     int64  // Number of chunks
 }
 
 // TSCreateOptions contains options for TS.CREATE
 type TSCreateOptions struct {
-	Retention    int64  // Retention time in milliseconds
-	Encoding     string // Encoding type (compressed, uncompressed)
+	Retention       int64  // Retention time in milliseconds
+	Encoding        string // Encoding type (compressed, uncompressed)
 	DuplicatePolicy string // Policy for duplicate samples (block, first, last, min, max, sum)
 }
 
@@ -120,7 +120,7 @@ func (s *BotreonStore) TSCreate(key string, opts TSCreateOptions) error {
 
 	// Set type
 	typeKey := TypeOfKeyGet(key)
-	err = s.db.Update(func(txn *badger.Txn) error {
+	err = s.retryUpdate(func(txn *badger.Txn) error {
 		if err := txn.Set(typeKey, []byte(KeyTypeTimeSeries)); err != nil {
 			return err
 		}
@@ -138,7 +138,7 @@ func (s *BotreonStore) TSCreate(key string, opts TSCreateOptions) error {
 		}
 
 		return txn.Set(tsMetaKey(key), encodeTSMeta(meta))
-	})
+	}, 30)
 
 	return err
 }
@@ -148,7 +148,7 @@ func (s *BotreonStore) TSCreate(key string, opts TSCreateOptions) error {
 func (s *BotreonStore) TSAdd(key string, timestamp int64, value float64, opts TSAddOptions) (int64, error) {
 	var addedTimestamp int64
 
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// Set type key if not exists
 		typeKey := TypeOfKeyGet(key)
 		typeItem, err := txn.Get(typeKey)
@@ -282,7 +282,7 @@ func (s *BotreonStore) TSAdd(key string, timestamp int64, value float64, opts TS
 
 		addedTimestamp = timestamp
 		return nil
-	})
+	}, 30)
 
 	return addedTimestamp, err
 }
@@ -411,7 +411,7 @@ func (s *BotreonStore) TSRange(key string, start, stop string, count int64) ([]T
 func (s *BotreonStore) TSDel(key string, start, stop string) (int64, error) {
 	var deleted int64
 
-	err := s.db.Update(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// Get metadata
 		metaKey := tsMetaKey(key)
 		item, err := txn.Get(metaKey)
@@ -487,7 +487,7 @@ func (s *BotreonStore) TSDel(key string, start, stop string) (int64, error) {
 		}
 
 		return txn.Set(metaKey, encodeTSMeta(meta))
-	})
+	}, 30)
 
 	return deleted, err
 }
