@@ -29,6 +29,7 @@ type connState struct {
 	clusterAsking bool
 	watchedKeys   map[string]struct{}
 	dirtyKeys     map[string]struct{}
+	subscriber    *store.Subscriber
 }
 
 type Handler struct {
@@ -238,6 +239,10 @@ func (h *Handler) handleConnection(conn net.Conn) {
 	state := &connState{}
 
 	defer func() {
+		if state.subscriber != nil {
+			h.PubSub.RemoveSubscriber(state.subscriber)
+			state.subscriber = nil
+		}
 		if len(state.watchedKeys) > 0 {
 			h.watchMu.Lock()
 			for key := range state.watchedKeys {
@@ -308,12 +313,25 @@ func (h *Handler) handleConnection(conn net.Conn) {
 
 		// 批量发送所有响应
 		for _, resp := range responses {
-			if err := proto.WriteRESP(writer, resp); err != nil {
-				logger.Logger.Warn().
-					Str("remote_addr", remoteAddr).
-					Err(err).
-					Msg("写入响应失败")
-				return
+			switch r := resp.(type) {
+			case *MultiResponse:
+				for _, subResp := range r.Responses {
+					if err := proto.WriteRESP(writer, subResp); err != nil {
+						logger.Logger.Warn().
+							Str("remote_addr", remoteAddr).
+							Err(err).
+							Msg("写入响应失败")
+						return
+					}
+				}
+			default:
+				if err := proto.WriteRESP(writer, resp); err != nil {
+					logger.Logger.Warn().
+						Str("remote_addr", remoteAddr).
+						Err(err).
+						Msg("写入响应失败")
+					return
+				}
 			}
 		}
 
@@ -323,6 +341,12 @@ func (h *Handler) handleConnection(conn net.Conn) {
 				Str("remote_addr", remoteAddr).
 				Err(err).
 				Msg("刷新缓冲区失败")
+			return
+		}
+
+		// 进入 PubSub 模式后切换到推送循环
+		if state.subscriber != nil {
+			h.runPubSubLoop(conn, reader, writer, state, remoteAddr)
 			return
 		}
 
@@ -412,6 +436,23 @@ func (ReplicationTakeoverSignal) String() string { return "replication-takeover"
 func (ReplicationTakeoverSignal) Error() string  { return "replication takeover" }
 func (ReplicationTakeoverSignal) IsError() bool  { return false }
 
+// PubSubQuitSignal signals that the pubsub loop should close after sending OK
+type PubSubQuitSignal struct{}
+
+func (PubSubQuitSignal) String() string { return "+OK\r\n" }
+
+// MultiResponse carries multiple RESP responses for a single command (e.g. SUBSCRIBE ch1 ch2)
+type MultiResponse struct {
+	Responses []proto.RESP
+}
+
+func (m *MultiResponse) String() string {
+	if len(m.Responses) == 0 {
+		return ""
+	}
+	return m.Responses[0].String()
+}
+
 func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.Conn, reader *bufio.Reader, writer *bufio.Writer) proto.RESP {
 	if len(args) < 2 {
 		return proto.NewError("ERR wrong number of arguments for 'PSYNC' command")
@@ -494,6 +535,229 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 		// 发送CONTINUE响应
 		response := fmt.Sprintf("+CONTINUE %s\r\n", result.ReplId)
 		return proto.NewSimpleString(strings.TrimSpace(response))
+	}
+}
+
+// runPubSubLoop handles a connection that has entered PubSub mode via SUBSCRIBE/PSUBSCRIBE.
+// It multiplexes between incoming subscription messages and PubSub commands.
+func (h *Handler) runPubSubLoop(conn net.Conn, reader *bufio.Reader, writer *bufio.Writer, state *connState, remoteAddr string) {
+	subscriber := state.subscriber
+	if subscriber == nil {
+		return
+	}
+
+	logger.Logger.Debug().Str("remote_addr", remoteAddr).Msg("进入 PubSub 模式")
+
+	cmdCh := make(chan *proto.Array, 16)
+	errCh := make(chan error, 1)
+	done := make(chan struct{})
+	defer close(done)
+
+	go func() {
+		for {
+			req, err := proto.ReadRESP(reader)
+			if err != nil {
+				select {
+				case errCh <- err:
+				case <-done:
+				}
+				return
+			}
+			select {
+			case cmdCh <- req:
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	for {
+		select {
+		case msg, ok := <-subscriber.MessageCh:
+			if !ok {
+				return
+			}
+			resp := buildPubSubPush(msg)
+			if err := proto.WriteRESP(writer, resp); err != nil {
+				return
+			}
+
+		case req := <-cmdCh:
+			resp := h.processPubSubCommand(state, req, remoteAddr)
+			if resp != nil {
+				switch r := resp.(type) {
+				case *PubSubQuitSignal:
+					_ = proto.WriteRESP(writer, proto.NewSimpleString("OK"))
+					return
+				case *MultiResponse:
+					for _, subResp := range r.Responses {
+						if err := proto.WriteRESP(writer, subResp); err != nil {
+							return
+						}
+					}
+				default:
+					if err := proto.WriteRESP(writer, resp); err != nil {
+						return
+					}
+				}
+			}
+
+		case err := <-errCh:
+			logger.Logger.Debug().Str("remote_addr", remoteAddr).Err(err).Msg("pubsub read error")
+			return
+		}
+	}
+}
+
+// buildPubSubPush constructs a RESP push message from a store.Message
+func buildPubSubPush(msg *store.Message) proto.RESP {
+	if msg.Pattern != "" {
+		return &proto.Array{Args: [][]byte{
+			[]byte("pmessage"),
+			[]byte(msg.Pattern),
+			[]byte(msg.Channel),
+			msg.Data,
+		}}
+	}
+	return &proto.Array{Args: [][]byte{
+		[]byte("message"),
+		[]byte(msg.Channel),
+		msg.Data,
+	}}
+}
+
+// processPubSubCommand handles commands received while in PubSub mode.
+// Only (P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT are allowed.
+func (h *Handler) processPubSubCommand(state *connState, req *proto.Array, remoteAddr string) proto.RESP {
+	args := req.Args
+	if len(args) == 0 {
+		return proto.NewError("ERR no command")
+	}
+	cmd := strings.ToUpper(string(args[0]))
+
+	switch cmd {
+	case "SUBSCRIBE":
+		if h.PubSub == nil {
+			return proto.NewError("ERR pubsub not enabled")
+		}
+		if len(args) < 2 {
+			return proto.NewError("ERR wrong number of arguments for 'SUBSCRIBE' command")
+		}
+		channels := make([]string, len(args)-1)
+		for i, arg := range args[1:] {
+			channels[i] = string(arg)
+		}
+		subscribed := h.PubSub.Subscribe(state.subscriber, channels...)
+		resp := &MultiResponse{
+			Responses: make([]proto.RESP, len(subscribed)),
+		}
+		for i, ch := range subscribed {
+			resp.Responses[i] = &proto.Array{Args: [][]byte{
+				[]byte("subscribe"),
+				[]byte(ch),
+				[]byte(strconv.Itoa(i + 1)),
+			}}
+		}
+		return resp
+
+	case "PSUBSCRIBE":
+		if h.PubSub == nil {
+			return proto.NewError("ERR pubsub not enabled")
+		}
+		if len(args) < 2 {
+			return proto.NewError("ERR wrong number of arguments for 'PSUBSCRIBE' command")
+		}
+		patterns := make([]string, len(args)-1)
+		for i, arg := range args[1:] {
+			patterns[i] = string(arg)
+		}
+		subscribed := h.PubSub.PSubscribe(state.subscriber, patterns...)
+		resp := &MultiResponse{
+			Responses: make([]proto.RESP, len(subscribed)),
+		}
+		for i, p := range subscribed {
+			resp.Responses[i] = &proto.Array{Args: [][]byte{
+				[]byte("psubscribe"),
+				[]byte(p),
+				[]byte(strconv.Itoa(i + 1)),
+			}}
+		}
+		return resp
+
+	case "UNSUBSCRIBE":
+		if h.PubSub == nil {
+			return proto.NewError("ERR pubsub not enabled")
+		}
+		var unsubscribed []string
+		if len(args) > 1 {
+			channels := make([]string, len(args)-1)
+			for i, arg := range args[1:] {
+				channels[i] = string(arg)
+			}
+			unsubscribed = h.PubSub.Unsubscribe(state.subscriber, channels...)
+		} else {
+			unsubscribed = h.PubSub.Unsubscribe(state.subscriber)
+		}
+		if len(unsubscribed) == 0 {
+			return &proto.Array{Args: [][]byte{
+				[]byte("unsubscribe"),
+				[]byte(""),
+				[]byte("0"),
+			}}
+		}
+		resp := &MultiResponse{
+			Responses: make([]proto.RESP, len(unsubscribed)),
+		}
+		for i, ch := range unsubscribed {
+			resp.Responses[i] = &proto.Array{Args: [][]byte{
+				[]byte("unsubscribe"),
+				[]byte(ch),
+				[]byte("0"),
+			}}
+		}
+		return resp
+
+	case "PUNSUBSCRIBE":
+		if h.PubSub == nil {
+			return proto.NewError("ERR pubsub not enabled")
+		}
+		var unsubscribed []string
+		if len(args) > 1 {
+			patterns := make([]string, len(args)-1)
+			for i, arg := range args[1:] {
+				patterns[i] = string(arg)
+			}
+			unsubscribed = h.PubSub.PUnsubscribe(state.subscriber, patterns...)
+		} else {
+			unsubscribed = h.PubSub.PUnsubscribe(state.subscriber)
+		}
+		if len(unsubscribed) == 0 {
+			return &proto.Array{Args: [][]byte{
+				[]byte("punsubscribe"),
+				[]byte(""),
+				[]byte("0"),
+			}}
+		}
+		resp := &MultiResponse{
+			Responses: make([]proto.RESP, len(unsubscribed)),
+		}
+		for i, p := range unsubscribed {
+			resp.Responses[i] = &proto.Array{Args: [][]byte{
+				[]byte("punsubscribe"),
+				[]byte(p),
+				[]byte("0"),
+			}}
+		}
+		return resp
+
+	case "PING":
+		return proto.NewSimpleString("PONG")
+
+	case "QUIT":
+		return &PubSubQuitSignal{}
+
+	default:
+		return proto.NewError("ERR only (P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT allowed in this context")
 	}
 }
 
@@ -4052,18 +4316,25 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if len(args) < 1 {
 			return proto.NewError("ERR wrong number of arguments for 'SUBSCRIBE' command")
 		}
-		// 简化实现：返回订阅确认
 		channels := make([]string, len(args))
 		for i, arg := range args {
 			channels[i] = string(arg)
 		}
-		// 实际应该创建订阅者并持续发送消息
-		// 这里简化处理
-		return &proto.Array{Args: [][]byte{
-			[]byte("subscribe"),
-			[]byte(channels[0]),
-			[]byte("1"),
-		}}
+		if state.subscriber == nil {
+			state.subscriber = store.NewSubscriber(fmt.Sprintf("%s:%d", remoteAddr, time.Now().UnixNano()))
+		}
+		subscribed := h.PubSub.Subscribe(state.subscriber, channels...)
+		resp := &MultiResponse{
+			Responses: make([]proto.RESP, len(subscribed)),
+		}
+		for i, ch := range subscribed {
+			resp.Responses[i] = &proto.Array{Args: [][]byte{
+				[]byte("subscribe"),
+				[]byte(ch),
+				[]byte(strconv.Itoa(i + 1)),
+			}}
+		}
+		return resp
 
 	case "PSUBSCRIBE":
 		if h.PubSub == nil {
@@ -4072,46 +4343,115 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if len(args) < 1 {
 			return proto.NewError("ERR wrong number of arguments for 'PSUBSCRIBE' command")
 		}
-		// 简化实现
 		patterns := make([]string, len(args))
 		for i, arg := range args {
 			patterns[i] = string(arg)
 		}
-		return &proto.Array{Args: [][]byte{
-			[]byte("psubscribe"),
-			[]byte(patterns[0]),
-			[]byte("1"),
-		}}
+		if state.subscriber == nil {
+			state.subscriber = store.NewSubscriber(fmt.Sprintf("%s:%d", remoteAddr, time.Now().UnixNano()))
+		}
+		subscribed := h.PubSub.PSubscribe(state.subscriber, patterns...)
+		resp := &MultiResponse{
+			Responses: make([]proto.RESP, len(subscribed)),
+		}
+		for i, p := range subscribed {
+			resp.Responses[i] = &proto.Array{Args: [][]byte{
+				[]byte("psubscribe"),
+				[]byte(p),
+				[]byte(strconv.Itoa(i + 1)),
+			}}
+		}
+		return resp
 
 	case "UNSUBSCRIBE":
 		if h.PubSub == nil {
 			return proto.NewError("ERR pubsub not enabled")
 		}
-		// 返回取消订阅确认
-		channel := ""
-		if len(args) >= 1 {
-			channel = string(args[0])
+		if state.subscriber == nil {
+			// Not in pubsub mode, return empty confirmation
+			channel := ""
+			if len(args) >= 1 {
+				channel = string(args[0])
+			}
+			return &proto.Array{Args: [][]byte{
+				[]byte("unsubscribe"),
+				[]byte(channel),
+				[]byte("0"),
+			}}
 		}
-		return &proto.Array{Args: [][]byte{
-			[]byte("unsubscribe"),
-			[]byte(channel),
-			[]byte("0"),
-		}}
+		var unsubscribed []string
+		if len(args) >= 1 {
+			channels := make([]string, len(args))
+			for i, arg := range args {
+				channels[i] = string(arg)
+			}
+			unsubscribed = h.PubSub.Unsubscribe(state.subscriber, channels...)
+		} else {
+			unsubscribed = h.PubSub.Unsubscribe(state.subscriber)
+		}
+		if len(unsubscribed) == 0 {
+			return &proto.Array{Args: [][]byte{
+				[]byte("unsubscribe"),
+				[]byte(""),
+				[]byte("0"),
+			}}
+		}
+		resp := &MultiResponse{
+			Responses: make([]proto.RESP, len(unsubscribed)),
+		}
+		for i, ch := range unsubscribed {
+			resp.Responses[i] = &proto.Array{Args: [][]byte{
+				[]byte("unsubscribe"),
+				[]byte(ch),
+				[]byte("0"),
+			}}
+		}
+		return resp
 
 	case "PUNSUBSCRIBE":
 		if h.PubSub == nil {
 			return proto.NewError("ERR pubsub not enabled")
 		}
-		// 返回取消模式订阅确认
-		pattern := ""
-		if len(args) >= 1 {
-			pattern = string(args[0])
+		if state.subscriber == nil {
+			// Not in pubsub mode, return empty confirmation
+			pattern := ""
+			if len(args) >= 1 {
+				pattern = string(args[0])
+			}
+			return &proto.Array{Args: [][]byte{
+				[]byte("punsubscribe"),
+				[]byte(pattern),
+				[]byte("0"),
+			}}
 		}
-		return &proto.Array{Args: [][]byte{
-			[]byte("punsubscribe"),
-			[]byte(pattern),
-			[]byte("0"),
-		}}
+		var unsubscribed []string
+		if len(args) >= 1 {
+			patterns := make([]string, len(args))
+			for i, arg := range args {
+				patterns[i] = string(arg)
+			}
+			unsubscribed = h.PubSub.PUnsubscribe(state.subscriber, patterns...)
+		} else {
+			unsubscribed = h.PubSub.PUnsubscribe(state.subscriber)
+		}
+		if len(unsubscribed) == 0 {
+			return &proto.Array{Args: [][]byte{
+				[]byte("punsubscribe"),
+				[]byte(""),
+				[]byte("0"),
+			}}
+		}
+		resp := &MultiResponse{
+			Responses: make([]proto.RESP, len(unsubscribed)),
+		}
+		for i, p := range unsubscribed {
+			resp.Responses[i] = &proto.Array{Args: [][]byte{
+				[]byte("punsubscribe"),
+				[]byte(p),
+				[]byte("0"),
+			}}
+		}
+		return resp
 
 	case "PUBSUB":
 		if h.PubSub == nil {
@@ -4342,6 +4682,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		added, err := h.Db.GeoAdd(key, members)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewInteger(added)
@@ -4947,6 +5290,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			// Skip MKSTREAM option for now
 			err := h.Db.XGroupCreate(key, group, startID)
 			if err != nil {
+				if errors.Is(err, store.ErrWrongType) {
+					return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+				}
 				return proto.NewError(fmt.Sprintf("ERR %v", err))
 			}
 			return proto.OK
@@ -5687,6 +6033,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		result, err := h.Db.JSONSet(key, path, value, nx, xx)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewSimpleString(result)
@@ -5966,6 +6315,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		ts, err := h.Db.TSAdd(key, timestamp, value, opts)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewInteger(ts)

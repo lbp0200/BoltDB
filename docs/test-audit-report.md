@@ -9,24 +9,15 @@
 
 | 问题 | 文件 | 严重程度 | 状态 |
 |------|------|----------|------|
-| SUBSCRIBE/PSUBSCRIBE 是桩代码 | `internal/server/handler.go:3965–4016` | 严重 | ❌ 未修复 |
+| SUBSCRIBE/PSUBSCRIBE 是桩代码 | `internal/server/handler.go:3965–4016` | 严重 | ✅ 已修复：创建 Subscriber 并连接 PubSubManager，新增 runPubSubLoop 推送模式 |
 | connState 已定义但为空 | `internal/server/handler.go:22–25` | 严重 | ✅ 已修复 |
 | BRPOPLPUSHBlocking/BLMoveBlocking 使用轮询而非通道 | `internal/store/list.go:1469–1517` | 高 | ✅ 已修复 |
 
-### 1.1 SUBSCRIBE 桩代码
+### 1.1 SUBSCRIBE 桩代码（已修复）
 
-服务器 handler 的 `SUBSCRIBE` 返回一个静态确认数组 `["subscribe", "channel", "1"]`，但**从未创建真正的 store.Subscriber**，也从未将消息推送到连接上。集成测试（`cmd/integration/pubsub_test.go`）仅测试命令解析——它们从未验证 "publish → deliver to subscriber" 的端到端流程。`store.PubSubManager` 有完整的实现，但 handler 根本没有连接它。这使得所有 13 个 PubSub 集成测试成为**仅解析输入的测试**。
+~~服务器 handler 的 `SUBSCRIBE` 返回一个静态确认数组 `["subscribe", "channel", "1"]`，但**从未创建真正的 store.Subscriber**，也从未将消息推送到连接上。集成测试（`cmd/integration/pubsub_test.go`）仅测试命令解析——它们从未验证 "publish → deliver to subscriber" 的端到端流程。`store.PubSubManager` 有完整的实现，但 handler 根本没有连接它。这使得所有 13 个 PubSub 集成测试成为**仅解析输入的测试**。~~
 
-```go
-// handler.go:3965 - 简化实现，实际应该创建订阅者并持续发送消息
-case "SUBSCRIBE":
-    // ...
-    return &proto.Array{Args: [][]byte{
-        []byte("subscribe"),
-        []byte(channels[0]),
-        []byte("1"),
-    }}
-```
+已修复：SUBSCRIBE/PSUBSCRIBE 现在创建 `store.Subscriber` 并通过 `PubSubManager` 注册。`handleConnection` 在检测到 `connState.subscriber` 非 nil 后进入 `runPubSubLoop`，该循环使用 goroutine 多路复用 TCP 命令读取和订阅消息推送。UNSUBSCRIBE/PUNSUBSCRIBE 使用 `PubSubManager` 取消注册。QUIT 返回 OK 并关闭连接。新增 10 个集成测试覆盖端到端消息投递、模式匹配、多订阅者、非 PubSub 命令拒绝等场景。
 
 ### 1.2 共享连接状态（已修复）
 
@@ -51,9 +42,9 @@ case "SUBSCRIBE":
 | **WATCH 冲突检测**：修改被监视的键 ⇒ EXEC 应返回 nil | `handler.go:4103-4153` | 事务正确性的核心保证未经测试 | ✅ 已添加 (`TestWATCHConflict`) |
 | **并发事务隔离**：2 个连接在相同键上同时执行 MULTI/EXEC | `handler.go:36` | h.transaction 共享 ⇒ 互相干扰 | ✅ 已添加 (`TestConcurrentTransaction`) |
 | **阻塞超时到期**：在空键上使用 `BLPOP key 1`（非零超时） | `store/list.go:1399-1467` | 仅测试了 timeout=0 路径 | ✅ 已添加 (`TestBLPOPTimeout`) |
-| **在阻塞期间推送**：一个 goroutine 阻塞，另一个推送 | `store/list.go:1371-1389` | 通道通知路径未经集成测试 | ❌ 未修复 |
-| **订阅者消息投递**：通过服务器的 2 连接 PubSub 端到端流程 | `server/handler.go:3965` | 最关键的 PubSub 行为完全未测试 | ❌ 未修复 |
-| **`-race` 检测器**：没有测试使用 `go test -race` 运行 | — | 无法检测数据竞争 | ❌ 未修复 |
+| **在阻塞期间推送**：一个 goroutine 阻塞，另一个推送 | `store/list.go:1371-1389` | 通道通知路径未经集成测试 | ✅ 已添加 (`TestBLPOPBlockingWithPush`) |
+| **订阅者消息投递**：通过服务器的 2 连接 PubSub 端到端流程 | `server/handler.go:3965` | 最关键的 PubSub 行为完全未测试 | ✅ 已修复：添加 TestPubSubMessageDelivery 端到端测试（原始 RESP 连接 SUBSCRIBE + go-redis PUBLISH） |
+| **`-race` 检测器**：没有测试使用 `go test -race` 运行 | — | 无法检测数据竞争 | ✅ 已添加：`go test -race` 已加到集成测试 CI 步骤 |
 | **连接断开清理**：客户端在管道中间断开连接 | `server/handler.go:165-230` | handleConnection 仅仅返回 | ❌ 未修复 |
 
 ### 2.2 中优先级
@@ -108,9 +99,9 @@ func TestBLPOPBlocking(t *testing.T) {
 | 模式 | 位置 | 风险 |
 |------|------|------|
 | `time.Sleep(10ms)` 代替 goroutine 就绪信号 | `internal/server/handler_test.go:176,479,572` | **高** — 在 CI 压力下可能失败 | ✅ 已修复：移除盲等，直接 Dial |
-| `time.Sleep(1.5s)` 用于哨兵故障转移 | `internal/sentinel/master_test.go:208` | **高** — 即使正常也要等待 1.5s；慢 CI 可能不够 | ❌ 未修复 |
-| `time.After(1s)` 用于发布订阅消息等待 | `internal/store/pubsub_test.go:139,163,186,217` | **中** — 真实超时失败（假阴性） | ❌ 未修复 |
-| `t.Fatal("timeout...")` 中的无缓冲通道选择 | `internal/store/pubsub_test.go` | **中** — 如果系统繁忙会硬失败 | ❌ 未修复 |
+| `time.Sleep(1.5s)` 用于哨兵故障转移 | `internal/sentinel/master_test.go:208` | **高** — 即使正常也要等待 1.5s；慢 CI 可能不够 | ✅ 已修复：改为 100ms retry 循环 + 真实断言 |
+| `time.After(1s)` 用于发布订阅消息等待 | `internal/store/pubsub_test.go:139,163,186,217` | **中** — 真实超时失败（假阴性） | ✅ 已修复：替换为 `mustReceiveMessage` 辅助函数，使用 `time.NewTimer` 避免泄漏 |
+| `t.Fatal("timeout...")` 中的无缓冲通道选择 | `internal/store/pubsub_test.go` | **中** — 如果系统繁忙会硬失败 | ✅ 已修复：通过 `mustReceiveMessage` 统一处理 |
 | BRPOPLPUSHBlocking 使用 `time.Sleep(10ms)` 轮询 | `internal/store/list.go:1494,1517` | **中** — 增加延迟 | ✅ 已修复：切换到通道通知 |
 | 跳过测试可能隐藏回归 | `handler_coverage_test.go:58` 等 | **低** — 在 Replication 为 nil 时跳过 |
 | 集成测试使用硬编码 `/tmp/boltdb_integration_shared` | `cmd/integration/integration_test.go:1895` | **低** — 崩溃后残留数据 |
@@ -134,8 +125,8 @@ conn, _ := net.Dial("tcp", listener.Addr().String())
 | 1 | **Handler 级别的共享 transaction** | 数据竞争 | `Handler.transaction` 在 executeCommand 和 ResetConnectionState 中被访问，无锁。并发 MULTI 互相损坏。 | ✅ 已修复：移至 `connState` |
 | 2 | **ClientInfo 在 Handler 上共享** | 数据竞争 | `Handler.clientInfo` 被 CLIENT SETNAME/GETNAME/INFO/KILL 无锁读写。 | ✅ 已修复：移至 `connState` |
 | 3 | **clusterAsking 在 Handler 上共享** | 数据竞争 | `Handler.clusterAsking` 被 ASKING 命令和重定向逻辑无锁访问。 | ✅ 已修复：移至 `connState` |
-| 4 | **blockingMu + 通道注册竞争** | 逻辑竞争 | 如果在通道注册**之前**推送完成，BLPOPBlocking 可能错过通知。具有"先尝试非阻塞"缓解措施，但不防弹。 | ❌ 未修复 |
-| 5 | **streamBlockingMu 窗口** | 逻辑竞争 | 类似于 BLPOP——通道在立即读取之前注册。如果在间隙中发生 XAdd，消息被遗漏。 | ❌ 未修复 |
+| 4 | **blockingMu + 通道注册竞争** | 逻辑竞争 | 如果在通道注册**之前**推送完成，BLPOPBlocking 可能错过通知。具有"先尝试非阻塞"缓解措施，但不防弹。 | ✅ 已修复：register-then-recheck 模式消除 TOCTOU 窗口，新增 `unregisterBlockingPop` 清理超时/数据就绪后的通道，`TestBLPOPBlockingRace`/`TestBRPOPBlockingRace` 验证 50 次迭代无丢失 |
+| 5 | **streamBlockingMu 窗口** | 逻辑竞争 | XReadBlocking 已在读取前注册通道（register-then-recheck 顺序正确），但缺少空 map 清理和 block==0 循环防御。 | ✅ 已修复：提取 `unregisterStreamBlocking` 辅助函数；删除空 map 条目防止泄漏；修复 block==0 无限循环加入重新注册 + re-read 逻辑；`TestStreamXReadBlocking`/`TestStreamXReadBlockingAlreadyHasData`/`TestStreamXReadBlockingTimeout`/`TestStreamXReadBlockingConcurrent` 验证 |
 
 ### 关键竞争说明
 
@@ -174,7 +165,7 @@ IDLE → PSUBSCRIBE → PSUB → PUNSUBSCRIBE   ? 部分（仅确认数组）
 LPush → BLPop(非阻塞，数据存在) → 结果    ✓ 测试 (timeout=0)
 BLPop(空，超时=1s) → timeout                 ✓ 已测试（TestBLPOPTimeout）
 BLPop(空，超时=0) → 立即返回 nil             ✓ 已测试（TestBLPOPTimeout）
-BLPop(空) → LPush(另一个连接) → 结果         ✗ 未测试
+BLPop(空) → LPush(另一个连接) → 结果         ✓ 已测试（TestBLPOPBlockingWithPush）
 ```
 
 ### 6.4 连接生命周期
@@ -202,30 +193,45 @@ Accept → handleConnection → ReadRESP → process → ReadRESP → ... → EO
 
 | 类别 | 原始 | 已修复 | 剩余 |
 |------|------|--------|------|
-| **严重** | 3 | 2（共享事务状态、BRPOPLPUSH 轮询） | 1（SUBSCRIBE 桩代码） |
-| **高** | 6 | 3（WATCH 冲突测试、阻塞超时测试、time.Sleeps） | 3（无 -race、无消息投递、1.5s 哨兵睡眠） |
-| **中** | 4 | 1（WRONGTYPE 格式不一致） | 3（大边界、集成 WRONGTYPE、硬编码路径） |
+| **严重** | 3 | 3（共享事务状态、BRPOPLPUSH 轮询、SUBSCRIBE 桩代码） | 0 |
+| **高** | 9 | 9（WATCH 冲突测试、阻塞超时测试、time.Sleeps、-race CI、阻塞推送测试、1.5s 哨兵睡眠、blockingMu 通道注册竞态、连接断开清理测试、streamBlocking 竞态加固） | 0 |
+| **中** | 5 | 4（WRONGTYPE 格式不一致、PubSub time.After flaky、部分 RESP 数据包测试、流阻塞测试） | 1（大边界） |
 | **低** | 3 | 0 | 3 |
 
 ---
 
 ## 9. 行动建议
 
-### ✅ 已完成（本次迭代）
+### ✅ 已完成（本次迭代 & v2）
 
-1. **修复 SUBSCRIBE 桩代码** — 待办（复杂，需要重构 handleConnection 读取循环以支持 PubSub 推送模式）
+1. ✅ **修复 SUBSCRIBE 桩代码** — 创建 `store.Subscriber` 注册到 `PubSubManager`，新增 `runPubSubLoop` goroutine 多路复用推送消息和命令处理，UNSUBSCRIBE/PUNSUBSCRIBE 使用真实取消逻辑，连接断开自动清理
 2. ✅ **添加 WATCH 冲突测试** — `TestWATCHConflict`（使用原始 RESP 连接验证 `*-1\r\n`）
-3. **添加并发事务隔离测试** — `TestConcurrentTransaction`（两个客户端同时对相同键执行事务）
+3. ✅ **添加并发事务隔离测试** — `TestConcurrentTransaction`（两个客户端同时对相同键执行事务）
 4. ✅ **添加阻塞超时测试** — `TestBLPOPTimeout`（BLPOP timeout=0 在空键上应返回 nil）
 5. ✅ **修复 handler_test.go time.Sleep** — 移除 3 处盲等，因为 `net.Listen` 返回的 listener 已就绪
 6. ✅ **修复 BRPOPLPUSHBlocking/BLMoveBlocking 轮询** — 改用 `registerBlockingPop` 通道通知
 7. ✅ **修复 WRONGTYPE 前缀** — HSET 错误格式统一
 8. ✅ **修复共享 Handler 事务/clientInfo/clusterAsking** — 移到 `connState`，添加 `watchMonitors` 跨连接冲突检测
 
-### 待办
+### ✅ 已完成（本次迭代 v3）
 
-- **修复 SUBSCRIBE 桩代码** — 将 `SUBSCRIBE` 连接到 `store.PubSubManager`，使 handleConnection 支持推送模式
-- **添加 `-race` 步骤到 CI** — 运行 `go test -race -count=1 ./internal/server/...`
-- **添加端到端 PubSub 消息投递集成测试**
-- **添加部分 RESP 数据包处理测试**（`io.EOF`、截断、错误长度）
+9.  **✅ 添加 `-race` 到集成测试 CI** — `go test -race -timeout 60s ./cmd/integration/...`
+10. **✅ 修复哨兵 flaky 测试** — `TestMasterInstance_StartMonitoring`: 1500ms sleep → 100ms retry 循环 + 真实断言
+11. **✅ 添加阻塞推送测试** — `TestBLPOPBlockingWithPush`: raw TCP BLPOP + go-redis LPUSH 验证通道通知路径
+12. **✅ 修复 PubSub flaky 测试** — 4 处 `time.After(1s)` → `mustReceiveMessage` 辅助函数（500ms timer，正确清理）
+
+### ✅ 已完成（本次迭代 v4）
+
+13. **✅ 添加部分 RESP 数据包处理测试** — 14 个测试覆盖 io.EOF、io.ErrUnexpectedEOF、截断的数组头、缺失的 bulk string、负长度、畸形长度、空行等
+14. **✅ 修复 blockingMu + 通道注册竞态** — `registerAndRecheck` 在注册通道后立即重新检查列表，消除 TOCTOU 窗口；`unregisterBlockingPop` 在超时时正确清理通道并删除空 map 条目；修复同样适用于 BRPOP/BRPOPLPUSH/BLMOVE；新增 `TestBLPOPBlockingRace`/`TestBRPOPBlockingRace`/`TestBLPOPBlockingMultipleKeysRace`/`TestBLPOPBlockingConcurrentPushers`/`TestBLPOPBlockingAlreadyHasData`/`TestBLPOPBlockingUnregisterCleanup` 6 个测试
+
+### ✅ 已完成（本次迭代 v5）
+
+15. **✅ 连接断开清理测试** — 新增 `TestWatchCleanupOnDisconnect`、`TestWatchCleanupOnDisconnectMultipleKeys`、`TestSubscriberCleanupOnDisconnect`、`TestDisconnectMidTransaction`、`TestDisconnectCleanupAfterPipeline` 共 5 个测试，验证 WATCH/PubSub/事务/pipeline 中断后全局状态的正确清理
+16. **✅ 修复 streamBlocking 通道注册竞态 + 空 map 泄漏** — 提取 `unregisterStreamBlocking` 辅助函数消除重复清理代码；删除空 map 条目防止内存泄漏；修复 `block==0` 无限等待循环（加入 spurious wakeup 防御 + 重新注册 + re-read）；确认 XReadBlocking 已在读取前注册通道（顺序正确），register-then-recheck 模式已验证
+17. **✅ 添加流阻塞测试** — `TestStreamXReadBlocking`（阻塞等待通知）、`TestStreamXReadBlockingAlreadyHasData`（数据已存在）、`TestStreamXReadBlockingTimeout`（超时后 map 清理）、`TestStreamXReadBlockingConcurrent`（5 个并发读取）
+
+### 仍待办
+
 - **添加大边界测试**（100MB 字符串、100K 列表、500MB 数据库）
+- **WRONGTYPE 集成层覆盖** — 流、JSON、时间序列、地理空间

@@ -494,12 +494,40 @@ func (s *BotreonStore) XRead(count int64, block int64, args ...string) ([]map[st
 	return result, err
 }
 
+// streamKeys extracts stream keys from the args array (key/startID pairs)
+func streamKeys(args []string) []string {
+	keys := make([]string, 0, len(args)/2)
+	for i := 0; i < len(args); i += 2 {
+		keys = append(keys, args[i])
+	}
+	return keys
+}
+
+// unregisterStreamBlocking removes a specific channel from all stream keys' wait lists
+func (s *BotreonStore) unregisterStreamBlocking(ch chan StreamReadResult, keys []string) {
+	s.streamBlockingMu.Lock()
+	defer s.streamBlockingMu.Unlock()
+
+	for _, key := range keys {
+		chans := s.streamBlockingChans[key]
+		for j, c := range chans {
+			if c == ch {
+				s.streamBlockingChans[key] = append(chans[:j], chans[j+1:]...)
+				break
+			}
+		}
+		if len(s.streamBlockingChans[key]) == 0 {
+			delete(s.streamBlockingChans, key)
+		}
+	}
+}
+
 // xReadBlocking implements blocking XREAD
 func (s *BotreonStore) xReadBlocking(count int64, block int64, args []string) ([]map[string][]StreamEntry, error) {
-	// Create a channel for this read request
 	resultCh := make(chan StreamReadResult, 1)
+	keys := streamKeys(args)
 
-	// Set up timeout FIRST - this is critical
+	// Set up timeout
 	var timeoutCh <-chan time.Time
 	if block > 0 {
 		timeoutCh = time.After(time.Duration(block) * time.Millisecond)
@@ -507,8 +535,7 @@ func (s *BotreonStore) xReadBlocking(count int64, block int64, args []string) ([
 
 	// Register this channel for each key BEFORE trying immediate read
 	s.streamBlockingMu.Lock()
-	for i := 0; i < len(args); i += 2 {
-		key := args[i]
+	for _, key := range keys {
 		s.streamBlockingChans[key] = append(s.streamBlockingChans[key], resultCh)
 	}
 	s.streamBlockingMu.Unlock()
@@ -516,39 +543,15 @@ func (s *BotreonStore) xReadBlocking(count int64, block int64, args []string) ([
 	// Try immediate read AFTER registering the channel
 	result, err := s.xReadImmediate(count, args...)
 	if err != nil {
-		// Clean up channels before returning error
-		s.streamBlockingMu.Lock()
-		for i := 0; i < len(args); i += 2 {
-			key := args[i]
-			chans := s.streamBlockingChans[key]
-			for j, ch := range chans {
-				if ch == resultCh {
-					s.streamBlockingChans[key] = append(chans[:j], chans[j+1:]...)
-					break
-				}
-			}
-		}
-		s.streamBlockingMu.Unlock()
+		s.unregisterStreamBlocking(resultCh, keys)
 		return nil, err
 	}
 	if len(result) > 0 {
-		// Clean up channels before returning
-		s.streamBlockingMu.Lock()
-		for i := 0; i < len(args); i += 2 {
-			key := args[i]
-			chans := s.streamBlockingChans[key]
-			for j, ch := range chans {
-				if ch == resultCh {
-					s.streamBlockingChans[key] = append(chans[:j], chans[j+1:]...)
-					break
-				}
-			}
-		}
-		s.streamBlockingMu.Unlock()
+		s.unregisterStreamBlocking(resultCh, keys)
 		return result, nil
 	}
 
-	// If block is 0 (infinite wait), we wait forever until data arrives
+	// If block is 0 (infinite wait), wait for notification with re-check loop
 	if block == 0 {
 		for {
 			select {
@@ -556,12 +559,17 @@ func (s *BotreonStore) xReadBlocking(count int64, block int64, args []string) ([
 				if len(streamResult.Entries) > 0 {
 					return []map[string][]StreamEntry{{streamResult.Key: streamResult.Entries}}, nil
 				}
-			}
-			// Check if channel is still valid, if not, retry immediate read
-			select {
-			case <-resultCh:
-				// Already handled above
-			default:
+				// Spurious wakeup: re-register channel and re-check
+				s.streamBlockingMu.Lock()
+				for _, key := range keys {
+					s.streamBlockingChans[key] = append(s.streamBlockingChans[key], resultCh)
+				}
+				s.streamBlockingMu.Unlock()
+				result, err := s.xReadImmediate(count, args...)
+				if err == nil && len(result) > 0 {
+					s.unregisterStreamBlocking(resultCh, keys)
+					return result, nil
+				}
 			}
 		}
 	}
@@ -570,25 +578,13 @@ func (s *BotreonStore) xReadBlocking(count int64, block int64, args []string) ([
 	select {
 	case streamResult := <-resultCh:
 		if len(streamResult.Entries) > 0 {
+			s.unregisterStreamBlocking(resultCh, keys)
 			return []map[string][]StreamEntry{{streamResult.Key: streamResult.Entries}}, nil
 		}
 	case <-timeoutCh:
 	}
 
-	// Clean up - remove the channel
-	s.streamBlockingMu.Lock()
-	for i := 0; i < len(args); i += 2 {
-		key := args[i]
-		chans := s.streamBlockingChans[key]
-		for j, ch := range chans {
-			if ch == resultCh {
-				s.streamBlockingChans[key] = append(chans[:j], chans[j+1:]...)
-				break
-			}
-		}
-	}
-	s.streamBlockingMu.Unlock()
-
+	s.unregisterStreamBlocking(resultCh, keys)
 	return nil, nil
 }
 
@@ -1027,7 +1023,18 @@ func (s *BotreonStore) XGroupCreate(key, group, startID string) error {
 		metaKey := streamKey(key)
 		typeKey := TypeOfKeyGet(key)
 
-		_, err := txn.Get(metaKey)
+		// Check type first before checking meta key
+		typeItem, err := txn.Get(typeKey)
+		if err == nil {
+			typeVal, _ := typeItem.ValueCopy(nil)
+			if string(typeVal) != "" && string(typeVal) != KeyTypeStream {
+				return ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
+
+		_, err = txn.Get(metaKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			_ = txn.Set(typeKey, []byte(KeyTypeStream))
 			meta := &streamMetaData{}
@@ -1035,14 +1042,6 @@ func (s *BotreonStore) XGroupCreate(key, group, startID string) error {
 			_ = txn.Set(metaKey, metaData)
 		} else if err != nil {
 			return err
-		} else {
-			typeItem, err := txn.Get(typeKey)
-			if err == nil {
-				typeVal, _ := typeItem.ValueCopy(nil)
-				if string(typeVal) != KeyTypeStream {
-					return ErrWrongType
-				}
-			}
 		}
 
 		groupKey := streamGroupDataKey(key, group)

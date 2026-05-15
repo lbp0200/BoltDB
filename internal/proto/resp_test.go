@@ -3,6 +3,8 @@ package proto
 import (
 	"bufio"
 	"bytes"
+	"errors"
+	"io"
 	"testing"
 
 	"github.com/zeebo/assert"
@@ -474,6 +476,141 @@ func TestRawString(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := tt.input.String()
 			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestReadRESP_PartialPackets(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantErr  bool
+		errMatch error
+	}{
+		{
+			name:     "empty input (io.EOF)",
+			input:    "",
+			wantErr:  true,
+			errMatch: io.EOF,
+		},
+		{
+			name:    "just CRLF",
+			input:   "\r\n",
+			wantErr: true,
+		},
+		{
+			name:    "just newline",
+			input:   "\n",
+			wantErr: true,
+		},
+		{
+			name:     "truncated array header - no CRLF",
+			input:    "*3",
+			wantErr:  true,
+			errMatch: io.EOF,
+		},
+		{
+			name:     "array header only, no bulk strings",
+			input:    "*2\r\n",
+			wantErr:  true,
+			errMatch: io.EOF,
+		},
+		{
+			name:     "truncated bulk string header",
+			input:    "*1\r\n$",
+			wantErr:  true,
+			errMatch: io.EOF,
+		},
+		{
+			name:     "partial bulk string data (io.ErrUnexpectedEOF)",
+			input:    "*1\r\n$5\r\nhel",
+			wantErr:  true,
+			errMatch: io.ErrUnexpectedEOF,
+		},
+		{
+			name:     "missing trailing CRLF after bulk data",
+			input:    "*1\r\n$5\r\nhello",
+			wantErr:  true,
+			errMatch: io.ErrUnexpectedEOF,
+		},
+		{
+			name:    "negative array length",
+			input:   "*-1\r\n",
+			wantErr: true,
+		},
+		{
+			name:    "invalid array length text",
+			input:   "*abc\r\n",
+			wantErr: true,
+		},
+		{
+			name:    "invalid bulk string length",
+			input:   "*1\r\n$abc\r\n",
+			wantErr: true,
+		},
+		{
+			name:     "truncated simple string - just +",
+			input:    "+",
+			wantErr:  true,
+			errMatch: io.EOF,
+		},
+		{
+			name:     "partial multi-bulk - first element ok, second truncated",
+			input:    "*2\r\n$3\r\nGET\r\n$",
+			wantErr:  true,
+			errMatch: io.EOF,
+		},
+		{
+			name:    "bulk string expects trailing CRLF but gets nothing",
+			input:   "*1\r\n$0\r\n",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := bufio.NewReader(bytes.NewBufferString(tt.input))
+			_, err := ReadRESP(r)
+
+			if !tt.wantErr {
+				assert.NoError(t, err)
+				return
+			}
+			assert.Error(t, err)
+			if tt.errMatch != nil && !errors.Is(err, tt.errMatch) {
+				t.Errorf("expected error %v, got %v", tt.errMatch, err)
+			}
+		})
+	}
+}
+
+func TestReadRESP_TruncatedInlineCommand(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{
+			name:    "empty inline command with CRLF",
+			input:   "\r\n",
+			wantErr: true,
+		},
+		{
+			name:    "just spaces with CRLF",
+			input:   "   \r\n",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := bufio.NewReader(bytes.NewBufferString(tt.input))
+			_, err := ReadRESP(r)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
 		})
 	}
 }

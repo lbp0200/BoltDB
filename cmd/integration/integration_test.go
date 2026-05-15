@@ -1252,6 +1252,44 @@ func TestBLMoveBlocking(t *testing.T) {
 	assert.Equal(t, "value1", val)
 }
 
+// TestBLPOPBlockingWithPush 测试 BLPOP 阻塞时另一个客户端推送数据
+// 覆盖状态机: BLPop(空) → LPush(另一个连接) → 结果
+func TestBLPOPBlockingWithPush(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	// 使用原始 RESP 连接进行阻塞 BLPOP
+	conn, err := net.Dial("tcp", sharedListener.Addr().String())
+	assert.NoError(t, err)
+	defer conn.Close()
+
+	// 发送 BLPOP test_blocking_key 3
+	err = proto.WriteRESP(bufio.NewWriter(conn), &proto.Array{
+		Args: [][]byte{[]byte("BLPOP"), []byte("test_blocking_key"), []byte("3")},
+	})
+	assert.NoError(t, err)
+
+	// 等待 BLPOP 注册到 blockingPopChans
+	time.Sleep(200 * time.Millisecond)
+
+	// 从 go-redis 客户端推送数据
+	count, err := sharedClient.LPush(ctx, "test_blocking_key", "pushed_value").Result()
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+
+	// 读取 BLPOP 响应
+	reader := bufio.NewReader(conn)
+	resp, err := proto.ReadRESP(reader)
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+
+	assert.Equal(t, 2, len(resp.Args))
+	assert.Equal(t, "test_blocking_key", string(resp.Args[0]))
+	assert.Equal(t, "pushed_value", string(resp.Args[1]))
+}
+
 // TestXREADBlocking 测试XREAD BLOCK功能
 func TestXREADBlocking(t *testing.T) {
 	setupTest(t)

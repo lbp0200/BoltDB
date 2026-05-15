@@ -683,6 +683,70 @@ func TestSortedSetError_WrongTypeIntegration(t *testing.T) {
 	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
 }
 
+// TestStreamError_WrongTypeIntegration tests stream commands on wrong types (integration level)
+func TestStreamError_WrongTypeIntegration(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	// Create a string key
+	sharedClient.Set(ctx, "string_key", "value", 0)
+
+	// XGROUP CREATE on string should return WRONGTYPE
+	err := sharedClient.Do(ctx, "XGROUP", "CREATE", "string_key", "mygroup", "$").Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+}
+
+// TestJsonError_WrongTypeIntegration tests JSON commands on wrong types (integration level)
+func TestJsonError_WrongTypeIntegration(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	// Create a string key
+	sharedClient.Set(ctx, "string_key", "value", 0)
+
+	// JSON.SET on string should return WRONGTYPE
+	err := sharedClient.Do(ctx, "JSON.SET", "string_key", "$", `{"a":1}`).Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+}
+
+// TestTimeSeriesError_WrongTypeIntegration tests time series commands on wrong types (integration level)
+func TestTimeSeriesError_WrongTypeIntegration(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	// Create a string key
+	sharedClient.Set(ctx, "string_key", "value", 0)
+
+	// TS.ADD on string should return WRONGTYPE
+	err := sharedClient.Do(ctx, "TS.ADD", "string_key", "1000", "25.5").Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+}
+
+// TestGeoError_WrongTypeIntegration tests geospatial commands on wrong types (integration level)
+func TestGeoError_WrongTypeIntegration(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	// Create a string key
+	sharedClient.Set(ctx, "string_key", "value", 0)
+
+	// GEOADD on string should return WRONGTYPE
+	err := sharedClient.Do(ctx, "GEOADD", "string_key", "116.40", "39.90", "beijing").Err()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+}
+
 // TestClusterConcurrent_ClusterCallsRace tests concurrent CLUSTER command calls
 func TestClusterConcurrent_ClusterCallsRace(t *testing.T) {
 	setupTest(t)

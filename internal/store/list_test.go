@@ -1,7 +1,10 @@
 package store
 
 import (
+	"fmt"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/zeebo/assert"
 )
@@ -549,6 +552,164 @@ func TestBLMove(t *testing.T) {
 	// Verify
 	val, _ := store.LIndex("dest", 0)
 	assert.Equal(t, "value1", val)
+}
+
+func TestBLPOPBlockingRace(t *testing.T) {
+	store := setupTestStore(t)
+
+	// Stress the TOCTOU race: start BLPOP before data exists, then LPush.
+	// With the fix (register-then-recheck), BLPOP should never miss data.
+	for i := 0; i < 50; i++ {
+		key := fmt.Sprintf("race_list_%d", i)
+		done := make(chan struct{})
+		go func() {
+			k, v, err := store.BLPOPBlocking([]string{key}, 2)
+			assert.NoError(t, err)
+			assert.Equal(t, key, k)
+			assert.Equal(t, "value", v)
+			close(done)
+		}()
+
+		// Small jitter to encourage the race window
+		time.Sleep(time.Duration(i%5) * time.Microsecond)
+		_, err := store.LPush(key, "value")
+		assert.NoError(t, err)
+
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Fatalf("BLPOPBlocking missed data on iteration %d (race condition)", i)
+		}
+	}
+}
+
+func TestBRPOPBlockingRace(t *testing.T) {
+	store := setupTestStore(t)
+
+	for i := 0; i < 50; i++ {
+		key := fmt.Sprintf("race_rlist_%d", i)
+		done := make(chan struct{})
+		go func() {
+			k, v, err := store.BRPOPBlocking([]string{key}, 2)
+			assert.NoError(t, err)
+			assert.Equal(t, key, k)
+			assert.Equal(t, "value", v)
+			close(done)
+		}()
+
+		time.Sleep(time.Duration(i%5) * time.Microsecond)
+		_, err := store.RPush(key, "value")
+		assert.NoError(t, err)
+
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Fatalf("BRPOPBlocking missed data on iteration %d (race condition)", i)
+		}
+	}
+}
+
+func TestBLPOPBlockingMultipleKeysRace(t *testing.T) {
+	store := setupTestStore(t)
+
+	// Multiple keys, only one gets data after registration
+	for i := 0; i < 20; i++ {
+		key := fmt.Sprintf("multi_blpop_%d", i)
+		done := make(chan struct{})
+		go func() {
+			k, v, err := store.BLPOPBlocking([]string{"nobody", key, "nobody2"}, 2)
+			assert.NoError(t, err)
+			assert.Equal(t, key, k)
+			assert.Equal(t, "data", v)
+			close(done)
+		}()
+
+		time.Sleep(time.Duration(i%3) * 10 * time.Microsecond)
+		_, err := store.LPush(key, "data")
+		assert.NoError(t, err)
+
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Fatalf("BLPOPBlocking multi-key missed data on iteration %d", i)
+		}
+	}
+}
+
+func TestBLPOPBlockingConcurrentPushers(t *testing.T) {
+	store := setupTestStore(t)
+	const numPushers = 10
+
+	// Multiple goroutines push to the same key; BLPOP should get exactly one value
+	key := "concurrent_push_key"
+
+	done := make(chan struct{})
+	go func() {
+		k, v, err := store.BLPOPBlocking([]string{key}, 3)
+		assert.NoError(t, err)
+		assert.Equal(t, key, k)
+		assert.NotEqual(t, "", v)
+		close(done)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	var wg sync.WaitGroup
+	for i := 0; i < numPushers; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, err := store.LPush(key, fmt.Sprintf("val_%d", idx))
+			assert.NoError(t, err)
+		}(i)
+	}
+	wg.Wait()
+
+	select {
+	case <-done:
+	case <-time.After(4 * time.Second):
+		t.Fatal("BLPOPBlocking concurrent pushers timed out")
+	}
+}
+
+func TestBLPOPBlockingAlreadyHasData(t *testing.T) {
+	store := setupTestStore(t)
+
+	// Data exists before BLPOP - should return immediately via the
+	// re-check path, not via the channel notification
+	_, err := store.LPush("existing", "hello")
+	assert.NoError(t, err)
+
+	k, v, err := store.BLPOPBlocking([]string{"existing"}, 2)
+	assert.NoError(t, err)
+	assert.Equal(t, "existing", k)
+	assert.Equal(t, "hello", v)
+}
+
+func TestBLPOPBlockingUnregisterCleanup(t *testing.T) {
+	store := setupTestStore(t)
+
+	// When timeout triggers, the channel should be properly cleaned up
+	// Register internally, then let it timeout
+	k, v, err := store.BLPOPBlocking([]string{"ghost"}, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, "", k)
+	assert.Equal(t, "", v)
+
+	// After timeout, no dangling channels should remain for "ghost"
+	store.blockingMu.RLock()
+	_, exists := store.blockingPopChans["ghost"]
+	store.blockingMu.RUnlock()
+	assert.False(t, exists)
+
+	// Push to the key afterwards - BLPOP should work normally
+	_, err = store.LPush("ghost", "after_timeout")
+	assert.NoError(t, err)
+
+	k, v, err = store.BLPOPBlocking([]string{"ghost"}, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, "ghost", k)
+	assert.Equal(t, "after_timeout", v)
 }
 
 // TestListWrongType tests that LPush/RPush returns ErrWrongType when key exists with different type

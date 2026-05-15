@@ -1396,6 +1396,48 @@ func (s *BotreonStore) registerBlockingPop(key string, ch chan BlockingResult) {
 	s.blockingPopChans[key] = append(s.blockingPopChans[key], ch)
 }
 
+// unregisterBlockingPop removes a specific channel from all keys' wait lists
+func (s *BotreonStore) unregisterBlockingPop(ch chan BlockingResult, keys []string) {
+	s.blockingMu.Lock()
+	defer s.blockingMu.Unlock()
+
+	for _, key := range keys {
+		chans := s.blockingPopChans[key]
+		for j, c := range chans {
+			if c == ch {
+				s.blockingPopChans[key] = append(chans[:j], chans[j+1:]...)
+				break
+			}
+		}
+		// Clean up empty map entries to prevent leaks
+		if len(s.blockingPopChans[key]) == 0 {
+			delete(s.blockingPopChans, key)
+		}
+	}
+}
+
+// registerAndRecheck registers a channel for keys and re-checks for data after registration.
+// This closes the TOCTOU race window where a concurrent push's notification
+// could arrive between the initial empty-list check and channel registration.
+// Returns (key, value, ok) if data was found in the re-check.
+func (s *BotreonStore) registerAndRecheck(keys []string, ch chan BlockingResult, popFn func(string) (string, error)) (string, string, bool) {
+	s.blockingMu.Lock()
+	for _, key := range keys {
+		s.blockingPopChans[key] = append(s.blockingPopChans[key], ch)
+	}
+	s.blockingMu.Unlock()
+
+	// Re-check every key to catch notifications that arrived before registration
+	for _, key := range keys {
+		value, err := popFn(key)
+		if err == nil && value != "" {
+			s.unregisterBlockingPop(ch, keys)
+			return key, value, true
+		}
+	}
+	return "", "", false
+}
+
 // BLPOPBlocking implements blocking left pop with timeout
 func (s *BotreonStore) BLPOPBlocking(keys []string, timeout int) (string, string, error) {
 	// Try non-blocking first
@@ -1415,18 +1457,17 @@ func (s *BotreonStore) BLPOPBlocking(keys []string, timeout int) (string, string
 	resultCh := make(chan BlockingResult, 1)
 	timeoutCh := time.After(time.Duration(timeout) * time.Second)
 
-	// Register this channel for each key
-	s.blockingMu.Lock()
-	for _, key := range keys {
-		s.blockingPopChans[key] = append(s.blockingPopChans[key], resultCh)
+	// Register + re-check to close the TOCTOU race window
+	if key, value, ok := s.registerAndRecheck(keys, resultCh, s.LPop); ok {
+		return key, value, nil
 	}
-	s.blockingMu.Unlock()
 
 	// Wait for data or timeout
 	select {
 	case result := <-resultCh:
 		return result.Key, result.Value, nil
 	case <-timeoutCh:
+		s.unregisterBlockingPop(resultCh, keys)
 		return "", "", nil
 	}
 }
@@ -1450,18 +1491,17 @@ func (s *BotreonStore) BRPOPBlocking(keys []string, timeout int) (string, string
 	resultCh := make(chan BlockingResult, 1)
 	timeoutCh := time.After(time.Duration(timeout) * time.Second)
 
-	// Register this channel for each key
-	s.blockingMu.Lock()
-	for _, key := range keys {
-		s.blockingPopChans[key] = append(s.blockingPopChans[key], resultCh)
+	// Register + re-check to close the TOCTOU race window
+	if key, value, ok := s.registerAndRecheck(keys, resultCh, s.RPop); ok {
+		return key, value, nil
 	}
-	s.blockingMu.Unlock()
 
 	// Wait for data or timeout
 	select {
 	case result := <-resultCh:
 		return result.Key, result.Value, nil
 	case <-timeoutCh:
+		s.unregisterBlockingPop(resultCh, keys)
 		return "", "", nil
 	}
 }
@@ -1481,10 +1521,21 @@ func (s *BotreonStore) BRPOPLPUSHBlocking(source, destination string, timeout in
 		return value, nil
 	}
 
-	timeoutCh := time.After(time.Duration(timeout) * time.Second)
 	resultCh := make(chan BlockingResult, 1)
-	s.registerBlockingPop(source, resultCh)
+	keys := []string{source}
 
+	// Register + re-check to close the TOCTOU race window
+	s.blockingMu.Lock()
+	s.blockingPopChans[source] = append(s.blockingPopChans[source], resultCh)
+	s.blockingMu.Unlock()
+
+	value, err = s.RPopLPush(source, destination)
+	if err == nil && value != "" {
+		s.unregisterBlockingPop(resultCh, keys)
+		return value, nil
+	}
+
+	timeoutCh := time.After(time.Duration(timeout) * time.Second)
 	for {
 		select {
 		case <-resultCh:
@@ -1494,6 +1545,7 @@ func (s *BotreonStore) BRPOPLPUSHBlocking(source, destination string, timeout in
 			}
 			s.registerBlockingPop(source, resultCh)
 		case <-timeoutCh:
+			s.unregisterBlockingPop(resultCh, keys)
 			return "", nil
 		}
 	}
@@ -1510,10 +1562,21 @@ func (s *BotreonStore) BLMoveBlocking(source, destination, sourceDirection, dest
 		return value, nil
 	}
 
-	timeoutCh := time.After(time.Duration(timeout) * time.Second)
 	resultCh := make(chan BlockingResult, 1)
-	s.registerBlockingPop(source, resultCh)
+	keys := []string{source}
 
+	// Register + re-check to close the TOCTOU race window
+	s.blockingMu.Lock()
+	s.blockingPopChans[source] = append(s.blockingPopChans[source], resultCh)
+	s.blockingMu.Unlock()
+
+	value, err = s.LMove(source, destination, sourceDirection, destinationDirection)
+	if err == nil && value != "" {
+		s.unregisterBlockingPop(resultCh, keys)
+		return value, nil
+	}
+
+	timeoutCh := time.After(time.Duration(timeout) * time.Second)
 	for {
 		select {
 		case <-resultCh:
@@ -1523,6 +1586,7 @@ func (s *BotreonStore) BLMoveBlocking(source, destination, sourceDirection, dest
 			}
 			s.registerBlockingPop(source, resultCh)
 		case <-timeoutCh:
+			s.unregisterBlockingPop(resultCh, keys)
 			return "", nil
 		}
 	}

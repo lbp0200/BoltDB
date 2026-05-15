@@ -1,12 +1,44 @@
 package integration
 
 import (
+	"bufio"
 	"context"
+	"net"
 	"testing"
 
+	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/redis/go-redis/v9"
 	"github.com/zeebo/assert"
 )
+
+func dialPubSub(t *testing.T) (net.Conn, *bufio.Reader) {
+	t.Helper()
+	conn, err := net.Dial("tcp", sharedListener.Addr().String())
+	assert.NoError(t, err)
+	return conn, bufio.NewReader(conn)
+}
+
+func sendPubSubCmd(t *testing.T, conn net.Conn, cmd string, args ...string) {
+	t.Helper()
+	cmdArgs := make([][]byte, 1+len(args))
+	cmdArgs[0] = []byte(cmd)
+	for i, arg := range args {
+		cmdArgs[i+1] = []byte(arg)
+	}
+	err := proto.WriteRESP(conn, &proto.Array{Args: cmdArgs})
+	assert.NoError(t, err)
+}
+
+func readPubSubResp(t *testing.T, reader *bufio.Reader) []string {
+	t.Helper()
+	arr, err := proto.ReadRESP(reader)
+	assert.NoError(t, err)
+	parts := make([]string, len(arr.Args))
+	for i, arg := range arr.Args {
+		parts[i] = string(arg)
+	}
+	return parts
+}
 
 // TestPublish 测试 PUBLISH 命令
 func TestPublish(t *testing.T) {
@@ -15,30 +47,25 @@ func TestPublish(t *testing.T) {
 
 	ctx := context.Background()
 
-	// PUBLISH - 发布消息
 	result, err := sharedClient.Publish(ctx, "channel1", "message1").Result()
 	assert.NoError(t, err)
-	// 没有订阅者时返回0
 	assert.Equal(t, int64(0), result)
 }
 
-// TestSubscribe 测试 SUBSCRIBE 命令
+// TestSubscribe 测试 SUBSCRIBE 命令（通过原始 RESP 连接）
 func TestSubscribe(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
 
-	ctx := context.Background()
+	conn, reader := dialPubSub(t)
+	defer conn.Close()
 
-	// SUBSCRIBE - 订阅频道（使用原始命令）
-	// 注意：由于是阻塞操作，我们只验证命令被接受
-	result, err := sharedClient.Do(ctx, "SUBSCRIBE", "channel1").Result()
-	assert.NoError(t, err)
-
-	arr, ok := result.([]interface{})
-	assert.True(t, ok)
-	// 订阅响应格式: ["subscribe", channel, count]
-	assert.Equal(t, 3, len(arr))
-	assert.Equal(t, "subscribe", arr[0])
+	sendPubSubCmd(t, conn, "SUBSCRIBE", "channel1")
+	parts := readPubSubResp(t, reader)
+	assert.Equal(t, 3, len(parts))
+	assert.Equal(t, "subscribe", parts[0])
+	assert.Equal(t, "channel1", parts[1])
+	assert.Equal(t, "1", parts[2])
 }
 
 // TestUnsubscribe 测试 UNSUBSCRIBE 命令
@@ -46,19 +73,16 @@ func TestUnsubscribe(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
 
-	ctx := context.Background()
+	conn, reader := dialPubSub(t)
+	defer conn.Close()
 
-	// 先订阅
-	_, _ = sharedClient.Do(ctx, "SUBSCRIBE", "channel1").Result()
+	sendPubSubCmd(t, conn, "SUBSCRIBE", "channel1")
+	readPubSubResp(t, reader)
 
-	// UNSUBSCRIBE - 取消订阅
-	result, err := sharedClient.Do(ctx, "UNSUBSCRIBE", "channel1").Result()
-	assert.NoError(t, err)
-
-	arr, ok := result.([]interface{})
-	assert.True(t, ok)
-	assert.Equal(t, 3, len(arr))
-	assert.Equal(t, "unsubscribe", arr[0])
+	sendPubSubCmd(t, conn, "UNSUBSCRIBE", "channel1")
+	parts := readPubSubResp(t, reader)
+	assert.Equal(t, "unsubscribe", parts[0])
+	assert.Equal(t, "channel1", parts[1])
 }
 
 // TestPSubscribe 测试 PSUBSCRIBE 命令
@@ -66,16 +90,14 @@ func TestPSubscribe(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
 
-	ctx := context.Background()
+	conn, reader := dialPubSub(t)
+	defer conn.Close()
 
-	// PSUBSCRIBE - 模式订阅
-	result, err := sharedClient.Do(ctx, "PSUBSCRIBE", "news.*").Result()
-	assert.NoError(t, err)
-
-	arr, ok := result.([]interface{})
-	assert.True(t, ok)
-	assert.Equal(t, 3, len(arr))
-	assert.Equal(t, "psubscribe", arr[0])
+	sendPubSubCmd(t, conn, "PSUBSCRIBE", "news.*")
+	parts := readPubSubResp(t, reader)
+	assert.Equal(t, 3, len(parts))
+	assert.Equal(t, "psubscribe", parts[0])
+	assert.Equal(t, "news.*", parts[1])
 }
 
 // TestPUnsubscribe 测试 PUNSUBSCRIBE 命令
@@ -83,19 +105,16 @@ func TestPUnsubscribe(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
 
-	ctx := context.Background()
+	conn, reader := dialPubSub(t)
+	defer conn.Close()
 
-	// 先模式订阅
-	_, _ = sharedClient.Do(ctx, "PSUBSCRIBE", "news.*").Result()
+	sendPubSubCmd(t, conn, "PSUBSCRIBE", "news.*")
+	readPubSubResp(t, reader)
 
-	// PUNSUBSCRIBE - 取消模式订阅
-	result, err := sharedClient.Do(ctx, "PUNSUBSCRIBE", "news.*").Result()
-	assert.NoError(t, err)
-
-	arr, ok := result.([]interface{})
-	assert.True(t, ok)
-	assert.Equal(t, 3, len(arr))
-	assert.Equal(t, "punsubscribe", arr[0])
+	sendPubSubCmd(t, conn, "PUNSUBSCRIBE", "news.*")
+	parts := readPubSubResp(t, reader)
+	assert.Equal(t, "punsubscribe", parts[0])
+	assert.Equal(t, "news.*", parts[1])
 }
 
 // TestPubSubChannels 测试 PUBSUB CHANNELS 命令
@@ -105,18 +124,13 @@ func TestPubSubChannels(t *testing.T) {
 
 	ctx := context.Background()
 
-	// PUBSUB CHANNELS - 列出活跃频道
 	result, err := sharedClient.Do(ctx, "PUBSUB", "CHANNELS").Result()
 	assert.NoError(t, err)
-
 	_, ok := result.([]interface{})
 	assert.True(t, ok)
-	// 没有活跃频道时返回空数组
 
-	// PUBSUB CHANNELS with pattern
 	result, err = sharedClient.Do(ctx, "PUBSUB", "CHANNELS", "news.*").Result()
 	assert.NoError(t, err)
-
 	_, ok = result.([]interface{})
 	assert.True(t, ok)
 }
@@ -128,13 +142,11 @@ func TestPubSubNumSub(t *testing.T) {
 
 	ctx := context.Background()
 
-	// PUBSUB NUMSUB - 获取订阅者数量
 	result, err := sharedClient.Do(ctx, "PUBSUB", "NUMSUB", "channel1", "channel2").Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})
 	assert.True(t, ok)
-	// 格式: [channel1, count1, channel2, count2, ...]
 	assert.True(t, len(arr) >= 2)
 }
 
@@ -145,7 +157,6 @@ func TestPubSubNumPat(t *testing.T) {
 
 	ctx := context.Background()
 
-	// PUBSUB NUMPAT - 获取模式订阅数量
 	result, err := sharedClient.Do(ctx, "PUBSUB", "NUMPAT").Result()
 	assert.NoError(t, err)
 
@@ -161,7 +172,6 @@ func TestPubSubHelp(t *testing.T) {
 
 	ctx := context.Background()
 
-	// PUBSUB HELP - 获取帮助信息
 	result, err := sharedClient.Do(ctx, "PUBSUB", "HELP").Result()
 	assert.NoError(t, err)
 
@@ -170,45 +180,133 @@ func TestPubSubHelp(t *testing.T) {
 	assert.True(t, len(arr) > 0)
 }
 
-// TestPublishSubscribeIntegration 测试发布订阅集成
-func TestPublishSubscribeIntegration(t *testing.T) {
+// TestPubSubMessageDelivery 端到端 PubSub: SUBSCRIBE → PUBLISH → 消息投递
+func TestPubSubMessageDelivery(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
 
 	ctx := context.Background()
 
-	// 创建一个新的客户端用于发布
+	// 订阅者: 原始 RESP 连接
+	subConn, subReader := dialPubSub(t)
+	defer subConn.Close()
+
+	sendPubSubCmd(t, subConn, "SUBSCRIBE", "delivery_test")
+	parts := readPubSubResp(t, subReader)
+	assert.Equal(t, "subscribe", parts[0])
+	assert.Equal(t, "delivery_test", parts[1])
+
+	// 发布者: go-redis 客户端
 	pubClient := redis.NewClient(&redis.Options{
-		Addr:     sharedListener.Addr().String(),
-		Password: "",
-		DB:       0,
+		Addr: sharedListener.Addr().String(),
+		DB:   0,
 	})
 	defer pubClient.Close()
 
-	// 发布消息
-	count, err := pubClient.Publish(ctx, "integration_test", "test_message").Result()
+	count, err := pubClient.Publish(ctx, "delivery_test", "hello_world").Result()
 	assert.NoError(t, err)
-	// 可能返回0（如果没有订阅者）
-	assert.True(t, count >= 0)
+	assert.Equal(t, int64(1), count)
+
+	// 读取推送消息
+	parts = readPubSubResp(t, subReader)
+	assert.Equal(t, 3, len(parts))
+	assert.Equal(t, "message", parts[0])
+	assert.Equal(t, "delivery_test", parts[1])
+	assert.Equal(t, "hello_world", parts[2])
 }
 
-// TestMultipleChannels 测试多个频道
+// TestPubSubPatternDelivery 端到端 PSUBSCRIBE → PUBLISH → pmessage 投递
+func TestPubSubPatternDelivery(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	subConn, subReader := dialPubSub(t)
+	defer subConn.Close()
+
+	sendPubSubCmd(t, subConn, "PSUBSCRIBE", "news.*")
+	parts := readPubSubResp(t, subReader)
+	assert.Equal(t, "psubscribe", parts[0])
+	assert.Equal(t, "news.*", parts[1])
+
+	pubClient := redis.NewClient(&redis.Options{
+		Addr: sharedListener.Addr().String(),
+		DB:   0,
+	})
+	defer pubClient.Close()
+
+	count, err := pubClient.Publish(ctx, "news.tech", "ai_breakthrough").Result()
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+
+	parts = readPubSubResp(t, subReader)
+	assert.Equal(t, 4, len(parts))
+	assert.Equal(t, "pmessage", parts[0])
+	assert.Equal(t, "news.*", parts[1])
+	assert.Equal(t, "news.tech", parts[2])
+	assert.Equal(t, "ai_breakthrough", parts[3])
+}
+
+// TestPubSubMultipleSubscribers 多个订阅者接收同一条消息
+func TestPubSubMultipleSubscribers(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	sub1Conn, sub1Reader := dialPubSub(t)
+	defer sub1Conn.Close()
+	sub2Conn, sub2Reader := dialPubSub(t)
+	defer sub2Conn.Close()
+
+	sendPubSubCmd(t, sub1Conn, "SUBSCRIBE", "multi_test")
+	readPubSubResp(t, sub1Reader)
+
+	sendPubSubCmd(t, sub2Conn, "SUBSCRIBE", "multi_test")
+	readPubSubResp(t, sub2Reader)
+
+	pubClient := redis.NewClient(&redis.Options{
+		Addr: sharedListener.Addr().String(),
+		DB:   0,
+	})
+	defer pubClient.Close()
+
+	count, err := pubClient.Publish(ctx, "multi_test", "broadcast").Result()
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), count)
+
+	parts1 := readPubSubResp(t, sub1Reader)
+	assert.Equal(t, "message", parts1[0])
+	assert.Equal(t, "broadcast", parts1[2])
+
+	parts2 := readPubSubResp(t, sub2Reader)
+	assert.Equal(t, "message", parts2[0])
+	assert.Equal(t, "broadcast", parts2[2])
+}
+
+// TestMultipleChannels 测试多个频道订阅
 func TestMultipleChannels(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
 
-	ctx := context.Background()
+	conn, reader := dialPubSub(t)
+	defer conn.Close()
 
-	// 订阅多个频道
-	_, _ = sharedClient.Do(ctx, "SUBSCRIBE", "channel1", "channel2", "channel3").Result()
+	sendPubSubCmd(t, conn, "SUBSCRIBE", "channel1", "channel2", "channel3")
 
-	// PUBSUB NUMSUB - 检查多个频道
-	result, err := sharedClient.Do(ctx, "PUBSUB", "NUMSUB", "channel1", "channel2", "channel3").Result()
-	assert.NoError(t, err)
+	parts1 := readPubSubResp(t, reader)
+	assert.Equal(t, "subscribe", parts1[0])
+	assert.Equal(t, "channel1", parts1[1])
 
-	arr, ok := result.([]interface{})
-	assert.True(t, ok)
-	assert.Equal(t, 6, len(arr)) // 3 channels * 2 (name, count)
+	parts2 := readPubSubResp(t, reader)
+	assert.Equal(t, "subscribe", parts2[0])
+	assert.Equal(t, "channel2", parts2[1])
+
+	parts3 := readPubSubResp(t, reader)
+	assert.Equal(t, "subscribe", parts3[0])
+	assert.Equal(t, "channel3", parts3[1])
+
 }
 
 // TestUnsubscribeAll 测试取消所有订阅
@@ -216,29 +314,64 @@ func TestUnsubscribeAll(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
 
-	ctx := context.Background()
+	conn, reader := dialPubSub(t)
+	defer conn.Close()
 
-	// 订阅多个频道
-	_, _ = sharedClient.Do(ctx, "SUBSCRIBE", "channel1", "channel2").Result()
+	sendPubSubCmd(t, conn, "SUBSCRIBE", "channel1", "channel2")
+	readPubSubResp(t, reader)
+	readPubSubResp(t, reader)
 
-	// 取消所有订阅（不带参数）
-	result, err := sharedClient.Do(ctx, "UNSUBSCRIBE").Result()
-	assert.NoError(t, err)
+	sendPubSubCmd(t, conn, "UNSUBSCRIBE")
 
-	arr, ok := result.([]interface{})
-	assert.True(t, ok)
-	// 响应格式: ["unsubscribe", channel, count]
-	assert.Equal(t, 3, len(arr))
+	parts1 := readPubSubResp(t, reader)
+	assert.Equal(t, "unsubscribe", parts1[0])
+
+	parts2 := readPubSubResp(t, reader)
+	assert.Equal(t, "unsubscribe", parts2[0])
 }
 
-// TestTimeoutUnsubscribe 测试超时取消订阅
-func TestTimeoutUnsubscribe(t *testing.T) {
+// TestPubSubNonPubSubCommand 在 PubSub 模式下非 PubSub 命令应返回错误
+func TestPubSubNonPubSubCommand(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	conn, reader := dialPubSub(t)
+	defer conn.Close()
+
+	sendPubSubCmd(t, conn, "SUBSCRIBE", "ch")
+	readPubSubResp(t, reader)
+
+	sendPubSubCmd(t, conn, "GET", "somekey")
+	line, err := reader.ReadString('\n')
+	assert.NoError(t, err)
+	assert.True(t, len(line) > 5)
+	assert.Equal(t, byte('-'), line[0])
+}
+
+// TestPubSubQuit 退出 PubSub 模式
+func TestPubSubQuit(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	conn, reader := dialPubSub(t)
+	defer conn.Close()
+
+	sendPubSubCmd(t, conn, "SUBSCRIBE", "ch")
+	readPubSubResp(t, reader)
+
+	sendPubSubCmd(t, conn, "QUIT")
+	line, err := reader.ReadString('\n')
+	assert.NoError(t, err)
+	assert.Equal(t, "+OK\r\n", line)
+}
+
+// TestPublishSubscribeIntegration 保留原始集成测试的发布部分
+func TestPublishSubscribeIntegration(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
 
 	ctx := context.Background()
 
-	// 使用单独的客户端进行发布测试
 	pubClient := redis.NewClient(&redis.Options{
 		Addr:     sharedListener.Addr().String(),
 		Password: "",
@@ -246,7 +379,25 @@ func TestTimeoutUnsubscribe(t *testing.T) {
 	})
 	defer pubClient.Close()
 
-	// 发布消息以验证频道功能
+	count, err := pubClient.Publish(ctx, "integration_test", "test_message").Result()
+	assert.NoError(t, err)
+	assert.True(t, count >= 0)
+}
+
+// TestTimeoutUnsubscribe 测试超时取消订阅（保留原始测试结构）
+func TestTimeoutUnsubscribe(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	pubClient := redis.NewClient(&redis.Options{
+		Addr:     sharedListener.Addr().String(),
+		Password: "",
+		DB:       0,
+	})
+	defer pubClient.Close()
+
 	_, err := pubClient.Publish(ctx, "timeout_test", "message").Result()
 	assert.NoError(t, err)
 }

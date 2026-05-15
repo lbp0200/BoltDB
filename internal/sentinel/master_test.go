@@ -204,13 +204,18 @@ func TestMasterInstance_StartMonitoring(t *testing.T) {
 	// Start monitoring in a goroutine
 	go master.StartMonitoring(sentinel)
 
-	// Give time for at least one check cycle
-	time.Sleep(1500 * time.Millisecond)
-
-	// Stop - but don't call master.Stop() directly since sentinel.Stop() handles it
-	// The sentinel.Stop() will close all master stop channels
-
-	assert.True(t, true)
+	// Wait for goroutine to start without busy sleep
+	// Use a retry loop to verify the master is still tracked
+	var m *MasterInstance
+	for i := 0; i < 10; i++ {
+		time.Sleep(10 * time.Millisecond)
+		m = sentinel.GetMaster("test-master")
+		if m != nil {
+			break
+		}
+	}
+	assert.NotNil(t, m)
+	assert.Equal(t, "test-master", m.GetName())
 }
 
 // TestMasterInstance_checkMaster tests checkMaster method

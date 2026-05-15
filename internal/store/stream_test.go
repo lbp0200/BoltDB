@@ -1,7 +1,9 @@
 package store
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/zeebo/assert"
 )
@@ -105,12 +107,110 @@ func TestStreamXRead(t *testing.T) {
 	store := setupTestStore(t)
 
 	// Add entries
-	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+	id1, err := store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+	assert.NoError(t, err)
 
-	// Read from stream - just verify it doesn't error
-	_, err := store.XRead(10, 0, "STREAMS", "mystream", "0")
-	// May return error for invalid args, just check it doesn't panic
-	_ = err
+	// Read from stream
+	result, err := store.XRead(10, 0, "mystream", "0")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(result))
+	assert.Equal(t, 1, len(result[0]["mystream"]))
+	assert.Equal(t, id1, result[0]["mystream"][0].ID)
+}
+
+func TestStreamXReadBlocking(t *testing.T) {
+	store := setupTestStore(t)
+
+	// Start blocking XRead in a goroutine
+	done := make(chan []map[string][]StreamEntry, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		result, err := store.XRead(10, 1000, "mystream", "$")
+		if err != nil {
+			errCh <- err
+			return
+		}
+		done <- result
+	}()
+
+	// Wait for goroutine to register, then XAdd
+	time.Sleep(50 * time.Millisecond)
+	id, err := store.XAdd("mystream", StreamXAddOptions{}, "*", map[string]string{"field": "value"})
+	assert.NoError(t, err)
+
+	select {
+	case result := <-done:
+		assert.Equal(t, 1, len(result))
+		assert.Equal(t, id, result[0]["mystream"][0].ID)
+	case err := <-errCh:
+		t.Fatalf("XReadBlocking error: %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("XReadBlocking timed out - notification was missed")
+	}
+}
+
+func TestStreamXReadBlockingAlreadyHasData(t *testing.T) {
+	store := setupTestStore(t)
+
+	// Add data first
+	id, err := store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field": "value"})
+	assert.NoError(t, err)
+
+	// Blocking read should return immediately via xReadImmediate
+	result, err := store.XRead(10, 1000, "mystream", "0")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(result))
+	assert.Equal(t, id, result[0]["mystream"][0].ID)
+}
+
+func TestStreamXReadBlockingTimeout(t *testing.T) {
+	store := setupTestStore(t)
+
+	// Block on non-existent stream with short timeout
+	result, err := store.XRead(10, 100, "ghoststream", "$")
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(result))
+
+	// After timeout, channel should be properly cleaned up
+	store.streamBlockingMu.RLock()
+	_, exists := store.streamBlockingChans["ghoststream"]
+	store.streamBlockingMu.RUnlock()
+	assert.False(t, exists)
+}
+
+func TestStreamXReadBlockingConcurrent(t *testing.T) {
+	store := setupTestStore(t)
+
+	const numReaders = 5
+	done := make(chan int, numReaders)
+
+	for i := 0; i < numReaders; i++ {
+		go func(id int) {
+			key := fmt.Sprintf("stream_%d", id)
+			result, err := store.XRead(10, 2000, key, "$")
+			if err == nil && len(result) > 0 {
+				done <- id
+			}
+		}(i)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Push data for each stream
+	for i := 0; i < numReaders; i++ {
+		key := fmt.Sprintf("stream_%d", i)
+		_, err := store.XAdd(key, StreamXAddOptions{}, "*", map[string]string{"data": "hello"})
+		assert.NoError(t, err)
+	}
+
+	for i := 0; i < numReaders; i++ {
+		select {
+		case id := <-done:
+			t.Logf("Reader %d completed", id)
+		case <-time.After(3 * time.Second):
+			t.Fatalf("Reader %d timed out", i)
+		}
+	}
 }
 
 // TestStreamInfo tests XInfo function

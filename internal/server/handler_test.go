@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/lbp0200/BoltDB/internal/store"
@@ -548,6 +549,200 @@ func sendCommand(conn net.Conn, reader *bufio.Reader, cmd string, args ...string
 	}
 
 	return readRESPResponse(reader)
+}
+
+func setupTestHandlerWithPubSub(t *testing.T) *Handler {
+	h := setupTestHandler(t)
+	h.PubSub = store.NewPubSubManager()
+	return h
+}
+
+// TestWatchCleanupOnDisconnect 验证 WATCH 连接断开后 watchMonitors 被正确清理
+func TestWatchCleanupOnDisconnect(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.NoError(t, err)
+	defer listener.Close()
+
+	go func() { _ = handler.ServeTCP(listener) }()
+
+	// 连接1：WATCH 一个 key
+	conn1, err := net.Dial("tcp", listener.Addr().String())
+	assert.NoError(t, err)
+	reader1 := bufio.NewReader(conn1)
+
+	_, err = sendCommand(conn1, reader1, "WATCH", "mykey")
+	assert.NoError(t, err)
+
+	// 验证 watchMonitors 已创建并包含 mykey
+	handler.watchMu.Lock()
+	assert.NotNil(t, handler.watchMonitors)
+	assert.Equal(t, 1, len(handler.watchMonitors["mykey"]))
+	handler.watchMu.Unlock()
+
+	// 断开连接
+	conn1.Close()
+
+	// 等待服务器 goroutine 完成 cleanup
+	time.Sleep(50 * time.Millisecond)
+
+	// 验证 watchMonitors 已被清理
+	handler.watchMu.Lock()
+	_, exists := handler.watchMonitors["mykey"]
+	handler.watchMu.Unlock()
+	assert.False(t, exists)
+}
+
+// TestWatchCleanupOnDisconnectMultipleKeys 验证多 key WATCH 断开后全部被清理
+func TestWatchCleanupOnDisconnectMultipleKeys(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.NoError(t, err)
+	defer listener.Close()
+
+	go func() { _ = handler.ServeTCP(listener) }()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	assert.NoError(t, err)
+	reader := bufio.NewReader(conn)
+
+	_, err = sendCommand(conn, reader, "WATCH", "k1", "k2", "k3")
+	assert.NoError(t, err)
+
+	handler.watchMu.Lock()
+	assert.Equal(t, 3, len(handler.watchMonitors))
+	handler.watchMu.Unlock()
+
+	conn.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	handler.watchMu.Lock()
+	assert.Equal(t, 0, len(handler.watchMonitors))
+	handler.watchMu.Unlock()
+}
+
+// TestSubscriberCleanupOnDisconnect 验证 SUBSCRIBE 连接断开后 subscriber 被移除
+func TestSubscriberCleanupOnDisconnect(t *testing.T) {
+	handler := setupTestHandlerWithPubSub(t)
+	defer handler.Db.Close()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.NoError(t, err)
+	defer listener.Close()
+
+	go func() { _ = handler.ServeTCP(listener) }()
+
+	// 订阅前 subscriber 数量应为 0
+	assert.Equal(t, 0, handler.PubSub.GetSubscriberCount("testchan"))
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	assert.NoError(t, err)
+	reader := bufio.NewReader(conn)
+
+	// SUBSCRIBE 到一个频道
+	req := &proto.Array{
+		Args: [][]byte{[]byte("SUBSCRIBE"), []byte("testchan")},
+	}
+	err = proto.WriteRESP(conn, req)
+	assert.NoError(t, err)
+
+	// 读取 3 条确认消息 (subscribe, testchan, 1)
+	for i := 0; i < 3; i++ {
+		_, err := readRESPResponse(reader)
+		assert.NoError(t, err)
+	}
+
+	// 验证 subscriber 已注册
+	assert.Equal(t, 1, handler.PubSub.GetSubscriberCount("testchan"))
+
+	// 断开连接
+	conn.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	// 验证 subscriber 已被移除
+	assert.Equal(t, 0, handler.PubSub.GetSubscriberCount("testchan"))
+}
+
+// TestDisconnectMidTransaction 验证事务中断开后没有泄漏
+func TestDisconnectMidTransaction(t *testing.T) {
+	handler := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.NoError(t, err)
+	defer listener.Close()
+
+	go func() { _ = handler.ServeTCP(listener) }()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	assert.NoError(t, err)
+	reader := bufio.NewReader(conn)
+
+	// 开始事务但不 EXEC
+	_, err = sendCommand(conn, reader, "MULTI")
+	assert.NoError(t, err)
+	_, err = sendCommand(conn, reader, "SET", "midkey", "midval")
+	assert.NoError(t, err)
+	_, err = sendCommand(conn, reader, "INCR", "midkey")
+	assert.NoError(t, err)
+
+	// 断开连接（不 EXEC/DISCARD）
+	conn.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	// 验证 key 没有被设置（事务没提交）
+	conn2, err := net.Dial("tcp", listener.Addr().String())
+	assert.NoError(t, err)
+	defer conn2.Close()
+	reader2 := bufio.NewReader(conn2)
+
+	resp, err := sendCommand(conn2, reader2, "GET", "midkey")
+	assert.NoError(t, err)
+	bulk, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Nil(t, *bulk)
+}
+
+// TestDisconnectCleanupAfterPipeline 验证 pipeline 中段断开后状态清理
+func TestDisconnectCleanupAfterPipeline(t *testing.T) {
+	handler := setupTestHandlerWithPubSub(t)
+	defer handler.Db.Close()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.NoError(t, err)
+	defer listener.Close()
+
+	go func() { _ = handler.ServeTCP(listener) }()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	assert.NoError(t, err)
+
+	// Pipeline: 发送多条命令但不读响应
+	cmds := [][][]byte{
+		{[]byte("SET"), []byte("k1"), []byte("v1")},
+		{[]byte("SET"), []byte("k2"), []byte("v2")},
+		{[]byte("WATCH"), []byte("k1")},
+		{[]byte("SUBSCRIBE"), []byte("ch")},
+	}
+	for _, args := range cmds {
+		req := &proto.Array{Args: args}
+		_ = proto.WriteRESP(conn, req)
+	}
+
+	// 立即断开（不读取任何响应）
+	conn.Close()
+	time.Sleep(100 * time.Millisecond)
+
+	// 验证没有泄露
+	handler.watchMu.Lock()
+	watchCount := len(handler.watchMonitors)
+	handler.watchMu.Unlock()
+	assert.Equal(t, 0, watchCount)
+	assert.Equal(t, 0, handler.PubSub.GetSubscriberCount("ch"))
 }
 
 // TestRealWorldScenario 测试真实场景

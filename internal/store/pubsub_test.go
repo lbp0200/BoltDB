@@ -8,6 +8,21 @@ import (
 	"github.com/zeebo/assert"
 )
 
+// mustReceiveMessage 从订阅者通道接收消息，超时则 fatal
+// 使用 time.NewTimer 而非 time.After 以避免 timer 泄漏
+func mustReceiveMessage(t *testing.T, ch chan *Message) *Message {
+	t.Helper()
+	timer := time.NewTimer(500 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case msg := <-ch:
+		return msg
+	case <-timer.C:
+		t.Fatal("timeout waiting for PubSub message")
+		return nil
+	}
+}
+
 func TestPubSubManagerCreation(t *testing.T) {
 	psm := NewPubSubManager()
 	assert.NotNil(t, psm)
@@ -130,14 +145,10 @@ func TestPublish(t *testing.T) {
 	assert.Equal(t, 1, count)
 
 	// Check message received
-	select {
-	case msg := <-sub.MessageCh:
-		assert.Equal(t, "channel1", msg.Channel)
-		assert.Equal(t, "hello", string(msg.Data))
-		assert.Equal(t, "", msg.Pattern) // No pattern for direct channel
-	case <-time.After(time.Second):
-		t.Fatal("timeout waiting for message")
-	}
+	msg := mustReceiveMessage(t, sub.MessageCh)
+	assert.Equal(t, "channel1", msg.Channel)
+	assert.Equal(t, "hello", string(msg.Data))
+	assert.Equal(t, "", msg.Pattern)
 }
 
 func TestPublishMultipleSubscribers(t *testing.T) {
@@ -154,14 +165,10 @@ func TestPublishMultipleSubscribers(t *testing.T) {
 	assert.Equal(t, 2, count)
 
 	// Both should receive
-	for i, sub := range []*Subscriber{sub1, sub2} {
-		select {
-		case msg := <-sub.MessageCh:
-			assert.Equal(t, "channel1", msg.Channel)
-			assert.Equal(t, "hello", string(msg.Data))
-		case <-time.After(time.Second):
-			t.Fatalf("sub%d timeout", i+1)
-		}
+	for _, sub := range []*Subscriber{sub1, sub2} {
+		msg := mustReceiveMessage(t, sub.MessageCh)
+		assert.Equal(t, "channel1", msg.Channel)
+		assert.Equal(t, "hello", string(msg.Data))
 	}
 }
 
@@ -177,14 +184,10 @@ func TestPublishPatternMatch(t *testing.T) {
 	assert.Equal(t, 1, count)
 
 	// Check message received with pattern
-	select {
-	case msg := <-sub.MessageCh:
-		assert.Equal(t, "news.sports", msg.Channel)
-		assert.Equal(t, "news.*", msg.Pattern)
-		assert.Equal(t, "sports news", string(msg.Data))
-	case <-time.After(time.Second):
-		t.Fatal("timeout waiting for message")
-	}
+	msg := mustReceiveMessage(t, sub.MessageCh)
+	assert.Equal(t, "news.sports", msg.Channel)
+	assert.Equal(t, "news.*", msg.Pattern)
+	assert.Equal(t, "sports news", string(msg.Data))
 }
 
 func TestPublishNoSubscribers(t *testing.T) {
@@ -208,14 +211,10 @@ func TestPublishChannelAndPattern(t *testing.T) {
 	assert.Equal(t, 2, count) // One for direct, one for pattern
 
 	// Should receive two messages
-	for i := 0; i < 2; i++ {
-		select {
-		case msg := <-sub.MessageCh:
-			assert.Equal(t, "testchannel", msg.Channel)
-			assert.Equal(t, "hello", string(msg.Data))
-		case <-time.After(time.Second):
-			t.Fatalf("message %d timeout", i+1)
-		}
+	for range 2 {
+		msg := mustReceiveMessage(t, sub.MessageCh)
+		assert.Equal(t, "testchannel", msg.Channel)
+		assert.Equal(t, "hello", string(msg.Data))
 	}
 }
 
