@@ -6538,6 +6538,27 @@ func boolToInt(b bool) int {
 	return 0
 }
 
+// parseScore parses Redis-style score bounds including special values
+// Supports: "-inf", "+inf", "(", "[", and numeric values
+//
+//nolint:unused
+func parseScore(s string) (float64, error) {
+	switch s {
+	case "-inf":
+		return float64(math.Inf(-1)), nil
+	case "+inf", "inf":
+		return float64(math.Inf(1)), nil
+	case "-inf(", "-inf[":
+		return float64(math.Inf(-1)), nil
+	case "+inf(", "+inf[":
+		return float64(math.Inf(1)), nil
+	}
+	if len(s) > 0 && s[0] == '(' {
+		s = s[1:]
+	}
+	return strconv.ParseFloat(s, 64)
+}
+
 // parseScoreExclusive checks if a score string represents an exclusive bound
 func parseScoreExclusive(s string) (float64, bool, error) {
 	exclusive := false

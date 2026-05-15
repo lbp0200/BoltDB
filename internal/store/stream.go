@@ -161,6 +161,11 @@ func streamGroupDataKey(key, group string) []byte {
 	return []byte(prefixStream + key + streamGroups + ":" + group)
 }
 
+//nolint:unused
+func streamPendingKey(key, group string) []byte {
+	return []byte(prefixStream + key + streamPending + ":" + group)
+}
+
 // encodeStreamMeta encodes stream metadata
 type streamMetaData struct {
 	Length       int64
