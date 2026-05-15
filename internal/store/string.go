@@ -789,7 +789,7 @@ func (s *BotreonStore) BitOp(op string, destKey string, keys ...string) (int, er
 
 // BitPos 实现 Redis BITPOS 命令，查找第一个设置或清除的位
 func (s *BotreonStore) BitPos(key string, bit int, start, end int) (int, error) {
-	var pos int = -1
+	pos := -1
 	err := s.db.View(func(txn *badger.Txn) error {
 		data, err := s.getStringBytes(txn, key)
 		if err != nil {
@@ -879,11 +879,12 @@ func parseBitFieldType(typeStr string) (isSigned bool, bits int, err error) {
 	if len(typeStr) < 2 {
 		return false, 0, fmt.Errorf("invalid type: %s", typeStr)
 	}
-	if typeStr[0] == 'i' {
+	switch typeStr[0] {
+	case 'i':
 		isSigned = true
-	} else if typeStr[0] == 'u' {
+	case 'u':
 		isSigned = false
-	} else {
+	default:
 		return false, 0, fmt.Errorf("invalid type: %s", typeStr)
 	}
 	bits, err = strconv.Atoi(typeStr[1:])

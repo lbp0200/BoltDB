@@ -21,7 +21,11 @@ func setupTestHandler(t *testing.T) *Handler {
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
-	return &Handler{Db: db}
+	return &Handler{
+		Db:        db,
+		baseState: &connState{},
+		conns:     make(map[*connState]*connMeta),
+	}
 }
 
 // TestExecuteCommand 单元测试：直接测试executeCommand函数

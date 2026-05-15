@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -774,13 +775,9 @@ func (s *BotreonStore) deleteNode(txn *badger.Txn, key, nodeID string) {
 func (s *BotreonStore) deleteList(txn *badger.Txn, key string) error {
 	_, start, _, _ := s.listGetMeta(key)
 	if start != "" {
-		// 遍历删除所有节点
 		currentNodeID := start
 		visited := make(map[string]bool)
-		for {
-			if visited[currentNodeID] {
-				break
-			}
+		for !visited[currentNodeID] {
 			visited[currentNodeID] = true
 			s.deleteNode(txn, key, currentNodeID)
 			nextKey := s.listKey(key, currentNodeID, "next")
@@ -1439,7 +1436,11 @@ func (s *BotreonStore) registerAndRecheck(keys []string, ch chan BlockingResult,
 }
 
 // BLPOPBlocking implements blocking left pop with timeout
-func (s *BotreonStore) BLPOPBlocking(keys []string, timeout int) (string, string, error) {
+func (s *BotreonStore) BLPOPBlocking(ctx context.Context, keys []string, timeout int) (string, string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	// Try non-blocking first
 	for _, key := range keys {
 		value, err := s.LPop(key)
@@ -1462,18 +1463,24 @@ func (s *BotreonStore) BLPOPBlocking(keys []string, timeout int) (string, string
 		return key, value, nil
 	}
 
-	// Wait for data or timeout
+	// Wait for data, timeout, or context cancellation
 	select {
 	case result := <-resultCh:
 		return result.Key, result.Value, nil
 	case <-timeoutCh:
 		s.unregisterBlockingPop(resultCh, keys)
 		return "", "", nil
+	case <-ctx.Done():
+		s.unregisterBlockingPop(resultCh, keys)
+		return "", "", nil
 	}
 }
 
 // BRPOPBlocking implements blocking right pop with timeout
-func (s *BotreonStore) BRPOPBlocking(keys []string, timeout int) (string, string, error) {
+func (s *BotreonStore) BRPOPBlocking(ctx context.Context, keys []string, timeout int) (string, string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	// Try non-blocking first
 	for _, key := range keys {
 		value, err := s.RPop(key)
@@ -1496,18 +1503,24 @@ func (s *BotreonStore) BRPOPBlocking(keys []string, timeout int) (string, string
 		return key, value, nil
 	}
 
-	// Wait for data or timeout
+	// Wait for data, timeout, or context cancellation
 	select {
 	case result := <-resultCh:
 		return result.Key, result.Value, nil
 	case <-timeoutCh:
 		s.unregisterBlockingPop(resultCh, keys)
 		return "", "", nil
+	case <-ctx.Done():
+		s.unregisterBlockingPop(resultCh, keys)
+		return "", "", nil
 	}
 }
 
 // BRPOPLPUSHBlocking implements blocking rpoplpush with timeout
-func (s *BotreonStore) BRPOPLPUSHBlocking(source, destination string, timeout int) (string, error) {
+func (s *BotreonStore) BRPOPLPUSHBlocking(ctx context.Context, source, destination string, timeout int) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if timeout == 0 {
 		value, err := s.RPopLPush(source, destination)
 		if err != nil || value == "" {
@@ -1547,12 +1560,18 @@ func (s *BotreonStore) BRPOPLPUSHBlocking(source, destination string, timeout in
 		case <-timeoutCh:
 			s.unregisterBlockingPop(resultCh, keys)
 			return "", nil
+		case <-ctx.Done():
+			s.unregisterBlockingPop(resultCh, keys)
+			return "", nil
 		}
 	}
 }
 
 // BLMoveBlocking implements blocking lmove with timeout
-func (s *BotreonStore) BLMoveBlocking(source, destination, sourceDirection, destinationDirection string, timeout float64) (string, error) {
+func (s *BotreonStore) BLMoveBlocking(ctx context.Context, source, destination, sourceDirection, destinationDirection string, timeout float64) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if timeout == 0 {
 		return s.LMove(source, destination, sourceDirection, destinationDirection)
 	}
@@ -1586,6 +1605,9 @@ func (s *BotreonStore) BLMoveBlocking(source, destination, sourceDirection, dest
 			}
 			s.registerBlockingPop(source, resultCh)
 		case <-timeoutCh:
+			s.unregisterBlockingPop(resultCh, keys)
+			return "", nil
+		case <-ctx.Done():
 			s.unregisterBlockingPop(resultCh, keys)
 			return "", nil
 		}

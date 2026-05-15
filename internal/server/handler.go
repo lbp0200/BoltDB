@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lbp0200/BoltDB/internal/backup"
@@ -22,6 +24,10 @@ import (
 
 // connState holds per-connection state
 type connState struct {
+	mu     sync.Mutex
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	inTransaction bool
 	commands      []TransactionCommand
 	transaction   *TransactionState
@@ -42,12 +48,30 @@ type Handler struct {
 	// 共享的 Watch 监视器：key → 正在监视该 key 的连接
 	watchMonitors map[string]map[*connState]struct{}
 	watchMu       sync.Mutex
-	// 事务状态（共享 fallback，仅当 state==nil 时使用）
-	transaction *TransactionState
-	// 客户端信息（连接级别）
-	clientInfo *ClientInfo
-	// 集群ASKING状态
-	clusterAsking bool
+	// baseState 是 state==nil 时的 fallback（仅测试路径）
+	// 生产路径中 handleConnection 始终创建 per-connection connState
+	baseState *connState
+
+	// Ctx 是服务器生命周期上下文，用于优雅关闭
+	// 信号触发 cancel → 所有子 goroutine 的阻塞操作被取消
+	Ctx context.Context
+
+	// 连接注册表，支持 CLIENT LIST/KILL
+	connsMu sync.RWMutex
+	conns   map[*connState]*connMeta
+
+	nextConnID atomic.Int64
+}
+
+// connMeta 连接元数据
+type connMeta struct {
+	id          int64
+	created     time.Time
+	remoteAddr  string
+	conn        net.Conn
+	outputBytes int64
+	lastRead    time.Time
+	lastWrite   time.Time
 }
 
 // ClientInfo 客户端连接信息
@@ -85,16 +109,17 @@ type TransactionCommand struct {
 	Args    [][]byte
 }
 
-// resetTransaction 重置事务状态
-func (h *Handler) resetTransaction() {
-	h.transaction = nil
-}
-
 // ResetConnectionState 重置连接级别的状态（测试用）
 func (h *Handler) ResetConnectionState() {
-	h.clientInfo = nil
-	h.clusterAsking = false
-	h.transaction = nil
+	if h.baseState != nil {
+		h.baseState.mu.Lock()
+		h.baseState.clientInfo = nil
+		h.baseState.clusterAsking = false
+		h.baseState.transaction = nil
+		h.baseState.inTransaction = false
+		h.baseState.commands = nil
+		h.baseState.mu.Unlock()
+	}
 }
 
 // markDirtyKeys 标记键为脏（被修改）
@@ -112,15 +137,6 @@ func (h *Handler) markDirtyKeys(state *connState, keys ...string) {
 		}
 	}
 	h.watchMu.Unlock()
-
-	// 旧路径：当 state==nil（测试调用者），使用 h.transaction
-	if state == nil {
-		if h.transaction != nil && h.transaction.IsWatching {
-			for _, key := range keys {
-				h.transaction.DirtyKeys[key] = struct{}{}
-			}
-		}
-	}
 }
 
 // checkAndHandleRedirect 检查键是否需要重定向到其他节点
@@ -131,20 +147,12 @@ func (h *Handler) checkAndHandleRedirect(state *connState, key string) proto.RES
 		return nil
 	}
 
-	asking := h.clusterAsking
-	if state != nil {
-		asking = state.clusterAsking
-	}
-	if asking {
+	if state.clusterAsking {
 		slot := cluster.Slot(key)
 		if h.Cluster.IsImportingSlot(slot) {
 			return nil
 		}
-		if state != nil {
-			state.clusterAsking = false
-		} else {
-			h.clusterAsking = false
-		}
+		state.clusterAsking = false
 	}
 
 	redirect := h.Cluster.CheckSlotRedirect(key)
@@ -183,11 +191,51 @@ func (h *Handler) checkAndHandleMultiKeyRedirect(keys []string) proto.RESP {
 	return nil
 }
 
+// registerConnection 注册连接到连接表
+func (h *Handler) registerConnection(state *connState, conn net.Conn, remoteAddr string) *connMeta {
+	meta := &connMeta{
+		id:         h.nextConnID.Add(1),
+		created:    time.Now(),
+		remoteAddr: remoteAddr,
+		conn:       conn,
+	}
+
+	h.connsMu.Lock()
+	if h.conns == nil {
+		h.conns = make(map[*connState]*connMeta)
+	}
+	h.conns[state] = meta
+	h.connsMu.Unlock()
+
+	if state.clientInfo == nil {
+		state.clientInfo = &ClientInfo{}
+	}
+	state.clientInfo.ID = meta.id
+	state.clientInfo.Addr = remoteAddr
+	state.clientInfo.FD = 0
+
+	return meta
+}
+
+// unregisterConnection 从连接表移除连接
+func (h *Handler) unregisterConnection(state *connState) {
+	h.connsMu.Lock()
+	delete(h.conns, state)
+	h.connsMu.Unlock()
+}
+
 // ServeTCP 监听并处理连接
 func (h *Handler) ServeTCP(l net.Listener) error {
 	for {
 		conn, err := l.Accept()
 		if err != nil {
+			if h.Ctx != nil {
+				select {
+				case <-h.Ctx.Done():
+					return h.Ctx.Err()
+				default:
+				}
+			}
 			return err
 		}
 		go h.handleConnection(conn)
@@ -234,14 +282,32 @@ func (h *Handler) handleConnection(conn net.Conn) {
 		if err := tcpConn.SetNoDelay(true); err != nil {
 			logger.Logger.Debug().Err(err).Msg("failed to set TCP_NODELAY")
 		}
+		if h.Ctx != nil {
+			if deadline, ok := h.Ctx.Deadline(); ok {
+				_ = tcpConn.SetDeadline(deadline)
+			}
+		}
 	}
 
-	state := &connState{}
+	parentCtx := h.Ctx
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parentCtx)
+	state := &connState{ctx: ctx, cancel: cancel}
+	meta := h.registerConnection(state, conn, remoteAddr)
 
 	defer func() {
-		if state.subscriber != nil {
-			h.PubSub.RemoveSubscriber(state.subscriber)
-			state.subscriber = nil
+		state.mu.Lock()
+		sub := state.subscriber
+		state.subscriber = nil
+		state.mu.Unlock()
+
+		cancel()
+		h.unregisterConnection(state)
+
+		if sub != nil {
+			h.PubSub.RemoveSubscriber(sub)
 		}
 		if len(state.watchedKeys) > 0 {
 			h.watchMu.Lock()
@@ -250,6 +316,7 @@ func (h *Handler) handleConnection(conn net.Conn) {
 			}
 			h.watchMu.Unlock()
 		}
+		_ = meta
 	}()
 
 	for {
@@ -263,6 +330,12 @@ func (h *Handler) handleConnection(conn net.Conn) {
 			logger.Logger.Debug().Str("remote_addr", remoteAddr).Err(err).Msg("读取请求失败")
 			return
 		}
+
+		h.connsMu.Lock()
+		if m, ok := h.conns[state]; ok {
+			m.lastRead = time.Now()
+		}
+		h.connsMu.Unlock()
 
 		// 收集所有响应
 		var responses []proto.RESP
@@ -343,10 +416,19 @@ func (h *Handler) handleConnection(conn net.Conn) {
 				Msg("刷新缓冲区失败")
 			return
 		}
+		h.connsMu.Lock()
+		if m, ok := h.conns[state]; ok {
+			m.lastWrite = time.Now()
+			m.outputBytes += int64(writer.Buffered())
+		}
+		h.connsMu.Unlock()
 
 		// 进入 PubSub 模式后切换到推送循环
-		if state.subscriber != nil {
-			h.runPubSubLoop(conn, reader, writer, state, remoteAddr)
+		state.mu.Lock()
+		inPubSub := state.subscriber != nil
+		state.mu.Unlock()
+		if inPubSub {
+			h.runPubSubLoop(ctx, conn, reader, writer, state, remoteAddr)
 			return
 		}
 
@@ -527,7 +609,7 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 		h.Replication.AddSlave(slaveConn)
 
 		// 启动goroutine处理从节点的复制连接（接收REPLCONF ACK等）
-		go h.handleSlaveReplicationConnection(slaveConn)
+		go h.handleSlaveReplicationConnection(h.Ctx, slaveConn)
 
 		// 返回复制接管信号，主handler不会关闭连接
 		return ReplicationTakeoverSignal{}
@@ -540,10 +622,13 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 
 // runPubSubLoop handles a connection that has entered PubSub mode via SUBSCRIBE/PSUBSCRIBE.
 // It multiplexes between incoming subscription messages and PubSub commands.
-func (h *Handler) runPubSubLoop(conn net.Conn, reader *bufio.Reader, writer *bufio.Writer, state *connState, remoteAddr string) {
+func (h *Handler) runPubSubLoop(ctx context.Context, conn net.Conn, reader *bufio.Reader, writer *bufio.Writer, state *connState, remoteAddr string) {
 	subscriber := state.subscriber
 	if subscriber == nil {
 		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	logger.Logger.Debug().Str("remote_addr", remoteAddr).Msg("进入 PubSub 模式")
@@ -573,6 +658,10 @@ func (h *Handler) runPubSubLoop(conn net.Conn, reader *bufio.Reader, writer *buf
 
 	for {
 		select {
+		case <-ctx.Done():
+			logger.Logger.Debug().Str("remote_addr", remoteAddr).Msg("pubsub loop cancelled by context")
+			return
+
 		case msg, ok := <-subscriber.MessageCh:
 			if !ok {
 				return
@@ -584,21 +673,19 @@ func (h *Handler) runPubSubLoop(conn net.Conn, reader *bufio.Reader, writer *buf
 
 		case req := <-cmdCh:
 			resp := h.processPubSubCommand(state, req, remoteAddr)
-			if resp != nil {
-				switch r := resp.(type) {
-				case *PubSubQuitSignal:
-					_ = proto.WriteRESP(writer, proto.NewSimpleString("OK"))
-					return
-				case *MultiResponse:
-					for _, subResp := range r.Responses {
-						if err := proto.WriteRESP(writer, subResp); err != nil {
-							return
-						}
-					}
-				default:
-					if err := proto.WriteRESP(writer, resp); err != nil {
+			switch r := resp.(type) {
+			case *PubSubQuitSignal:
+				_ = proto.WriteRESP(writer, proto.NewSimpleString("OK"))
+				return
+			case *MultiResponse:
+				for _, subResp := range r.Responses {
+					if err := proto.WriteRESP(writer, subResp); err != nil {
 						return
 					}
+				}
+			default:
+				if err := proto.WriteRESP(writer, resp); err != nil {
+					return
 				}
 			}
 
@@ -766,7 +853,11 @@ func (h *Handler) processPubSubCommand(state *connState, req *proto.Array, remot
 // 1. 接收 REPLCONF ACK 命令（从节点确认已接收的命令偏移量）
 // 2. 保持连接打开，直到从节点断开
 // 3. 负责关闭连接
-func (h *Handler) handleSlaveReplicationConnection(slave *replication.SlaveConnection) {
+func (h *Handler) handleSlaveReplicationConnection(ctx context.Context, slave *replication.SlaveConnection) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	defer func() {
 		// 关闭连接
 		if err := slave.Close(); err != nil {
@@ -790,6 +881,15 @@ func (h *Handler) handleSlaveReplicationConnection(slave *replication.SlaveConne
 
 	// 持续接收从节点的命令（主要是REPLCONF ACK）
 	for {
+		select {
+		case <-ctx.Done():
+			logger.Logger.Debug().
+				Str("slave_id", slave.ID).
+				Msg("取消从节点复制连接")
+			return
+		default:
+		}
+
 		req, err := proto.ReadRESP(slave.Reader)
 		if err != nil {
 			logger.Logger.Debug().
@@ -829,24 +929,60 @@ func (h *Handler) handleSlaveReplicationConnection(slave *replication.SlaveConne
 	}
 }
 
+// clientListRESP 返回 CLIENT LIST 的 RESP 响应
+func (h *Handler) clientListRESP() proto.RESP {
+	h.connsMu.RLock()
+	defer h.connsMu.RUnlock()
+
+	if len(h.conns) == 0 {
+		return proto.NewBulkString([]byte("id=1 addr=127.0.0.1:0 fd=0 name= age=0 idle=0 flags=N db=0 sub=0 psub=0 multi=-1 cmd=client events=r oFlags= keys=0"))
+	}
+
+	var lines []string
+	now := time.Now()
+	for state, meta := range h.conns {
+		id := meta.id
+		addr := meta.remoteAddr
+		name := ""
+		age := int(now.Sub(meta.created).Seconds())
+		idle := 0
+
+		state.mu.Lock()
+		flags := "N"
+		sub := 0
+		psub := 0
+		multi := -1
+		if state.subscriber != nil {
+			flags = "P"
+			sub = len(state.subscriber.Channels)
+			psub = len(state.subscriber.Patterns)
+		} else if state.inTransaction {
+			flags = "t"
+		}
+		if state.inTransaction {
+			multi = len(state.commands)
+		}
+		state.mu.Unlock()
+
+		line := fmt.Sprintf("id=%d addr=%s fd=0 name=%s age=%d idle=%d flags=%s db=0 sub=%d psub=%d multi=%d cmd=client events=r oFlags= keys=0",
+			id, addr, name, age, idle, flags, sub, psub, multi)
+		lines = append(lines, line)
+	}
+	return proto.NewBulkString([]byte(strings.Join(lines, "\n")))
+}
+
 func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, remoteAddr string) proto.RESP {
+	if state == nil {
+		state = h.baseState
+	}
+
 	// 如果在事务中（且不是事务控制命令），将命令加入队列
-	if state != nil && state.inTransaction {
+	if state.inTransaction {
 		switch cmd {
 		case "MULTI", "EXEC", "DISCARD", "WATCH", "UNWATCH", "PING", "QUIT":
 			// 事务控制/连接命令不排队
 		default:
 			state.commands = append(state.commands, TransactionCommand{
-				Command: cmd,
-				Args:    args,
-			})
-			return proto.NewSimpleString("QUEUED")
-		}
-	} else if state == nil && h.transaction != nil && h.transaction.InTransaction {
-		switch cmd {
-		case "MULTI", "EXEC", "DISCARD", "WATCH", "UNWATCH":
-		default:
-			h.transaction.Commands = append(h.transaction.Commands, TransactionCommand{
 				Command: cmd,
 				Args:    args,
 			})
@@ -915,15 +1051,10 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		subcommand := strings.ToUpper(string(args[0]))
 		switch subcommand {
 		case "LIST":
-			// 返回当前客户端列表（简化实现）
-			return proto.NewBulkString([]byte("id=1 addr=127.0.0.1:12345 fd=6 name= age=0 idle=0 flags=N db=0 sub=0 psub=0 multi=-1 cmd=client events=r oFlags= keys=0"))
+			return h.clientListRESP()
 		case "GETNAME":
-			ci := h.clientInfo
-			if state != nil && state.clientInfo != nil {
-				ci = state.clientInfo
-			}
-			if ci != nil && ci.Name != "" {
-				return proto.NewBulkString([]byte(ci.Name))
+			if state.clientInfo != nil && state.clientInfo.Name != "" {
+				return proto.NewBulkString([]byte(state.clientInfo.Name))
 			}
 			nilResp := proto.NewBulkString(nil)
 			return nilResp
@@ -932,25 +1063,14 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				return proto.NewError("ERR wrong number of arguments for 'CLIENT SETNAME' command")
 			}
 			name := string(args[1])
-			if state != nil {
-				if state.clientInfo == nil {
-					state.clientInfo = &ClientInfo{}
-				}
-				state.clientInfo.Name = name
-			} else {
-				if h.clientInfo == nil {
-					h.clientInfo = &ClientInfo{}
-				}
-				h.clientInfo.Name = name
+			if state.clientInfo == nil {
+				state.clientInfo = &ClientInfo{}
 			}
+			state.clientInfo.Name = name
 			return proto.OK
 		case "ID":
-			ci := h.clientInfo
-			if state != nil && state.clientInfo != nil {
-				ci = state.clientInfo
-			}
-			if ci != nil && ci.ID > 0 {
-				return proto.NewInteger(ci.ID)
+			if state.clientInfo != nil && state.clientInfo.ID > 0 {
+				return proto.NewInteger(state.clientInfo.ID)
 			}
 			return proto.NewInteger(1)
 		case "KILL":
@@ -958,13 +1078,35 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				return proto.NewError("ERR wrong number of arguments for 'CLIENT KILL' command")
 			}
 			addr := string(args[1])
-			// 简化实现：检查地址格式，但不真正关闭连接
-			// 由于无法真正关闭连接，总是返回0（连接不存在）
 			if addr == "" {
 				return proto.NewError("ERR Invalid address")
 			}
-			// 返回0表示没有杀死任何连接（简化实现）
-			return proto.NewInteger(0)
+
+			h.connsMu.RLock()
+			var targetState *connState
+			var targetConn net.Conn
+			for s, m := range h.conns {
+				if m.remoteAddr == addr {
+					targetState = s
+					targetConn = m.conn
+					break
+				}
+			}
+			h.connsMu.RUnlock()
+
+			if targetState == nil {
+				return proto.NewInteger(0)
+			}
+
+			targetState.mu.Lock()
+			if targetState.cancel != nil {
+				targetState.cancel()
+			}
+			targetState.mu.Unlock()
+			if targetConn != nil {
+				_ = targetConn.Close()
+			}
+			return proto.NewInteger(1)
 		case "PAUSE":
 			// 暂停客户端（简化实现：空操作）
 			return proto.OK
@@ -976,10 +1118,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			clientID := int64(0)
 			fd := 0
 			clientName := ""
-			ci := h.clientInfo
-			if state != nil && state.clientInfo != nil {
-				ci = state.clientInfo
-			}
+			ci := state.clientInfo
 			if ci != nil {
 				if ci.Addr != "" {
 					addr = ci.Addr
@@ -2285,7 +2424,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR timeout is not a float")
 		}
 		h.markDirtyKeys(state, source, destination)
-		value, err := h.Db.BLMoveBlocking(source, destination, sourceDirection, destinationDirection, timeout)
+		value, err := h.Db.BLMoveBlocking(state.ctx, source, destination, sourceDirection, destinationDirection, timeout)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -2340,7 +2479,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR timeout is not an integer or out of range")
 		}
-		key, value, err := h.Db.BLPOPBlocking(keys, timeout)
+		key, value, err := h.Db.BLPOPBlocking(state.ctx, keys, timeout)
 		if err != nil || key == "" {
 			return proto.NilArray{}
 		}
@@ -2358,7 +2497,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR timeout is not an integer or out of range")
 		}
-		key, value, err := h.Db.BRPOPBlocking(keys, timeout)
+		key, value, err := h.Db.BRPOPBlocking(state.ctx, keys, timeout)
 		if err != nil || key == "" {
 			return proto.NilArray{}
 		}
@@ -2373,7 +2512,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR timeout is not an integer or out of range")
 		}
-		value, err := h.Db.BRPOPLPUSHBlocking(source, destination, timeout)
+		value, err := h.Db.BRPOPLPUSHBlocking(state.ctx, source, destination, timeout)
 		if err != nil || value == "" {
 			return proto.NewBulkString(nil)
 		}
@@ -3718,11 +3857,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 
 	case "ASKING":
-		if state != nil {
-			state.clusterAsking = true
-		} else {
-			h.clusterAsking = true
-		}
+		state.clusterAsking = true
 		logger.Logger.Debug().Msg("收到 ASKING 命令")
 		return proto.OK
 
@@ -4320,9 +4455,11 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i, arg := range args {
 			channels[i] = string(arg)
 		}
+		state.mu.Lock()
 		if state.subscriber == nil {
 			state.subscriber = store.NewSubscriber(fmt.Sprintf("%s:%d", remoteAddr, time.Now().UnixNano()))
 		}
+		state.mu.Unlock()
 		subscribed := h.PubSub.Subscribe(state.subscriber, channels...)
 		resp := &MultiResponse{
 			Responses: make([]proto.RESP, len(subscribed)),
@@ -4347,9 +4484,11 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i, arg := range args {
 			patterns[i] = string(arg)
 		}
+		state.mu.Lock()
 		if state.subscriber == nil {
 			state.subscriber = store.NewSubscriber(fmt.Sprintf("%s:%d", remoteAddr, time.Now().UnixNano()))
 		}
+		state.mu.Unlock()
 		subscribed := h.PubSub.PSubscribe(state.subscriber, patterns...)
 		resp := &MultiResponse{
 			Responses: make([]proto.RESP, len(subscribed)),
@@ -4500,79 +4639,44 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 	// Transaction commands - 事务命令
 	case "MULTI":
-		if state != nil {
-			if state.inTransaction {
-				return proto.NewError("ERR MULTI calls can not be nested")
-			}
-			state.inTransaction = true
-			state.commands = make([]TransactionCommand, 0)
-			if state.transaction == nil {
-				state.transaction = &TransactionState{
-					Commands:  make([]TransactionCommand, 0),
-					WatchKeys: make(map[string]struct{}),
-					DirtyKeys: make(map[string]struct{}),
-				}
-			}
-			state.transaction.InTransaction = true
-			state.transaction.Commands = make([]TransactionCommand, 0)
-		} else {
-			if h.transaction != nil && h.transaction.InTransaction {
-				return proto.NewError("ERR MULTI calls can not be nested")
-			}
-			if h.transaction == nil {
-				h.transaction = &TransactionState{
-					Commands:  make([]TransactionCommand, 0),
-					WatchKeys: make(map[string]struct{}),
-					DirtyKeys: make(map[string]struct{}),
-				}
-			}
-			h.transaction.InTransaction = true
-			h.transaction.Commands = make([]TransactionCommand, 0)
+		if state.inTransaction {
+			return proto.NewError("ERR MULTI calls can not be nested")
 		}
+		state.inTransaction = true
+		state.commands = make([]TransactionCommand, 0)
+		if state.transaction == nil {
+			state.transaction = &TransactionState{
+				Commands:  make([]TransactionCommand, 0),
+				WatchKeys: make(map[string]struct{}),
+				DirtyKeys: make(map[string]struct{}),
+			}
+		}
+		state.transaction.InTransaction = true
+		state.transaction.Commands = make([]TransactionCommand, 0)
 		return proto.NewSimpleString("OK")
 
 	case "EXEC":
-		if state != nil {
-			if !state.inTransaction {
-				return proto.NewError("ERR EXEC without MULTI")
-			}
-			if len(state.watchedKeys) > 0 {
-				for watchKey := range state.watchedKeys {
-					if _, dirty := state.dirtyKeys[watchKey]; dirty {
-						state.inTransaction = false
-						state.commands = nil
-						return proto.NilArray{}
-					}
-				}
-			}
-			results := make([]proto.RESP, len(state.commands))
-			for i, tc := range state.commands {
-				results[i] = h.executeQueuedCommand(tc.Command, tc.Args)
-			}
-			state.inTransaction = false
-			state.commands = nil
-			flatArgs := make([][]byte, len(results))
-			for i, r := range results {
-				flatArgs[i] = []byte(r.String())
-			}
-			return &proto.Array{Args: flatArgs}
-		}
-		if h.transaction == nil || !h.transaction.InTransaction {
+		if !state.inTransaction {
 			return proto.NewError("ERR EXEC without MULTI")
 		}
-		if h.transaction.IsWatching && len(h.transaction.WatchKeys) > 0 {
-			for watchKey := range h.transaction.WatchKeys {
-				if _, dirty := h.transaction.DirtyKeys[watchKey]; dirty {
-					h.resetTransaction()
+		if len(state.watchedKeys) > 0 {
+			h.watchMu.Lock()
+			for watchKey := range state.watchedKeys {
+				if _, dirty := state.dirtyKeys[watchKey]; dirty {
+					h.watchMu.Unlock()
+					state.inTransaction = false
+					state.commands = nil
 					return proto.NilArray{}
 				}
 			}
+			h.watchMu.Unlock()
 		}
-		results := make([]proto.RESP, len(h.transaction.Commands))
-		for i, tc := range h.transaction.Commands {
+		results := make([]proto.RESP, len(state.commands))
+		for i, tc := range state.commands {
 			results[i] = h.executeQueuedCommand(tc.Command, tc.Args)
 		}
-		h.resetTransaction()
+		state.inTransaction = false
+		state.commands = nil
 		flatArgs := make([][]byte, len(results))
 		for i, r := range results {
 			flatArgs[i] = []byte(r.String())
@@ -4580,83 +4684,49 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		return &proto.Array{Args: flatArgs}
 
 	case "DISCARD":
-		if state != nil {
-			if !state.inTransaction {
-				return proto.NewError("ERR DISCARD without MULTI")
-			}
-			state.inTransaction = false
-			state.commands = nil
-			state.transaction = nil
-		} else {
-			if h.transaction == nil || !h.transaction.InTransaction {
-				return proto.NewError("ERR DISCARD without MULTI")
-			}
-			h.resetTransaction()
+		if !state.inTransaction {
+			return proto.NewError("ERR DISCARD without MULTI")
 		}
+		state.inTransaction = false
+		state.commands = nil
+		state.transaction = nil
 		return proto.NewSimpleString("OK")
 
 	case "WATCH":
 		if len(args) < 1 {
 			return proto.NewError("ERR wrong number of arguments for 'WATCH' command")
 		}
-		if (state != nil && state.inTransaction && len(state.commands) > 0) ||
-			(state == nil && h.transaction != nil && h.transaction.InTransaction && len(h.transaction.Commands) > 0) {
+		if state.inTransaction && len(state.commands) > 0 {
 			return proto.NewError("ERR WATCH inside MULTI is not allowed")
 		}
-		if state != nil {
-			if state.watchedKeys == nil {
-				state.watchedKeys = make(map[string]struct{})
-				state.dirtyKeys = make(map[string]struct{})
-			}
-			h.watchMu.Lock()
-			if h.watchMonitors == nil {
-				h.watchMonitors = make(map[string]map[*connState]struct{})
-			}
-			for _, arg := range args {
-				key := string(arg)
-				state.watchedKeys[key] = struct{}{}
-				if h.watchMonitors[key] == nil {
-					h.watchMonitors[key] = make(map[*connState]struct{})
-				}
-				h.watchMonitors[key][state] = struct{}{}
-			}
-			h.watchMu.Unlock()
-		} else {
-			if h.transaction == nil {
-				h.transaction = &TransactionState{
-					Commands:   make([]TransactionCommand, 0),
-					WatchKeys:  make(map[string]struct{}),
-					IsWatching: true,
-					DirtyKeys:  make(map[string]struct{}),
-				}
-			} else {
-				h.transaction.IsWatching = true
-				h.transaction.WatchKeys = make(map[string]struct{})
-			}
-			for _, arg := range args {
-				key := string(arg)
-				h.transaction.WatchKeys[key] = struct{}{}
-			}
+		if state.watchedKeys == nil {
+			state.watchedKeys = make(map[string]struct{})
+			state.dirtyKeys = make(map[string]struct{})
 		}
+		h.watchMu.Lock()
+		if h.watchMonitors == nil {
+			h.watchMonitors = make(map[string]map[*connState]struct{})
+		}
+		for _, arg := range args {
+			key := string(arg)
+			state.watchedKeys[key] = struct{}{}
+			if h.watchMonitors[key] == nil {
+				h.watchMonitors[key] = make(map[*connState]struct{})
+			}
+			h.watchMonitors[key][state] = struct{}{}
+		}
+		h.watchMu.Unlock()
 		return proto.NewInteger(int64(len(args)))
 
 	case "UNWATCH":
-		if state != nil {
-			if state.watchedKeys != nil {
-				h.watchMu.Lock()
-				for key := range state.watchedKeys {
-					delete(h.watchMonitors, key)
-				}
-				h.watchMu.Unlock()
-				state.watchedKeys = make(map[string]struct{})
-				state.dirtyKeys = make(map[string]struct{})
+		if state.watchedKeys != nil {
+			h.watchMu.Lock()
+			for key := range state.watchedKeys {
+				delete(h.watchMonitors, key)
 			}
-		} else {
-			if h.transaction != nil {
-				h.transaction.IsWatching = false
-				h.transaction.WatchKeys = make(map[string]struct{})
-			}
-			h.resetTransaction()
+			h.watchMu.Unlock()
+			state.watchedKeys = make(map[string]struct{})
+			state.dirtyKeys = make(map[string]struct{})
 		}
 		return proto.NewSimpleString("OK")
 
@@ -5104,7 +5174,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			allArgs = append(allArgs, streamIDs[j])
 		}
 
-		results, err := h.Db.XRead(count, block, allArgs...)
+		results, err := h.Db.XRead(state.ctx, count, block, allArgs...)
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -6450,17 +6520,8 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		return &proto.Array{Args: arr}
 
 	default:
-		// 如果在事务中，将命令加入队列
-		if state != nil {
-			if state.inTransaction {
-				state.commands = append(state.commands, TransactionCommand{
-					Command: cmd,
-					Args:    args,
-				})
-				return proto.NewSimpleString("QUEUED")
-			}
-		} else if h.transaction != nil {
-			h.transaction.Commands = append(h.transaction.Commands, TransactionCommand{
+		if state.inTransaction {
+			state.commands = append(state.commands, TransactionCommand{
 				Command: cmd,
 				Args:    args,
 			})
@@ -6475,25 +6536,6 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
-}
-
-// parseScore parses Redis-style score bounds including special values
-// Supports: "-inf", "+inf", "(", "[", and numeric values
-func parseScore(s string) (float64, error) {
-	switch s {
-	case "-inf":
-		return float64(math.Inf(-1)), nil
-	case "+inf", "inf":
-		return float64(math.Inf(1)), nil
-	case "-inf(", "-inf[":
-		return float64(math.Inf(-1)), nil
-	case "+inf(", "+inf[":
-		return float64(math.Inf(1)), nil
-	}
-	if len(s) > 0 && s[0] == '(' {
-		s = s[1:]
-	}
-	return strconv.ParseFloat(s, 64)
 }
 
 // parseScoreExclusive checks if a score string represents an exclusive bound

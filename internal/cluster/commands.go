@@ -89,7 +89,7 @@ func (cc *ClusterCommands) handleInfo(args []string) (string, error) {
 	myself := cc.cluster.GetMyself()
 	epoch := cc.cluster.GetEpoch()
 
-	// 统计信息
+	cc.cluster.mu.RLock()
 	totalNodes := len(cc.cluster.Nodes)
 	totalSlots := 0
 	for i := uint32(0); i < SlotCount; i++ {
@@ -97,6 +97,7 @@ func (cc *ClusterCommands) handleInfo(args []string) (string, error) {
 			totalSlots++
 		}
 	}
+	cc.cluster.mu.RUnlock()
 
 	info := fmt.Sprintf(`cluster_state:ok
 cluster_slots_assigned:%d
@@ -225,11 +226,21 @@ func (cc *ClusterCommands) handleForget(args []string) (string, error) {
 	}
 
 	nodeID := args[0]
+
+	cc.cluster.mu.Lock()
+	defer cc.cluster.mu.Unlock()
+
 	if nodeID == cc.cluster.Myself.ID {
 		return "", fmt.Errorf("ERR I can't forget myself")
 	}
 
-	cc.cluster.RemoveNode(nodeID)
+	delete(cc.cluster.Nodes, nodeID)
+	for i := uint32(0); i < SlotCount; i++ {
+		if cc.cluster.Slots[i] != nil && cc.cluster.Slots[i].ID == nodeID {
+			cc.cluster.Slots[i] = cc.cluster.Myself
+		}
+	}
+
 	return "OK", nil
 }
 
@@ -240,16 +251,18 @@ func (cc *ClusterCommands) handleReplicate(args []string) (string, error) {
 	}
 
 	masterID := args[0]
-	master := cc.cluster.GetNodeByID(masterID)
+
+	cc.cluster.mu.Lock()
+	defer cc.cluster.mu.Unlock()
+
+	master := cc.cluster.Nodes[masterID]
 	if master == nil {
 		return "", fmt.Errorf("ERR unknown node %s", masterID)
 	}
 
-	// 将当前节点设置为slave
 	cc.cluster.Myself.MasterID = masterID
 	cc.cluster.Myself.Flags = []string{"slave", "myself"}
 
-	// 移除当前节点的槽位分配
 	for i := uint32(0); i < SlotCount; i++ {
 		if cc.cluster.Slots[i] == cc.cluster.Myself {
 			cc.cluster.Slots[i] = master
@@ -272,6 +285,9 @@ func (cc *ClusterCommands) handleAddSlots(args []string) (string, error) {
 		return "", fmt.Errorf("ERR wrong number of arguments for 'CLUSTER ADDSLOTS' command")
 	}
 
+	cc.cluster.mu.Lock()
+	defer cc.cluster.mu.Unlock()
+
 	for _, arg := range args {
 		slot, err := strconv.ParseUint(arg, 10, 32)
 		if err != nil {
@@ -282,16 +298,12 @@ func (cc *ClusterCommands) handleAddSlots(args []string) (string, error) {
 			return "", fmt.Errorf("ERR slot %d out of range", slot)
 		}
 
-		// 检查槽位是否已被分配
-		currentOwner := cc.cluster.GetNodeBySlot(uint32(slot))
+		currentOwner := cc.cluster.Slots[slot]
 		if currentOwner != nil && currentOwner.ID != cc.cluster.Myself.ID {
 			return "", fmt.Errorf("ERR Slot %d is already busy", slot)
 		}
 
-		err = cc.cluster.AssignSlot(uint32(slot), cc.cluster.Myself.ID)
-		if err != nil {
-			return "", err
-		}
+		cc.cluster.Slots[slot] = cc.cluster.Myself
 	}
 
 	return "OK", nil
@@ -322,14 +334,15 @@ func (cc *ClusterCommands) handleDelSlots(args []string) (string, error) {
 
 // handleFlushSlots 处理CLUSTER FLUSHSLOTS命令
 func (cc *ClusterCommands) handleFlushSlots(args []string) (string, error) {
-	// 清除当前节点的所有槽位
-	myself := cc.cluster.Myself
+	cc.cluster.mu.Lock()
+	defer cc.cluster.mu.Unlock()
+
 	for i := uint32(0); i < SlotCount; i++ {
-		if cc.cluster.Slots[i] == myself {
+		if cc.cluster.Slots[i] == cc.cluster.Myself {
 			cc.cluster.Slots[i] = nil
 		}
 	}
-	myself.Slots = []SlotRange{}
+	cc.cluster.Myself.Slots = []SlotRange{}
 
 	return "OK", nil
 }
@@ -371,17 +384,19 @@ func (cc *ClusterCommands) handleSlaves(args []string) ([]string, error) {
 	}
 
 	nodeID := args[0]
-	master := cc.cluster.GetNodeByID(nodeID)
+
+	cc.cluster.mu.RLock()
+	defer cc.cluster.mu.RUnlock()
+
+	master := cc.cluster.Nodes[nodeID]
 	if master == nil {
 		return nil, fmt.Errorf("ERR No such node %s", nodeID)
 	}
 
-	// 获取所有slave节点
 	var slaves []string
 	for _, node := range cc.cluster.Nodes {
 		if node.MasterID == nodeID {
-			line := cc.cluster.formatNodeLine(node)
-			slaves = append(slaves, line)
+			slaves = append(slaves, cc.cluster.formatNodeLine(node))
 		}
 	}
 
@@ -456,13 +471,13 @@ var globalClusterStats = &clusterStats{
 
 // handleCalls 处理CLUSTER CALLS命令
 func (cc *ClusterCommands) handleCalls(args []string) ([]interface{}, error) {
+	cc.cluster.mu.RLock()
+	defer cc.cluster.mu.RUnlock()
+
 	globalClusterStats.mu.RLock()
 	defer globalClusterStats.mu.RUnlock()
 
-	// 返回集群调用统计信息
-	// 格式: [nodename, num_commands, num_bytes_received, num_bytes_sent, ...]
 	result := make([]interface{}, 0, 4*len(cc.cluster.Nodes))
-
 	for _, node := range cc.cluster.Nodes {
 		result = append(result, node.ID)
 		result = append(result, globalClusterStats.CommandsProcessed)

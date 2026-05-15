@@ -2,6 +2,7 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -158,11 +159,6 @@ func streamGroupKey(key string) []byte {
 // streamGroupDataKey returns the key for a specific group
 func streamGroupDataKey(key, group string) []byte {
 	return []byte(prefixStream + key + streamGroups + ":" + group)
-}
-
-// streamPendingKey returns the key for pending entries in a group
-func streamPendingKey(key, group string) []byte {
-	return []byte(prefixStream + key + streamPending + ":" + group)
 }
 
 // encodeStreamMeta encodes stream metadata
@@ -406,7 +402,10 @@ func (s *BotreonStore) XLen(key string) (int64, error) {
 }
 
 // XRead reads entries from one or more streams
-func (s *BotreonStore) XRead(count int64, block int64, args ...string) ([]map[string][]StreamEntry, error) {
+func (s *BotreonStore) XRead(ctx context.Context, count int64, block int64, args ...string) ([]map[string][]StreamEntry, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if len(args) < 2 || len(args)%2 != 0 {
 		return nil, errors.New("ERR wrong number of arguments for 'XREAD' command")
 	}
@@ -488,7 +487,11 @@ func (s *BotreonStore) XRead(count int64, block int64, args ...string) ([]map[st
 
 	if block > 0 && len(result) == 0 {
 		// Implement blocking behavior
-		return s.xReadBlocking(count, block, args)
+		return s.xReadBlocking(ctx, count, block, args)
+	}
+
+	if block == 0 && len(result) == 0 && len(args) > 0 {
+		return s.xReadBlocking(ctx, count, block, args)
 	}
 
 	return result, err
@@ -523,7 +526,7 @@ func (s *BotreonStore) unregisterStreamBlocking(ch chan StreamReadResult, keys [
 }
 
 // xReadBlocking implements blocking XREAD
-func (s *BotreonStore) xReadBlocking(count int64, block int64, args []string) ([]map[string][]StreamEntry, error) {
+func (s *BotreonStore) xReadBlocking(ctx context.Context, count int64, block int64, args []string) ([]map[string][]StreamEntry, error) {
 	resultCh := make(chan StreamReadResult, 1)
 	keys := streamKeys(args)
 
@@ -555,6 +558,9 @@ func (s *BotreonStore) xReadBlocking(count int64, block int64, args []string) ([
 	if block == 0 {
 		for {
 			select {
+			case <-ctx.Done():
+				s.unregisterStreamBlocking(resultCh, keys)
+				return nil, nil
 			case streamResult := <-resultCh:
 				if len(streamResult.Entries) > 0 {
 					return []map[string][]StreamEntry{{streamResult.Key: streamResult.Entries}}, nil
@@ -576,6 +582,9 @@ func (s *BotreonStore) xReadBlocking(count int64, block int64, args []string) ([
 
 	// Wait for data or timeout
 	select {
+	case <-ctx.Done():
+		s.unregisterStreamBlocking(resultCh, keys)
+		return nil, nil
 	case streamResult := <-resultCh:
 		if len(streamResult.Entries) > 0 {
 			s.unregisterStreamBlocking(resultCh, keys)

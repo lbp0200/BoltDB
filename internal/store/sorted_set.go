@@ -1268,15 +1268,16 @@ func compareLex(a, b string, inclusive bool) bool {
 	var aVal string
 	var aIncl bool
 	if len(a) > 0 {
-		if a[0] == '(' {
+		switch a[0] {
+		case '(':
 			aVal = a[1:]
 			aIncl = false
-		} else if a[0] == '[' {
+		case '[':
 			aVal = a[1:]
 			aIncl = true
-		} else {
+		default:
 			aVal = a
-			aIncl = inclusive // 当a是普通成员时，使用参数
+			aIncl = inclusive
 		}
 	} else {
 		aVal = a

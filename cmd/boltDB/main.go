@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"net"
 	"os"
@@ -71,11 +72,15 @@ func main() {
 	// 初始化Pub/Sub管理器
 	pubsubMgr := store.NewPubSubManager()
 
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
 	handler := &server.Handler{
 		Db:          db,
 		Replication: replMgr,
 		Backup:      backupMgr,
 		PubSub:      pubsubMgr,
+		Ctx:         ctx,
 	}
 
 	// 初始化集群（如果启用了集群模式）
@@ -98,12 +103,9 @@ func main() {
 	logger.Warning("BoltDB 服务器启动，监听地址: %s", *addrFlag)
 	logger.Warning("当前日志级别: %s", logger.GetLevelString())
 
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-
 	go func() {
-		sig := <-sigCh
-		logger.Logger.Info().Str("signal", sig.String()).Msg("收到关闭信号，正在关闭服务器...")
+		<-ctx.Done()
+		logger.Logger.Info().Msg("收到关闭信号，正在关闭服务器...")
 		_ = ln.Close()
 	}()
 
@@ -112,4 +114,5 @@ func main() {
 	}
 
 	replMgr.Stop()
+	cancel()
 }

@@ -1232,15 +1232,14 @@ func readRDBExpireTime(buf *bytes.Buffer) (int64, bool) {
 		return 0, false
 	}
 	expireType := buf.Next(1)[0]
-	if expireType == 0xFC {
-		// 毫秒精度
+	switch expireType {
+	case 0xFC:
 		var ms int64
 		if err := binary.Read(buf, binary.LittleEndian, &ms); err != nil {
 			return 0, false
 		}
 		return ms, true
-	} else if expireType == 0xFD {
-		// 秒精度
+	case 0xFD:
 		var sec int32
 		if err := binary.Read(buf, binary.LittleEndian, &sec); err != nil {
 			return 0, false
@@ -1573,22 +1572,10 @@ func (s *BotreonStore) NextStartup() error {
 		if err := cleanupOrphanedHashData(txn); err != nil {
 			_ = err
 		}
-		// List: list:key:
-		if err := cleanupOrphanedListData(txn); err != nil {
-			// 记录日志
-		}
-		// Hash: hash:key:field
-		if err := cleanupOrphanedHashData(txn); err != nil {
-			// 记录日志
-		}
-		// Set: set:key:member
-		if err := cleanupOrphanedSetData(txn); err != nil {
-			// 记录日志
-		}
-		// SortedSet: zset:key:*
-		if err := cleanupOrphanedZSetData(txn); err != nil {
-			// 记录日志
-		}
+		_ = cleanupOrphanedListData(txn)
+		_ = cleanupOrphanedHashData(txn)
+		_ = cleanupOrphanedSetData(txn)
+		_ = cleanupOrphanedZSetData(txn)
 
 		return nil
 	}, 30)

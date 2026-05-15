@@ -27,6 +27,8 @@ func setupBenchmarkHandler(b *testing.B) *Handler {
 		Backup:      backupMgr,
 		Replication: replMgr,
 		Port:        6337,
+		baseState:   &connState{},
+		conns:       make(map[*connState]*connMeta),
 	}
 }
 

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -111,7 +112,7 @@ func TestStreamXRead(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Read from stream
-	result, err := store.XRead(10, 0, "mystream", "0")
+		result, err := store.XRead(context.Background(), 10, 0, "mystream", "0")
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(result))
 	assert.Equal(t, 1, len(result[0]["mystream"]))
@@ -125,7 +126,7 @@ func TestStreamXReadBlocking(t *testing.T) {
 	done := make(chan []map[string][]StreamEntry, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		result, err := store.XRead(10, 1000, "mystream", "$")
+		result, err := store.XRead(context.Background(), 10, 1000, "mystream", "$")
 		if err != nil {
 			errCh <- err
 			return
@@ -157,7 +158,7 @@ func TestStreamXReadBlockingAlreadyHasData(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Blocking read should return immediately via xReadImmediate
-	result, err := store.XRead(10, 1000, "mystream", "0")
+	result, err := store.XRead(context.Background(), 10, 1000, "mystream", "0")
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(result))
 	assert.Equal(t, id, result[0]["mystream"][0].ID)
@@ -167,7 +168,7 @@ func TestStreamXReadBlockingTimeout(t *testing.T) {
 	store := setupTestStore(t)
 
 	// Block on non-existent stream with short timeout
-	result, err := store.XRead(10, 100, "ghoststream", "$")
+	result, err := store.XRead(context.Background(), 10, 100, "ghoststream", "$")
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(result))
 
@@ -187,7 +188,7 @@ func TestStreamXReadBlockingConcurrent(t *testing.T) {
 	for i := 0; i < numReaders; i++ {
 		go func(id int) {
 			key := fmt.Sprintf("stream_%d", id)
-			result, err := store.XRead(10, 2000, key, "$")
+			result, err := store.XRead(context.Background(), 10, 2000, key, "$")
 			if err == nil && len(result) > 0 {
 				done <- id
 			}

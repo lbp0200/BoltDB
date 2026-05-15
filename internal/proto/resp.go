@@ -105,8 +105,11 @@ func ReadRESP(r *bufio.Reader) (*Array, error) {
 				return nil, fmt.Errorf("expected $, got %q", lenLine)
 			}
 			bulkLen, err := strconv.Atoi(string(lenLine[1:]))
-			if err != nil || bulkLen < -1 {
+			if err != nil {
 				return nil, err
+			}
+			if bulkLen < -1 {
+				return nil, fmt.Errorf("invalid bulk string length: %s", lenLine[1:])
 			}
 			if bulkLen == -1 {
 				args[i] = nil

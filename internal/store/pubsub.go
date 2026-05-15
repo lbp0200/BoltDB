@@ -21,6 +21,8 @@ type Subscriber struct {
 	Patterns  map[string]bool
 	MessageCh chan *Message
 	mu        sync.RWMutex
+	closed    bool
+	closeMu   sync.Mutex
 }
 
 // Message 消息
@@ -197,6 +199,11 @@ func (psm *PubSubManager) Publish(channel string, message []byte) int {
 	// 发送给频道订阅者
 	if subs, exists := psm.channels[channel]; exists {
 		for sub := range subs {
+			sub.closeMu.Lock()
+			if sub.closed {
+				sub.closeMu.Unlock()
+				continue
+			}
 			select {
 			case sub.MessageCh <- msg:
 				count++
@@ -206,6 +213,7 @@ func (psm *PubSubManager) Publish(channel string, message []byte) int {
 					Str("channel", channel).
 					Msg("订阅者消息通道已满，跳过消息")
 			}
+			sub.closeMu.Unlock()
 		}
 	}
 
@@ -218,6 +226,11 @@ func (psm *PubSubManager) Publish(channel string, message []byte) int {
 				Data:    message,
 			}
 			for sub := range subs {
+				sub.closeMu.Lock()
+				if sub.closed {
+					sub.closeMu.Unlock()
+					continue
+				}
 				select {
 				case sub.MessageCh <- patternMsg:
 					count++
@@ -227,6 +240,7 @@ func (psm *PubSubManager) Publish(channel string, message []byte) int {
 						Str("pattern", pattern).
 						Msg("订阅者消息通道已满，跳过消息")
 				}
+				sub.closeMu.Unlock()
 			}
 		}
 	}
@@ -249,6 +263,11 @@ func (psm *PubSubManager) GetSubscriberCount(channel string) int {
 func (psm *PubSubManager) RemoveSubscriber(subscriber *Subscriber) {
 	psm.mu.Lock()
 	defer psm.mu.Unlock()
+
+	// 标记为已关闭，阻止 Publish 向其发送消息
+	subscriber.closeMu.Lock()
+	subscriber.closed = true
+	subscriber.closeMu.Unlock()
 
 	// 取消所有频道订阅
 	subscriber.mu.RLock()
@@ -276,6 +295,9 @@ func (psm *PubSubManager) Clear() {
 
 	// 关闭所有订阅者的消息通道并移除订阅者
 	for sub := range psm.subscribers {
+		sub.closeMu.Lock()
+		sub.closed = true
+		sub.closeMu.Unlock()
 		close(sub.MessageCh)
 	}
 

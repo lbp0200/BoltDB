@@ -2070,6 +2070,319 @@ func TestConcurrentTransaction(t *testing.T) {
 	assert.NotEqual(t, "0", counter)
 }
 
+// TestTransactionConnIsolationRegression - Regression for MULTI transaction connection isolation bug
+// Bug: Transaction state (inTransaction, commands) was on shared Handler, letting one connection
+// leak queued commands into another connection's EXEC.
+// Fix: Moved all transaction state into per-connection connState.
+//
+// State transitions covered:
+//   IDLE → MULTI → SET → QUEUED → EXEC → IDLE  (per-connection)
+//   connA[MULTI→SET connA.key] → connB[MULTI→SET connB.key→EXEC] → EXEC connA  (no cross-leak)
+//   MULTI → disconnect → reconnect → MULTI → EXEC  (clean state after reconnect)
+//   MULTI → MULTI  (nesting error, per-connection)
+//   WATCH → [other conn SET] → MULTI → SET → EXEC  (watch conflict returns *-1, per-connection tracking)
+func TestTransactionConnIsolationRegression(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	// --- Sub-test 1: Independent MULTI sessions, no command leakage ---
+	connA, err := net.Dial("tcp", sharedListener.Addr().String())
+	assert.NoError(t, err)
+	defer connA.Close()
+	readerA := bufio.NewReader(connA)
+
+	connB, err := net.Dial("tcp", sharedListener.Addr().String())
+	assert.NoError(t, err)
+	defer connB.Close()
+	readerB := bufio.NewReader(connB)
+
+	sendRESP := func(conn net.Conn, cmd string, args ...string) {
+		cmdArgs := make([][]byte, 1+len(args))
+		cmdArgs[0] = []byte(cmd)
+		for i, arg := range args {
+			cmdArgs[i+1] = []byte(arg)
+		}
+		_ = proto.WriteRESP(bufio.NewWriter(conn), &proto.Array{Args: cmdArgs})
+	}
+
+	readOK := func(r *bufio.Reader) {
+		resp, err := proto.ReadRESP(r)
+		assert.NoError(t, err)
+		assert.NotNil(t, resp)
+	}
+
+	// connA: MULTI → SET iso_key_a
+	sendRESP(connA, "MULTI")
+	readOK(readerA)
+	sendRESP(connA, "SET", "iso_key_a", "val_a")
+	readOK(readerA)
+
+	// connB: MULTI (should see no trace of connA's commands)
+	sendRESP(connB, "MULTI")
+	readOK(readerB)
+	sendRESP(connB, "SET", "iso_key_b", "val_b")
+	readOK(readerB)
+
+	// connA EXEC — only iso_key_a should be set
+	sendRESP(connA, "EXEC")
+	readOK(readerA)
+	val, err := sharedClient.Get(ctx, "iso_key_a").Result()
+	assert.NoError(t, err)
+	assert.Equal(t, "val_a", val)
+	_, err = sharedClient.Get(ctx, "iso_key_b").Result()
+	assert.Equal(t, redis.Nil, err)
+
+	// connB EXEC — iso_key_b should now be set
+	sendRESP(connB, "EXEC")
+	readOK(readerB)
+	val, err = sharedClient.Get(ctx, "iso_key_b").Result()
+	assert.NoError(t, err)
+	assert.Equal(t, "val_b", val)
+
+	// --- Sub-test 2: Disconnect with open MULTI then reconnect ---
+	connC, err := net.Dial("tcp", sharedListener.Addr().String())
+	assert.NoError(t, err)
+	readerC := bufio.NewReader(connC)
+
+	sendRESP(connC, "MULTI")
+	readOK(readerC)
+	sendRESP(connC, "SET", "orphan_key", "orphan_val")
+	readOK(readerC)
+	connC.Close()
+	time.Sleep(100 * time.Millisecond)
+
+	connD, err := net.Dial("tcp", sharedListener.Addr().String())
+	assert.NoError(t, err)
+	defer connD.Close()
+	readerD := bufio.NewReader(connD)
+
+	sendRESP(connD, "MULTI")
+	readOK(readerD)
+	sendRESP(connD, "SET", "clean_key", "clean_val")
+	readOK(readerD)
+	sendRESP(connD, "EXEC")
+	readOK(readerD)
+
+	val, err = sharedClient.Get(ctx, "clean_key").Result()
+	assert.NoError(t, err)
+	assert.Equal(t, "clean_val", val)
+	_, err = sharedClient.Get(ctx, "orphan_key").Result()
+	assert.Equal(t, redis.Nil, err)
+
+	// --- Sub-test 3: MULTI nesting error ---
+	connE, err := net.Dial("tcp", sharedListener.Addr().String())
+	assert.NoError(t, err)
+	defer connE.Close()
+	readerE := bufio.NewReader(connE)
+
+	sendRESP(connE, "MULTI")
+	readOK(readerE)
+	sendRESP(connE, "MULTI")
+	rawLine, err := readerE.ReadString('\n')
+	assert.NoError(t, err)
+	assert.True(t, strings.HasPrefix(rawLine, "-"))
+	assert.True(t, strings.Contains(rawLine, "MULTI calls can not be nested"))
+
+	sendRESP(connE, "DISCARD")
+	readOK(readerE)
+	sendRESP(connE, "EXEC")
+	rawLine, err = readerE.ReadString('\n')
+	assert.NoError(t, err)
+	assert.True(t, strings.HasPrefix(rawLine, "-"))
+	assert.True(t, strings.Contains(rawLine, "EXEC without MULTI"))
+}
+
+// TestMGetWrongTypeRegression - Regression for MGET wrong-type garbled-data bug
+// Bug: MGet did not check key type before reading, producing garbled bytes for non-string keys.
+// Fix: Added type prefix check in MGet; non-string keys return ErrWrongType.
+//
+// State transitions covered:
+//   MGET [string, hash] → -ERR WRONGTYPE  (wrong type detected)
+//   MGET [string, nonexistent] → [value, nil]  (mixed OK keys still work)
+//   MGET [hash, list, set, zset] → -ERR WRONGTYPE  (all non-string types rejected)
+//   concurrent: SET → HSET same key, MGET while type changes  (concurrent type change)
+//   disconnect → reconnect → MGET (works after reconnect)
+func TestMGetWrongTypeRegression(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	// --- Sub-test 1: MGET mixed string + hash returns error, no garbled data ---
+	_ = sharedClient.Set(ctx, "mget_str", "hello", 0)
+	_ = sharedClient.HSet(ctx, "mget_hash", "field", "value")
+
+	_, err := sharedClient.MGet(ctx, "mget_str", "mget_hash").Result()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	// --- Sub-test 2: MGET with non-existent keys still OK ---
+	_ = sharedClient.Set(ctx, "mget_ok", "ok", 0)
+	vals, err := sharedClient.MGet(ctx, "mget_ok", "mget_nope").Result()
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(vals))
+	assert.Equal(t, "ok", vals[0])
+	assert.Nil(t, vals[1])
+
+	// --- Sub-test 3: All non-string types rejected ---
+	_ = sharedClient.LPush(ctx, "mget_list", "a")
+	_ = sharedClient.SAdd(ctx, "mget_set", "x")
+	_ = sharedClient.ZAdd(ctx, "mget_zset", redis.Z{Score: 1, Member: "m"})
+
+	_, err = sharedClient.MGet(ctx, "mget_str", "mget_list").Result()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	_, err = sharedClient.MGet(ctx, "mget_str", "mget_set").Result()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	_, err = sharedClient.MGet(ctx, "mget_str", "mget_zset").Result()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	// --- Sub-test 4: Concurrent MGET while type changes ---
+	_ = sharedClient.Set(ctx, "mget_concur", "initial", 0)
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 20; i++ {
+			_, _ = sharedClient.MGet(ctx, "mget_concur", "mget_str", "mget_nope").Result()
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 5; i++ {
+			sharedClient.HSet(ctx, "mget_concur", "f", "v")
+			time.Sleep(2 * time.Millisecond)
+			sharedClient.Del(ctx, "mget_concur")
+			time.Sleep(1 * time.Millisecond)
+			sharedClient.Set(ctx, "mget_concur", "restored", 0)
+			time.Sleep(2 * time.Millisecond)
+		}
+	}()
+	wg.Wait()
+
+	// --- Sub-test 5: Reconnect, MGET still works ---
+	conn, err := net.Dial("tcp", sharedListener.Addr().String())
+	assert.NoError(t, err)
+	conn.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	_, err = sharedClient.MGet(ctx, "mget_str").Result()
+	assert.NoError(t, err)
+}
+
+// TestWriteRESPNilArrayRegression - Regression for RESP WriteRESP NilArray optimization
+// Bug: BLPOP/BRPOP timeout returned *0 (empty array) instead of *-1 (nil array).
+// EXEC watch failure used &Array{Args: []} which also encoded as *0.
+// Fix: Added NilArray type; WriteRESP encodes it as *-1\r\n; BLPOP/BRPOP/EXEC use it.
+//
+// State transitions covered:
+//   BLPOP empty → timeout → *-1  (nil array for timeout)
+//   EXEC after watch conflict → *-1  (nil array for failed EXEC)
+//   concurrent BLPOP + LPUSH → *2 array  (normal flow still produces correct array)
+//   WriteRESP with NilArray → *-1\r\n  (encoding correctness)
+//   disconnect → reconnect → BLPOP timeout  (works after reconnect)
+func TestWriteRESPNilArrayRegression(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	// --- Sub-test 1: BLPOP timeout returns *-1 via raw RESP ---
+	conn, err := net.Dial("tcp", sharedListener.Addr().String())
+	assert.NoError(t, err)
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
+
+	sendRESP := func(conn net.Conn, cmd string, args ...string) {
+		cmdArgs := make([][]byte, 1+len(args))
+		cmdArgs[0] = []byte(cmd)
+		for i, arg := range args {
+			cmdArgs[i+1] = []byte(arg)
+		}
+		_ = proto.WriteRESP(bufio.NewWriter(conn), &proto.Array{Args: cmdArgs})
+	}
+
+	// BLPOP nonexistent_list 1 (timeout after 1s)
+	sendRESP(conn, "BLPOP", "nilarr_nonexistent", "1")
+	rawLine, err := reader.ReadString('\n')
+	assert.NoError(t, err)
+	assert.Equal(t, "*-1\r\n", rawLine)
+
+	// --- Sub-test 2: BLPOP with data still returns correct array ---
+	_ = sharedClient.LPush(ctx, "nilarr_popdata", "hello")
+	sendRESP(conn, "BLPOP", "nilarr_popdata", "1")
+	resp, err := proto.ReadRESP(reader)
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+	assert.Equal(t, 2, len(resp.Args))
+
+	// --- Sub-test 3: BRPOP timeout also returns *-1 ---
+	sendRESP(conn, "BRPOP", "nilarr_br_nonexistent", "1")
+	rawLine, err = reader.ReadString('\n')
+	assert.NoError(t, err)
+	assert.Equal(t, "*-1\r\n", rawLine)
+
+	// --- Sub-test 4: EXEC watch conflict returns *-1 via raw RESP ---
+	connA, err := net.Dial("tcp", sharedListener.Addr().String())
+	assert.NoError(t, err)
+	defer connA.Close()
+	readerA := bufio.NewReader(connA)
+
+	connB, err := net.Dial("tcp", sharedListener.Addr().String())
+	assert.NoError(t, err)
+	defer connB.Close()
+	readerB := bufio.NewReader(connB)
+
+	sendRESP(connA, "SET", "watch_nil", "original")
+	readOK := func(r *bufio.Reader) {
+		rp, err := proto.ReadRESP(r)
+		assert.NoError(t, err)
+		assert.NotNil(t, rp)
+	}
+	readOK(readerA)
+
+	sendRESP(connA, "WATCH", "watch_nil")
+	readOK(readerA)
+	sendRESP(connB, "SET", "watch_nil", "modified_by_b")
+	readOK(readerB)
+	sendRESP(connA, "MULTI")
+	readOK(readerA)
+	sendRESP(connA, "SET", "watch_nil", "modified_by_a")
+	readOK(readerA)
+	sendRESP(connA, "EXEC")
+	rawLine, err = readerA.ReadString('\n')
+	assert.NoError(t, err)
+	assert.Equal(t, "*-1\r\n", rawLine)
+
+	// --- Sub-test 5: WriteRESP direct NilArray encoding ---
+	var buf strings.Builder
+	nilArr := proto.NilArray{}
+	err = proto.WriteRESP(&buf, nilArr)
+	assert.NoError(t, err)
+	assert.Equal(t, "*-1\r\n", buf.String())
+
+	// --- Sub-test 6: Reconnect, BLPOP timeout still returns *-1 ---
+	conn.Close()
+	time.Sleep(100 * time.Millisecond)
+
+	conn2, err := net.Dial("tcp", sharedListener.Addr().String())
+	assert.NoError(t, err)
+	defer conn2.Close()
+	reader2 := bufio.NewReader(conn2)
+
+	sendRESP(conn2, "BLPOP", "nilarr_reconnect_nope", "1")
+	rawLine, err = reader2.ReadString('\n')
+	assert.NoError(t, err)
+	assert.Equal(t, "*-1\r\n", rawLine)
+}
+
 // ========== 共享服务器基础设施 ==========
 
 var (

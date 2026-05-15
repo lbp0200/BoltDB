@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -563,7 +564,7 @@ func TestBLPOPBlockingRace(t *testing.T) {
 		key := fmt.Sprintf("race_list_%d", i)
 		done := make(chan struct{})
 		go func() {
-			k, v, err := store.BLPOPBlocking([]string{key}, 2)
+			k, v, err := store.BLPOPBlocking(context.Background(), []string{key}, 2)
 			assert.NoError(t, err)
 			assert.Equal(t, key, k)
 			assert.Equal(t, "value", v)
@@ -590,7 +591,7 @@ func TestBRPOPBlockingRace(t *testing.T) {
 		key := fmt.Sprintf("race_rlist_%d", i)
 		done := make(chan struct{})
 		go func() {
-			k, v, err := store.BRPOPBlocking([]string{key}, 2)
+			k, v, err := store.BRPOPBlocking(context.Background(), []string{key}, 2)
 			assert.NoError(t, err)
 			assert.Equal(t, key, k)
 			assert.Equal(t, "value", v)
@@ -617,7 +618,7 @@ func TestBLPOPBlockingMultipleKeysRace(t *testing.T) {
 		key := fmt.Sprintf("multi_blpop_%d", i)
 		done := make(chan struct{})
 		go func() {
-			k, v, err := store.BLPOPBlocking([]string{"nobody", key, "nobody2"}, 2)
+			k, v, err := store.BLPOPBlocking(context.Background(), []string{"nobody", key, "nobody2"}, 2)
 			assert.NoError(t, err)
 			assert.Equal(t, key, k)
 			assert.Equal(t, "data", v)
@@ -645,7 +646,7 @@ func TestBLPOPBlockingConcurrentPushers(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		k, v, err := store.BLPOPBlocking([]string{key}, 3)
+		k, v, err := store.BLPOPBlocking(context.Background(), []string{key}, 3)
 		assert.NoError(t, err)
 		assert.Equal(t, key, k)
 		assert.NotEqual(t, "", v)
@@ -680,7 +681,7 @@ func TestBLPOPBlockingAlreadyHasData(t *testing.T) {
 	_, err := store.LPush("existing", "hello")
 	assert.NoError(t, err)
 
-	k, v, err := store.BLPOPBlocking([]string{"existing"}, 2)
+	k, v, err := store.BLPOPBlocking(context.Background(), []string{"existing"}, 2)
 	assert.NoError(t, err)
 	assert.Equal(t, "existing", k)
 	assert.Equal(t, "hello", v)
@@ -691,7 +692,7 @@ func TestBLPOPBlockingUnregisterCleanup(t *testing.T) {
 
 	// When timeout triggers, the channel should be properly cleaned up
 	// Register internally, then let it timeout
-	k, v, err := store.BLPOPBlocking([]string{"ghost"}, 1)
+	k, v, err := store.BLPOPBlocking(context.Background(), []string{"ghost"}, 1)
 	assert.NoError(t, err)
 	assert.Equal(t, "", k)
 	assert.Equal(t, "", v)
@@ -706,7 +707,7 @@ func TestBLPOPBlockingUnregisterCleanup(t *testing.T) {
 	_, err = store.LPush("ghost", "after_timeout")
 	assert.NoError(t, err)
 
-	k, v, err = store.BLPOPBlocking([]string{"ghost"}, 1)
+	k, v, err = store.BLPOPBlocking(context.Background(), []string{"ghost"}, 1)
 	assert.NoError(t, err)
 	assert.Equal(t, "ghost", k)
 	assert.Equal(t, "after_timeout", v)
