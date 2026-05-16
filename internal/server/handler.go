@@ -5217,6 +5217,89 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		return proto.NewBulkString([]byte(fmt.Sprintf("%.4f", dist)))
 
+	// ==================== GEORADIUS ====================
+	case "GEORADIUS":
+		if len(args) < 5 {
+			return proto.NewError("ERR wrong number of arguments for 'GEORADIUS' command")
+		}
+		gKey := string(args[0])
+		gLon, err := strconv.ParseFloat(string(args[1]), 64)
+		if err != nil {
+			return proto.NewError("ERR value is not a valid float")
+		}
+		gLat, err := strconv.ParseFloat(string(args[2]), 64)
+		if err != nil {
+			return proto.NewError("ERR value is not a valid float")
+		}
+		gRadius, err := strconv.ParseFloat(string(args[3]), 64)
+		if err != nil {
+			return proto.NewError("ERR value is not a valid float")
+		}
+		gUnit := strings.ToLower(string(args[4]))
+
+		var gCount int
+		var gWithDist, gWithHash, gWithCoord bool
+
+		gI := 5
+		for gI < len(args) {
+			opt := strings.ToUpper(string(args[gI]))
+			switch opt {
+			case "WITHCOORD":
+				gWithCoord = true
+				gI++
+			case "WITHDIST":
+				gWithDist = true
+				gI++
+			case "WITHHASH":
+				gWithHash = true
+				gI++
+			case "COUNT":
+				if gI+1 >= len(args) {
+					return proto.NewError("ERR syntax error")
+				}
+				c, err := strconv.Atoi(string(args[gI+1]))
+				if err != nil {
+					return proto.NewError("ERR value is not an integer")
+				}
+				gCount = c
+				gI += 2
+			case "ASC", "DESC":
+				gI++
+			default:
+				return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option %s", opt))
+			}
+		}
+
+		gResults, err := h.Db.GeoRadius(gKey, gLon, gLat, gRadius, gUnit, gCount, gWithDist, gWithHash, gWithCoord)
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+
+		var gResp [][]byte
+		for _, r := range gResults {
+			if gWithCoord {
+				gResp = append(gResp, []byte(r.Member))
+				gResp = append(gResp, []byte(fmt.Sprintf("%.6f", r.Lon)))
+				gResp = append(gResp, []byte(fmt.Sprintf("%.6f", r.Lat)))
+			} else if gWithDist && gWithHash {
+				gResp = append(gResp, []byte(r.Member))
+				gResp = append(gResp, []byte(fmt.Sprintf("%.4f", r.Dist)))
+				gResp = append(gResp, []byte(r.Hash))
+			} else if gWithDist {
+				gResp = append(gResp, []byte(r.Member))
+				gResp = append(gResp, []byte(fmt.Sprintf("%.4f", r.Dist)))
+			} else if gWithHash {
+				gResp = append(gResp, []byte(r.Member))
+				gResp = append(gResp, []byte(r.Hash))
+			} else {
+				gResp = append(gResp, []byte(r.Member))
+			}
+		}
+		return &proto.Array{Args: gResp}
+
 	// ==================== GEOSEARCH ====================
 	case "GEOSEARCH":
 		if len(args) < 4 {

@@ -408,7 +408,7 @@ function startBoltdb() {
   const port = 19889;
 
   const binary = join(dataDir, "boltDB");
-  execSync(`go build -o ${binary} cmd/boltDB/main.go`, {
+  execSync(`go build -a -o ${binary} cmd/boltDB/main.go`, {
     cwd: REPO_ROOT,
     stdio: "pipe",
   });
