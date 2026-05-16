@@ -545,6 +545,7 @@ redis-cli -p 6379 GET "test"  # Returns "hello"
 
 1. **RDB Format Incompatibility**: BoltDB and Redis use different RDB formats and cannot exchange RDB snapshot files directly
 2. **BoltDB SLAVEOF**: BoltDB does not implement the SLAVEOF command, so it cannot act as a replica of Redis
+3. **No Lua Scripting (EVAL/SCRIPT)**: BoltDB intentionally does not implement Lua scripting (`EVAL`/`SCRIPT` commands). This is a conscious design decision to avoid the security risks (sandbox escape), maintenance burden, and complexity of embedding a Lua runtime. BoltDB is a disk-persistent KV store, not a full Redis replacement — clients should implement script logic on their end.
 
 ---
 
