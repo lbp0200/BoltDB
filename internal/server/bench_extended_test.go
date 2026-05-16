@@ -7,19 +7,20 @@ import (
 	"github.com/lbp0200/BoltDB/internal/store"
 )
 
+
 func BenchmarkExecuteCommand_MGET_5(b *testing.B) {
 	handler := setupBenchmarkHandler(b)
 	defer handler.Db.Close()
 
 	for i := 0; i < 5; i++ {
-		handler.executeCommand(nil, "SET", [][]byte{[]byte(fmt.Sprintf("key%d", i)), []byte("value")}, "127.0.0.1:12345")
+		handler.executeCommand(testState, "SET", [][]byte{[]byte(fmt.Sprintf("key%d", i)), []byte("value")}, "127.0.0.1:12345")
 	}
 
 	args := [][]byte{[]byte("key0"), []byte("key1"), []byte("key2"), []byte("key3"), []byte("key4")}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		handler.executeCommand(nil, "MGET", args, "127.0.0.1:12345")
+		handler.executeCommand(testState, "MGET", args, "127.0.0.1:12345")
 	}
 }
 
@@ -28,7 +29,7 @@ func BenchmarkExecuteCommand_MGET_10(b *testing.B) {
 	defer handler.Db.Close()
 
 	for i := 0; i < 10; i++ {
-		handler.executeCommand(nil, "SET", [][]byte{[]byte(fmt.Sprintf("key%d", i)), []byte("value")}, "127.0.0.1:12345")
+		handler.executeCommand(testState, "SET", [][]byte{[]byte(fmt.Sprintf("key%d", i)), []byte("value")}, "127.0.0.1:12345")
 	}
 
 	args := make([][]byte, 10)
@@ -38,7 +39,7 @@ func BenchmarkExecuteCommand_MGET_10(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		handler.executeCommand(nil, "MGET", args, "127.0.0.1:12345")
+		handler.executeCommand(testState, "MGET", args, "127.0.0.1:12345")
 	}
 }
 
@@ -48,7 +49,7 @@ func BenchmarkExecuteCommand_Pipeline_SET(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		handler.executeCommand(nil, "SET", [][]byte{[]byte("key"), []byte("value")}, "127.0.0.1:12345")
+		handler.executeCommand(testState, "SET", [][]byte{[]byte("key"), []byte("value")}, "127.0.0.1:12345")
 	}
 }
 
@@ -56,7 +57,7 @@ func BenchmarkExecuteCommand_Pipeline_Mixed(b *testing.B) {
 	handler := setupBenchmarkHandler(b)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("counter"), []byte("0")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("counter"), []byte("0")}, "127.0.0.1:12345")
 
 	commands := []struct {
 		cmd  string
@@ -73,7 +74,7 @@ func BenchmarkExecuteCommand_Pipeline_Mixed(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		for _, c := range commands {
-			handler.executeCommand(nil, c.cmd, c.args, "127.0.0.1:12345")
+			handler.executeCommand(testState, c.cmd, c.args, "127.0.0.1:12345")
 		}
 	}
 }

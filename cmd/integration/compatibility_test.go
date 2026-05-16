@@ -55,6 +55,14 @@ func rawQueued(t *testing.T, conn net.Conn) {
 }
 
 // rawWatchOK asserts WATCH returned an integer count (BoltDB returns :N not +OK)
+func rawReadWire(t *testing.T, conn net.Conn) []byte {
+	t.Helper()
+	r := bufio.NewReader(conn)
+	line, err := r.ReadBytes('\n')
+	assert.NoError(t, err)
+	return line
+}
+
 func rawWatchOK(t *testing.T, conn net.Conn) {
 	t.Helper()
 	v := rawArg(t, conn)
@@ -499,6 +507,58 @@ func TestCompatBLPOPTimeoutReturnsNil(t *testing.T) {
 	}
 }
 
+func TestCompatBZPOPMAXTimeoutReturnsNil(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	_, err := sharedClient.BZPopMax(ctx, 1*time.Second, "bz:empty").Result()
+	if err != redis.Nil {
+		t.Errorf("BZPopMax timeout should return redis.Nil, got: %v", err)
+	}
+}
+
+func TestCompatBZPOPMINTimeoutReturnsNil(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	_, err := sharedClient.BZPopMin(ctx, 1*time.Second, "bz:empty2").Result()
+	if err != redis.Nil {
+		t.Errorf("BZPopMin timeout should return redis.Nil, got: %v", err)
+	}
+}
+
+func TestCompatBlockingTimeoutWireFormat(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	tests := []struct {
+		name string
+		cmd  []string
+	}{
+		{"BLPOP", []string{"BLPOP", "bw:empty", "1"}},
+		{"BRPOP", []string{"BRPOP", "bw:empty2", "1"}},
+		{"BZPOPMAX", []string{"BZPOPMAX", "bw:empty3", "1"}},
+		{"BZPOPMIN", []string{"BZPOPMIN", "bw:empty4", "1"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conn := dialConn(t)
+			defer conn.Close()
+
+			rawCmd(t, conn, tt.cmd...)
+			wire := rawReadWire(t, conn)
+			if string(wire) != "*-1\r\n" {
+				t.Errorf("%s timeout wire format: got %q, want %q", tt.name, string(wire), "*-1\r\n")
+			}
+		})
+	}
+}
+
 func TestCompatKeyEvictionAfterEXPIRE(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
@@ -754,14 +814,11 @@ func TestCompatWrongTypeListOpOnString(t *testing.T) {
 
 	sharedClient.Set(ctx, "wt:string", "value", 0)
 
-	// LLEN on non-list returns 0 in BoltDB (known gap: missing WRONGTYPE check)
-	val, err := sharedClient.LLen(ctx, "wt:string").Result()
-	if err == nil && val == 0 {
-		t.Log("LLEN on string returns 0 (known behavior gap - handler doesn't check WRONGTYPE for LLEN)")
-	} else if err != nil {
-		t.Logf("LLEN on string returned error: %v", err)
-	} else {
-		t.Errorf("LLEN on string returned unexpected value: %d", val)
+	_, err := sharedClient.LLen(ctx, "wt:string").Result()
+	if err == nil {
+		t.Error("LLEN on string should return WRONGTYPE error")
+	} else if !strings.Contains(err.Error(), "WRONGTYPE") {
+		t.Errorf("LLEN on string got: %v (expected WRONGTYPE)", err)
 	}
 }
 
@@ -1097,7 +1154,7 @@ func TestCompatSummary(t *testing.T) {
 	t.Log("2. PUBSUB       : SUBSCRIBE/PUBLISH/PSUBSCRIBE/UNSUBSCRIBE/QUIT")
 	t.Log("3. TIMEOUT      : EXPIRE/TTL/PTTL/PERSIST/BLPOP timeout")
 	t.Log("4. PIPELINE     : go-redis Pipeline() with mixed types")
-	t.Log("5. WRONGTYPE    : Cross-type operation error detection")
+	t.Log("5. WRONGTYPE    : Cross-type operation error detection (incl LLEN fix)")
 	t.Log("6. NIL RESPONSE : nil bulk/nil array for missing keys/fields")
 	t.Log("7. DISCONNECT   : Subscriber/Watch/Transaction cleanup on close")
 	t.Log("")

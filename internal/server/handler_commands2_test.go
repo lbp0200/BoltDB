@@ -8,14 +8,15 @@ import (
 	"github.com/zeebo/assert"
 )
 
+
 // TestServerListCommands2 tests more list commands
 func TestServerListCommands2(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// Setup list
-	handler.executeCommand(nil, "LPUSH", [][]byte{[]byte("mylist"), []byte("value1")}, "127.0.0.1:12345")
-	handler.executeCommand(nil, "LPUSH", [][]byte{[]byte("mylist"), []byte("value2")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "LPUSH", [][]byte{[]byte("mylist"), []byte("value1")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "LPUSH", [][]byte{[]byte("mylist"), []byte("value2")}, "127.0.0.1:12345")
 
 	tests := []struct {
 		name  string
@@ -48,7 +49,7 @@ func TestServerListCommands2(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -60,8 +61,8 @@ func TestServerSetCommands2(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Setup set
-	handler.executeCommand(nil, "SADD", [][]byte{[]byte("myset"), []byte("member1")}, "127.0.0.1:12345")
-	handler.executeCommand(nil, "SADD", [][]byte{[]byte("myset"), []byte("member2")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SADD", [][]byte{[]byte("myset"), []byte("member1")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SADD", [][]byte{[]byte("myset"), []byte("member2")}, "127.0.0.1:12345")
 
 	tests := []struct {
 		name  string
@@ -104,7 +105,7 @@ func TestServerSetCommands2(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -152,7 +153,7 @@ func TestServerSortedSetCommands2(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -164,8 +165,8 @@ func TestServerHashCommands2(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Setup hash
-	handler.executeCommand(nil, "HSET", [][]byte{[]byte("myhash"), []byte("field1"), []byte("value1")}, "127.0.0.1:12345")
-	handler.executeCommand(nil, "HSET", [][]byte{[]byte("myhash"), []byte("field2"), []byte("value2")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "HSET", [][]byte{[]byte("myhash"), []byte("field1"), []byte("value1")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "HSET", [][]byte{[]byte("myhash"), []byte("field2"), []byte("value2")}, "127.0.0.1:12345")
 
 	tests := []struct {
 		name  string
@@ -208,7 +209,7 @@ func TestServerHashCommands2(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}

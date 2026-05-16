@@ -217,6 +217,9 @@ func (s *BotreonStore) HDel(key string, fields ...string) (int, error) {
 func (s *BotreonStore) HLen(key string) (uint64, error) {
 	var count uint64
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeHash); err != nil {
+			return err
+		}
 		countKey := s.hashCountKey(key)
 		item, err := txn.Get(countKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -240,6 +243,9 @@ func (s *BotreonStore) HGetAll(key string) (map[string][]byte, error) {
 	result := make(map[string][]byte)
 	prefix := fmt.Sprintf("%s:%s:", KeyTypeHash, key)
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeHash); err != nil {
+			return err
+		}
 		iter := txn.NewIterator(badger.DefaultIteratorOptions)
 		defer iter.Close()
 		prefixBytes := []byte(prefix)
@@ -314,6 +320,9 @@ func (s *BotreonStore) getAllHashFields(txn *badger.Txn, key string) ([]string, 
 func (s *BotreonStore) HExists(key, field string) (bool, error) {
 	exists := false
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeHash); err != nil {
+			return err
+		}
 		hkey := s.hashKey(key, field)
 		_, err := txn.Get(hkey)
 		if err == nil {
@@ -332,6 +341,9 @@ func (s *BotreonStore) HExists(key, field string) (bool, error) {
 func (s *BotreonStore) HKeys(key string) ([]string, error) {
 	var fields []string
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeHash); err != nil {
+			return err
+		}
 		var err error
 		fields, err = s.getAllHashFields(txn, key)
 		return err
@@ -344,6 +356,9 @@ func (s *BotreonStore) HVals(key string) ([][]byte, error) {
 	var values [][]byte
 	prefix := fmt.Sprintf("%s:%s:", KeyTypeHash, key)
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeHash); err != nil {
+			return err
+		}
 		iter := txn.NewIterator(badger.DefaultIteratorOptions)
 		defer iter.Close()
 		prefixBytes := []byte(prefix)
@@ -704,6 +719,9 @@ func (s *BotreonStore) HIncrByFloat(key, field string, increment float64) (float
 func (s *BotreonStore) HStrLen(key, field string) (int, error) {
 	var length int
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeHash); err != nil {
+			return err
+		}
 		hkey := s.hashKey(key, field)
 		item, err := txn.Get(hkey)
 		if errors.Is(err, badger.ErrKeyNotFound) {

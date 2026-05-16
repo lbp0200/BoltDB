@@ -484,19 +484,11 @@ func (s *BotreonStore) GeoRadius(key string, lon, lat, radius float64, unit stri
 
 		startKey := append(prefix, encodeScore(minScore)...)
 		for it.Seek(startKey); it.ValidForPrefix(prefix); it.Next() {
-			item := it.Item()
-			keyBytes := item.Key()
-
-			// Parse key to get member
-			keyParts := bytes.Split(keyBytes[len(prefixKeySortedSetBytes):], []byte(":"))
-			if len(keyParts) < 4 {
+			score, member, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
+			if !ok {
 				continue
 			}
-			scoreBytes := keyParts[2]
-			if len(scoreBytes) != 8 {
-				continue
-			}
-			memberHash := decodeScore(scoreBytes)
+			memberHash := score
 			memberLat, memberLon := decodeGeoHash(uint64(memberHash))
 
 			// Check if within actual radius (Haversine)
@@ -505,11 +497,8 @@ func (s *BotreonStore) GeoRadius(key string, lon, lat, radius float64, unit stri
 				continue
 			}
 
-			// Get member name
-			memberName := string(keyParts[3])
-
 			result := GeoSearchResult{
-				Member: memberName,
+				Member: member,
 				Lat:    memberLat,
 				Lon:    memberLon,
 			}
@@ -711,14 +700,10 @@ func (s *BotreonStore) GeoMembers(key string) ([]string, error) {
 		defer it.Close()
 
 		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			item := it.Item()
-			keyBytes := item.Key()
-
-			keyParts := bytes.Split(keyBytes[len(prefixKeySortedSetBytes):], []byte(":"))
-			if len(keyParts) < 4 {
-				continue
+			_, member, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
+			if ok {
+				members = append(members, member)
 			}
-			members = append(members, string(keyParts[3]))
 		}
 		return nil
 	})

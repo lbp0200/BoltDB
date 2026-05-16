@@ -28,6 +28,7 @@ type ReplicationManager struct {
 	store            *store.BotreonStore         // 数据存储
 	stopCh           chan struct{}               // 停止信号
 	closeOnce        sync.Once                   // 确保关闭只执行一次
+	slaveReconnector *SlaveReconnector           // 从节点自动重连器
 }
 
 // NewReplicationManager 创建新的复制管理器

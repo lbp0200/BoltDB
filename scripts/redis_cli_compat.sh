@@ -29,11 +29,17 @@ trap cleanup EXIT
 
 RCLI="redis-cli -p $BOLTDB_PORT"
 
+# redis-cli 8.x: nil bulk string = blank line, not "(nil)"
+normalize_nil() {
+  if [ -z "$1" ]; then echo "(nil)"; else echo "$1"; fi
+}
+
 check() {
   TOTAL=$((TOTAL + 1))
   local name="$1"
   local expected="$2"
-  local actual="$3"
+  local actual
+  actual=$(normalize_nil "$3")
 
   if [ "$expected" = "$actual" ]; then
     echo -e "  ${GREEN}PASS${NC} $name"
@@ -52,7 +58,8 @@ check_contains() {
   TOTAL=$((TOTAL + 1))
   local name="$1"
   local expected_substr="$2"
-  local actual="$3"
+  local actual
+  actual=$(normalize_nil "$3")
 
   if echo "$actual" | grep -qF "$expected_substr"; then
     echo -e "  ${GREEN}PASS${NC} $name"
@@ -293,6 +300,171 @@ sleep 0.3
 # After disconnect, publish should get 0 subscribers
 result=$($RCLI PUBLISH disc:channel after_disc 2>&1 || true)
 check "PUBLISH after disconnect returns 0" "(integer) 0" "$result"
+
+# ===================== 7. SINTERCARD =====================
+section "7. SINTERCARD"
+
+$RCLI SADD sc:set1 a b c d > /dev/null 2>&1
+$RCLI SADD sc:set2 c d e f > /dev/null 2>&1
+$RCLI SADD sc:set3 d f g > /dev/null 2>&1
+
+result=$($RCLI SINTERCARD 2 sc:set1 sc:set2 2>&1 || true)
+check "SINTERCARD two sets" "(integer) 2" "$result"
+
+result=$($RCLI SINTERCARD 3 sc:set1 sc:set2 sc:set3 2>&1 || true)
+check "SINTERCARD three sets" "(integer) 1" "$result"
+
+result=$($RCLI SINTERCARD 2 sc:set1 sc:nonexist 2>&1 || true)
+check "SINTERCARD with non-existent" "(integer) 0" "$result"
+
+result=$($RCLI SINTERCARD 1 sc:set1 2>&1 || true)
+check "SINTERCARD one set" "(integer) 4" "$result"
+
+result=$($RCLI SINTERCARD 2 sc:set1 2>&1 || true)
+check_contains "SINTERCARD numkeys > arg count" "ERR" "$result"
+
+result=$($RCLI SINTERCARD 2>&1 || true)
+check_contains "SINTERCARD missing args" "ERR" "$result"
+
+# ===================== 8. SMISMEMBER =====================
+section "8. SMISMEMBER"
+
+$RCLI SADD sm:set a b c > /dev/null 2>&1
+
+result=$($RCLI SMISMEMBER sm:set a b d 2>&1 || true)
+check_contains "SMISMEMBER mixed hits/misses" "1" "$result"
+check_contains "SMISMEMBER contains 0 for miss" "0" "$result"
+
+result=$($RCLI SMISMEMBER sm:set a 2>&1 || true)
+check_contains "SMISMEMBER single hit" "1" "$result"
+
+result=$($RCLI SMISMEMBER sm:set x 2>&1 || true)
+check_contains "SMISMEMBER single miss" "0" "$result"
+
+result=$($RCLI SMISMEMBER sm:nonexist a 2>&1 || true)
+check_contains "SMISMEMBER on missing key" "0" "$result"
+
+# ===================== 9. BZPOP (BLOCKING ZSET) =====================
+section "9. BZPOP (BLOCKING ZSET)"
+
+# BZPOPMAX timeout — redis-cli outputs (nil) for *-1
+result=$($RCLI BZPOPMAX bzp:nonexist 1 2>&1 || true)
+[ -z "$result" ] && result="(nil)"  # normalize empty -> (nil)
+check "BZPOPMAX timeout returns nil" "(nil)" "$result"
+
+# BZPOPMIN timeout
+result=$($RCLI BZPOPMIN bzp:nonexist 1 2>&1 || true)
+[ -z "$result" ] && result="(nil)"
+check "BZPOPMIN timeout returns nil" "(nil)" "$result"
+
+# BZPOPMAX with data
+$RCLI ZADD bzp:set 1 a 2 b 3 c > /dev/null 2>&1
+result=$($RCLI BZPOPMAX bzp:set 1 2>&1 || true)
+check_contains "BZPOPMAX returns highest score" "3" "$result"
+check_contains "BZPOPMAX returns member c" "c" "$result"
+
+# BZPOPMIN with data
+$RCLI ZADD bzp:set2 1 a 2 b 3 c > /dev/null 2>&1
+result=$($RCLI BZPOPMIN bzp:set2 1 2>&1 || true)
+check_contains "BZPOPMIN returns lowest score" "1" "$result"
+check_contains "BZPOPMIN returns member a" "a" "$result"
+
+# BZPOPMAX on non-zset type
+$RCLI SET bzp:str val > /dev/null 2>&1
+result=$($RCLI BZPOPMAX bzp:str 1 2>&1 || true)
+check_contains "BZPOPMAX on string returns WRONGTYPE" "WRONGTYPE" "$result"
+
+# BZPOPMIN on non-zset type
+result=$($RCLI BZPOPMIN bzp:str 1 2>&1 || true)
+check_contains "BZPOPMIN on string returns WRONGTYPE" "WRONGTYPE" "$result"
+
+# ===================== 10. EXPANDED WRONGTYPE =====================
+section "10. EXPANDED WRONGTYPE"
+
+# HLEN on string
+$RCLI SET wt:str2 val > /dev/null 2>&1
+result=$($RCLI HLEN wt:str2 2>&1 || true)
+check_contains "HLEN on string returns WRONGTYPE" "WRONGTYPE" "$result"
+
+# HGETALL on string
+result=$($RCLI HGETALL wt:str2 2>&1 || true)
+check_contains "HGETALL on string returns WRONGTYPE" "WRONGTYPE" "$result"
+
+# HEXISTS on string
+result=$($RCLI HEXISTS wt:str2 f 2>&1 || true)
+check_contains "HEXISTS on string returns WRONGTYPE" "WRONGTYPE" "$result"
+
+# HKEYS on string
+result=$($RCLI HKEYS wt:str2 2>&1 || true)
+check_contains "HKEYS on string returns WRONGTYPE" "WRONGTYPE" "$result"
+
+# HVALS on string
+result=$($RCLI HVALS wt:str2 2>&1 || true)
+check_contains "HVALS on string returns WRONGTYPE" "WRONGTYPE" "$result"
+
+# HSTRLEN on string
+result=$($RCLI HSTRLEN wt:str2 f 2>&1 || true)
+check_contains "HSTRLEN on string returns WRONGTYPE" "WRONGTYPE" "$result"
+
+# STRLEN on list
+$RCLI LPUSH wt:list2 a > /dev/null 2>&1
+result=$($RCLI STRLEN wt:list2 2>&1 || true)
+check_contains "STRLEN on list returns WRONGTYPE" "WRONGTYPE" "$result"
+
+# LRANGE on string
+result=$($RCLI LRANGE wt:str2 0 -1 2>&1 || true)
+check_contains "LRANGE on string returns WRONGTYPE" "WRONGTYPE" "$result"
+
+# RPOP on string
+result=$($RCLI RPOP wt:str2 2>&1 || true)
+check_contains "RPOP on string returns WRONGTYPE" "WRONGTYPE" "$result"
+
+# LINDEX on string
+result=$($RCLI LINDEX wt:str2 0 2>&1 || true)
+check_contains "LINDEX on string returns WRONGTYPE" "WRONGTYPE" "$result"
+
+# ===================== 11. HYPERLOGLOG =====================
+section "11. HYPERLOGLOG"
+
+# PFADD
+result=$($RCLI PFADD hll:key a b c 2>&1 || true)
+check_contains "PFADD new key returns 1" "1" "$result"
+
+result=$($RCLI PFADD hll:key a 2>&1 || true)
+check_contains "PFADD existing returns 0" "0" "$result"
+
+result=$($RCLI PFCOUNT hll:key 2>&1 || true)
+check_contains "PFCOUNT returns count" "3" "$result"
+
+result=$($RCLI PFCOUNT hll:nonexist 2>&1 || true)
+check_contains "PFCOUNT missing key" "0" "$result"
+
+$RCLI PFADD hll:a x y z > /dev/null 2>&1
+$RCLI PFADD hll:b x y w > /dev/null 2>&1
+result=$($RCLI PFMERGE hll:merged hll:a hll:b 2>&1 || true)
+check "PFMERGE returns OK" "OK" "$result"
+
+result=$($RCLI PFCOUNT hll:merged 2>&1 || true)
+check_contains "PFCOUNT after merge" "4" "$result"
+
+# ===================== 12. STREAM =====================
+section "12. STREAM"
+
+# XADD with explicit ID
+result=$($RCLI XADD st:mystream 1-0 name Bob 2>&1 || true)
+check "XADD with explicit ID" "1-0" "$result"
+
+# XADD with auto ID (* must be quoted to avoid shell expansion)
+result=$($RCLI XADD st:mystream '*' name Alice age 30 2>&1 || true)
+check_contains "XADD with auto ID" "-" "$result"
+
+# XLEN
+result=$($RCLI XLEN st:mystream 2>&1 || true)
+check_contains "XLEN returns count" "2" "$result"
+
+# XRANGE
+result=$($RCLI XRANGE st:mystream - + 2>&1 || true)
+check_contains "XRANGE returns entry" "Bob" "$result"
 
 # ===================== SUMMARY =====================
 section "SUMMARY"

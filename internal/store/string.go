@@ -263,15 +263,28 @@ func (s *BotreonStore) Get(key string) (string, error) {
 
 	var val string
 	err := s.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(TypeOfKeyGet(key))
+		if err == nil {
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(val)
+			if keyType != "" && keyType != KeyTypeString {
+				return ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
 		strKey := s.stringKey(key)
-		item, err := txn.Get([]byte(strKey))
+		item2, err := txn.Get([]byte(strKey))
 		if err != nil {
 			if errors.Is(err, badger.ErrKeyNotFound) {
 				return ErrKeyNotFound // 返回特定错误表示键不存在
 			}
 			return err
 		}
-		valBytes, err := s.getValueWithDecompression(item)
+		valBytes, err := s.getValueWithDecompression(item2)
 		if err != nil {
 			return err
 		}
@@ -458,6 +471,9 @@ func (s *BotreonStore) APPEND(key string, value string) (int, error) {
 func (s *BotreonStore) StrLen(key string) (int, error) {
 	var length int
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeString); err != nil {
+			return err
+		}
 		strKey := s.stringKey(key)
 		item, err := txn.Get([]byte(strKey))
 		if err != nil {
@@ -481,6 +497,9 @@ func (s *BotreonStore) StrLen(key string) (int, error) {
 func (s *BotreonStore) GetRange(key string, start, end int) (string, error) {
 	var result string
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeString); err != nil {
+			return err
+		}
 		strKey := s.stringKey(key)
 		item, err := txn.Get([]byte(strKey))
 		if err != nil {

@@ -506,6 +506,34 @@ func (s *BotreonStore) Persist(key string) (bool, error) {
 	return hasTTL, nil
 }
 
+// checkKeyType checks that the key has the expected type.
+// Returns nil if key doesn't exist (no type info), ErrWrongType if type mismatch.
+func checkKeyType(txn *badger.Txn, key string, expectedType string) error {
+	item, err := txn.Get(TypeOfKeyGet(key))
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	val, err := item.ValueCopy(nil)
+	if err != nil {
+		return err
+	}
+	keyType := string(val)
+	if keyType != expectedType {
+		return ErrWrongType
+	}
+	return nil
+}
+
+// checkTypeBeforeOp checks key type in a separate View transaction.
+func (s *BotreonStore) checkTypeBeforeOp(key string, expectedType string) error {
+	return s.db.View(func(txn *badger.Txn) error {
+		return checkKeyType(txn, key, expectedType)
+	})
+}
+
 // RENAME 实现 Redis RENAME 命令，重命名键
 func (s *BotreonStore) Rename(key, newKey string) error {
 	// 清除读缓存

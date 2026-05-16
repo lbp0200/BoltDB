@@ -112,178 +112,31 @@ func SendBacklogData(slave *SlaveConnection, backlog *ReplicationBacklog, startO
 	return nil
 }
 
-// StartSlaveReplication 启动从节点复制（从节点端）
-func StartSlaveReplication(rm *ReplicationManager, store *store.BotreonStore, masterAddr string) error {
+// StartSlaveReplication 启动从节点复制（从节点端），包含自动重连
+func StartSlaveReplication(rm *ReplicationManager, storeObj *store.BotreonStore, masterAddr string) error {
 	rm.mu.Lock()
+	if rm.slaveReconnector != nil {
+		rm.slaveReconnector.Stop()
+		rm.slaveReconnector = nil
+	}
 	rm.role = RoleSlave
 	rm.masterAddr = masterAddr
 	rm.mu.Unlock()
 
-	// 连接到主节点
-	masterConn, err := NewMasterConnection(masterAddr)
-	if err != nil {
-		return fmt.Errorf("connect to master failed: %w", err)
-	}
+	reconnector := NewSlaveReconnector(rm, storeObj, masterAddr)
+	rm.mu.Lock()
+	rm.slaveReconnector = reconnector
+	rm.mu.Unlock()
 
-	rm.SetMasterConnection(masterConn)
-
-	// 启动复制goroutine
-	go func() {
-		defer func() {
-			if err := masterConn.Close(); err != nil {
-				logger.Logger.Debug().Err(err).Msg("failed to close master connection")
-			}
-		}()
-
-		// 发送PING
-		if err := masterConn.SendCommand([][]byte{[]byte("PING")}); err != nil {
-			logger.Logger.Error().Err(err).Msg("发送PING到主节点失败")
-			return
-		}
-
-		resp, err := masterConn.ReadResponse()
-		if err != nil {
-			logger.Logger.Error().Err(err).Msg("读取PING响应失败")
-			return
-		}
-
-		if _, ok := resp.(*proto.SimpleString); !ok || resp.String() != "+PONG\r\n" {
-			logger.Logger.Error().Msg("主节点PING响应异常")
-			return
-		}
-
-		// 发送REPLCONF listening-port (Redis 要求必须有此命令)
-		if err := masterConn.SendCommand([][]byte{
-			[]byte("REPLCONF"),
-			[]byte("listening-port"),
-			[]byte("6380"),
-		}); err != nil {
-			logger.Logger.Error().Err(err).Msg("发送REPLCONF listening-port失败")
-			return
-		}
-		_, _ = masterConn.ReadResponse()
-
-		// 发送REPLCONF capa eof
-		if err := masterConn.SendCommand([][]byte{
-			[]byte("REPLCONF"),
-			[]byte("capa"),
-			[]byte("eof"),
-		}); err != nil {
-			logger.Logger.Error().Err(err).Msg("发送REPLCONF capa eof失败")
-			return
-		}
-		_, _ = masterConn.ReadResponse()
-
-		// 发送REPLCONF capa psync2
-		if err := masterConn.SendCommand([][]byte{
-			[]byte("REPLCONF"),
-			[]byte("capa"),
-			[]byte("psync2"),
-		}); err != nil {
-			logger.Logger.Error().Err(err).Msg("发送REPLCONF capa psync2失败")
-			return
-		}
-		_, _ = masterConn.ReadResponse()
-
-		// 发送PSYNC
-		if err := masterConn.SendCommand([][]byte{
-			[]byte("PSYNC"),
-			[]byte("?"),
-			[]byte("-1"),
-		}); err != nil {
-			logger.Logger.Error().Err(err).Msg("发送PSYNC失败")
-			return
-		}
-
-		// 读取PSYNC响应
-		resp, err = masterConn.ReadResponse()
-		if err != nil {
-			logger.Logger.Error().Err(err).Msg("读取PSYNC响应失败")
-			return
-		}
-
-		respStr := resp.String()
-		logger.Logger.Info().Str("psync_response", respStr).Msg("收到PSYNC响应")
-
-		// 解析响应
-		if strings.HasPrefix(respStr, "+FULLRESYNC") {
-			// 全量同步
-			// 解析replid和offset
-			parts := strings.Fields(respStr)
-			if len(parts) >= 3 {
-				newReplId := parts[1]
-				offset, _ := strconv.ParseInt(parts[2], 10, 64)
-				rm.mu.Lock()
-				rm.replId = newReplId
-				rm.masterReplOffset = offset
-				rm.mu.Unlock()
-			}
-
-			// 读取RDB数据
-			rdbData, err := masterConn.ReadBulkString()
-			if err != nil {
-				logger.Logger.Error().Err(err).Msg("读取RDB数据失败")
-				return
-			}
-
-			logger.Logger.Info().
-				Int("rdb_size", len(rdbData)).
-				Msg("收到RDB数据，开始加载")
-
-			// 加载RDB数据
-			if err := rm.LoadRDB(rdbData); err != nil {
-				logger.Logger.Error().Err(err).Msg("加载RDB数据失败")
-			}
-
-			logger.Logger.Info().Msg("RDB数据加载完成，开始接收命令流")
-
-		} else if strings.HasPrefix(respStr, "+CONTINUE") {
-			// 增量同步
-			parts := strings.Fields(respStr)
-			if len(parts) >= 2 {
-				newReplId := parts[1]
-				rm.mu.Lock()
-				rm.replId = newReplId
-				rm.mu.Unlock()
-			}
-
-			// 开始接收命令流
-			logger.Logger.Info().Msg("开始增量同步，接收命令流")
-		}
-
-		for {
-			req, err := proto.ReadRESP(masterConn.Reader)
-			if err != nil {
-				logger.Logger.Warn().Err(err).Msg("从主节点读取命令失败")
-				break
-			}
-
-			logger.Logger.Debug().
-				Int("arg_count", len(req.Args)).
-				Str("cmd", string(req.Args[0])).
-				Msg("从主节点收到命令")
-
-			if err := executeReplicatedCommand(store, req.Args); err != nil {
-				logger.Logger.Error().Err(err).
-					Str("cmd", string(req.Args[0])).
-					Msg("执行复制命令失败")
-				break
-			}
-			cmdBytes := serializeCommand(req.Args)
-			rm.IncrementReplOffset(int64(len(cmdBytes)))
-		}
-
-		logger.Logger.Info().Msg("从节点复制连接关闭")
-	}()
-
+	reconnector.Start()
 	return nil
 }
 
 // StopSlaveReplication 停止从节点复制
 func StopSlaveReplication(rm *ReplicationManager) {
 	rm.mu.Lock()
-	defer rm.mu.Unlock()
-
+	reconnector := rm.slaveReconnector
+	rm.slaveReconnector = nil
 	rm.role = RoleMaster
 	rm.masterAddr = ""
 
@@ -292,6 +145,11 @@ func StopSlaveReplication(rm *ReplicationManager) {
 			logger.Logger.Debug().Err(err).Msg("failed to close master connection")
 		}
 		rm.masterConn = nil
+	}
+	rm.mu.Unlock()
+
+	if reconnector != nil {
+		reconnector.Stop()
 	}
 }
 
@@ -322,6 +180,65 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			return s.Set(key, value)
 		}
 
+	case "SETEX":
+		if len(args) >= 4 {
+			key := string(args[1])
+			seconds, _ := strconv.ParseInt(string(args[2]), 10, 64)
+			value := string(args[3])
+			return s.SetEX(key, value, int(seconds))
+		}
+
+	case "PSETEX":
+		if len(args) >= 4 {
+			key := string(args[1])
+			millis, _ := strconv.ParseInt(string(args[2]), 10, 64)
+			value := string(args[3])
+			return s.PSETEX(key, value, millis)
+		}
+
+	case "SETNX":
+		if len(args) >= 3 {
+			key := string(args[1])
+			value := string(args[2])
+			_, err := s.SetNX(key, value)
+			return err
+		}
+
+	case "GETSET":
+		if len(args) >= 3 {
+			key := string(args[1])
+			value := string(args[2])
+			_, err := s.GetSet(key, value)
+			return err
+		}
+
+	case "MSET", "MSETNX":
+		if len(args) >= 3 && (len(args)-1)%2 == 0 {
+			for i := 1; i < len(args); i += 2 {
+				if err := s.Set(string(args[i]), string(args[i+1])); err != nil {
+					return fmt.Errorf("%s %s: %w", cmd, string(args[i]), err)
+				}
+			}
+			return nil
+		}
+
+	case "INCRBYFLOAT":
+		if len(args) >= 3 {
+			key := string(args[1])
+			delta, _ := strconv.ParseFloat(string(args[2]), 64)
+			_, err := s.INCRBYFLOAT(key, delta)
+			return err
+		}
+
+	case "SETRANGE":
+		if len(args) >= 4 {
+			key := string(args[1])
+			offset, _ := strconv.Atoi(string(args[2]))
+			value := string(args[3])
+			_, err := s.SetRange(key, offset, value)
+			return err
+		}
+
 	case "DEL":
 		if len(args) >= 2 {
 			for i := 1; i < len(args); i++ {
@@ -330,6 +247,60 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 				}
 			}
 			return nil
+		}
+
+	case "EXPIRE":
+		if len(args) >= 3 {
+			key := string(args[1])
+			seconds, _ := strconv.Atoi(string(args[2]))
+			_, err := s.Expire(key, seconds)
+			return err
+		}
+
+	case "EXPIREAT":
+		if len(args) >= 3 {
+			key := string(args[1])
+			timestamp, _ := strconv.ParseInt(string(args[2]), 10, 64)
+			_, err := s.ExpireAt(key, timestamp)
+			return err
+		}
+
+	case "PEXPIRE":
+		if len(args) >= 3 {
+			key := string(args[1])
+			millis, _ := strconv.ParseInt(string(args[2]), 10, 64)
+			_, err := s.PExpire(key, millis)
+			return err
+		}
+
+	case "PEXPIREAT":
+		if len(args) >= 3 {
+			key := string(args[1])
+			millis, _ := strconv.ParseInt(string(args[2]), 10, 64)
+			_, err := s.PExpireAt(key, millis)
+			return err
+		}
+
+	case "PERSIST":
+		if len(args) >= 2 {
+			key := string(args[1])
+			_, err := s.Persist(key)
+			return err
+		}
+
+	case "RENAME":
+		if len(args) >= 3 {
+			key := string(args[1])
+			newKey := string(args[2])
+			return s.Rename(key, newKey)
+		}
+
+	case "RENAMENX":
+		if len(args) >= 3 {
+			key := string(args[1])
+			newKey := string(args[2])
+			_, err := s.RenameNX(key, newKey)
+			return err
 		}
 
 	case "INCR", "INCRBY":
@@ -386,6 +357,66 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 				}
 			}
 			return nil
+		}
+
+	case "LPOP":
+		if len(args) >= 2 {
+			key := string(args[1])
+			_, err := s.LPop(key)
+			return err
+		}
+
+	case "RPOP":
+		if len(args) >= 2 {
+			key := string(args[1])
+			_, err := s.RPop(key)
+			return err
+		}
+
+	case "LPUSHX":
+		if len(args) >= 3 {
+			key := string(args[1])
+			for i := 2; i < len(args); i++ {
+				if _, err := s.LPUSHX(key, string(args[i])); err != nil {
+					return fmt.Errorf("LPUSHX %s: %w", key, err)
+				}
+			}
+			return nil
+		}
+
+	case "RPUSHX":
+		if len(args) >= 3 {
+			key := string(args[1])
+			for i := 2; i < len(args); i++ {
+				if _, err := s.RPUSHX(key, string(args[i])); err != nil {
+					return fmt.Errorf("RPUSHX %s: %w", key, err)
+				}
+			}
+			return nil
+		}
+
+	case "LINSERT":
+		if len(args) >= 5 {
+			key := string(args[1])
+			where := string(args[2])
+			pivot := string(args[3])
+			value := string(args[4])
+			_, err := s.LInsert(key, where, pivot, value)
+			return err
+		}
+
+	case "RPOPLPUSH":
+		if len(args) >= 3 {
+			source := string(args[1])
+			dest := string(args[2])
+			_, err := s.RPopLPush(source, dest)
+			return err
+		}
+
+	case "LMOVE":
+		if len(args) >= 5 {
+			_, err := s.LMove(string(args[1]), string(args[2]), string(args[3]), string(args[4]))
+			return err
 		}
 
 	case "LSET":
@@ -456,12 +487,48 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			return err
 		}
 
+	case "SINTERSTORE":
+		if len(args) >= 3 {
+			dest := string(args[1])
+			keys := make([]string, len(args)-2)
+			for i := 2; i < len(args); i++ {
+				keys[i-2] = string(args[i])
+			}
+			_, err := s.SInterStore(dest, keys...)
+			return err
+		}
+
+	case "SUNIONSTORE":
+		if len(args) >= 3 {
+			dest := string(args[1])
+			keys := make([]string, len(args)-2)
+			for i := 2; i < len(args); i++ {
+				keys[i-2] = string(args[i])
+			}
+			_, err := s.SUnionStore(dest, keys...)
+			return err
+		}
+
+	case "SDIFFSTORE":
+		if len(args) >= 3 {
+			dest := string(args[1])
+			keys := make([]string, len(args)-2)
+			for i := 2; i < len(args); i++ {
+				keys[i-2] = string(args[i])
+			}
+			_, err := s.SDiffStore(dest, keys...)
+			return err
+		}
+
 	case "HSET":
 		if len(args) >= 4 {
 			key := string(args[1])
-			field := string(args[2])
-			value := string(args[3])
-			return s.HSet(key, field, value)
+			for i := 2; i+1 < len(args); i += 2 {
+				if err := s.HSet(key, string(args[i]), string(args[i+1])); err != nil {
+					return fmt.Errorf("HSET %s: %w", key, err)
+				}
+			}
+			return nil
 		}
 
 	case "HMSET":
@@ -548,9 +615,110 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			return nil
 		}
 
-	case "ZPOPMAX", "ZPOPMIN":
-		logger.Logger.Debug().Str("cmd", cmd).Msg("忽略不支持的复制命令")
-		return nil
+	case "ZPOPMAX":
+		if len(args) >= 2 {
+			key := string(args[1])
+			count := 1
+			if len(args) >= 3 {
+				if c, err := strconv.Atoi(string(args[2])); err == nil && c > 0 {
+					count = c
+				}
+			}
+			_, err := s.ZPopMax(key, count)
+			return err
+		}
+
+	case "ZPOPMIN":
+		if len(args) >= 2 {
+			key := string(args[1])
+			count := 1
+			if len(args) >= 3 {
+				if c, err := strconv.Atoi(string(args[2])); err == nil && c > 0 {
+					count = c
+				}
+			}
+			_, err := s.ZPopMin(key, count)
+			return err
+		}
+
+	case "ZREMRANGEBYRANK":
+		if len(args) >= 4 {
+			key := string(args[1])
+			start, _ := strconv.ParseInt(string(args[2]), 10, 64)
+			stop, _ := strconv.ParseInt(string(args[3]), 10, 64)
+			_, err := s.ZRemRangeByRank(key, start, stop)
+			return err
+		}
+
+	case "ZREMRANGEBYSCORE":
+		if len(args) >= 4 {
+			key := string(args[1])
+			min, _ := strconv.ParseFloat(string(args[2]), 64)
+			max, _ := strconv.ParseFloat(string(args[3]), 64)
+			_, err := s.ZRemRangeByScore(key, min, max, false, false)
+			return err
+		}
+
+	case "ZREMRANGEBYLEX":
+		if len(args) >= 4 {
+			key := string(args[1])
+			min := string(args[2])
+			max := string(args[3])
+			_, err := s.ZRemRangeByLex(key, min, max)
+			return err
+		}
+
+	case "GEOADD":
+		if len(args) >= 5 && (len(args)-2)%3 == 0 {
+			key := string(args[1])
+			members := make([]store.GeoMember, 0, (len(args)-2)/3)
+			for i := 2; i+2 < len(args); i += 3 {
+				lon, _ := strconv.ParseFloat(string(args[i]), 64)
+				lat, _ := strconv.ParseFloat(string(args[i+1]), 64)
+				members = append(members, store.GeoMember{
+					Member: string(args[i+2]),
+					Lon:    lon,
+					Lat:    lat,
+				})
+			}
+			_, err := s.GeoAdd(key, members)
+			return err
+		}
+
+	case "XADD":
+		if len(args) >= 4 {
+			key := string(args[1])
+			id := string(args[2])
+			fields := make(map[string]string)
+			for i := 3; i+1 < len(args); i += 2 {
+				fields[string(args[i])] = string(args[i+1])
+			}
+			_, err := s.XAdd(key, store.StreamXAddOptions{}, id, fields)
+			return err
+		}
+
+	case "XDEL":
+		if len(args) >= 3 {
+			key := string(args[1])
+			ids := make([]string, len(args)-2)
+			for i := 2; i < len(args); i++ {
+				ids[i-2] = string(args[i])
+			}
+			_, err := s.XDel(key, ids...)
+			return err
+		}
+
+	case "XTRIM":
+		if len(args) >= 3 {
+			key := string(args[1])
+			maxLen, _ := strconv.ParseInt(string(args[2]), 10, 64)
+			minID := ""
+			if len(args) >= 4 {
+				minID = string(args[3])
+			}
+			_, err := s.XTrim(key, maxLen, minID)
+			return err
+		}
 
 	default:
 		logger.Logger.Debug().Str("cmd", cmd).Msg("收到未处理的复制命令")

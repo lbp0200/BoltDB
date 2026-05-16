@@ -8,12 +8,13 @@ import (
 	"github.com/zeebo/assert"
 )
 
+
 // TestExecuteCommand_CLIENT_ID_Coverage tests CLIENT ID command
 func TestExecuteCommand_CLIENT_ID_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "CLIENT", [][]byte{[]byte("ID")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "CLIENT", [][]byte{[]byte("ID")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.True(t, int64(*integer) > 0)
@@ -24,7 +25,7 @@ func TestExecuteCommand_CLIENT_KILL_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "CLIENT", [][]byte{[]byte("KILL"), []byte("127.0.0.1:12345")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "CLIENT", [][]byte{[]byte("KILL"), []byte("127.0.0.1:12345")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.True(t, int64(*integer) >= 0)
@@ -35,7 +36,7 @@ func TestExecuteCommand_CLIENT_PAUSE_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "CLIENT", [][]byte{[]byte("PAUSE"), []byte("1000")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "CLIENT", [][]byte{[]byte("PAUSE"), []byte("1000")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 }
 
@@ -44,7 +45,7 @@ func TestExecuteCommand_CLIENT_UNPAUSE_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "CLIENT", [][]byte{[]byte("UNPAUSE")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "CLIENT", [][]byte{[]byte("UNPAUSE")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 }
 
@@ -53,7 +54,7 @@ func TestExecuteCommand_CLIENT_INFO_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "CLIENT", [][]byte{[]byte("INFO")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "CLIENT", [][]byte{[]byte("INFO")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.True(t, len(*bs) > 0)
@@ -64,10 +65,10 @@ func TestExecuteCommand_CLIENT_NOEVICT_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "CLIENT", [][]byte{[]byte("NOEVICT"), []byte("ON")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "CLIENT", [][]byte{[]byte("NOEVICT"), []byte("ON")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 
-	resp = handler.executeCommand(nil, "CLIENT", [][]byte{[]byte("NOEVICT"), []byte("OFF")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "CLIENT", [][]byte{[]byte("NOEVICT"), []byte("OFF")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 }
 
@@ -76,10 +77,10 @@ func TestExecuteCommand_CLIENT_TRACKING_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "CLIENT", [][]byte{[]byte("TRACKING"), []byte("ON")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "CLIENT", [][]byte{[]byte("TRACKING"), []byte("ON")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 
-	resp = handler.executeCommand(nil, "CLIENT", [][]byte{[]byte("TRACKING"), []byte("OFF")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "CLIENT", [][]byte{[]byte("TRACKING"), []byte("OFF")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 }
 
@@ -92,7 +93,7 @@ func TestExecuteCommand_BITFIELD_Coverage(t *testing.T) {
 	handler.Db.Set("bitfieldkey", "A") // 0x41 = 01000001
 
 	// GET i8 offset 0 - should return 65
-	resp := handler.executeCommand(nil, "BITFIELD", [][]byte{[]byte("bitfieldkey"), []byte("GET"), []byte("i8"), []byte("0")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "BITFIELD", [][]byte{[]byte("bitfieldkey"), []byte("GET"), []byte("i8"), []byte("0")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(65), int64(*integer))
@@ -105,7 +106,7 @@ func TestExecuteCommand_BITPOS_Coverage(t *testing.T) {
 
 	handler.Db.Set("bitposkey", string([]byte{0xFF}))
 
-	resp := handler.executeCommand(nil, "BITPOS", [][]byte{[]byte("bitposkey"), []byte("0")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "BITPOS", [][]byte{[]byte("bitposkey"), []byte("0")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	// 0xFF = all bits are 1, so looking for bit 0 (first 0) returns -1 (not found)
@@ -113,7 +114,7 @@ func TestExecuteCommand_BITPOS_Coverage(t *testing.T) {
 
 	// Test finding a bit that exists
 	handler.Db.Set("bitposkey2", string([]byte{0x00}))
-	resp2 := handler.executeCommand(nil, "BITPOS", [][]byte{[]byte("bitposkey2"), []byte("1")}, "127.0.0.1:12345")
+	resp2 := handler.executeCommand(testState, "BITPOS", [][]byte{[]byte("bitposkey2"), []byte("1")}, "127.0.0.1:12345")
 	integer2, ok := resp2.(*proto.Integer)
 	assert.True(t, ok)
 	// 0x00 = all bits are 0, looking for bit 1 returns -1 (not found)
@@ -121,7 +122,7 @@ func TestExecuteCommand_BITPOS_Coverage(t *testing.T) {
 
 	// Test with mixed value
 	handler.Db.Set("bitposkey3", string([]byte{0x80})) // 10000000
-	resp3 := handler.executeCommand(nil, "BITPOS", [][]byte{[]byte("bitposkey3"), []byte("1")}, "127.0.0.1:12345")
+	resp3 := handler.executeCommand(testState, "BITPOS", [][]byte{[]byte("bitposkey3"), []byte("1")}, "127.0.0.1:12345")
 	integer3, ok := resp3.(*proto.Integer)
 	assert.True(t, ok)
 	// Bit 0 of 0x80 is 1, so first 1 bit is at position 0
@@ -136,7 +137,7 @@ func TestExecuteCommand_BITOP_Coverage(t *testing.T) {
 	handler.Db.Set("bitopkey1", "A") // 0x41 = 01000001
 	handler.Db.Set("bitopkey2", "B") // 0x42 = 01000010
 
-	resp := handler.executeCommand(nil, "BITOP", [][]byte{[]byte("AND"), []byte("bitopresult"), []byte("bitopkey1"), []byte("bitopkey2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "BITOP", [][]byte{[]byte("AND"), []byte("bitopresult"), []byte("bitopkey1"), []byte("bitopkey2")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -154,7 +155,7 @@ func TestExecuteCommand_SCAN_Coverage(t *testing.T) {
 	handler.Db.Set("scankey1", "value1")
 	handler.Db.Set("scankey2", "value2")
 
-	resp := handler.executeCommand(nil, "SCAN", [][]byte{[]byte("0")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SCAN", [][]byte{[]byte("0")}, "127.0.0.1:12345")
 	// SCAN returns RawString with format: *2\r\n$1\r\n0\r\n*2\r\n$8\r\nscankey1\r\n$8\r\nscankey2\r\n
 	// Verify response is not nil and implements RESP interface
 	assert.NotNil(t, resp)
@@ -175,7 +176,7 @@ func TestExecuteCommand_SORT_Coverage(t *testing.T) {
 	handler.Db.LPush("sortlist", "1")
 	handler.Db.LPush("sortlist", "2")
 
-	resp := handler.executeCommand(nil, "SORT", [][]byte{[]byte("sortlist")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SORT", [][]byte{[]byte("sortlist")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	// SORT without modifiers returns items in ascending numeric order: 1, 2, 3
@@ -196,7 +197,7 @@ func TestExecuteCommand_SORT_ASC_Coverage(t *testing.T) {
 	handler.Db.LPush("sortlist2", "1")
 	handler.Db.LPush("sortlist2", "2")
 
-	resp := handler.executeCommand(nil, "SORT", [][]byte{[]byte("sortlist2"), []byte("ASC")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SORT", [][]byte{[]byte("sortlist2"), []byte("ASC")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 3, len(arr.Args))
@@ -216,7 +217,7 @@ func TestExecuteCommand_SORT_DESC_Coverage(t *testing.T) {
 	handler.Db.LPush("sortlist3", "1")
 	handler.Db.LPush("sortlist3", "2")
 
-	resp := handler.executeCommand(nil, "SORT", [][]byte{[]byte("sortlist3"), []byte("DESC")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SORT", [][]byte{[]byte("sortlist3"), []byte("DESC")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 3, len(arr.Args))
@@ -238,7 +239,7 @@ func TestExecuteCommand_SORT_LIMIT_Coverage(t *testing.T) {
 	handler.Db.LPush("sortlist4", "4")
 	handler.Db.LPush("sortlist4", "2")
 
-	resp := handler.executeCommand(nil, "SORT", [][]byte{[]byte("sortlist4"), []byte("LIMIT"), []byte("1"), []byte("3")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SORT", [][]byte{[]byte("sortlist4"), []byte("LIMIT"), []byte("1"), []byte("3")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	// LIMIT 1 3 should return items at offset 1, count 3: [2, 3, 4]
@@ -259,7 +260,7 @@ func TestExecuteCommand_SORT_ALPHA_Coverage(t *testing.T) {
 	handler.Db.LPush("sortlist5", "a")
 	handler.Db.LPush("sortlist5", "b")
 
-	resp := handler.executeCommand(nil, "SORT", [][]byte{[]byte("sortlist5"), []byte("ALPHA")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SORT", [][]byte{[]byte("sortlist5"), []byte("ALPHA")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	// ALPHA sorts lexicographically: a, b, c
@@ -280,7 +281,7 @@ func TestExecuteCommand_SORT_STORE_Coverage(t *testing.T) {
 	handler.Db.LPush("sortlist6", "1")
 	handler.Db.LPush("sortlist6", "2")
 
-	resp := handler.executeCommand(nil, "SORT", [][]byte{[]byte("sortlist6"), []byte("STORE"), []byte("sortedlist")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SORT", [][]byte{[]byte("sortlist6"), []byte("STORE"), []byte("sortedlist")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(3), int64(*integer))
@@ -300,7 +301,7 @@ func TestExecuteCommand_SORT_BY_Coverage(t *testing.T) {
 	handler.Db.Set("weight_1", "3")
 	handler.Db.Set("weight_2", "1")
 
-	resp := handler.executeCommand(nil, "SORT", [][]byte{[]byte("sortlist7"), []byte("BY"), []byte("weight_*")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SORT", [][]byte{[]byte("sortlist7"), []byte("BY"), []byte("weight_*")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	// BY weight_*: weight_1=3, weight_2=1. Ascending order: 2 (weight 1), 1 (weight 3)
@@ -316,7 +317,7 @@ func TestExecuteCommand_CONFIG_GET_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "CONFIG", [][]byte{[]byte("GET"), []byte("maxmemory")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "CONFIG", [][]byte{[]byte("GET"), []byte("maxmemory")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	// CONFIG GET returns [name, value]
@@ -331,7 +332,7 @@ func TestExecuteCommand_CONFIG_SET_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "CONFIG", [][]byte{[]byte("SET"), []byte("maxmemory"), []byte("0")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "CONFIG", [][]byte{[]byte("SET"), []byte("maxmemory"), []byte("0")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 }
 
@@ -340,7 +341,7 @@ func TestExecuteCommand_SLOWLOG_RESET_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "SLOWLOG", [][]byte{[]byte("RESET")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SLOWLOG", [][]byte{[]byte("RESET")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 }
 
@@ -351,7 +352,7 @@ func TestExecuteCommand_MEMORY_USAGE_Coverage(t *testing.T) {
 
 	handler.Db.Set("memkey", "somevalue")
 
-	resp := handler.executeCommand(nil, "MEMORY", [][]byte{[]byte("USAGE"), []byte("memkey")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "MEMORY", [][]byte{[]byte("USAGE"), []byte("memkey")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	memUsage := int64(*integer)
@@ -368,7 +369,7 @@ func TestExecuteCommand_ZRANGESTORE_Coverage(t *testing.T) {
 	handler.Db.ZAdd("zrangestore1", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}, {Member: "c", Score: 3}})
 
 	// ZRANGESTORE dst src 0 1 stores indices 0 and 1 (a and b) -> returns 2
-	resp := handler.executeCommand(nil, "ZRANGESTORE", [][]byte{[]byte("zrangestore_result"), []byte("zrangestore1"), []byte("0"), []byte("1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZRANGESTORE", [][]byte{[]byte("zrangestore_result"), []byte("zrangestore1"), []byte("0"), []byte("1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -390,7 +391,7 @@ func TestExecuteCommand_ZRANGESTORE_BYSCORE_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zrangestore2", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 5}, {Member: "c", Score: 10}})
 
-	resp := handler.executeCommand(nil, "ZRANGESTORE", [][]byte{[]byte("zrangestore_result2"), []byte("zrangestore2"), []byte("0"), []byte("5"), []byte("BYSCORE")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZRANGESTORE", [][]byte{[]byte("zrangestore_result2"), []byte("zrangestore2"), []byte("0"), []byte("5"), []byte("BYSCORE")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -412,7 +413,7 @@ func TestExecuteCommand_ZRANGESTORE_BYLEX_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zrangestore3", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}, {Member: "c", Score: 3}})
 
-	resp := handler.executeCommand(nil, "ZRANGESTORE", [][]byte{[]byte("zrangestore_result3"), []byte("zrangestore3"), []byte("-"), []byte("+"), []byte("BYLEX")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZRANGESTORE", [][]byte{[]byte("zrangestore_result3"), []byte("zrangestore3"), []byte("-"), []byte("+"), []byte("BYLEX")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(3), int64(*integer))
@@ -434,7 +435,7 @@ func TestExecuteCommand_ZRANGESTORE_REV_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zrangestore4", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}, {Member: "c", Score: 3}})
 
-	resp := handler.executeCommand(nil, "ZRANGESTORE", [][]byte{[]byte("zrangestore_result4"), []byte("zrangestore4"), []byte("2"), []byte("0"), []byte("REV")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZRANGESTORE", [][]byte{[]byte("zrangestore_result4"), []byte("zrangestore4"), []byte("2"), []byte("0"), []byte("REV")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(3), int64(*integer))
@@ -460,7 +461,7 @@ func TestExecuteCommand_ZRANGESTORE_LIMIT_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zrangestore5", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}, {Member: "c", Score: 3}, {Member: "d", Score: 4}, {Member: "e", Score: 5}})
 
-	resp := handler.executeCommand(nil, "ZRANGESTORE", [][]byte{[]byte("zrangestore_result5"), []byte("zrangestore5"), []byte("0"), []byte("+inf"), []byte("BYSCORE"), []byte("LIMIT"), []byte("0"), []byte("2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZRANGESTORE", [][]byte{[]byte("zrangestore_result5"), []byte("zrangestore5"), []byte("0"), []byte("+inf"), []byte("BYSCORE"), []byte("LIMIT"), []byte("0"), []byte("2")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -480,7 +481,7 @@ func TestExecuteCommand_LATENCY_RESET_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "LATENCY", [][]byte{[]byte("RESET")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LATENCY", [][]byte{[]byte("RESET")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
@@ -491,7 +492,7 @@ func TestExecuteCommand_LATENCY_HELP_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "LATENCY", [][]byte{[]byte("HELP")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LATENCY", [][]byte{[]byte("HELP")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.True(t, len(arr.Args) > 0) // HELP returns array of help strings
@@ -504,7 +505,7 @@ func TestExecuteCommand_BLMOVE_Coverage(t *testing.T) {
 
 	handler.Db.RPush("blmovetest", "value")
 
-	resp := handler.executeCommand(nil, "BLMOVE", [][]byte{[]byte("blmovetest"), []byte("blmovetest2"), []byte("RIGHT"), []byte("LEFT"), []byte("0")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "BLMOVE", [][]byte{[]byte("blmovetest"), []byte("blmovetest2"), []byte("RIGHT"), []byte("LEFT"), []byte("0")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "value", string(*bs))
@@ -525,7 +526,7 @@ func TestExecuteCommand_BLPOP_Coverage(t *testing.T) {
 
 	handler.Db.RPush("blpoptest", "value")
 
-	resp := handler.executeCommand(nil, "BLPOP", [][]byte{[]byte("blpoptest"), []byte("1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "BLPOP", [][]byte{[]byte("blpoptest"), []byte("1")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.True(t, len(arr.Args) >= 2)
@@ -543,7 +544,7 @@ func TestExecuteCommand_BRPOP_Coverage(t *testing.T) {
 
 	handler.Db.RPush("brpoptest", "value")
 
-	resp := handler.executeCommand(nil, "BRPOP", [][]byte{[]byte("brpoptest"), []byte("1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "BRPOP", [][]byte{[]byte("brpoptest"), []byte("1")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.True(t, len(arr.Args) >= 2)
@@ -561,7 +562,7 @@ func TestExecuteCommand_BRPOPLPUSH_Coverage(t *testing.T) {
 
 	handler.Db.RPush("brpoplpushsource", "value")
 
-	resp := handler.executeCommand(nil, "BRPOPLPUSH", [][]byte{[]byte("brpoplpushsource"), []byte("brpoplpushdest"), []byte("1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "BRPOPLPUSH", [][]byte{[]byte("brpoplpushsource"), []byte("brpoplpushdest"), []byte("1")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "value", string(*bs))
@@ -580,7 +581,7 @@ func TestExecuteCommand_BZPOPMAX_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("bzpopmaxtest", []store.ZSetMember{{Member: "member", Score: 1}})
 
-	resp := handler.executeCommand(nil, "BZPOPMAX", [][]byte{[]byte("bzpopmaxtest"), []byte("1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "BZPOPMAX", [][]byte{[]byte("bzpopmaxtest"), []byte("1")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.True(t, len(arr.Args) >= 3)
@@ -599,7 +600,7 @@ func TestExecuteCommand_BZPOPMIN_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("bzpopmintest", []store.ZSetMember{{Member: "member", Score: 1}})
 
-	resp := handler.executeCommand(nil, "BZPOPMIN", [][]byte{[]byte("bzpopmintest"), []byte("1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "BZPOPMIN", [][]byte{[]byte("bzpopmintest"), []byte("1")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.True(t, len(arr.Args) >= 3)
@@ -618,7 +619,7 @@ func TestExecuteCommand_LPUSHX_Coverage(t *testing.T) {
 
 	handler.Db.RPush("lpushxtest", "existing")
 
-	resp := handler.executeCommand(nil, "LPUSHX", [][]byte{[]byte("lpushxtest"), []byte("newvalue")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LPUSHX", [][]byte{[]byte("lpushxtest"), []byte("newvalue")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -633,7 +634,7 @@ func TestExecuteCommand_LPUSHX_NotExists_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "LPUSHX", [][]byte{[]byte("nonexistent"), []byte("value")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LPUSHX", [][]byte{[]byte("nonexistent"), []byte("value")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
@@ -646,7 +647,7 @@ func TestExecuteCommand_RPUSHX_Coverage(t *testing.T) {
 
 	handler.Db.RPush("rpushxtest", "existing")
 
-	resp := handler.executeCommand(nil, "RPUSHX", [][]byte{[]byte("rpushxtest"), []byte("newvalue")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "RPUSHX", [][]byte{[]byte("rpushxtest"), []byte("newvalue")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -661,7 +662,7 @@ func TestExecuteCommand_RPUSHX_NotExists_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "RPUSHX", [][]byte{[]byte("nonexistent"), []byte("value")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "RPUSHX", [][]byte{[]byte("nonexistent"), []byte("value")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
@@ -674,13 +675,13 @@ func TestExecuteCommand_PEXPIRE_Coverage(t *testing.T) {
 
 	handler.Db.Set("pexpirekey", "value")
 
-	resp := handler.executeCommand(nil, "PEXPIRE", [][]byte{[]byte("pexpirekey"), []byte("1000")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "PEXPIRE", [][]byte{[]byte("pexpirekey"), []byte("1000")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
 
 	// Verify TTL is set (PTTL should return positive value)
-	pttlResp := handler.executeCommand(nil, "PTTL", [][]byte{[]byte("pexpirekey")}, "127.0.0.1:12345")
+	pttlResp := handler.executeCommand(testState, "PTTL", [][]byte{[]byte("pexpirekey")}, "127.0.0.1:12345")
 	pttlInt, _ := pttlResp.(*proto.Integer)
 	assert.True(t, int64(*pttlInt) > 0 && int64(*pttlInt) <= 1000)
 }
@@ -692,13 +693,13 @@ func TestExecuteCommand_PEXPIREAT_Coverage(t *testing.T) {
 
 	handler.Db.Set("pexpireatkey", "value")
 
-	resp := handler.executeCommand(nil, "PEXPIREAT", [][]byte{[]byte("pexpireatkey"), []byte("9999999999999")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "PEXPIREAT", [][]byte{[]byte("pexpireatkey"), []byte("9999999999999")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
 
 	// Verify TTL is set
-	pttlResp := handler.executeCommand(nil, "PTTL", [][]byte{[]byte("pexpireatkey")}, "127.0.0.1:12345")
+	pttlResp := handler.executeCommand(testState, "PTTL", [][]byte{[]byte("pexpireatkey")}, "127.0.0.1:12345")
 	pttlInt, _ := pttlResp.(*proto.Integer)
 	assert.True(t, int64(*pttlInt) > 0)
 }
@@ -710,13 +711,13 @@ func TestExecuteCommand_EXPIREAT_Coverage(t *testing.T) {
 
 	handler.Db.Set("expireatkey", "value")
 
-	resp := handler.executeCommand(nil, "EXPIREAT", [][]byte{[]byte("expireatkey"), []byte("9999999999")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "EXPIREAT", [][]byte{[]byte("expireatkey"), []byte("9999999999")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
 
 	// Verify TTL is set
-	ttlResp := handler.executeCommand(nil, "TTL", [][]byte{[]byte("expireatkey")}, "127.0.0.1:12345")
+	ttlResp := handler.executeCommand(testState, "TTL", [][]byte{[]byte("expireatkey")}, "127.0.0.1:12345")
 	ttlInt, _ := ttlResp.(*proto.Integer)
 	assert.True(t, int64(*ttlInt) > 0)
 }
@@ -726,20 +727,46 @@ func TestExecuteCommand_XREAD_BLOCK_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "XADD", [][]byte{[]byte("blockstream"), []byte("1"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "XADD", [][]byte{[]byte("blockstream"), []byte("1"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "XREAD", [][]byte{[]byte("BLOCK"), []byte("1000"), []byte("STREAMS"), []byte("blockstream"), []byte("0")}, "127.0.0.1:12345")
-	// XREAD returns flat Array: [streamKey, entryID, field1, value1, ...]
-	arr, ok := resp.(*proto.Array)
+	resp := handler.executeCommand(testState, "XREAD", [][]byte{[]byte("BLOCK"), []byte("1000"), []byte("STREAMS"), []byte("blockstream"), []byte("0")}, "127.0.0.1:12345")
+	narr, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) >= 4)
-	// Verify stream key
-	assert.Equal(t, "blockstream", string(arr.Args[0]))
-	// Verify entry ID
-	assert.Equal(t, "1", string(arr.Args[1]))
-	// Verify field and value
-	assert.Equal(t, "field", string(arr.Args[2]))
-	assert.Equal(t, "value", string(arr.Args[3]))
+	assert.True(t, len(narr.Elems) >= 1)
+	if len(narr.Elems) >= 1 {
+		streamResult, ok := narr.Elems[0].(*proto.NestedArray)
+		assert.True(t, ok)
+		assert.True(t, len(streamResult.Elems) >= 2)
+		if len(streamResult.Elems) >= 2 {
+			streamKey, ok := streamResult.Elems[0].(*proto.BulkString)
+			assert.True(t, ok)
+			assert.Equal(t, "blockstream", string(*streamKey))
+			entries, ok := streamResult.Elems[1].(*proto.NestedArray)
+			assert.True(t, ok)
+			assert.True(t, len(entries.Elems) >= 1)
+			if len(entries.Elems) >= 1 {
+				entry, ok := entries.Elems[0].(*proto.NestedArray)
+				assert.True(t, ok)
+				assert.True(t, len(entry.Elems) >= 2)
+				if len(entry.Elems) >= 2 {
+					entryID, ok := entry.Elems[0].(*proto.BulkString)
+					assert.True(t, ok)
+					assert.Equal(t, "1", string(*entryID))
+					fields, ok := entry.Elems[1].(*proto.NestedArray)
+					assert.True(t, ok)
+					assert.True(t, len(fields.Elems) >= 2)
+					if len(fields.Elems) >= 2 {
+						fieldName, ok := fields.Elems[0].(*proto.BulkString)
+						assert.True(t, ok)
+						assert.Equal(t, "field", string(*fieldName))
+						fieldVal, ok := fields.Elems[1].(*proto.BulkString)
+						assert.True(t, ok)
+						assert.Equal(t, "value", string(*fieldVal))
+					}
+				}
+			}
+		}
+	}
 }
 
 // TestExecuteCommand_LINSERT_BEFORE_Coverage tests LINSERT with BEFORE
@@ -750,7 +777,7 @@ func TestExecuteCommand_LINSERT_BEFORE_Coverage(t *testing.T) {
 	handler.Db.RPush("linserttest", "a")
 	handler.Db.RPush("linserttest", "c")
 
-	resp := handler.executeCommand(nil, "LINSERT", [][]byte{[]byte("linserttest"), []byte("BEFORE"), []byte("c"), []byte("b")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LINSERT", [][]byte{[]byte("linserttest"), []byte("BEFORE"), []byte("c"), []byte("b")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(3), int64(*integer))
@@ -768,7 +795,7 @@ func TestExecuteCommand_LINSERT_AFTER_Coverage(t *testing.T) {
 	handler.Db.RPush("linserttest2", "a")
 	handler.Db.RPush("linserttest2", "c")
 
-	resp := handler.executeCommand(nil, "LINSERT", [][]byte{[]byte("linserttest2"), []byte("AFTER"), []byte("a"), []byte("b")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LINSERT", [][]byte{[]byte("linserttest2"), []byte("AFTER"), []byte("a"), []byte("b")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(3), int64(*integer))
@@ -787,7 +814,7 @@ func TestExecuteCommand_LSET_Coverage(t *testing.T) {
 	handler.Db.RPush("lsettest", "b")
 	handler.Db.RPush("lsettest", "c")
 
-	resp := handler.executeCommand(nil, "LSET", [][]byte{[]byte("lsettest"), []byte("1"), []byte("newvalue")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LSET", [][]byte{[]byte("lsettest"), []byte("1"), []byte("newvalue")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 
 	// Verify element was changed
@@ -804,7 +831,7 @@ func TestExecuteCommand_LREM_Coverage(t *testing.T) {
 	handler.Db.RPush("lremtest", "b")
 	handler.Db.RPush("lremtest", "a")
 
-	resp := handler.executeCommand(nil, "LREM", [][]byte{[]byte("lremtest"), []byte("1"), []byte("a")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LREM", [][]byte{[]byte("lremtest"), []byte("1"), []byte("a")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -817,7 +844,7 @@ func TestExecuteCommand_RPOPLPUSH_Coverage(t *testing.T) {
 
 	handler.Db.RPush("rpoplpushtest", "value")
 
-	resp := handler.executeCommand(nil, "RPOPLPUSH", [][]byte{[]byte("rpoplpushtest"), []byte("destlist")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "RPOPLPUSH", [][]byte{[]byte("rpoplpushtest"), []byte("destlist")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "value", string(*bs))
@@ -830,7 +857,7 @@ func TestExecuteCommand_GETBIT_Coverage(t *testing.T) {
 
 	handler.Db.Set("getbittest", "A")
 
-	resp := handler.executeCommand(nil, "GETBIT", [][]byte{[]byte("getbittest"), []byte("0")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "GETBIT", [][]byte{[]byte("getbittest"), []byte("0")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
@@ -841,7 +868,7 @@ func TestExecuteCommand_SETBIT_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "SETBIT", [][]byte{[]byte("setbittest"), []byte("7"), []byte("1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SETBIT", [][]byte{[]byte("setbittest"), []byte("7"), []byte("1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.True(t, int64(*integer) >= 0)
@@ -854,7 +881,7 @@ func TestExecuteCommand_BITLEN_Coverage(t *testing.T) {
 
 	handler.Db.Set("bitlentest", "A")
 
-	resp := handler.executeCommand(nil, "BITLEN", [][]byte{[]byte("bitlentest")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "BITLEN", [][]byte{[]byte("bitlentest")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(8), int64(*integer))
@@ -867,7 +894,7 @@ func TestExecuteCommand_ZMSCORE_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zmscoretest", []store.ZSetMember{{Member: "member", Score: 1.5}})
 
-	resp := handler.executeCommand(nil, "ZMSCORE", [][]byte{[]byte("zmscoretest"), []byte("member")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZMSCORE", [][]byte{[]byte("zmscoretest"), []byte("member")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 1, len(arr.Args))
@@ -884,7 +911,7 @@ func TestExecuteCommand_ZRANK_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zranktest", []store.ZSetMember{{Member: "member1", Score: 1}, {Member: "member2", Score: 2}})
 
-	resp := handler.executeCommand(nil, "ZRANK", [][]byte{[]byte("zranktest"), []byte("member1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZRANK", [][]byte{[]byte("zranktest"), []byte("member1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
@@ -897,7 +924,7 @@ func TestExecuteCommand_ZREVRANK_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zrevranktest", []store.ZSetMember{{Member: "member1", Score: 1}, {Member: "member2", Score: 2}})
 
-	resp := handler.executeCommand(nil, "ZREVRANK", [][]byte{[]byte("zrevranktest"), []byte("member1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZREVRANK", [][]byte{[]byte("zrevranktest"), []byte("member1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -910,7 +937,7 @@ func TestExecuteCommand_ZPOPMAX_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zpopmaxtest", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}})
 
-	resp := handler.executeCommand(nil, "ZPOPMAX", [][]byte{[]byte("zpopmaxtest")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZPOPMAX", [][]byte{[]byte("zpopmaxtest")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.True(t, len(arr.Args) >= 2)
@@ -930,7 +957,7 @@ func TestExecuteCommand_ZPOPMIN_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zpopmintest", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}})
 
-	resp := handler.executeCommand(nil, "ZPOPMIN", [][]byte{[]byte("zpopmintest")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZPOPMIN", [][]byte{[]byte("zpopmintest")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.True(t, len(arr.Args) >= 2)
@@ -951,7 +978,7 @@ func TestExecuteCommand_ZUNIONSTORE_Coverage(t *testing.T) {
 	handler.Db.ZAdd("zunion1", []store.ZSetMember{{Member: "a", Score: 1}})
 	handler.Db.ZAdd("zunion2", []store.ZSetMember{{Member: "b", Score: 2}})
 
-	resp := handler.executeCommand(nil, "ZUNIONSTORE", [][]byte{[]byte("zunionresult"), []byte("2"), []byte("zunion1"), []byte("zunion2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZUNIONSTORE", [][]byte{[]byte("zunionresult"), []byte("2"), []byte("zunion1"), []byte("zunion2")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -980,7 +1007,7 @@ func TestExecuteCommand_ZUNIONSTORE_WEIGHTS_Coverage(t *testing.T) {
 	handler.Db.ZAdd("zunion3", []store.ZSetMember{{Member: "a", Score: 1}})
 	handler.Db.ZAdd("zunion4", []store.ZSetMember{{Member: "b", Score: 1}})
 
-	resp := handler.executeCommand(nil, "ZUNIONSTORE", [][]byte{[]byte("zunionresult2"), []byte("2"), []byte("zunion3"), []byte("zunion4"), []byte("WEIGHTS"), []byte("2"), []byte("3")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZUNIONSTORE", [][]byte{[]byte("zunionresult2"), []byte("2"), []byte("zunion3"), []byte("zunion4"), []byte("WEIGHTS"), []byte("2"), []byte("3")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -994,7 +1021,7 @@ func TestExecuteCommand_ZUNIONSTORE_AGGREGATE_Coverage(t *testing.T) {
 	handler.Db.ZAdd("zunion5", []store.ZSetMember{{Member: "a", Score: 1}})
 	handler.Db.ZAdd("zunion6", []store.ZSetMember{{Member: "b", Score: 1}})
 
-	resp := handler.executeCommand(nil, "ZUNIONSTORE", [][]byte{[]byte("zunionresult3"), []byte("2"), []byte("zunion5"), []byte("zunion6"), []byte("AGGREGATE"), []byte("MIN")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZUNIONSTORE", [][]byte{[]byte("zunionresult3"), []byte("2"), []byte("zunion5"), []byte("zunion6"), []byte("AGGREGATE"), []byte("MIN")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -1008,7 +1035,7 @@ func TestExecuteCommand_ZINTERSTORE_Coverage(t *testing.T) {
 	handler.Db.ZAdd("zinter1", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}})
 	handler.Db.ZAdd("zinter2", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "c", Score: 3}})
 
-	resp := handler.executeCommand(nil, "ZINTERSTORE", [][]byte{[]byte("zinterresult"), []byte("2"), []byte("zinter1"), []byte("zinter2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZINTERSTORE", [][]byte{[]byte("zinterresult"), []byte("2"), []byte("zinter1"), []byte("zinter2")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -1022,7 +1049,7 @@ func TestExecuteCommand_ZDIFFSTORE_Coverage(t *testing.T) {
 	handler.Db.ZAdd("zdiff1", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}, {Member: "c", Score: 3}})
 	handler.Db.ZAdd("zdiff2", []store.ZSetMember{{Member: "b", Score: 2}})
 
-	resp := handler.executeCommand(nil, "ZDIFFSTORE", [][]byte{[]byte("zdifffresult"), []byte("2"), []byte("zdiff1"), []byte("zdiff2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZDIFFSTORE", [][]byte{[]byte("zdifffresult"), []byte("2"), []byte("zdiff1"), []byte("zdiff2")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -1035,7 +1062,7 @@ func TestExecuteCommand_ZLEXCOUNT_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zlexcounttest", []store.ZSetMember{{Member: "a", Score: 0}, {Member: "b", Score: 0}, {Member: "c", Score: 0}})
 
-	resp := handler.executeCommand(nil, "ZLEXCOUNT", [][]byte{[]byte("zlexcounttest"), []byte("-"), []byte("+")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZLEXCOUNT", [][]byte{[]byte("zlexcounttest"), []byte("-"), []byte("+")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(3), int64(*integer))
@@ -1048,7 +1075,7 @@ func TestExecuteCommand_ZREMRANGEBYLEX_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zrembylextest", []store.ZSetMember{{Member: "a", Score: 0}, {Member: "b", Score: 0}, {Member: "c", Score: 0}})
 
-	resp := handler.executeCommand(nil, "ZREMRANGEBYLEX", [][]byte{[]byte("zrembylextest"), []byte("-"), []byte("b")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZREMRANGEBYLEX", [][]byte{[]byte("zrembylextest"), []byte("-"), []byte("b")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -1061,7 +1088,7 @@ func TestExecuteCommand_ZSCAN_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zscantest", []store.ZSetMember{{Member: "member", Score: 1}})
 
-	resp := handler.executeCommand(nil, "ZSCAN", [][]byte{[]byte("zscantest"), []byte("0")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZSCAN", [][]byte{[]byte("zscantest"), []byte("0")}, "127.0.0.1:12345")
 	_, isError := resp.(*proto.Error)
 	assert.False(t, isError)
 }
@@ -1073,7 +1100,7 @@ func TestExecuteCommand_SSCAN_Coverage(t *testing.T) {
 
 	handler.Db.SAdd("sscantest", "member")
 
-	resp := handler.executeCommand(nil, "SSCAN", [][]byte{[]byte("sscantest"), []byte("0")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SSCAN", [][]byte{[]byte("sscantest"), []byte("0")}, "127.0.0.1:12345")
 	_, isError := resp.(*proto.Error)
 	assert.False(t, isError)
 }
@@ -1085,7 +1112,7 @@ func TestExecuteCommand_HSTRLEN_Coverage(t *testing.T) {
 
 	handler.Db.HSet("hstrlentest", "field", "value")
 
-	resp := handler.executeCommand(nil, "HSTRLEN", [][]byte{[]byte("hstrlentest"), []byte("field")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HSTRLEN", [][]byte{[]byte("hstrlentest"), []byte("field")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(5), int64(*integer))
@@ -1098,7 +1125,7 @@ func TestExecuteCommand_HINCRBY_Coverage(t *testing.T) {
 
 	handler.Db.HSet("hincrbytest", "field", "5")
 
-	resp := handler.executeCommand(nil, "HINCRBY", [][]byte{[]byte("hincrbytest"), []byte("field"), []byte("3")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HINCRBY", [][]byte{[]byte("hincrbytest"), []byte("field"), []byte("3")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(8), int64(*integer))
@@ -1111,7 +1138,7 @@ func TestExecuteCommand_HINCRBYFLOAT_Coverage(t *testing.T) {
 
 	handler.Db.HSet("hincrbyfloattest", "field", "5.5")
 
-	resp := handler.executeCommand(nil, "HINCRBYFLOAT", [][]byte{[]byte("hincrbyfloattest"), []byte("field"), []byte("1.5")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HINCRBYFLOAT", [][]byte{[]byte("hincrbyfloattest"), []byte("field"), []byte("1.5")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	// Should return "7" or "7.0"
@@ -1130,10 +1157,10 @@ func TestExecuteCommand_SMISMEMBER_Coverage(t *testing.T) {
 	handler.Db.SAdd("smismembertest", "member1")
 	handler.Db.SAdd("smismembertest", "member2")
 
-	resp := handler.executeCommand(nil, "SMISMEMBER", [][]byte{[]byte("smismembertest"), []byte("member1"), []byte("member2"), []byte("member3")}, "127.0.0.1:12345")
-	arr, ok := resp.(*proto.Array)
+	resp := handler.executeCommand(testState, "SMISMEMBER", [][]byte{[]byte("smismembertest"), []byte("member1"), []byte("member2"), []byte("member3")}, "127.0.0.1:12345")
+	nestedArr, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.Equal(t, 3, len(arr.Args))
+	assert.Equal(t, 3, len(nestedArr.Elems))
 }
 
 // TestExecuteCommand_SINTERSTORE_Coverage tests SINTERSTORE command
@@ -1147,7 +1174,7 @@ func TestExecuteCommand_SINTERSTORE_Coverage(t *testing.T) {
 	handler.Db.SAdd("sinter2", "c")
 
 	// SINTERSTORE dest key1 key2 [key3 ...]
-	resp := handler.executeCommand(nil, "SINTERSTORE", [][]byte{[]byte("sinterresult"), []byte("sinter1"), []byte("sinter2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SINTERSTORE", [][]byte{[]byte("sinterresult"), []byte("sinter1"), []byte("sinter2")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -1166,7 +1193,7 @@ func TestExecuteCommand_SUNIONSTORE_Coverage(t *testing.T) {
 	handler.Db.SAdd("sunion2", "b")
 
 	// SUNIONSTORE dest key1 key2 [key3 ...]
-	resp := handler.executeCommand(nil, "SUNIONSTORE", [][]byte{[]byte("sunionresult"), []byte("sunion1"), []byte("sunion2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SUNIONSTORE", [][]byte{[]byte("sunionresult"), []byte("sunion1"), []byte("sunion2")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -1187,7 +1214,7 @@ func TestExecuteCommand_SDIFFSTORE2_Coverage(t *testing.T) {
 	handler.Db.SAdd("sdiff2", "b")
 
 	// SDIFFSTORE dest key1 key2 [key3 ...]
-	resp := handler.executeCommand(nil, "SDIFFSTORE", [][]byte{[]byte("sdifffresult"), []byte("sdiff1"), []byte("sdiff2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SDIFFSTORE", [][]byte{[]byte("sdifffresult"), []byte("sdiff1"), []byte("sdiff2")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -1207,7 +1234,7 @@ func TestExecuteCommand_SINTER_Coverage(t *testing.T) {
 	handler.Db.SAdd("sintercmd2", "b")
 	handler.Db.SAdd("sintercmd2", "c")
 
-	resp := handler.executeCommand(nil, "SINTER", [][]byte{[]byte("sintercmd1"), []byte("sintercmd2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SINTER", [][]byte{[]byte("sintercmd1"), []byte("sintercmd2")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 1, len(arr.Args))
@@ -1225,7 +1252,7 @@ func TestExecuteCommand_SUNION_Coverage(t *testing.T) {
 	handler.Db.SAdd("sunioncmd1", "a")
 	handler.Db.SAdd("sunioncmd2", "b")
 
-	resp := handler.executeCommand(nil, "SUNION", [][]byte{[]byte("sunioncmd1"), []byte("sunioncmd2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SUNION", [][]byte{[]byte("sunioncmd1"), []byte("sunioncmd2")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 2, len(arr.Args))
@@ -1247,7 +1274,7 @@ func TestExecuteCommand_SDIFF_Coverage(t *testing.T) {
 	handler.Db.SAdd("sdiffcmd1", "b")
 	handler.Db.SAdd("sdiffcmd2", "b")
 
-	resp := handler.executeCommand(nil, "SDIFF", [][]byte{[]byte("sdiffcmd1"), []byte("sdiffcmd2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SDIFF", [][]byte{[]byte("sdiffcmd1"), []byte("sdiffcmd2")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 1, len(arr.Args))
@@ -1265,7 +1292,7 @@ func TestExecuteCommand_SPOP_Coverage(t *testing.T) {
 	handler.Db.SAdd("spoptest", "member1")
 	handler.Db.SAdd("spoptest", "member2")
 
-	resp := handler.executeCommand(nil, "SPOP", [][]byte{[]byte("spoptest")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SPOP", [][]byte{[]byte("spoptest")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.True(t, len(*bs) > 0)
@@ -1273,7 +1300,7 @@ func TestExecuteCommand_SPOP_Coverage(t *testing.T) {
 	assert.True(t, popped == "member1" || popped == "member2")
 
 	// Verify set size decreased by 1
-	cardResp := handler.executeCommand(nil, "SCARD", [][]byte{[]byte("spoptest")}, "127.0.0.1:12345")
+	cardResp := handler.executeCommand(testState, "SCARD", [][]byte{[]byte("spoptest")}, "127.0.0.1:12345")
 	cardInt, _ := cardResp.(*proto.Integer)
 	assert.Equal(t, int64(1), int64(*cardInt))
 
@@ -1292,7 +1319,7 @@ func TestExecuteCommand_SRANDMEMBER_Count_Coverage(t *testing.T) {
 	handler.Db.SAdd("srandmembercount", "b")
 	handler.Db.SAdd("srandmembercount", "c")
 
-	resp := handler.executeCommand(nil, "SRANDMEMBER", [][]byte{[]byte("srandmembercount"), []byte("2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SRANDMEMBER", [][]byte{[]byte("srandmembercount"), []byte("2")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 2, len(arr.Args))
@@ -1310,7 +1337,7 @@ func TestExecuteCommand_SMOVE_Coverage(t *testing.T) {
 
 	handler.Db.SAdd("smovetest", "member")
 
-	resp := handler.executeCommand(nil, "SMOVE", [][]byte{[]byte("smovetest"), []byte("smovedest"), []byte("member")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SMOVE", [][]byte{[]byte("smovetest"), []byte("smovedest"), []byte("member")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -1329,7 +1356,7 @@ func TestExecuteCommand_ZREMRANGEBYRANK_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zrembyranktest", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}, {Member: "c", Score: 3}})
 
-	resp := handler.executeCommand(nil, "ZREMRANGEBYRANK", [][]byte{[]byte("zrembyranktest"), []byte("0"), []byte("1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZREMRANGEBYRANK", [][]byte{[]byte("zrembyranktest"), []byte("0"), []byte("1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -1347,7 +1374,7 @@ func TestExecuteCommand_ZREMRANGEBYSCORE_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zrembyscoretest", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}, {Member: "c", Score: 3}})
 
-	resp := handler.executeCommand(nil, "ZREMRANGEBYSCORE", [][]byte{[]byte("zrembyscoretest"), []byte("-inf"), []byte("2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZREMRANGEBYSCORE", [][]byte{[]byte("zrembyscoretest"), []byte("-inf"), []byte("2")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -1365,7 +1392,7 @@ func TestExecuteCommand_ZINCRBY_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zincrbytest", []store.ZSetMember{{Member: "member", Score: 1}})
 
-	resp := handler.executeCommand(nil, "ZINCRBY", [][]byte{[]byte("zincrbytest"), []byte("2"), []byte("member")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZINCRBY", [][]byte{[]byte("zincrbytest"), []byte("2"), []byte("member")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.True(t, len(*bs) > 0)
@@ -1382,7 +1409,7 @@ func TestExecuteCommand_ZREVRANGEBYSCORE_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zrevrangebyscore", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}, {Member: "c", Score: 3}})
 
-	resp := handler.executeCommand(nil, "ZREVRANGEBYSCORE", [][]byte{[]byte("zrevrangebyscore"), []byte("+inf"), []byte("-inf")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZREVRANGEBYSCORE", [][]byte{[]byte("zrevrangebyscore"), []byte("+inf"), []byte("-inf")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.True(t, len(arr.Args) >= 1)
@@ -1402,7 +1429,7 @@ func TestExecuteCommand_ZRANGEBYLEX_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zrangebylex", []store.ZSetMember{{Member: "a", Score: 0}, {Member: "b", Score: 0}, {Member: "c", Score: 0}})
 
-	resp := handler.executeCommand(nil, "ZRANGEBYLEX", [][]byte{[]byte("zrangebylex"), []byte("-"), []byte("+")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZRANGEBYLEX", [][]byte{[]byte("zrangebylex"), []byte("-"), []byte("+")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 3, len(arr.Args))
@@ -1419,7 +1446,7 @@ func TestExecuteCommand_ZREVRANGEBYLEX_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zrevrangebylex", []store.ZSetMember{{Member: "a", Score: 0}, {Member: "b", Score: 0}, {Member: "c", Score: 0}})
 
-	resp := handler.executeCommand(nil, "ZREVRANGEBYLEX", [][]byte{[]byte("zrevrangebylex"), []byte("+"), []byte("-")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZREVRANGEBYLEX", [][]byte{[]byte("zrevrangebylex"), []byte("+"), []byte("-")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 3, len(arr.Args))
@@ -1436,7 +1463,7 @@ func TestExecuteCommand_ZCARD_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zcardtest", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}})
 
-	resp := handler.executeCommand(nil, "ZCARD", [][]byte{[]byte("zcardtest")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZCARD", [][]byte{[]byte("zcardtest")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -1449,7 +1476,7 @@ func TestExecuteCommand_ZCOUNT2_Coverage(t *testing.T) {
 
 	handler.Db.ZAdd("zcounttest", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 5}, {Member: "c", Score: 10}})
 
-	resp := handler.executeCommand(nil, "ZCOUNT", [][]byte{[]byte("zcounttest"), []byte("1"), []byte("5")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZCOUNT", [][]byte{[]byte("zcounttest"), []byte("1"), []byte("5")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -1462,7 +1489,7 @@ func TestExecuteCommand_SISMEMBER_Coverage(t *testing.T) {
 
 	handler.Db.SAdd("sismembertest", "member")
 
-	resp := handler.executeCommand(nil, "SISMEMBER", [][]byte{[]byte("sismembertest"), []byte("member")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SISMEMBER", [][]byte{[]byte("sismembertest"), []byte("member")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -1476,7 +1503,7 @@ func TestExecuteCommand_SCARD_Coverage(t *testing.T) {
 	handler.Db.SAdd("scardtest", "a")
 	handler.Db.SAdd("scardtest", "b")
 
-	resp := handler.executeCommand(nil, "SCARD", [][]byte{[]byte("scardtest")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SCARD", [][]byte{[]byte("scardtest")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -1490,7 +1517,7 @@ func TestExecuteCommand_SREM2_Coverage(t *testing.T) {
 	handler.Db.SAdd("sremtest", "member1")
 	handler.Db.SAdd("sremtest", "member2")
 
-	resp := handler.executeCommand(nil, "SREM", [][]byte{[]byte("sremtest"), []byte("member1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SREM", [][]byte{[]byte("sremtest"), []byte("member1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -1508,7 +1535,7 @@ func TestExecuteCommand_HKEYS_Coverage(t *testing.T) {
 	handler.Db.HSet("hkeystest", "field1", "value1")
 	handler.Db.HSet("hkeystest", "field2", "value2")
 
-	resp := handler.executeCommand(nil, "HKEYS", [][]byte{[]byte("hkeystest")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HKEYS", [][]byte{[]byte("hkeystest")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 2, len(arr.Args))
@@ -1529,7 +1556,7 @@ func TestExecuteCommand_HVALS_Coverage(t *testing.T) {
 	handler.Db.HSet("hvalstest", "field1", "value1")
 	handler.Db.HSet("hvalstest", "field2", "value2")
 
-	resp := handler.executeCommand(nil, "HVALS", [][]byte{[]byte("hvalstest")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HVALS", [][]byte{[]byte("hvalstest")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 2, len(arr.Args))
@@ -1549,7 +1576,7 @@ func TestExecuteCommand_HEXISTS_Coverage(t *testing.T) {
 
 	handler.Db.HSet("hexiststest", "field", "value")
 
-	resp := handler.executeCommand(nil, "HEXISTS", [][]byte{[]byte("hexiststest"), []byte("field")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HEXISTS", [][]byte{[]byte("hexiststest"), []byte("field")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -1563,7 +1590,7 @@ func TestExecuteCommand_HLEN_Coverage(t *testing.T) {
 	handler.Db.HSet("hlentest", "field1", "value1")
 	handler.Db.HSet("hlentest", "field2", "value2")
 
-	resp := handler.executeCommand(nil, "HLEN", [][]byte{[]byte("hlentest")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HLEN", [][]byte{[]byte("hlentest")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -1577,7 +1604,7 @@ func TestExecuteCommand_HMGET_Coverage(t *testing.T) {
 	handler.Db.HSet("hmgettest", "field1", "value1")
 	handler.Db.HSet("hmgettest", "field2", "value2")
 
-	resp := handler.executeCommand(nil, "HMGET", [][]byte{[]byte("hmgettest"), []byte("field1"), []byte("field2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HMGET", [][]byte{[]byte("hmgettest"), []byte("field1"), []byte("field2")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 2, len(arr.Args))
@@ -1591,7 +1618,7 @@ func TestExecuteCommand_HMSET_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "HMSET", [][]byte{[]byte("hmsettest"), []byte("field1"), []byte("value1"), []byte("field2"), []byte("value2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HMSET", [][]byte{[]byte("hmsettest"), []byte("field1"), []byte("value1"), []byte("field2"), []byte("value2")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 
 	// Verify fields were stored
@@ -1608,7 +1635,7 @@ func TestExecuteCommand_HSETNX_Coverage(t *testing.T) {
 
 	handler.Db.HSet("hsetnextest", "field", "value")
 
-	resp := handler.executeCommand(nil, "HSETNX", [][]byte{[]byte("hsetnextest"), []byte("field"), []byte("newvalue")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HSETNX", [][]byte{[]byte("hsetnextest"), []byte("field"), []byte("newvalue")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
@@ -1623,7 +1650,7 @@ func TestExecuteCommand_LRANGE_Negative_Coverage(t *testing.T) {
 	handler.Db.RPush("lrangeneg", "b")
 	handler.Db.RPush("lrangeneg", "c")
 
-	resp := handler.executeCommand(nil, "LRANGE", [][]byte{[]byte("lrangeneg"), []byte("-2"), []byte("-1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LRANGE", [][]byte{[]byte("lrangeneg"), []byte("-2"), []byte("-1")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 2, len(arr.Args))
@@ -1637,7 +1664,7 @@ func TestExecuteCommand_LINDEX_Coverage(t *testing.T) {
 	handler.Db.RPush("lindextest", "a")
 	handler.Db.RPush("lindextest", "b")
 
-	resp := handler.executeCommand(nil, "LINDEX", [][]byte{[]byte("lindextest"), []byte("0")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LINDEX", [][]byte{[]byte("lindextest"), []byte("0")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "a", string(*bs))
@@ -1652,7 +1679,7 @@ func TestExecuteCommand_LTRIM_Coverage(t *testing.T) {
 	handler.Db.RPush("ltrimtest", "b")
 	handler.Db.RPush("ltrimtest", "c")
 
-	resp := handler.executeCommand(nil, "LTRIM", [][]byte{[]byte("ltrimtest"), []byte("0"), []byte("1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LTRIM", [][]byte{[]byte("ltrimtest"), []byte("0"), []byte("1")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 
 	// Verify only first two elements remain
@@ -1668,7 +1695,7 @@ func TestExecuteCommand_LLEN_Coverage(t *testing.T) {
 	handler.Db.RPush("llentest", "a")
 	handler.Db.RPush("llentest", "b")
 
-	resp := handler.executeCommand(nil, "LLEN", [][]byte{[]byte("llentest")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LLEN", [][]byte{[]byte("llentest")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -1682,7 +1709,7 @@ func TestExecuteCommand_LPOP_Coverage(t *testing.T) {
 	handler.Db.RPush("lpoptest", "a")
 	handler.Db.RPush("lpoptest", "b")
 
-	resp := handler.executeCommand(nil, "LPOP", [][]byte{[]byte("lpoptest")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LPOP", [][]byte{[]byte("lpoptest")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "a", string(*bs))
@@ -1696,7 +1723,7 @@ func TestExecuteCommand_RPOP_Coverage(t *testing.T) {
 	handler.Db.RPush("rpoptest", "a")
 	handler.Db.RPush("rpoptest", "b")
 
-	resp := handler.executeCommand(nil, "RPOP", [][]byte{[]byte("rpoptest")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "RPOP", [][]byte{[]byte("rpoptest")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "b", string(*bs))
@@ -1707,7 +1734,7 @@ func TestExecuteCommand_LPUSH_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "LPUSH", [][]byte{[]byte("lpushtest"), []byte("value")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LPUSH", [][]byte{[]byte("lpushtest"), []byte("value")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -1722,7 +1749,7 @@ func TestExecuteCommand_RPUSH_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "RPUSH", [][]byte{[]byte("rpushtest"), []byte("value")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "RPUSH", [][]byte{[]byte("rpushtest"), []byte("value")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -1737,7 +1764,7 @@ func TestExecuteCommand_MSET_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "MSET", [][]byte{[]byte("key1"), []byte("value1"), []byte("key2"), []byte("value2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "MSET", [][]byte{[]byte("key1"), []byte("value1"), []byte("key2"), []byte("value2")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 
 	// Verify both keys were set
@@ -1755,7 +1782,7 @@ func TestExecuteCommand_MGET_Coverage(t *testing.T) {
 	handler.Db.Set("mgetkey1", "value1")
 	handler.Db.Set("mgetkey2", "value2")
 
-	resp := handler.executeCommand(nil, "MGET", [][]byte{[]byte("mgetkey1"), []byte("mgetkey2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "MGET", [][]byte{[]byte("mgetkey1"), []byte("mgetkey2")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 2, len(arr.Args))
@@ -1771,7 +1798,7 @@ func TestExecuteCommand_INCR_Coverage(t *testing.T) {
 
 	handler.Db.Set("incrkey", "10")
 
-	resp := handler.executeCommand(nil, "INCR", [][]byte{[]byte("incrkey")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "INCR", [][]byte{[]byte("incrkey")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(11), int64(*integer))
@@ -1784,7 +1811,7 @@ func TestExecuteCommand_INCRBY_Coverage(t *testing.T) {
 
 	handler.Db.Set("incrbykey", "10")
 
-	resp := handler.executeCommand(nil, "INCRBY", [][]byte{[]byte("incrbykey"), []byte("5")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "INCRBY", [][]byte{[]byte("incrbykey"), []byte("5")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(15), int64(*integer))
@@ -1797,7 +1824,7 @@ func TestExecuteCommand_DECR_Coverage(t *testing.T) {
 
 	handler.Db.Set("decrkey", "10")
 
-	resp := handler.executeCommand(nil, "DECR", [][]byte{[]byte("decrkey")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "DECR", [][]byte{[]byte("decrkey")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(9), int64(*integer))
@@ -1810,7 +1837,7 @@ func TestExecuteCommand_DECRBY_Coverage(t *testing.T) {
 
 	handler.Db.Set("decrbykey", "10")
 
-	resp := handler.executeCommand(nil, "DECRBY", [][]byte{[]byte("decrbykey"), []byte("3")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "DECRBY", [][]byte{[]byte("decrbykey"), []byte("3")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(7), int64(*integer))
@@ -1823,7 +1850,7 @@ func TestExecuteCommand_INCRBYFLOAT_Coverage(t *testing.T) {
 
 	handler.Db.Set("incrbyfloatkey", "10.5")
 
-	resp := handler.executeCommand(nil, "INCRBYFLOAT", [][]byte{[]byte("incrbyfloatkey"), []byte("2.5")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "INCRBYFLOAT", [][]byte{[]byte("incrbyfloatkey"), []byte("2.5")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.True(t, len(*bs) > 0)
@@ -1836,7 +1863,7 @@ func TestExecuteCommand_GETSET2_Coverage(t *testing.T) {
 
 	handler.Db.Set("getsetskey", "oldvalue")
 
-	resp := handler.executeCommand(nil, "GETSET", [][]byte{[]byte("getsetskey"), []byte("newvalue")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "GETSET", [][]byte{[]byte("getsetskey"), []byte("newvalue")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "oldvalue", string(*bs))
@@ -1849,7 +1876,7 @@ func TestExecuteCommand_STRLEN2_Coverage(t *testing.T) {
 
 	handler.Db.Set("strlenkey", "hello")
 
-	resp := handler.executeCommand(nil, "STRLEN", [][]byte{[]byte("strlenkey")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "STRLEN", [][]byte{[]byte("strlenkey")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(5), int64(*integer))
@@ -1862,7 +1889,7 @@ func TestExecuteCommand_EXISTS_Coverage(t *testing.T) {
 
 	handler.Db.Set("existskey", "value")
 
-	resp := handler.executeCommand(nil, "EXISTS", [][]byte{[]byte("existskey")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "EXISTS", [][]byte{[]byte("existskey")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -1875,7 +1902,7 @@ func TestExecuteCommand_DEL_Coverage(t *testing.T) {
 
 	handler.Db.Set("delkey", "value")
 
-	resp := handler.executeCommand(nil, "DEL", [][]byte{[]byte("delkey")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "DEL", [][]byte{[]byte("delkey")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -1888,7 +1915,7 @@ func TestExecuteCommand_RANDOMKEY_Coverage(t *testing.T) {
 
 	handler.Db.Set("randomkey1", "value1")
 
-	resp := handler.executeCommand(nil, "RANDOMKEY", nil, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "RANDOMKEY", nil, "127.0.0.1:12345")
 	_, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 }
@@ -1900,7 +1927,7 @@ func TestExecuteCommand_KEYS_Coverage(t *testing.T) {
 
 	handler.Db.Set("key1", "value1")
 
-	resp := handler.executeCommand(nil, "KEYS", [][]byte{[]byte("key*")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "KEYS", [][]byte{[]byte("key*")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.True(t, len(arr.Args) >= 1)
@@ -1911,7 +1938,7 @@ func TestExecuteCommand_SWAPDB_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "SWAPDB", [][]byte{[]byte("0"), []byte("1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SWAPDB", [][]byte{[]byte("0"), []byte("1")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 }
 
@@ -1920,7 +1947,7 @@ func TestExecuteCommand_SELECT_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "SELECT", [][]byte{[]byte("0")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SELECT", [][]byte{[]byte("0")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 }
 
@@ -1929,7 +1956,7 @@ func TestExecuteCommand_TIME_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "TIME", nil, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "TIME", nil, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 2, len(arr.Args))
@@ -1940,7 +1967,7 @@ func TestExecuteCommand_AUTH_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "AUTH", [][]byte{[]byte("password")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "AUTH", [][]byte{[]byte("password")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 }
 
@@ -1949,7 +1976,7 @@ func TestExecuteCommand_MULTI_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "MULTI", nil, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "MULTI", nil, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 }
 
@@ -1958,9 +1985,9 @@ func TestExecuteCommand_DISCARD_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "MULTI", nil, "127.0.0.1:12345")
+	handler.executeCommand(testState, "MULTI", nil, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "DISCARD", nil, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "DISCARD", nil, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 }
 
@@ -1969,6 +1996,6 @@ func TestExecuteCommand_UNWATCH_Coverage(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "UNWATCH", nil, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "UNWATCH", nil, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 }

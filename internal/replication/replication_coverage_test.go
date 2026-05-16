@@ -451,10 +451,14 @@ func TestStartSlaveReplication_ConnectionFailure(t *testing.T) {
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
 
-	// Use an invalid address that will fail to connect
+	// Use an invalid address - StartSlaveReplication now returns nil (async reconnect)
 	err := StartSlaveReplication(rm, testStore, "127.0.0.1:59999")
-	// Connection should fail
-	assert.True(t, err != nil)
+	assert.NoError(t, err)
+	assert.True(t, rm.IsSlave())
+
+	// Stop replication to clean up goroutine
+	StopSlaveReplication(rm)
+	assert.True(t, rm.IsMaster())
 }
 
 // TestStartSlaveReplication_SetsRole tests that StartSlaveReplication sets role to slave
@@ -463,15 +467,13 @@ func TestStartSlaveReplication_SetsRole(t *testing.T) {
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
 
-	// Try to connect to a port that won't accept connections immediately
-	// This will cause the function to fail but role should still be set
-	// Use a non-routable address
 	err := StartSlaveReplication(rm, testStore, "10.255.255.1:1")
-	// Connection should fail (timeout or refused)
-	assert.True(t, err != nil)
+	assert.NoError(t, err)
+	assert.True(t, rm.IsSlave())
 
-	// Role might be set to slave before the connection fails
-	// Note: The implementation sets role before connecting
+	// Stop replication to clean up goroutine
+	StopSlaveReplication(rm)
+	assert.True(t, rm.IsMaster())
 }
 
 // TestHandlePSync_PartialSync tests HandlePSync with partial sync scenario

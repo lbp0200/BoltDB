@@ -233,9 +233,9 @@ func TestFormatStreamID(t *testing.T) {
 		sequence  int64
 		expected  string
 	}{
-		{"zero sequence", 1234567890000, 0, "1234567890000"},
+		{"zero sequence", 1234567890000, 0, "1234567890000-0"},
 		{"non-zero sequence", 1234567890000, 5, "1234567890000-5"},
-		{"both zero", 0, 0, "0"},
+		{"both zero", 0, 0, "0-0"},
 	}
 
 	for _, tt := range tests {

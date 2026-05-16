@@ -96,6 +96,23 @@ func encodeVersion(version uint32) []byte {
 	return b
 }
 
+// parseZSetIndexKey extracts score, member, version from a zset index key.
+// Key format: zset:<name>:index:<8 byte score>:<member>:<4 byte version>
+// This handles zSet names containing ':' unlike bytes.Split-based parsing.
+func parseZSetIndexKey(key, prefix []byte) (score float64, member string, version uint32, ok bool) {
+	if !bytes.HasPrefix(key, prefix) {
+		return 0, "", 0, false
+	}
+	remaining := key[len(prefix):]
+	if len(remaining) < 14 {
+		return 0, "", 0, false
+	}
+	score = decodeScore(remaining[:8])
+	member = string(remaining[9 : len(remaining)-5])
+	version = binary.BigEndian.Uint32(remaining[len(remaining)-4:])
+	return score, member, version, true
+}
+
 func keyBadgerGet(prefix string, key []byte) []byte {
 	return append([]byte(prefix), key...)
 }
@@ -246,20 +263,11 @@ func (s *BotreonStore) ZRangeByScore(zSetName string, minScore, maxScore float64
 		current := 0
 		for it.Seek(startKey); it.ValidForPrefix(prefix); it.Next() {
 			item := it.Item()
-			key := item.Key()
-
-			keyParts := bytes.Split(key[len(prefixKeySortedSetBytes):], []byte(":"))
-			if len(keyParts) != 5 {
-				logger.Logger.Debug().Str("key", string(key)).Msg("ZRangeByScore: Invalid key format")
+			score, member, _, ok := parseZSetIndexKey(item.Key(), prefix)
+			if !ok {
+				logger.Logger.Debug().Str("key", string(item.Key())).Msg("ZRangeByScore: Invalid key format")
 				continue
 			}
-			scoreBytes := keyParts[2]
-			member := string(keyParts[3])
-			if len(scoreBytes) != 8 {
-				logger.Logger.Debug().Int("length", len(scoreBytes)).Msg("ZRangeByScore: Invalid score bytes length")
-				continue
-			}
-			score := decodeScore(scoreBytes)
 
 			// Check max boundary
 			if maxExclusive {
@@ -541,29 +549,11 @@ func (s *BotreonStore) ZRange(zSetName string, start, stop int64) ([]*ZSetMember
 			}
 
 			item := it.Item()
-			key := item.Key()
-
-			// 键格式: zset:zSetName:index:scoreBytes:member:versionBytes
-			// 去掉前缀 "zset:"
-			keyWithoutPrefix := key[len(prefixKeySortedSetBytes):]
-			// 格式: zSetName:index:scoreBytes:member:versionBytes
-			keyParts := bytes.Split(keyWithoutPrefix, []byte(":"))
-			if len(keyParts) < 5 {
-				logger.Logger.Debug().Str("key", string(key)).Msg("ZRange: Invalid key format")
+			score, member, _, ok := parseZSetIndexKey(item.Key(), prefix)
+			if !ok {
+				logger.Logger.Debug().Str("key", string(item.Key())).Msg("ZRange: Invalid key format")
 				continue
 			}
-			// keyParts[0] = zSetName
-			// keyParts[1] = "index"
-			// keyParts[2] = scoreBytes (8 bytes)
-			// keyParts[3] = member
-			// keyParts[4] = versionBytes (4 bytes)
-			scoreBytes := keyParts[2]
-			member := string(keyParts[3])
-			if len(scoreBytes) != 8 {
-				logger.Logger.Debug().Int("length", len(scoreBytes)).Msg("ZRange: Invalid score bytes length")
-				continue
-			}
-			score := decodeScore(scoreBytes)
 
 			results = append(results, &ZSetMember{Member: member, Score: score})
 			currentIndex++
@@ -685,19 +675,10 @@ func (s *BotreonStore) ZCount(zSetName string, minScore, maxScore float64) (int6
 
 		startKey := append(prefix, encodeScore(minScore)...)
 		for it.Seek(startKey); it.ValidForPrefix(prefix); it.Next() {
-			item := it.Item()
-			key := item.Key()
-
-			keyParts := bytes.Split(key[len(prefixKeySortedSetBytes):], []byte(":"))
-			if len(keyParts) != 5 {
+			score, _, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
+			if !ok {
 				continue
 			}
-			scoreBytes := keyParts[2]
-			if len(scoreBytes) != 8 {
-				continue
-			}
-			score := decodeScore(scoreBytes)
-
 			if score > maxScore {
 				break
 			}
@@ -818,20 +799,10 @@ func (s *BotreonStore) ZRank(zSetName, member string) (int64, error) {
 
 		rank = 0
 		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			item := it.Item()
-			key := item.Key()
-
-			keyParts := bytes.Split(key[len(prefixKeySortedSetBytes):], []byte(":"))
-			if len(keyParts) != 5 {
+			memberScore, memberName, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
+			if !ok {
 				continue
 			}
-			scoreBytes := keyParts[2]
-			memberName := string(keyParts[3])
-			if len(scoreBytes) != 8 {
-				continue
-			}
-			memberScore := decodeScore(scoreBytes)
-
 			if memberScore < score || (memberScore == score && memberName < member) {
 				rank++
 			} else if memberScore == score && memberName == member {
@@ -1227,6 +1198,37 @@ func (s *BotreonStore) ZDiffStore(destination string, keys []string) (int64, err
 	return int64(len(zsetMembers)), nil
 }
 
+// ZDiff returns the difference of the first sorted set with all subsequent ones.
+func (s *BotreonStore) ZDiff(keys []string) ([]ZSetMember, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+
+	firstMembers, err := s.ZRange(keys[0], 0, -1)
+	if err != nil {
+		return nil, err
+	}
+
+	otherMembers := make(map[string]bool)
+	for i := 1; i < len(keys); i++ {
+		members, err := s.ZRange(keys[i], 0, -1)
+		if err != nil {
+			return nil, err
+		}
+		for _, member := range members {
+			otherMembers[member.Member] = true
+		}
+	}
+
+	result := make([]ZSetMember, 0)
+	for _, member := range firstMembers {
+		if !otherMembers[member.Member] {
+			result = append(result, ZSetMember{Member: member.Member, Score: member.Score})
+		}
+	}
+	return result, nil
+}
+
 // ZLexCount 实现 Redis ZLEXCOUNT 命令，计算有序集合中成员值介于min和max之间的成员数量（字典序）
 func (s *BotreonStore) ZLexCount(zSetName, min, max string) (int64, error) {
 	// 获取所有成员（按分数排序）
@@ -1499,23 +1501,11 @@ func (s *BotreonStore) ZScan(zSetName string, cursor uint64, pattern string, cou
 
 		// 收集匹配的成员
 		for iter.ValidForPrefix(prefix) && collected < count {
-			item := iter.Item()
-			key := item.Key()
-
-			// 解析键格式: zset:zSetName:index:scoreBytes:member:versionBytes
-			keyWithoutPrefix := key[len(prefixKeySortedSetBytes):]
-			keyParts := bytes.Split(keyWithoutPrefix, []byte(":"))
-			if len(keyParts) >= 4 {
-				scoreBytes := keyParts[2]
-				member := string(keyParts[3])
-
-				if len(scoreBytes) == 8 {
-					score := decodeScore(scoreBytes)
-
-					if pattern == "" || pattern == "*" || matchPattern(member, pattern) {
-						result.Members = append(result.Members, ZSetMember{Member: member, Score: score})
-						collected++
-					}
+			score, member, _, ok := parseZSetIndexKey(iter.Item().Key(), prefix)
+			if ok {
+				if pattern == "" || pattern == "*" || matchPattern(member, pattern) {
+					result.Members = append(result.Members, ZSetMember{Member: member, Score: score})
+					collected++
 				}
 			}
 
@@ -1533,4 +1523,79 @@ func (s *BotreonStore) ZScan(zSetName string, cursor uint64, pattern string, cou
 		return nil
 	})
 	return result, err
+}
+
+// ZRandMember returns random members from a sorted set.
+// If count > 0: returns up to count distinct members (no repeats).
+// If count < 0: returns -count members, allowing repeats.
+// If count == 0: returns 1 random member.
+func (s *BotreonStore) ZRandMember(zSetName string, count int) ([]ZSetMember, error) {
+	var members []ZSetMember
+
+	typeKey := TypeOfKeyGet(zSetName)
+	var typeErr error
+	_ = s.db.View(func(txn *badger.Txn) error {
+		typeItem, err := txn.Get(typeKey)
+		if err == nil {
+			typeVal, err := typeItem.ValueCopy(nil)
+			if err != nil {
+				typeErr = err
+				return err
+			}
+			keyType := string(typeVal)
+			if keyType != "" && keyType != KeyTypeSortedSet {
+				typeErr = ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			typeErr = err
+		}
+		return nil
+	})
+	if typeErr != nil {
+		return nil, typeErr
+	}
+
+	err := s.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		prefix := keyBadgerGet(prefixKeySortedSetBytes, []byte(zSetName+sortedSetIndex))
+		opts.Prefix = prefix
+		opts.PrefetchValues = false
+
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		var allMembers []ZSetMember
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			score, member, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
+			if ok {
+				allMembers = append(allMembers, ZSetMember{Member: member, Score: score})
+			}
+		}
+
+		if len(allMembers) == 0 {
+			return nil
+		}
+
+		if count == 0 {
+			idx := randomIntn(len(allMembers))
+			members = append(members, allMembers[idx])
+		} else if count < 0 {
+			n := -count
+			for i := 0; i < n; i++ {
+				idx := randomIntn(len(allMembers))
+				members = append(members, allMembers[idx])
+			}
+		} else {
+			n := count
+			if n > len(allMembers) {
+				n = len(allMembers)
+			}
+			randomShuffle(len(allMembers), func(i, j int) {
+				allMembers[i], allMembers[j] = allMembers[j], allMembers[i]
+			})
+			members = allMembers[:n]
+		}
+		return nil
+	})
+	return members, err
 }

@@ -96,33 +96,39 @@ func ReadRESP(r *bufio.Reader) (*Array, error) {
 		}
 		args := make([][]byte, n)
 		for i := 0; i < n; i++ {
-			// 先读 $xxx\r\n
-			lenLine, err := readLine(r)
+			line, err := readLine(r)
 			if err != nil {
 				return nil, err
 			}
-			if len(lenLine) == 0 || lenLine[0] != '$' {
-				return nil, fmt.Errorf("expected $, got %q", lenLine)
+			if len(line) == 0 {
+				return nil, fmt.Errorf("empty element in array")
 			}
-			bulkLen, err := strconv.Atoi(string(lenLine[1:]))
-			if err != nil {
-				return nil, err
+			switch line[0] {
+			case '$':
+				bulkLen, err := strconv.Atoi(string(line[1:]))
+				if err != nil {
+					return nil, err
+				}
+				if bulkLen < -1 {
+					return nil, fmt.Errorf("invalid bulk string length: %s", line[1:])
+				}
+				if bulkLen == -1 {
+					args[i] = nil
+					continue
+				}
+				data := make([]byte, bulkLen+2)
+				_, err = io.ReadFull(r, data)
+				if err != nil {
+					return nil, err
+				}
+				args[i] = data[:bulkLen]
+			case ':':
+				args[i] = line[1:]
+			case '+':
+				args[i] = line[1:]
+			default:
+				return nil, fmt.Errorf("unexpected element type %q in array", line[0])
 			}
-			if bulkLen < -1 {
-				return nil, fmt.Errorf("invalid bulk string length: %s", lenLine[1:])
-			}
-			if bulkLen == -1 {
-				args[i] = nil
-				continue
-			}
-
-			// 读真实数据 + \r\n
-			data := make([]byte, bulkLen+2) // +2 for \r\n
-			_, err = io.ReadFull(r, data)
-			if err != nil {
-				return nil, err
-			}
-			args[i] = data[:bulkLen] // 去掉 \r\n
 		}
 		return &Array{Args: args}, nil
 	case '+': // Simple String (用于响应，如 PING 返回 PONG)

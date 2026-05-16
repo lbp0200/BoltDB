@@ -1091,6 +1091,124 @@ func TestSortedSetAdvancedCommands(t *testing.T) {
 	assert.Equal(t, 2, len(members))
 }
 
+// TestZRandMember 测试 ZRANDMEMBER 命令
+func TestZRandMember(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+	ctx := context.Background()
+
+	// 准备测试数据
+	_ = sharedClient.ZAdd(ctx, "zrand_test", redis.Z{Score: 1, Member: "a"}, redis.Z{Score: 2, Member: "b"}, redis.Z{Score: 3, Member: "c"}).Err()
+
+	// ZRANDMEMBER key - 随机返回一个成员
+	val, err := sharedClient.Do(ctx, "ZRANDMEMBER", "zrand_test").Result()
+	assert.NoError(t, err)
+	member, ok := val.(string)
+	assert.True(t, ok)
+	assert.True(t, member == "a" || member == "b" || member == "c")
+
+	// ZRANDMEMBER key count (正数) - 返回不重复的成员
+	members, err := sharedClient.ZRandMember(ctx, "zrand_test", 2).Result()
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(members))
+	for _, m := range members {
+		assert.True(t, m == "a" || m == "b" || m == "c")
+	}
+	// 正数 count >= card 时返回所有成员
+	all, err := sharedClient.ZRandMember(ctx, "zrand_test", 10).Result()
+	assert.NoError(t, err)
+	assert.Equal(t, 3, len(all))
+
+	// ZRANDMEMBER key count (负数) - 可以重复
+	repeated, err := sharedClient.ZRandMember(ctx, "zrand_test", -5).Result()
+	assert.NoError(t, err)
+	assert.Equal(t, 5, len(repeated))
+
+	// ZRANDMEMBER key WITHSCORES - 返回带分数的单个成员
+	val, err = sharedClient.Do(ctx, "ZRANDMEMBER", "zrand_test", "1", "WITHSCORES").Result()
+	assert.NoError(t, err)
+	arr, ok := val.([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(arr))
+
+	// ZRANDMEMBER key count WITHSCORES
+	val, err = sharedClient.Do(ctx, "ZRANDMEMBER", "zrand_test", 2, "WITHSCORES").Result()
+	assert.NoError(t, err)
+	arr, ok = val.([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 4, len(arr)) // 2 members × 2 (member+score)
+
+	// ZRANDMEMBER 不存在的 key - 返回 nil
+	val, err = sharedClient.Do(ctx, "ZRANDMEMBER", "nonexistent").Result()
+	if err != nil {
+		assert.Equal(t, redis.Nil, err)
+		assert.Nil(t, val)
+	} else {
+		assert.Nil(t, val)
+	}
+
+	// 不存在的 key + count - 返回空数组
+	empty, err := sharedClient.ZRandMember(ctx, "nonexistent", 2).Result()
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(empty))
+
+	// ZRANDMEMBER 对非 zset 类型 - 返回错误
+	_ = sharedClient.Set(ctx, "zrand_str", "value", 0).Err()
+	_, err = sharedClient.Do(ctx, "ZRANDMEMBER", "zrand_str").Result()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	// 清理
+	sharedClient.Del(ctx, "zrand_test", "zrand_str")
+}
+
+// TestZDIFF 测试 ZDIFF 只读差集命令
+func TestZDIFF(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+	ctx := context.Background()
+
+	// 准备数据
+	_ = sharedClient.ZAdd(ctx, "zdiff_a", redis.Z{Score: 1, Member: "a"}, redis.Z{Score: 2, Member: "b"}, redis.Z{Score: 3, Member: "c"}).Err()
+	_ = sharedClient.ZAdd(ctx, "zdiff_b", redis.Z{Score: 2, Member: "b"}).Err()
+
+	// ZDIFF 2 zdiff_a zdiff_b → {a, c}
+	result, err := sharedClient.Do(ctx, "ZDIFF", 2, "zdiff_a", "zdiff_b").Result()
+	assert.NoError(t, err)
+	arr, ok := result.([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(arr))
+	members := make([]string, len(arr))
+	for i, v := range arr {
+		members[i] = v.(string)
+	}
+	assert.True(t, containsString(members, "a"))
+	assert.True(t, containsString(members, "c"))
+
+	// ZDIFF WITHSCORES
+	result, err = sharedClient.Do(ctx, "ZDIFF", 2, "zdiff_a", "zdiff_b", "WITHSCORES").Result()
+	assert.NoError(t, err)
+	arr, ok = result.([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 4, len(arr)) // 2 members × 2 (member + score)
+
+	// ZDIFF 不存在的 key → 空数组
+	result, err = sharedClient.Do(ctx, "ZDIFF", 1, "nonexistent").Result()
+	assert.NoError(t, err)
+	arr, ok = result.([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(arr))
+
+	// ZDIFF 对非 zset 类型 → WRONGTYPE
+	_ = sharedClient.Set(ctx, "zdiff_str", "value", 0).Err()
+	_, err = sharedClient.Do(ctx, "ZDIFF", 1, "zdiff_str").Result()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+
+	// 清理
+	sharedClient.Del(ctx, "zdiff_a", "zdiff_b", "zdiff_str")
+}
+
 // TestSWAPDB 测试SWAPDB命令
 func TestSWAPDB(t *testing.T) {
 	setupTest(t)
@@ -2494,8 +2612,7 @@ func setupTest(t *testing.T) {
 	// 清理 PubSub 状态（跨测试残留会导致失败）
 	sharedServer.PubSub.Clear()
 
-	// 重置连接级别的状态（跨测试残留会导致失败）
-	sharedServer.ResetConnectionState()
+	// ResetConnectionState 已移除 — connState 永不为 nil, 无需 fallback
 }
 
 // teardownTest 测试后清理（每个测试调用）
@@ -2510,6 +2627,163 @@ func teardownTest(t *testing.T) {
 }
 
 // ========== 兼容性层（可选，逐步迁移期使用）==========
+
+func TestMONITOR(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+	ctx := context.Background()
+
+	// 使用原始 TCP 连接作为 MONITOR 客户端
+	monConn, err := net.Dial("tcp", sharedListener.Addr().String())
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	defer monConn.Close()
+	monConn.SetDeadline(time.Now().Add(5 * time.Second))
+
+	// 发送 MONITOR
+	_, err = monConn.Write([]byte("*1\r\n$7\r\nMONITOR\r\n"))
+	if err != nil {
+		t.Fatalf("failed to write MONITOR: %v", err)
+	}
+
+	// 读取 +OK\r\n
+	buf := make([]byte, 5)
+	_, err = monConn.Read(buf)
+	if err != nil {
+		t.Fatalf("failed to read OK: %v", err)
+	}
+	if string(buf) != "+OK\r\n" {
+		t.Fatalf("expected +OK\\r\\n, got %q", string(buf))
+	}
+
+	// 通过 go-redis 发送 SET 命令
+	err = sharedClient.Set(ctx, "mon_test_key", "mon_test_val", 0).Err()
+	if err != nil {
+		t.Fatalf("SET failed: %v", err)
+	}
+
+	// 读取 MONITOR 输出
+	monBuf := make([]byte, 1024)
+	n, err := monConn.Read(monBuf)
+	if err != nil {
+		t.Fatalf("failed to read monitor output: %v", err)
+	}
+	monLine := string(monBuf[:n])
+	t.Logf("monitor line: %s", monLine)
+
+	// 验证 MONITOR 行包含 SET 命令
+	if !strings.Contains(monLine, "\"SET\"") || !strings.Contains(monLine, "\"mon_test_key\"") {
+		t.Errorf("monitor line should contain SET command, got: %s", monLine)
+	}
+
+	// 测试 QUIT
+	_, err = monConn.Write([]byte("*1\r\n$4\r\nQUIT\r\n"))
+	if err != nil {
+		t.Fatalf("failed to write QUIT: %v", err)
+	}
+	quitBuf := make([]byte, 5)
+	_, err = monConn.Read(quitBuf)
+	if err != nil {
+		t.Fatalf("failed to read QUIT response: %v", err)
+	}
+	if string(quitBuf) != "+OK\r\n" {
+		t.Fatalf("expected +OK\\r\\n for QUIT, got %q", string(quitBuf))
+	}
+
+	// 清理测试 key
+	sharedClient.Del(ctx, "mon_test_key")
+}
+
+func TestMONITOR_WrongArgs(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+	ctx := context.Background()
+
+	err := sharedClient.Do(ctx, "MONITOR", "extra_arg").Err()
+	if err == nil {
+		t.Fatal("expected error for MONITOR with args")
+	}
+}
+
+func TestMONITOR_InvalidCommandInMonitorMode(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	monConn, err := net.Dial("tcp", sharedListener.Addr().String())
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	defer monConn.Close()
+	monConn.SetDeadline(time.Now().Add(5 * time.Second))
+
+	// 发送 MONITOR
+	_, err = monConn.Write([]byte("*1\r\n$7\r\nMONITOR\r\n"))
+	if err != nil {
+		t.Fatalf("failed to write MONITOR: %v", err)
+	}
+
+	// 读取 +OK\r\n
+	buf := make([]byte, 5)
+	_, err = monConn.Read(buf)
+	if err != nil {
+		t.Fatalf("failed to read OK: %v", err)
+	}
+
+	// 在 MONITOR 模式下发送 SET --- 非法命令
+	_, err = monConn.Write([]byte("*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n"))
+	if err != nil {
+		t.Fatalf("failed to write SET: %v", err)
+	}
+
+	// 读取错误响应
+	errBuf := make([]byte, 1024)
+	n, err := monConn.Read(errBuf)
+	if err != nil {
+		t.Fatalf("failed to read error: %v", err)
+	}
+	errResp := string(errBuf[:n])
+	if !strings.Contains(errResp, "ERR only PING / QUIT allowed") {
+		t.Errorf("expected MONITOR mode error, got: %s", errResp)
+	}
+}
+
+func TestMONITOR_PING(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	monConn, err := net.Dial("tcp", sharedListener.Addr().String())
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	defer monConn.Close()
+	monConn.SetDeadline(time.Now().Add(5 * time.Second))
+
+	// 发送 MONITOR
+	_, err = monConn.Write([]byte("*1\r\n$7\r\nMONITOR\r\n"))
+	if err != nil {
+		t.Fatalf("failed to write MONITOR: %v", err)
+	}
+	buf := make([]byte, 5)
+	_, err = monConn.Read(buf)
+	if err != nil {
+		t.Fatalf("failed to read OK: %v", err)
+	}
+
+	// 在 MONITOR 模式下 ping
+	_, err = monConn.Write([]byte("*1\r\n$4\r\nPING\r\n"))
+	if err != nil {
+		t.Fatalf("failed to write PING: %v", err)
+	}
+	pingBuf := make([]byte, 7)
+	_, err = monConn.Read(pingBuf)
+	if err != nil {
+		t.Fatalf("failed to read PONG: %v", err)
+	}
+	if string(pingBuf) != "+PONG\r\n" {
+		t.Fatalf("expected +PONG\\r\\n, got %q", string(pingBuf))
+	}
+}
 
 
 

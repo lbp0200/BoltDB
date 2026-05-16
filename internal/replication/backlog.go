@@ -2,19 +2,27 @@ package replication
 
 import (
 	"fmt"
+	"math"
 	"sync"
 )
 
-// ReplicationBacklog 复制积压缓冲区
+const DefaultBacklogSize int64 = 1024 * 1024
+const MaxBacklogSize int64 = 512 * 1024 * 1024
+
 type ReplicationBacklog struct {
 	buffer []byte
-	offset int64 // 当前偏移量
-	size   int64 // 缓冲区大小
+	offset int64
+	size   int64
 	mu     sync.RWMutex
 }
 
-// NewReplicationBacklog 创建新的复制积压缓冲区
 func NewReplicationBacklog(size int64) *ReplicationBacklog {
+	if size <= 0 {
+		size = DefaultBacklogSize
+	}
+	if size > MaxBacklogSize {
+		size = MaxBacklogSize
+	}
 	return &ReplicationBacklog{
 		buffer: make([]byte, size),
 		offset: 0,
@@ -22,88 +30,159 @@ func NewReplicationBacklog(size int64) *ReplicationBacklog {
 	}
 }
 
-// Append 追加数据到缓冲区，返回新的偏移量
 func (rb *ReplicationBacklog) Append(data []byte) int64 {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 
 	dataLen := int64(len(data))
-	startOffset := rb.offset
-
-	// 如果数据太大，只保留最后的部分
-	if dataLen > rb.size {
-		// 只保留最后size字节
-		data = data[dataLen-rb.size:]
-		dataLen = rb.size
-		rb.offset = rb.size
-	} else {
-		// 检查是否需要循环覆盖
-		if rb.offset+dataLen > rb.size {
-			// 需要循环，从开头开始
-			rb.offset = 0
-		}
-		rb.offset += dataLen
+	if dataLen == 0 {
+		return rb.offset
 	}
 
-	// 写入数据
-	copy(rb.buffer[rb.offset-dataLen:rb.offset], data)
+	startOffset := rb.offset
 
+	if dataLen >= rb.size {
+		copy(rb.buffer, data[dataLen-rb.size:])
+		rb.offset += dataLen
+		return startOffset
+	}
+
+	writePos := rb.offset % rb.size
+	endPos := writePos + dataLen
+
+	if endPos <= rb.size {
+		copy(rb.buffer[writePos:endPos], data)
+	} else {
+		firstPart := rb.size - writePos
+		copy(rb.buffer[writePos:], data[:firstPart])
+		copy(rb.buffer[:endPos-rb.size], data[firstPart:])
+	}
+
+	rb.offset += dataLen
 	return startOffset
 }
 
-// GetRange 获取指定偏移量范围的数据
 func (rb *ReplicationBacklog) GetRange(startOffset, endOffset int64) ([]byte, error) {
 	rb.mu.RLock()
 	defer rb.mu.RUnlock()
 
 	if startOffset < 0 || endOffset < startOffset {
-		return nil, fmt.Errorf("invalid offset range")
+		return nil, fmt.Errorf("invalid offset range: start=%d end=%d", startOffset, endOffset)
 	}
 
-	// 计算实际可用的偏移量范围
-	availableStart := rb.offset - rb.size
+	currentOffset := rb.offset
+	availableStart := currentOffset - rb.size
 	if availableStart < 0 {
 		availableStart = 0
 	}
 
 	if startOffset < availableStart {
-		// 请求的偏移量太旧，无法提供
-		return nil, fmt.Errorf("offset too old, min available: %d", availableStart)
+		return nil, fmt.Errorf("offset too old, min available: %d, requested: %d", availableStart, startOffset)
 	}
 
-	if startOffset >= rb.offset {
-		// 请求的偏移量太新
-		return nil, fmt.Errorf("offset too new, max available: %d", rb.offset-1)
+	if startOffset >= currentOffset {
+		return nil, fmt.Errorf("offset too new, max available: %d, requested: %d", currentOffset-1, startOffset)
 	}
 
-	// 计算在缓冲区中的位置
-	startPos := startOffset % rb.size
-	endPos := endOffset % rb.size
-
-	if endPos < startPos {
-		// 跨越了缓冲区边界，需要拼接
-		part1 := rb.buffer[startPos:]
-		part2 := rb.buffer[:endPos]
-		result := make([]byte, 0, len(part1)+len(part2))
-		result = append(result, part1...)
-		result = append(result, part2...)
-		return result, nil
+	if endOffset > currentOffset {
+		endOffset = currentOffset
 	}
 
-	// 没有跨越边界
-	return rb.buffer[startPos:endPos], nil
+	length := endOffset - startOffset
+	if length <= 0 {
+		return []byte{}, nil
+	}
+
+	result := make([]byte, length)
+	for i := int64(0); i < length; i++ {
+		result[i] = rb.buffer[(startOffset+i)%rb.size]
+	}
+
+	return result, nil
 }
 
-// GetCurrentOffset 获取当前偏移量
 func (rb *ReplicationBacklog) GetCurrentOffset() int64 {
 	rb.mu.RLock()
 	defer rb.mu.RUnlock()
 	return rb.offset
 }
 
-// GetSize 获取缓冲区大小
 func (rb *ReplicationBacklog) GetSize() int64 {
 	rb.mu.RLock()
 	defer rb.mu.RUnlock()
 	return rb.size
+}
+
+func (rb *ReplicationBacklog) GetAvailableLength() int64 {
+	rb.mu.RLock()
+	defer rb.mu.RUnlock()
+	if rb.offset == 0 {
+		return 0
+	}
+	availableStart := rb.offset - rb.size
+	if availableStart < 0 {
+		availableStart = 0
+	}
+	return rb.offset - availableStart
+}
+
+func (rb *ReplicationBacklog) AvailableStartOffset() int64 {
+	rb.mu.RLock()
+	defer rb.mu.RUnlock()
+	start := rb.offset - rb.size
+	if start < 0 {
+		return 0
+	}
+	return start
+}
+
+func (rb *ReplicationBacklog) IsOffsetAvailable(offset int64) bool {
+	rb.mu.RLock()
+	defer rb.mu.RUnlock()
+	availableStart := rb.offset - rb.size
+	if availableStart < 0 {
+		availableStart = 0
+	}
+	return offset >= availableStart && offset < rb.offset
+}
+
+const MibInBytes int64 = 1024 * 1024
+
+func ParseBacklogSize(s string) (int64, error) {
+	if len(s) == 0 {
+		return DefaultBacklogSize, nil
+	}
+
+	var value float64
+	var unit string
+	n, err := fmt.Sscanf(s, "%f%s", &value, &unit)
+	if err != nil && n == 0 {
+		return 0, fmt.Errorf("invalid backlog size: %s", s)
+	}
+
+	var multiplier int64
+	switch unit {
+	case "b", "B":
+		multiplier = 1
+	case "kb", "KB", "Kb", "kB", "k":
+		multiplier = 1024
+	case "mb", "MB", "Mb", "mB", "m":
+		multiplier = MibInBytes
+	case "gb", "GB", "Gb", "gB", "g":
+		multiplier = MibInBytes * 1024
+	case "":
+		multiplier = MibInBytes
+	default:
+		return 0, fmt.Errorf("invalid backlog size unit: %s", unit)
+	}
+
+	result := int64(math.Round(value * float64(multiplier)))
+	if result <= 0 {
+		result = DefaultBacklogSize
+	}
+	if result > MaxBacklogSize {
+		result = MaxBacklogSize
+	}
+
+	return result, nil
 }

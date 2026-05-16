@@ -9,6 +9,7 @@ import (
 	"github.com/lbp0200/BoltDB/internal/store"
 )
 
+
 // setupBenchmarkHandler creates a handler for benchmark testing
 func setupBenchmarkHandler(b *testing.B) *Handler {
 	dbPath := b.TempDir()
@@ -27,7 +28,6 @@ func setupBenchmarkHandler(b *testing.B) *Handler {
 		Backup:      backupMgr,
 		Replication: replMgr,
 		Port:        6337,
-		baseState:   &connState{},
 		conns:       make(map[*connState]*connMeta),
 	}
 }
@@ -39,7 +39,7 @@ func BenchmarkExecuteCommand_PING(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		handler.executeCommand(nil, "PING", nil, "127.0.0.1:12345")
+		handler.executeCommand(testState, "PING", nil, "127.0.0.1:12345")
 	}
 }
 
@@ -50,7 +50,7 @@ func BenchmarkExecuteCommand_SET(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		handler.executeCommand(nil, "SET", [][]byte{[]byte("key"), []byte("value")}, "127.0.0.1:12345")
+		handler.executeCommand(testState, "SET", [][]byte{[]byte("key"), []byte("value")}, "127.0.0.1:12345")
 	}
 }
 
@@ -60,11 +60,11 @@ func BenchmarkExecuteCommand_GET(b *testing.B) {
 	defer handler.Db.Close()
 
 	// Pre-populate
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("key"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("key"), []byte("value")}, "127.0.0.1:12345")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		handler.executeCommand(nil, "GET", [][]byte{[]byte("key")}, "127.0.0.1:12345")
+		handler.executeCommand(testState, "GET", [][]byte{[]byte("key")}, "127.0.0.1:12345")
 	}
 }
 
@@ -75,7 +75,7 @@ func BenchmarkExecuteCommand_INCR(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		handler.executeCommand(nil, "INCR", [][]byte{[]byte("counter")}, "127.0.0.1:12345")
+		handler.executeCommand(testState, "INCR", [][]byte{[]byte("counter")}, "127.0.0.1:12345")
 	}
 }
 
@@ -86,12 +86,12 @@ func BenchmarkExecuteCommand_DEL(b *testing.B) {
 
 	// Pre-populate
 	for i := 0; i < 100; i++ {
-		handler.executeCommand(nil, "SET", [][]byte{[]byte("key"), []byte("value")}, "127.0.0.1:12345")
+		handler.executeCommand(testState, "SET", [][]byte{[]byte("key"), []byte("value")}, "127.0.0.1:12345")
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		handler.executeCommand(nil, "DEL", [][]byte{[]byte("key")}, "127.0.0.1:12345")
+		handler.executeCommand(testState, "DEL", [][]byte{[]byte("key")}, "127.0.0.1:12345")
 	}
 }
 

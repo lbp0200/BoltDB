@@ -110,9 +110,6 @@ func parseStreamID(id string) (int64, int64, error) {
 
 // formatStreamID formats (timestamp, sequence) to string
 func formatStreamID(timestamp, sequence int64) string {
-	if sequence == 0 {
-		return fmt.Sprintf("%d", timestamp)
-	}
 	return fmt.Sprintf("%d-%d", timestamp, sequence)
 }
 

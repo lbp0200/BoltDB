@@ -6,23 +6,37 @@ func isWriteCommand(cmd string) bool {
 		"SET": true, "SETEX": true, "PSETEX": true, "SETNX": true,
 		"GETSET": true, "MSET": true, "MSETNX": true,
 		"INCR": true, "INCRBY": true, "DECR": true, "DECRBY": true,
-		"INCRBYFLOAT": true, "APPEND": true, "SETRANGE": true,
-		"DEL": true, "EXPIRE": true, "EXPIREAT": true,
+		"INCRBYFLOAT": true, "APPEND": true, "SETRANGE": true, "SETBIT": true,
+		"BITOP": true, "BITFIELD": true,
+		"COPY": true,
+		"DEL":  true, "EXPIRE": true, "EXPIREAT": true,
 		"PEXPIRE": true, "PEXPIREAT": true, "PERSIST": true,
 		"RENAME": true, "RENAMENX": true,
 		"LPUSH": true, "RPUSH": true, "LPOP": true, "RPOP": true,
 		"LSET": true, "LTRIM": true, "LINSERT": true, "LREM": true,
 		"RPOPLPUSH": true, "LPUSHX": true, "RPUSHX": true,
+		"LMOVE": true, "BLMOVE": true, "BRPOPLPUSH": true,
+		"BLPOP": true, "BRPOP": true,
 		"HSET": true, "HDEL": true, "HMSET": true, "HSETNX": true,
 		"HINCRBY": true, "HINCRBYFLOAT": true,
 		"SADD": true, "SREM": true, "SPOP": true, "SMOVE": true,
 		"SINTERSTORE": true, "SUNIONSTORE": true, "SDIFFSTORE": true,
 		"ZADD": true, "ZREM": true, "ZINCRBY": true,
+		"ZPOPMAX": true, "ZPOPMIN": true,
+		"ZREMRANGEBYRANK": true, "ZREMRANGEBYSCORE": true, "ZREMRANGEBYLEX": true,
+		"ZUNIONSTORE": true, "ZINTERSTORE": true, "ZDIFFSTORE": true,
+		"ZRANGESTORE": true,
+		"PFADD":       true, "PFMERGE": true,
 		// GEO commands
 		"GEOADD": true, "GEOSEARCHSTORE": true,
 		// Stream commands
 		"XADD": true, "XDEL": true, "XACK": true,
 		"XCLAIM": true, "XGROUP": true, "XTRIM": true,
+		// JSON commands
+		"JSON.SET": true, "JSON.DEL": true, "JSON.ARRAPPEND": true,
+		"JSON.NUMINCRBY": true, "JSON.NUMMULTBY": true, "JSON.CLEAR": true,
+		// TimeSeries commands
+		"TS.CREATE": true, "TS.ADD": true, "TS.DEL": true,
 	}
 	return writeCommands[cmd]
 }

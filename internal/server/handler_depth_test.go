@@ -9,12 +9,13 @@ import (
 	"github.com/zeebo/assert"
 )
 
+
 // TestStringBoundary_EmptyKey tests GET on nonexistent key
 func TestStringBoundary_EmptyKey(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "GET", [][]byte{[]byte("nonexistent_key")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "GET", [][]byte{[]byte("nonexistent_key")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "", string(*bs))
@@ -31,10 +32,10 @@ func TestStringBoundary_MaxValueSize(t *testing.T) {
 		largeValue[i] = byte(i % 256)
 	}
 
-	resp := handler.executeCommand(nil, "SET", [][]byte{[]byte("large_key"), largeValue}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SET", [][]byte{[]byte("large_key"), largeValue}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 
-	getResp := handler.executeCommand(nil, "GET", [][]byte{[]byte("large_key")}, "127.0.0.1:12345")
+	getResp := handler.executeCommand(testState, "GET", [][]byte{[]byte("large_key")}, "127.0.0.1:12345")
 	bs, ok := getResp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, 10*1024*1024, len(*bs))
@@ -45,10 +46,10 @@ func TestStringBoundary_EmptyString(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "SET", [][]byte{[]byte("empty_key"), []byte("")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SET", [][]byte{[]byte("empty_key"), []byte("")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 
-	getResp := handler.executeCommand(nil, "GET", [][]byte{[]byte("empty_key")}, "127.0.0.1:12345")
+	getResp := handler.executeCommand(testState, "GET", [][]byte{[]byte("empty_key")}, "127.0.0.1:12345")
 	bs, ok := getResp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "", string(*bs))
@@ -60,15 +61,15 @@ func TestIncrBoundary_MaxInt64(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Set to max int64 - 1
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("max_counter"), []byte("9223372036854775806")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("max_counter"), []byte("9223372036854775806")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "INCR", [][]byte{[]byte("max_counter")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "INCR", [][]byte{[]byte("max_counter")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(9223372036854775807), int64(*integer))
 
 	// Next INCR should overflow
-	resp = handler.executeCommand(nil, "INCR", [][]byte{[]byte("max_counter")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "INCR", [][]byte{[]byte("max_counter")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "overflow"))
@@ -79,18 +80,18 @@ func TestIncrBoundary_NegativeToPositive(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("neg_counter"), []byte("-5")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("neg_counter"), []byte("-5")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "INCR", [][]byte{[]byte("neg_counter")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "INCR", [][]byte{[]byte("neg_counter")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(-4), int64(*integer))
 
 	// Cross zero
 	for i := 0; i < 4; i++ {
-		handler.executeCommand(nil, "INCR", [][]byte{[]byte("neg_counter")}, "127.0.0.1:12345")
+		handler.executeCommand(testState, "INCR", [][]byte{[]byte("neg_counter")}, "127.0.0.1:12345")
 	}
-	resp = handler.executeCommand(nil, "INCR", [][]byte{[]byte("neg_counter")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "INCR", [][]byte{[]byte("neg_counter")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -102,10 +103,10 @@ func TestStringError_TypeMismatch(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Create a list type key
-	handler.executeCommand(nil, "LPUSH", [][]byte{[]byte("list_key"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "LPUSH", [][]byte{[]byte("list_key"), []byte("value")}, "127.0.0.1:12345")
 
 	// APPEND on list key should error
-	resp := handler.executeCommand(nil, "APPEND", [][]byte{[]byte("list_key"), []byte("extra")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "APPEND", [][]byte{[]byte("list_key"), []byte("extra")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
@@ -116,7 +117,7 @@ func TestStringError_WrongNumberOfArguments(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "GET", [][]byte{}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "GET", [][]byte{}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "wrong number of arguments"))
@@ -128,7 +129,7 @@ func TestStringError_SetGetInvalidArgs(t *testing.T) {
 	defer handler.Db.Close()
 
 	// SET with only key (missing value)
-	resp := handler.executeCommand(nil, "SET", [][]byte{[]byte("key_only")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SET", [][]byte{[]byte("key_only")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "wrong number of arguments"))
@@ -139,9 +140,9 @@ func TestStringError_IncrOnFloat(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("float_key"), []byte("1.5")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("float_key"), []byte("1.5")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "INCR", [][]byte{[]byte("float_key")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "INCR", [][]byte{[]byte("float_key")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	// Should error on non-integer value
@@ -153,7 +154,7 @@ func TestListBoundary_EmptyList(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "LPOP", [][]byte{[]byte("nonexistent_list")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LPOP", [][]byte{[]byte("nonexistent_list")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "", string(*bs))
@@ -164,15 +165,15 @@ func TestListBoundary_SingleElement(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "LPUSH", [][]byte{[]byte("single_list"), []byte("only")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "LPUSH", [][]byte{[]byte("single_list"), []byte("only")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "LPOP", [][]byte{[]byte("single_list")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LPOP", [][]byte{[]byte("single_list")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "only", string(*bs))
 
 	// Second pop should return empty
-	resp = handler.executeCommand(nil, "LPOP", [][]byte{[]byte("single_list")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "LPOP", [][]byte{[]byte("single_list")}, "127.0.0.1:12345")
 	bs, ok = resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "", string(*bs))
@@ -185,16 +186,16 @@ func TestListBoundary_IndexOverflow(t *testing.T) {
 
 	// Push 1000 elements
 	for i := 0; i < 1000; i++ {
-		handler.executeCommand(nil, "RPUSH", [][]byte{[]byte("large_list"), []byte(string(rune('A' + i%26)))}, "127.0.0.1:12345")
+		handler.executeCommand(testState, "RPUSH", [][]byte{[]byte("large_list"), []byte(string(rune('A' + i%26)))}, "127.0.0.1:12345")
 	}
 
-	resp := handler.executeCommand(nil, "LLEN", [][]byte{[]byte("large_list")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LLEN", [][]byte{[]byte("large_list")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1000), int64(*integer))
 
 	// Index beyond length
-	resp = handler.executeCommand(nil, "LINDEX", [][]byte{[]byte("large_list"), []byte("9999")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "LINDEX", [][]byte{[]byte("large_list"), []byte("9999")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "", string(*bs))
@@ -205,28 +206,28 @@ func TestListBoundary_NegativeIndex(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "RPUSH", [][]byte{[]byte("neg_index_list"), []byte("first"), []byte("middle"), []byte("last")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "RPUSH", [][]byte{[]byte("neg_index_list"), []byte("first"), []byte("middle"), []byte("last")}, "127.0.0.1:12345")
 
 	// -1 = last element
-	resp := handler.executeCommand(nil, "LINDEX", [][]byte{[]byte("neg_index_list"), []byte("-1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LINDEX", [][]byte{[]byte("neg_index_list"), []byte("-1")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "last", string(*bs))
 
 	// -2 = middle element
-	resp = handler.executeCommand(nil, "LINDEX", [][]byte{[]byte("neg_index_list"), []byte("-2")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "LINDEX", [][]byte{[]byte("neg_index_list"), []byte("-2")}, "127.0.0.1:12345")
 	bs, ok = resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "middle", string(*bs))
 
 	// -3 = first element
-	resp = handler.executeCommand(nil, "LINDEX", [][]byte{[]byte("neg_index_list"), []byte("-3")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "LINDEX", [][]byte{[]byte("neg_index_list"), []byte("-3")}, "127.0.0.1:12345")
 	bs, ok = resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "first", string(*bs))
 
 	// -4 beyond list (only 3 elements, so -4 is out of bounds)
-	resp = handler.executeCommand(nil, "LINDEX", [][]byte{[]byte("neg_index_list"), []byte("-4")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "LINDEX", [][]byte{[]byte("neg_index_list"), []byte("-4")}, "127.0.0.1:12345")
 	bs, ok = resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "", string(*bs))
@@ -237,9 +238,9 @@ func TestListError_TypeMismatch(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "LPUSH", [][]byte{[]byte("string_key"), []byte("new")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LPUSH", [][]byte{[]byte("string_key"), []byte("new")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
@@ -250,9 +251,9 @@ func TestListError_InvalidIndex(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "RPUSH", [][]byte{[]byte("valid_list"), []byte("a"), []byte("b")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "RPUSH", [][]byte{[]byte("valid_list"), []byte("a"), []byte("b")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "LSET", [][]byte{[]byte("valid_list"), []byte("5"), []byte("c")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LSET", [][]byte{[]byte("valid_list"), []byte("5"), []byte("c")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "index out of range"))
@@ -264,15 +265,15 @@ func TestStringBoundary_DecrOverflow(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Set to min int64 + 1
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("min_counter"), []byte("-9223372036854775807")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("min_counter"), []byte("-9223372036854775807")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "DECR", [][]byte{[]byte("min_counter")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "DECR", [][]byte{[]byte("min_counter")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(-9223372036854775808), int64(*integer))
 
 	// Next DECR should overflow
-	resp = handler.executeCommand(nil, "DECR", [][]byte{[]byte("min_counter")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "DECR", [][]byte{[]byte("min_counter")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "overflow"))
@@ -283,10 +284,10 @@ func TestStringBoundary_GetrangeFullString(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("range_key"), []byte("hello")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("range_key"), []byte("hello")}, "127.0.0.1:12345")
 
 	// Get full string with 0 to -1
-	resp := handler.executeCommand(nil, "GETRANGE", [][]byte{[]byte("range_key"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "GETRANGE", [][]byte{[]byte("range_key"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "hello", string(*bs))
@@ -297,10 +298,10 @@ func TestStringBoundary_GetrangeOutOfBounds(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("short_key"), []byte("hi")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("short_key"), []byte("hi")}, "127.0.0.1:12345")
 
 	// Request more than exists — should return what is available
-	resp := handler.executeCommand(nil, "GETRANGE", [][]byte{[]byte("short_key"), []byte("0"), []byte("100")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "GETRANGE", [][]byte{[]byte("short_key"), []byte("0"), []byte("100")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "hi", string(*bs))
@@ -311,8 +312,8 @@ func TestStringError_WrongTypeForDecr(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "HSET", [][]byte{[]byte("hash_key"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
-	resp := handler.executeCommand(nil, "DECR", [][]byte{[]byte("hash_key")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "HSET", [][]byte{[]byte("hash_key"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "DECR", [][]byte{[]byte("hash_key")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
@@ -323,8 +324,8 @@ func TestStringError_WrongTypeForDecrby(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SADD", [][]byte{[]byte("set_key"), []byte("member")}, "127.0.0.1:12345")
-	resp := handler.executeCommand(nil, "DECRBY", [][]byte{[]byte("set_key"), []byte("1")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SADD", [][]byte{[]byte("set_key"), []byte("member")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "DECRBY", [][]byte{[]byte("set_key"), []byte("1")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
@@ -335,8 +336,8 @@ func TestStringError_SetexWrongType(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "ZADD", [][]byte{[]byte("zset_key"), []byte("1.0"), []byte("member")}, "127.0.0.1:12345")
-	resp := handler.executeCommand(nil, "SETEX", [][]byte{[]byte("zset_key"), []byte("10"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "ZADD", [][]byte{[]byte("zset_key"), []byte("1.0"), []byte("member")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SETEX", [][]byte{[]byte("zset_key"), []byte("10"), []byte("value")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
@@ -347,8 +348,8 @@ func TestStringError_PsetexWrongType(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "LPUSH", [][]byte{[]byte("list_key"), []byte("value")}, "127.0.0.1:12345")
-	resp := handler.executeCommand(nil, "PSETEX", [][]byte{[]byte("list_key"), []byte("1000"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "LPUSH", [][]byte{[]byte("list_key"), []byte("value")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "PSETEX", [][]byte{[]byte("list_key"), []byte("1000"), []byte("value")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
@@ -360,13 +361,13 @@ func TestStringBoundary_SetbitGetbitBasic(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Set bit 7 to 1 (value = 128)
-	resp := handler.executeCommand(nil, "SETBIT", [][]byte{[]byte("bit_key"), []byte("7"), []byte("1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SETBIT", [][]byte{[]byte("bit_key"), []byte("7"), []byte("1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer)) // old value was 0
 
 	// GETBIT should return 1
-	resp = handler.executeCommand(nil, "GETBIT", [][]byte{[]byte("bit_key"), []byte("7")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "GETBIT", [][]byte{[]byte("bit_key"), []byte("7")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -378,13 +379,13 @@ func TestStringBoundary_SetbitOutOfRange(t *testing.T) {
 	defer handler.Db.Close()
 
 	// Set bit at a large offset (creates a string of that size)
-	resp := handler.executeCommand(nil, "SETBIT", [][]byte{[]byte("large_bit_key"), []byte("1048576"), []byte("1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SETBIT", [][]byte{[]byte("large_bit_key"), []byte("1048576"), []byte("1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
 
 	// Verify the bit was set
-	resp = handler.executeCommand(nil, "GETBIT", [][]byte{[]byte("large_bit_key"), []byte("1048576")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "GETBIT", [][]byte{[]byte("large_bit_key"), []byte("1048576")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -395,16 +396,16 @@ func TestStringBoundary_SetrangeExtend(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("extend_key"), []byte("hello")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("extend_key"), []byte("hello")}, "127.0.0.1:12345")
 
 	// Extend from offset 5 with " world"
-	resp := handler.executeCommand(nil, "SETRANGE", [][]byte{[]byte("extend_key"), []byte("5"), []byte(" world")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SETRANGE", [][]byte{[]byte("extend_key"), []byte("5"), []byte(" world")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(11), int64(*integer))
 
 	// Verify new value
-	getResp := handler.executeCommand(nil, "GET", [][]byte{[]byte("extend_key")}, "127.0.0.1:12345")
+	getResp := handler.executeCommand(testState, "GET", [][]byte{[]byte("extend_key")}, "127.0.0.1:12345")
 	bs, ok := getResp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "hello world", string(*bs))
@@ -418,14 +419,14 @@ func TestListBoundary_LinsertBefore(t *testing.T) {
 	handler.Db.RPush("linsert_key", "first", "second")
 
 	// LINSERT BEFORE first element (position 0)
-	resp := handler.executeCommand(nil, "LINSERT", [][]byte{[]byte("linsert_key"), []byte("BEFORE"), []byte("first"), []byte("new_first")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LINSERT", [][]byte{[]byte("linsert_key"), []byte("BEFORE"), []byte("first"), []byte("new_first")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	// LINSERT returns new list length after successful insert
 	assert.Equal(t, int64(3), int64(*integer))
 
 	// Verify list length increased
-	lenResp := handler.executeCommand(nil, "LLEN", [][]byte{[]byte("linsert_key")}, "127.0.0.1:12345")
+	lenResp := handler.executeCommand(testState, "LLEN", [][]byte{[]byte("linsert_key")}, "127.0.0.1:12345")
 	lenInt, ok := lenResp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(3), int64(*lenInt))
@@ -439,7 +440,7 @@ func TestListBoundary_LinsertAfter(t *testing.T) {
 	handler.Db.RPush("linsert_key", "first", "second")
 
 	// LINSERT AFTER first element
-	resp := handler.executeCommand(nil, "LINSERT", [][]byte{[]byte("linsert_key"), []byte("AFTER"), []byte("first"), []byte("new_second")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LINSERT", [][]byte{[]byte("linsert_key"), []byte("AFTER"), []byte("first"), []byte("new_second")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	// LINSERT returns new list length after successful insert
@@ -451,9 +452,9 @@ func TestListBoundary_LinsertNotFound(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "RPUSH", [][]byte{[]byte("linsert_key"), []byte("first"), []byte("second")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "RPUSH", [][]byte{[]byte("linsert_key"), []byte("first"), []byte("second")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "LINSERT", [][]byte{[]byte("linsert_key"), []byte("BEFORE"), []byte("nonexistent"), []byte("new_val")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LINSERT", [][]byte{[]byte("linsert_key"), []byte("BEFORE"), []byte("nonexistent"), []byte("new_val")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	// LINSERT returns -1 when pivot is not found
@@ -465,9 +466,9 @@ func TestListBoundary_LposBasic(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "RPUSH", [][]byte{[]byte("lpos_key"), []byte("a"), []byte("b"), []byte("c"), []byte("b")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "RPUSH", [][]byte{[]byte("lpos_key"), []byte("a"), []byte("b"), []byte("c"), []byte("b")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "LPOS", [][]byte{[]byte("lpos_key"), []byte("b")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LPOS", [][]byte{[]byte("lpos_key"), []byte("b")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -478,10 +479,10 @@ func TestListBoundary_LposRank(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "RPUSH", [][]byte{[]byte("lpos_key"), []byte("a"), []byte("b"), []byte("c"), []byte("b")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "RPUSH", [][]byte{[]byte("lpos_key"), []byte("a"), []byte("b"), []byte("c"), []byte("b")}, "127.0.0.1:12345")
 
 	// LPOS with RANK returns an array of positions
-	resp := handler.executeCommand(nil, "LPOS", [][]byte{[]byte("lpos_key"), []byte("b"), []byte("RANK"), []byte("2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LPOS", [][]byte{[]byte("lpos_key"), []byte("b"), []byte("RANK"), []byte("2")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 1, len(arr.Args))
@@ -493,19 +494,19 @@ func TestListBoundary_LmoveBasic(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "RPUSH", [][]byte{[]byte("source_list"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "RPUSH", [][]byte{[]byte("source_list"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "LMOVE", [][]byte{[]byte("source_list"), []byte("dest_list"), []byte("RIGHT"), []byte("LEFT")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LMOVE", [][]byte{[]byte("source_list"), []byte("dest_list"), []byte("RIGHT"), []byte("LEFT")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "c", string(*bs))
 
-	srcResp := handler.executeCommand(nil, "LRANGE", [][]byte{[]byte("source_list"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
+	srcResp := handler.executeCommand(testState, "LRANGE", [][]byte{[]byte("source_list"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
 	srcArr, ok := srcResp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 2, len(srcArr.Args))
 
-	dstResp := handler.executeCommand(nil, "LRANGE", [][]byte{[]byte("dest_list"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
+	dstResp := handler.executeCommand(testState, "LRANGE", [][]byte{[]byte("dest_list"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
 	dstArr, ok := dstResp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 1, len(dstArr.Args))
@@ -516,9 +517,9 @@ func TestListBoundary_LpushxBasic(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "RPUSH", [][]byte{[]byte("lpushx_key"), []byte("first")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "RPUSH", [][]byte{[]byte("lpushx_key"), []byte("first")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "LPUSHX", [][]byte{[]byte("lpushx_key"), []byte("pushed")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LPUSHX", [][]byte{[]byte("lpushx_key"), []byte("pushed")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -529,7 +530,7 @@ func TestListBoundary_LpushxNotExist(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "LPUSHX", [][]byte{[]byte("nonexistent_key"), []byte("value")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LPUSHX", [][]byte{[]byte("nonexistent_key"), []byte("value")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
@@ -540,9 +541,9 @@ func TestListBoundary_RpushxBasic(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "RPUSH", [][]byte{[]byte("rpushx_key"), []byte("first")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "RPUSH", [][]byte{[]byte("rpushx_key"), []byte("first")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "RPUSHX", [][]byte{[]byte("rpushx_key"), []byte("pushed")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "RPUSHX", [][]byte{[]byte("rpushx_key"), []byte("pushed")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -553,8 +554,8 @@ func TestListError_WrongTypeForLinsert(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
-	resp := handler.executeCommand(nil, "LINSERT", [][]byte{[]byte("string_key"), []byte("BEFORE"), []byte("pivot"), []byte("val")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LINSERT", [][]byte{[]byte("string_key"), []byte("BEFORE"), []byte("pivot"), []byte("val")}, "127.0.0.1:12345")
 	// LINSERT returns 0 when key exists but is not a list (no error, just 0 count)
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
@@ -566,16 +567,16 @@ func TestHashBoundary_HsetNxBasic(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "HSET", [][]byte{[]byte("hash_key"), []byte("field1"), []byte("val1")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "HSET", [][]byte{[]byte("hash_key"), []byte("field1"), []byte("val1")}, "127.0.0.1:12345")
 
 	// HSETNX on existing field should return 0
-	resp := handler.executeCommand(nil, "HSETNX", [][]byte{[]byte("hash_key"), []byte("field1"), []byte("new_val")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HSETNX", [][]byte{[]byte("hash_key"), []byte("field1"), []byte("new_val")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
 
 	// HSETNX on new field should return 1
-	resp = handler.executeCommand(nil, "HSETNX", [][]byte{[]byte("hash_key"), []byte("field2"), []byte("val2")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "HSETNX", [][]byte{[]byte("hash_key"), []byte("field2"), []byte("val2")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -586,9 +587,9 @@ func TestHashBoundary_HincrbyBasic(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "HSET", [][]byte{[]byte("hash_key"), []byte("counter"), []byte("10")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "HSET", [][]byte{[]byte("hash_key"), []byte("counter"), []byte("10")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "HINCRBY", [][]byte{[]byte("hash_key"), []byte("counter"), []byte("5")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HINCRBY", [][]byte{[]byte("hash_key"), []byte("counter"), []byte("5")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(15), int64(*integer))
@@ -599,9 +600,9 @@ func TestHashBoundary_HincrbyNegative(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "HSET", [][]byte{[]byte("hash_key"), []byte("counter"), []byte("10")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "HSET", [][]byte{[]byte("hash_key"), []byte("counter"), []byte("10")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "HINCRBY", [][]byte{[]byte("hash_key"), []byte("counter"), []byte("-3")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HINCRBY", [][]byte{[]byte("hash_key"), []byte("counter"), []byte("-3")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(7), int64(*integer))
@@ -612,9 +613,9 @@ func TestHashBoundary_HincrbyFloatBasic(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "HSET", [][]byte{[]byte("hash_key"), []byte("counter"), []byte("10.5")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "HSET", [][]byte{[]byte("hash_key"), []byte("counter"), []byte("10.5")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "HINCRBYFLOAT", [][]byte{[]byte("hash_key"), []byte("counter"), []byte("2.5")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HINCRBYFLOAT", [][]byte{[]byte("hash_key"), []byte("counter"), []byte("2.5")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "13", string(*bs)) // 10.5 + 2.5 = 13
@@ -625,11 +626,11 @@ func TestHashBoundary_HrandfieldBasic(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "HSET", [][]byte{[]byte("hash_key"), []byte("field1"), []byte("val1")}, "127.0.0.1:12345")
-	handler.executeCommand(nil, "HSET", [][]byte{[]byte("hash_key"), []byte("field2"), []byte("val2")}, "127.0.0.1:12345")
-	handler.executeCommand(nil, "HSET", [][]byte{[]byte("hash_key"), []byte("field3"), []byte("val3")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "HSET", [][]byte{[]byte("hash_key"), []byte("field1"), []byte("val1")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "HSET", [][]byte{[]byte("hash_key"), []byte("field2"), []byte("val2")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "HSET", [][]byte{[]byte("hash_key"), []byte("field3"), []byte("val3")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "HRANDFIELD", [][]byte{[]byte("hash_key")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HRANDFIELD", [][]byte{[]byte("hash_key")}, "127.0.0.1:12345")
 	// HRANDFIELD returns an Array of field names
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
@@ -642,10 +643,10 @@ func TestHashBoundary_HrandfieldWithValues(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "HSET", [][]byte{[]byte("hash_key"), []byte("field1"), []byte("val1")}, "127.0.0.1:12345")
-	handler.executeCommand(nil, "HSET", [][]byte{[]byte("hash_key"), []byte("field2"), []byte("val2")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "HSET", [][]byte{[]byte("hash_key"), []byte("field1"), []byte("val1")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "HSET", [][]byte{[]byte("hash_key"), []byte("field2"), []byte("val2")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "HRANDFIELD", [][]byte{[]byte("hash_key"), []byte("2"), []byte("WITHVALUES")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HRANDFIELD", [][]byte{[]byte("hash_key"), []byte("2"), []byte("WITHVALUES")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 4, len(arr.Args))
@@ -656,9 +657,9 @@ func TestHashError_WrongTypeForHset(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "HSET", [][]byte{[]byte("string_key"), []byte("field"), []byte("val")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HSET", [][]byte{[]byte("string_key"), []byte("field"), []byte("val")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
@@ -669,9 +670,9 @@ func TestHashError_WrongTypeForHget(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "HGET", [][]byte{[]byte("string_key"), []byte("field")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HGET", [][]byte{[]byte("string_key"), []byte("field")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
@@ -682,9 +683,9 @@ func TestHashError_HincrbyOnNonNumeric(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "HSET", [][]byte{[]byte("hash_key"), []byte("field"), []byte("not_a_number")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "HSET", [][]byte{[]byte("hash_key"), []byte("field"), []byte("not_a_number")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "HINCRBY", [][]byte{[]byte("hash_key"), []byte("field"), []byte("1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HINCRBY", [][]byte{[]byte("hash_key"), []byte("field"), []byte("1")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "not an integer"))
@@ -695,9 +696,9 @@ func TestHashError_HincrbyFloatOnNonNumeric(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "HSET", [][]byte{[]byte("hash_key"), []byte("field"), []byte("not_a_number")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "HSET", [][]byte{[]byte("hash_key"), []byte("field"), []byte("not_a_number")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "HINCRBYFLOAT", [][]byte{[]byte("hash_key"), []byte("field"), []byte("1.5")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HINCRBYFLOAT", [][]byte{[]byte("hash_key"), []byte("field"), []byte("1.5")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "not a valid float"))
@@ -708,12 +709,12 @@ func TestSetBoundary_SaddBasic(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "SADD", [][]byte{[]byte("set_key"), []byte("member1"), []byte("member2"), []byte("member3")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SADD", [][]byte{[]byte("set_key"), []byte("member1"), []byte("member2"), []byte("member3")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(3), int64(*integer))
 
-	resp = handler.executeCommand(nil, "SADD", [][]byte{[]byte("set_key"), []byte("member1")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "SADD", [][]byte{[]byte("set_key"), []byte("member1")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
@@ -724,14 +725,14 @@ func TestSetBoundary_SremBasic(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SADD", [][]byte{[]byte("set_key"), []byte("member1"), []byte("member2"), []byte("member3")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SADD", [][]byte{[]byte("set_key"), []byte("member1"), []byte("member2"), []byte("member3")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "SREM", [][]byte{[]byte("set_key"), []byte("member1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SREM", [][]byte{[]byte("set_key"), []byte("member1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
 
-	resp = handler.executeCommand(nil, "SREM", [][]byte{[]byte("set_key"), []byte("nonexistent")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "SREM", [][]byte{[]byte("set_key"), []byte("nonexistent")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
@@ -742,9 +743,9 @@ func TestSetBoundary_ScardBasic(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SADD", [][]byte{[]byte("set_key"), []byte("member1"), []byte("member2")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SADD", [][]byte{[]byte("set_key"), []byte("member1"), []byte("member2")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "SCARD", [][]byte{[]byte("set_key")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SCARD", [][]byte{[]byte("set_key")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -755,9 +756,9 @@ func TestSetBoundary_SrandmemberBasic(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SADD", [][]byte{[]byte("set_key"), []byte("member1"), []byte("member2"), []byte("member3")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SADD", [][]byte{[]byte("set_key"), []byte("member1"), []byte("member2"), []byte("member3")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "SRANDMEMBER", [][]byte{[]byte("set_key")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SRANDMEMBER", [][]byte{[]byte("set_key")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.True(t, len(string(*bs)) > 0)
@@ -768,14 +769,14 @@ func TestSetBoundary_SpopBasic(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SADD", [][]byte{[]byte("set_key"), []byte("member1"), []byte("member2"), []byte("member3")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SADD", [][]byte{[]byte("set_key"), []byte("member1"), []byte("member2"), []byte("member3")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "SPOP", [][]byte{[]byte("set_key")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SPOP", [][]byte{[]byte("set_key")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.True(t, len(string(*bs)) > 0)
 
-	cardResp := handler.executeCommand(nil, "SCARD", [][]byte{[]byte("set_key")}, "127.0.0.1:12345")
+	cardResp := handler.executeCommand(testState, "SCARD", [][]byte{[]byte("set_key")}, "127.0.0.1:12345")
 	cardInt, _ := cardResp.(*proto.Integer)
 	assert.Equal(t, int64(2), int64(*cardInt))
 }
@@ -785,9 +786,9 @@ func TestSetError_WrongTypeForSadd(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "SADD", [][]byte{[]byte("string_key"), []byte("member")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SADD", [][]byte{[]byte("string_key"), []byte("member")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
@@ -798,9 +799,9 @@ func TestSetError_WrongTypeForSrem(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "SREM", [][]byte{[]byte("string_key"), []byte("member")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SREM", [][]byte{[]byte("string_key"), []byte("member")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
@@ -811,9 +812,9 @@ func TestSetError_WrongTypeForSismember(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "SISMEMBER", [][]byte{[]byte("string_key"), []byte("member")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SISMEMBER", [][]byte{[]byte("string_key"), []byte("member")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
@@ -824,9 +825,9 @@ func TestSetError_WrongTypeForSmembers(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "SMEMBERS", [][]byte{[]byte("string_key")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SMEMBERS", [][]byte{[]byte("string_key")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
@@ -837,9 +838,9 @@ func TestSetError_WrongTypeForScard(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "SCARD", [][]byte{[]byte("string_key")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SCARD", [][]byte{[]byte("string_key")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
@@ -853,13 +854,13 @@ func TestSortedSetBoundary_ZaddBasic(t *testing.T) {
 	defer handler.Db.Close()
 
 	// ZADD new members - returns count of members in command
-	resp := handler.executeCommand(nil, "ZADD", [][]byte{[]byte("zset_key"), []byte("1.0"), []byte("member1"), []byte("2.0"), []byte("member2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZADD", [][]byte{[]byte("zset_key"), []byte("1.0"), []byte("member1"), []byte("2.0"), []byte("member2")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
 
 	// ZADD to update member - BoltDB returns len(members) (behavioral difference from Redis)
-	resp = handler.executeCommand(nil, "ZADD", [][]byte{[]byte("zset_key"), []byte("3.0"), []byte("member1")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "ZADD", [][]byte{[]byte("zset_key"), []byte("3.0"), []byte("member1")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -870,16 +871,16 @@ func TestSortedSetBoundary_ZremBasic(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "ZADD", [][]byte{[]byte("zset_key"), []byte("1.0"), []byte("member1"), []byte("2.0"), []byte("member2")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "ZADD", [][]byte{[]byte("zset_key"), []byte("1.0"), []byte("member1"), []byte("2.0"), []byte("member2")}, "127.0.0.1:12345")
 
 	// ZREM existing member
-	resp := handler.executeCommand(nil, "ZREM", [][]byte{[]byte("zset_key"), []byte("member1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZREM", [][]byte{[]byte("zset_key"), []byte("member1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
 
 	// ZREM non-existing member - should return 0
-	resp = handler.executeCommand(nil, "ZREM", [][]byte{[]byte("zset_key"), []byte("nonexistent")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "ZREM", [][]byte{[]byte("zset_key"), []byte("nonexistent")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*integer))
@@ -890,9 +891,9 @@ func TestSortedSetBoundary_ZcardBasic(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "ZADD", [][]byte{[]byte("zset_key"), []byte("1.0"), []byte("member1"), []byte("2.0"), []byte("member2")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "ZADD", [][]byte{[]byte("zset_key"), []byte("1.0"), []byte("member1"), []byte("2.0"), []byte("member2")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "ZCARD", [][]byte{[]byte("zset_key")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZCARD", [][]byte{[]byte("zset_key")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -903,15 +904,15 @@ func TestSortedSetBoundary_ZscoreBasic(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "ZADD", [][]byte{[]byte("zset_key"), []byte("1.5"), []byte("member1")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "ZADD", [][]byte{[]byte("zset_key"), []byte("1.5"), []byte("member1")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "ZSCORE", [][]byte{[]byte("zset_key"), []byte("member1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZSCORE", [][]byte{[]byte("zset_key"), []byte("member1")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "1.5", string(*bs))
 
 	// Non-existing member
-	resp = handler.executeCommand(nil, "ZSCORE", [][]byte{[]byte("zset_key"), []byte("nonexistent")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "ZSCORE", [][]byte{[]byte("zset_key"), []byte("nonexistent")}, "127.0.0.1:12345")
 	nilResp, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.True(t, nilResp == nil || string(*nilResp) == "")
@@ -922,10 +923,10 @@ func TestSortedSetBoundary_ZrangeBasic(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "ZADD", [][]byte{[]byte("zset_key"), []byte("1.0"), []byte("a"), []byte("2.0"), []byte("b"), []byte("3.0"), []byte("c")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "ZADD", [][]byte{[]byte("zset_key"), []byte("1.0"), []byte("a"), []byte("2.0"), []byte("b"), []byte("3.0"), []byte("c")}, "127.0.0.1:12345")
 
 	// Without WITHSCORES, ZRANGE returns only members
-	resp := handler.executeCommand(nil, "ZRANGE", [][]byte{[]byte("zset_key"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZRANGE", [][]byte{[]byte("zset_key"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 3, len(arr.Args)) // a, b, c (members only)
@@ -936,9 +937,9 @@ func TestSortedSetError_WrongTypeForZadd(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "ZADD", [][]byte{[]byte("string_key"), []byte("1.0"), []byte("member")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZADD", [][]byte{[]byte("string_key"), []byte("1.0"), []byte("member")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
@@ -949,9 +950,9 @@ func TestSortedSetError_WrongTypeForZrem(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "ZREM", [][]byte{[]byte("string_key"), []byte("member")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZREM", [][]byte{[]byte("string_key"), []byte("member")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
@@ -962,9 +963,9 @@ func TestSortedSetError_WrongTypeForZcard(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "ZCARD", [][]byte{[]byte("string_key")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZCARD", [][]byte{[]byte("string_key")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
@@ -975,9 +976,9 @@ func TestSortedSetError_WrongTypeForZscore(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "ZSCORE", [][]byte{[]byte("string_key"), []byte("member")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZSCORE", [][]byte{[]byte("string_key"), []byte("member")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
@@ -988,9 +989,9 @@ func TestSortedSetError_WrongTypeForZrange(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	handler.executeCommand(nil, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(testState, "SET", [][]byte{[]byte("string_key"), []byte("value")}, "127.0.0.1:12345")
 
-	resp := handler.executeCommand(nil, "ZRANGE", [][]byte{[]byte("string_key"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ZRANGE", [][]byte{[]byte("string_key"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
@@ -1004,7 +1005,7 @@ func TestClusterError_ClusterDisabled(t *testing.T) {
 	defer handler.Db.Close()
 
 	// CLUSTER INFO should return error when cluster support is disabled
-	resp := handler.executeCommand(nil, "CLUSTER", [][]byte{[]byte("INFO")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "CLUSTER", [][]byte{[]byte("INFO")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "cluster support disabled"))
@@ -1015,7 +1016,7 @@ func TestClusterError_ClusterDisabledNodes(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "CLUSTER", [][]byte{[]byte("NODES")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "CLUSTER", [][]byte{[]byte("NODES")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "cluster support disabled"))
@@ -1026,7 +1027,7 @@ func TestClusterError_ClusterDisabledKeySlot(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "CLUSTER", [][]byte{[]byte("KEYSLOT"), []byte("mykey")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "CLUSTER", [][]byte{[]byte("KEYSLOT"), []byte("mykey")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "cluster support disabled"))
@@ -1037,7 +1038,7 @@ func TestClusterError_ClusterDisabledSlots(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "CLUSTER", [][]byte{[]byte("SLOTS")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "CLUSTER", [][]byte{[]byte("SLOTS")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "cluster support disabled"))
@@ -1048,7 +1049,7 @@ func TestClusterError_InvalidSubcommand(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "CLUSTER", [][]byte{[]byte("INVALID")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "CLUSTER", [][]byte{[]byte("INVALID")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "ERR"))
@@ -1061,7 +1062,7 @@ func TestReplicationBoundary_RoleMaster(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "ROLE", [][]byte{}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "ROLE", [][]byte{}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.True(t, len(arr.Args) >= 1)
@@ -1074,7 +1075,7 @@ func TestReplicationBoundary_ReplconfListeningPort(t *testing.T) {
 	defer handler.Db.Close()
 	handler.Replication = replication.NewReplicationManager(handler.Db)
 
-	resp := handler.executeCommand(nil, "REPLCONF", [][]byte{[]byte("LISTENING-PORT"), []byte("6379")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "REPLCONF", [][]byte{[]byte("LISTENING-PORT"), []byte("6379")}, "127.0.0.1:12345")
 	simple, ok := resp.(*proto.SimpleString)
 	assert.True(t, ok)
 	assert.Equal(t, "OK", string(*simple))
@@ -1086,7 +1087,7 @@ func TestReplicationBoundary_ReplconfCapa(t *testing.T) {
 	defer handler.Db.Close()
 	handler.Replication = replication.NewReplicationManager(handler.Db)
 
-	resp := handler.executeCommand(nil, "REPLCONF", [][]byte{[]byte("CAPA"), []byte("eof")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "REPLCONF", [][]byte{[]byte("CAPA"), []byte("eof")}, "127.0.0.1:12345")
 	simple, ok := resp.(*proto.SimpleString)
 	assert.True(t, ok)
 	assert.Equal(t, "OK", string(*simple))
@@ -1097,7 +1098,7 @@ func TestReplicationError_ReplconfInvalidSubcommand(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "REPLCONF", [][]byte{[]byte("INVALID")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "REPLCONF", [][]byte{[]byte("INVALID")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "ERR"))
@@ -1108,7 +1109,7 @@ func TestReplicationError_ReplconfAckWithoutArgs(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "REPLCONF", [][]byte{[]byte("ACK")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "REPLCONF", [][]byte{[]byte("ACK")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "ERR"))
@@ -1126,7 +1127,7 @@ func TestSentinelBoundary_InfoReplication(t *testing.T) {
 	handler.Replication.SetRole("slave")
 	handler.Replication.SetMasterAddr("127.0.0.1:6379")
 
-	resp := handler.executeCommand(nil, "INFO", [][]byte{[]byte("replication")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "INFO", [][]byte{[]byte("replication")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	info := string(*bs)
@@ -1142,7 +1143,7 @@ func TestSentinelBoundary_ReplconfGetack(t *testing.T) {
 	// Set up replication manager for GETACK to work
 	handler.Replication = replication.NewReplicationManager(handler.Db)
 
-	resp := handler.executeCommand(nil, "REPLCONF", [][]byte{[]byte("GETACK"), []byte("*")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "REPLCONF", [][]byte{[]byte("GETACK"), []byte("*")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.True(t, len(arr.Args) >= 3)
@@ -1155,7 +1156,7 @@ func TestSentinelError_ReplconfUnknownSubcommand(t *testing.T) {
 	handler := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(nil, "REPLCONF", [][]byte{[]byte("UNKNOWN")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "REPLCONF", [][]byte{[]byte("UNKNOWN")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "ERR"))

@@ -16,15 +16,17 @@ import (
 	"github.com/zeebo/assert"
 )
 
+
+var testState = &connState{}
+
 // setupTestHandler 创建测试用的Handler
 func setupTestHandler(t *testing.T) *Handler {
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
 	return &Handler{
-		Db:        db,
-		baseState: &connState{},
-		conns:     make(map[*connState]*connMeta),
+		Db:    db,
+		conns: make(map[*connState]*connMeta),
 	}
 }
 
@@ -57,7 +59,7 @@ func TestExecuteCommand(t *testing.T) {
 			validate: func(t *testing.T, resp proto.RESP) {
 				assert.Equal(t, proto.OK, resp)
 				// Test GET
-				getResp := handler.executeCommand(nil, "GET", [][]byte{[]byte("key1")}, "127.0.0.1:12345")
+				getResp := handler.executeCommand(testState, "GET", [][]byte{[]byte("key1")}, "127.0.0.1:12345")
 				bulk, ok := getResp.(*proto.BulkString)
 				assert.True(t, ok)
 				assert.Equal(t, "value1", string(*bulk))
@@ -107,7 +109,7 @@ func TestExecuteCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.validate(t, resp)
 		})
 	}
@@ -312,19 +314,19 @@ func TestListCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	// LPUSH
-	resp := handler.executeCommand(nil, "LPUSH", [][]byte{[]byte("mylist"), []byte("world"), []byte("hello")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "LPUSH", [][]byte{[]byte("mylist"), []byte("world"), []byte("hello")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
 
 	// LLEN
-	resp = handler.executeCommand(nil, "LLEN", [][]byte{[]byte("mylist")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "LLEN", [][]byte{[]byte("mylist")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
 
 	// LPOP
-	resp = handler.executeCommand(nil, "LPOP", [][]byte{[]byte("mylist")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "LPOP", [][]byte{[]byte("mylist")}, "127.0.0.1:12345")
 	bulk, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "hello", string(*bulk))
@@ -336,19 +338,19 @@ func TestHashCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	// HSET
-	resp := handler.executeCommand(nil, "HSET", [][]byte{[]byte("user:1"), []byte("name"), []byte("Alice"), []byte("age"), []byte("30")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "HSET", [][]byte{[]byte("user:1"), []byte("name"), []byte("Alice"), []byte("age"), []byte("30")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
 
 	// HGET
-	resp = handler.executeCommand(nil, "HGET", [][]byte{[]byte("user:1"), []byte("name")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "HGET", [][]byte{[]byte("user:1"), []byte("name")}, "127.0.0.1:12345")
 	bulk, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "Alice", string(*bulk))
 
 	// HLEN
-	resp = handler.executeCommand(nil, "HLEN", [][]byte{[]byte("user:1")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "HLEN", [][]byte{[]byte("user:1")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -360,19 +362,19 @@ func TestSetCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	// SADD
-	resp := handler.executeCommand(nil, "SADD", [][]byte{[]byte("myset"), []byte("member1"), []byte("member2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(testState, "SADD", [][]byte{[]byte("myset"), []byte("member1"), []byte("member2")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
 
 	// SCARD
-	resp = handler.executeCommand(nil, "SCARD", [][]byte{[]byte("myset")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "SCARD", [][]byte{[]byte("myset")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
 
 	// SISMEMBER
-	resp = handler.executeCommand(nil, "SISMEMBER", [][]byte{[]byte("myset"), []byte("member1")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "SISMEMBER", [][]byte{[]byte("myset"), []byte("member1")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -384,7 +386,7 @@ func TestSortedSetCommands(t *testing.T) {
 	defer handler.Db.Close()
 
 	// ZADD
-	resp := handler.executeCommand(nil, "ZADD", [][]byte{
+	resp := handler.executeCommand(testState, "ZADD", [][]byte{
 		[]byte("zset"),
 		[]byte("1.0"),
 		[]byte("member1"),
@@ -396,13 +398,13 @@ func TestSortedSetCommands(t *testing.T) {
 	assert.Equal(t, int64(2), int64(*integer))
 
 	// ZCARD
-	resp = handler.executeCommand(nil, "ZCARD", [][]byte{[]byte("zset")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "ZCARD", [][]byte{[]byte("zset")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
 
 	// ZSCORE
-	resp = handler.executeCommand(nil, "ZSCORE", [][]byte{[]byte("zset"), []byte("member1")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(testState, "ZSCORE", [][]byte{[]byte("zset"), []byte("member1")}, "127.0.0.1:12345")
 	bulk, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "1", string(*bulk))
@@ -452,7 +454,7 @@ func TestErrorHandling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(nil, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
 			err, ok := resp.(*proto.Error)
 			if tt.wantErr {
 				assert.True(t, ok)
@@ -534,8 +536,8 @@ func BenchmarkExecuteCommand(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("key%d", i)
 		value := fmt.Sprintf("value%d", i)
-		_ = handler.executeCommand(nil, "SET", [][]byte{[]byte(key), []byte(value)}, "127.0.0.1:12345")
-		_ = handler.executeCommand(nil, "GET", [][]byte{[]byte(key)}, "127.0.0.1:12345")
+		_ = handler.executeCommand(testState, "SET", [][]byte{[]byte(key), []byte(value)}, "127.0.0.1:12345")
+		_ = handler.executeCommand(testState, "GET", [][]byte{[]byte(key)}, "127.0.0.1:12345")
 	}
 }
 

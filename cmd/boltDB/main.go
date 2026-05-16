@@ -19,12 +19,13 @@ import (
 
 // Command-line flags - defined at package level for testability
 var (
-	addrFlag           = flag.String("addr", ":6337", "listen addr")
-	dbPathFlag         = flag.String("dir", os.TempDir(), "badger dir")
-	logLevelFlag       = flag.String("log-level", "", "log level: DEBUG, INFO, WARNING, ERROR (default: WARNING, or from BOLTDB_LOG_LEVEL env)")
-	clusterEnabledFlag = flag.Bool("cluster", false, "enable cluster mode")
-	replicaofFlag      = flag.String("replicaof", "", "replicaof master host:port")
-	skipStartupCleanup = flag.Bool("skip-startup-cleanup", false, "skip startup cleanup (data integrity check)")
+	addrFlag                = flag.String("addr", ":6337", "listen addr")
+	dbPathFlag              = flag.String("dir", os.TempDir(), "badger dir")
+	logLevelFlag            = flag.String("log-level", "", "log level: DEBUG, INFO, WARNING, ERROR (default: WARNING, or from BOLTDB_LOG_LEVEL env)")
+	clusterEnabledFlag      = flag.Bool("cluster", false, "enable cluster mode")
+	replicaofFlag           = flag.String("replicaof", "", "replicaof master host:port")
+	skipStartupCleanup      = flag.Bool("skip-startup-cleanup", false, "skip startup cleanup (data integrity check)")
+	clientOutputBufferLimit = flag.Int64("client-output-buffer-limit", 0, "per-client output buffer hard limit in bytes (0 = unlimited)")
 )
 
 func main() {
@@ -76,11 +77,12 @@ func main() {
 	defer cancel()
 
 	handler := &server.Handler{
-		Db:          db,
-		Replication: replMgr,
-		Backup:      backupMgr,
-		PubSub:      pubsubMgr,
-		Ctx:         ctx,
+		Db:                db,
+		Replication:       replMgr,
+		Backup:            backupMgr,
+		PubSub:            pubsubMgr,
+		Ctx:               ctx,
+		OutputBufferLimit: *clientOutputBufferLimit,
 	}
 
 	// 初始化集群（如果启用了集群模式）

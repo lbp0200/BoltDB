@@ -36,6 +36,8 @@ type connState struct {
 	watchedKeys   map[string]struct{}
 	dirtyKeys     map[string]struct{}
 	subscriber    *store.Subscriber
+	monitoring    bool
+	monitorCh     chan []byte
 }
 
 type Handler struct {
@@ -48,10 +50,6 @@ type Handler struct {
 	// 共享的 Watch 监视器：key → 正在监视该 key 的连接
 	watchMonitors map[string]map[*connState]struct{}
 	watchMu       sync.Mutex
-	// baseState 是 state==nil 时的 fallback（仅测试路径）
-	// 生产路径中 handleConnection 始终创建 per-connection connState
-	baseState *connState
-
 	// Ctx 是服务器生命周期上下文，用于优雅关闭
 	// 信号触发 cancel → 所有子 goroutine 的阻塞操作被取消
 	Ctx context.Context
@@ -61,6 +59,15 @@ type Handler struct {
 	conns   map[*connState]*connMeta
 
 	nextConnID atomic.Int64
+
+	// 用于 MONITOR 命令的客户端注册表
+	monitorClients map[*connState]chan []byte
+	monitorMu      sync.Mutex
+
+	// OutputBufferLimit 是每个连接输出缓冲区的硬限制（字节）
+	// 当连接的待发送数据超过此值时，服务器断开该连接（slow client protection）
+	// 0 表示不限制
+	OutputBufferLimit int64
 }
 
 // connMeta 连接元数据
@@ -107,19 +114,6 @@ type TransactionState struct {
 type TransactionCommand struct {
 	Command string
 	Args    [][]byte
-}
-
-// ResetConnectionState 重置连接级别的状态（测试用）
-func (h *Handler) ResetConnectionState() {
-	if h.baseState != nil {
-		h.baseState.mu.Lock()
-		h.baseState.clientInfo = nil
-		h.baseState.clusterAsking = false
-		h.baseState.transaction = nil
-		h.baseState.inTransaction = false
-		h.baseState.commands = nil
-		h.baseState.mu.Unlock()
-	}
 }
 
 // markDirtyKeys 标记键为脏（被修改）
@@ -309,6 +303,7 @@ func (h *Handler) handleConnection(conn net.Conn) {
 		if sub != nil {
 			h.PubSub.RemoveSubscriber(sub)
 		}
+		h.unregisterMonitorClient(state)
 		if len(state.watchedKeys) > 0 {
 			h.watchMu.Lock()
 			for key := range state.watchedKeys {
@@ -409,6 +404,7 @@ func (h *Handler) handleConnection(conn net.Conn) {
 		}
 
 		// 一次性刷新所有响应
+		flushBytes := writer.Buffered()
 		if err := writer.Flush(); err != nil {
 			logger.Logger.Warn().
 				Str("remote_addr", remoteAddr).
@@ -417,11 +413,20 @@ func (h *Handler) handleConnection(conn net.Conn) {
 			return
 		}
 		h.connsMu.Lock()
-		if m, ok := h.conns[state]; ok {
+		m, tracked := h.conns[state]
+		if tracked {
 			m.lastWrite = time.Now()
-			m.outputBytes += int64(writer.Buffered())
+			m.outputBytes += int64(flushBytes)
 		}
 		h.connsMu.Unlock()
+		if tracked && h.OutputBufferLimit > 0 && m.outputBytes > h.OutputBufferLimit {
+			logger.Logger.Warn().
+				Str("remote_addr", remoteAddr).
+				Int64("output_bytes", m.outputBytes).
+				Int64("limit", h.OutputBufferLimit).
+				Msg("客户端输出缓冲区超限，断开连接")
+			return
+		}
 
 		// 进入 PubSub 模式后切换到推送循环
 		state.mu.Lock()
@@ -429,6 +434,15 @@ func (h *Handler) handleConnection(conn net.Conn) {
 		state.mu.Unlock()
 		if inPubSub {
 			h.runPubSubLoop(ctx, conn, reader, writer, state, remoteAddr)
+			return
+		}
+
+		// 进入 MONITOR 模式后切换到推送循环
+		state.mu.Lock()
+		inMonitor := state.monitoring
+		state.mu.Unlock()
+		if inMonitor {
+			h.runMonitorLoop(conn, writer, state, remoteAddr)
 			return
 		}
 
@@ -479,6 +493,11 @@ func (h *Handler) processRequest(req *proto.Array, reader *bufio.Reader, remoteA
 		if cmd != "REPLICAOF" && cmd != "PSYNC" && cmd != "REPLCONF" {
 			h.Replication.PropagateCommand(req.Args)
 		}
+	}
+
+	// 广播到 MONITOR 客户端（不广播 MONITOR 自身的请求）
+	if cmd != "MONITOR" {
+		h.broadcastToMonitors(cmd, args[1:], remoteAddr)
 	}
 
 	logger.Logger.Debug().
@@ -656,6 +675,9 @@ func (h *Handler) runPubSubLoop(ctx context.Context, conn net.Conn, reader *bufi
 		}
 	}()
 
+	flushTicker := time.NewTicker(100 * time.Millisecond)
+	defer flushTicker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -685,6 +707,27 @@ func (h *Handler) runPubSubLoop(ctx context.Context, conn net.Conn, reader *bufi
 				}
 			default:
 				if err := proto.WriteRESP(writer, resp); err != nil {
+					return
+				}
+			}
+
+		case <-flushTicker.C:
+			if n := writer.Buffered(); n > 0 {
+				if err := writer.Flush(); err != nil {
+					return
+				}
+				h.connsMu.Lock()
+				m, tracked := h.conns[state]
+				if tracked {
+					m.outputBytes += int64(n)
+				}
+				h.connsMu.Unlock()
+				if tracked && h.OutputBufferLimit > 0 && m.outputBytes > h.OutputBufferLimit {
+					logger.Logger.Warn().
+						Str("remote_addr", remoteAddr).
+						Int64("output_bytes", m.outputBytes).
+						Int64("limit", h.OutputBufferLimit).
+						Msg("客户端输出缓冲区超限，断开连接")
 					return
 				}
 			}
@@ -739,10 +782,10 @@ func (h *Handler) processPubSubCommand(state *connState, req *proto.Array, remot
 			Responses: make([]proto.RESP, len(subscribed)),
 		}
 		for i, ch := range subscribed {
-			resp.Responses[i] = &proto.Array{Args: [][]byte{
-				[]byte("subscribe"),
-				[]byte(ch),
-				[]byte(strconv.Itoa(i + 1)),
+			resp.Responses[i] = &proto.NestedArray{Elems: []proto.RESP{
+				proto.NewBulkString([]byte("subscribe")),
+				proto.NewBulkString([]byte(ch)),
+				proto.NewInteger(int64(i + 1)),
 			}}
 		}
 		return resp
@@ -763,10 +806,10 @@ func (h *Handler) processPubSubCommand(state *connState, req *proto.Array, remot
 			Responses: make([]proto.RESP, len(subscribed)),
 		}
 		for i, p := range subscribed {
-			resp.Responses[i] = &proto.Array{Args: [][]byte{
-				[]byte("psubscribe"),
-				[]byte(p),
-				[]byte(strconv.Itoa(i + 1)),
+			resp.Responses[i] = &proto.NestedArray{Elems: []proto.RESP{
+				proto.NewBulkString([]byte("psubscribe")),
+				proto.NewBulkString([]byte(p)),
+				proto.NewInteger(int64(i + 1)),
 			}}
 		}
 		return resp
@@ -786,20 +829,20 @@ func (h *Handler) processPubSubCommand(state *connState, req *proto.Array, remot
 			unsubscribed = h.PubSub.Unsubscribe(state.subscriber)
 		}
 		if len(unsubscribed) == 0 {
-			return &proto.Array{Args: [][]byte{
-				[]byte("unsubscribe"),
-				[]byte(""),
-				[]byte("0"),
+			return &proto.NestedArray{Elems: []proto.RESP{
+				proto.NewBulkString([]byte("unsubscribe")),
+				proto.NewBulkString([]byte("")),
+				proto.NewInteger(0),
 			}}
 		}
 		resp := &MultiResponse{
 			Responses: make([]proto.RESP, len(unsubscribed)),
 		}
 		for i, ch := range unsubscribed {
-			resp.Responses[i] = &proto.Array{Args: [][]byte{
-				[]byte("unsubscribe"),
-				[]byte(ch),
-				[]byte("0"),
+			resp.Responses[i] = &proto.NestedArray{Elems: []proto.RESP{
+				proto.NewBulkString([]byte("unsubscribe")),
+				proto.NewBulkString([]byte(ch)),
+				proto.NewInteger(0),
 			}}
 		}
 		return resp
@@ -819,20 +862,20 @@ func (h *Handler) processPubSubCommand(state *connState, req *proto.Array, remot
 			unsubscribed = h.PubSub.PUnsubscribe(state.subscriber)
 		}
 		if len(unsubscribed) == 0 {
-			return &proto.Array{Args: [][]byte{
-				[]byte("punsubscribe"),
-				[]byte(""),
-				[]byte("0"),
+			return &proto.NestedArray{Elems: []proto.RESP{
+				proto.NewBulkString([]byte("punsubscribe")),
+				proto.NewBulkString([]byte("")),
+				proto.NewInteger(0),
 			}}
 		}
 		resp := &MultiResponse{
 			Responses: make([]proto.RESP, len(unsubscribed)),
 		}
 		for i, p := range unsubscribed {
-			resp.Responses[i] = &proto.Array{Args: [][]byte{
-				[]byte("punsubscribe"),
-				[]byte(p),
-				[]byte("0"),
+			resp.Responses[i] = &proto.NestedArray{Elems: []proto.RESP{
+				proto.NewBulkString([]byte("punsubscribe")),
+				proto.NewBulkString([]byte(p)),
+				proto.NewInteger(0),
 			}}
 		}
 		return resp
@@ -845,6 +888,173 @@ func (h *Handler) processPubSubCommand(state *connState, req *proto.Array, remot
 
 	default:
 		return proto.NewError("ERR only (P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT allowed in this context")
+	}
+}
+
+func (h *Handler) registerMonitorClient(state *connState) {
+	h.monitorMu.Lock()
+	defer h.monitorMu.Unlock()
+	if h.monitorClients == nil {
+		h.monitorClients = make(map[*connState]chan []byte)
+	}
+	ch := make(chan []byte, 1024)
+	state.monitorCh = ch
+	h.monitorClients[state] = ch
+}
+
+func (h *Handler) unregisterMonitorClient(state *connState) {
+	h.monitorMu.Lock()
+	defer h.monitorMu.Unlock()
+	if ch, ok := h.monitorClients[state]; ok {
+		close(ch)
+		delete(h.monitorClients, state)
+	}
+}
+
+func (h *Handler) broadcastToMonitors(cmd string, args [][]byte, remoteAddr string) {
+	msg := formatMonitorMessage(cmd, args, remoteAddr)
+	h.monitorMu.Lock()
+	defer h.monitorMu.Unlock()
+	for _, ch := range h.monitorClients {
+		select {
+		case ch <- msg:
+		default:
+		}
+	}
+}
+
+func formatMonitorMessage(cmd string, args [][]byte, remoteAddr string) []byte {
+	now := time.Now()
+	sec := now.Unix()
+	usec := now.Nanosecond() / 1000
+	timestamp := fmt.Sprintf("%d.%06d", sec, usec)
+
+	var b strings.Builder
+	b.WriteString("+")
+	b.WriteString(timestamp)
+	b.WriteString(" [0 ")
+	b.WriteString(remoteAddr)
+	b.WriteString("]")
+	b.WriteString(" \"")
+	b.WriteString(cmd)
+	b.WriteString("\"")
+	for _, arg := range args {
+		b.WriteString(" \"")
+		escaped := strings.ReplaceAll(string(arg), "\\", "\\\\")
+		escaped = strings.ReplaceAll(escaped, "\"", "\\\"")
+		b.WriteString(escaped)
+		b.WriteString("\"")
+	}
+	b.WriteString("\r\n")
+	return []byte(b.String())
+}
+
+func (h *Handler) runMonitorLoop(conn net.Conn, writer *bufio.Writer, state *connState, remoteAddr string) {
+	ch := state.monitorCh
+	if ch == nil {
+		return
+	}
+
+	logger.Logger.Debug().Str("remote_addr", remoteAddr).Msg("进入 MONITOR 模式")
+
+	// 先发送 OK 响应
+	if err := writer.Flush(); err != nil {
+		return
+	}
+
+	reader := bufio.NewReader(conn)
+	cmdCh := make(chan *proto.Array, 16)
+	errCh := make(chan error, 1)
+	done := make(chan struct{})
+	defer close(done)
+
+	go func() {
+		for {
+			req, err := proto.ReadRESP(reader)
+			if err != nil {
+				select {
+				case errCh <- err:
+				case <-done:
+				}
+				return
+			}
+			select {
+			case cmdCh <- req:
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	flushTicker := time.NewTicker(100 * time.Millisecond)
+	defer flushTicker.Stop()
+
+	for {
+		select {
+		case <-state.ctx.Done():
+			logger.Logger.Debug().Str("remote_addr", remoteAddr).Msg("monitor loop cancelled by context")
+			return
+
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
+			if _, err := writer.Write(msg); err != nil {
+				return
+			}
+
+		case req := <-cmdCh:
+			resp := h.processMonitorCommand(req, remoteAddr)
+			if _, isQuit := resp.(*PubSubQuitSignal); isQuit {
+				_ = proto.WriteRESP(writer, proto.NewSimpleString("OK"))
+				_ = writer.Flush()
+				return
+			}
+			if err := proto.WriteRESP(writer, resp); err != nil {
+				return
+			}
+
+		case <-flushTicker.C:
+			if n := writer.Buffered(); n > 0 {
+				if err := writer.Flush(); err != nil {
+					return
+				}
+				h.connsMu.Lock()
+				m, tracked := h.conns[state]
+				if tracked {
+					m.outputBytes += int64(n)
+				}
+				h.connsMu.Unlock()
+				if tracked && h.OutputBufferLimit > 0 && m.outputBytes > h.OutputBufferLimit {
+					logger.Logger.Warn().
+						Str("remote_addr", remoteAddr).
+						Int64("output_bytes", m.outputBytes).
+						Int64("limit", h.OutputBufferLimit).
+						Msg("客户端输出缓冲区超限，断开连接")
+					return
+				}
+			}
+
+		case err := <-errCh:
+			logger.Logger.Debug().Str("remote_addr", remoteAddr).Err(err).Msg("monitor read error")
+			return
+		}
+	}
+}
+
+func (h *Handler) processMonitorCommand(req *proto.Array, remoteAddr string) proto.RESP {
+	args := req.Args
+	if len(args) == 0 {
+		return proto.NewError("ERR no command")
+	}
+	cmd := strings.ToUpper(string(args[0]))
+	switch cmd {
+	case "QUIT":
+		return &PubSubQuitSignal{}
+	case "PING":
+		return proto.NewSimpleString("PONG")
+	default:
+		return proto.NewError("ERR only PING / QUIT allowed in this context")
 	}
 }
 
@@ -964,8 +1174,12 @@ func (h *Handler) clientListRESP() proto.RESP {
 		}
 		state.mu.Unlock()
 
-		line := fmt.Sprintf("id=%d addr=%s fd=0 name=%s age=%d idle=%d flags=%s db=0 sub=%d psub=%d multi=%d cmd=client events=r oFlags= keys=0",
-			id, addr, name, age, idle, flags, sub, psub, multi)
+		oFlags := ""
+		if h.OutputBufferLimit > 0 && meta.outputBytes > h.OutputBufferLimit/2 {
+			oFlags = ">"
+		}
+		line := fmt.Sprintf("id=%d addr=%s fd=0 name=%s age=%d idle=%d flags=%s db=0 sub=%d psub=%d multi=%d cmd=client events=r obl=0 oll=0 omem=%d oFlags=%s keys=0",
+			id, addr, name, age, idle, flags, sub, psub, multi, meta.outputBytes, oFlags)
 		lines = append(lines, line)
 	}
 	return proto.NewBulkString([]byte(strings.Join(lines, "\n")))
@@ -973,7 +1187,7 @@ func (h *Handler) clientListRESP() proto.RESP {
 
 func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, remoteAddr string) proto.RESP {
 	if state == nil {
-		state = h.baseState
+		panic("nil connState in executeCommand")
 	}
 
 	// 如果在事务中（且不是事务控制命令），将命令加入队列
@@ -1191,6 +1405,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			if errors.Is(err, store.ErrKeyNotFound) {
 				return proto.NewBulkString(nil)
+			}
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -1439,12 +1656,14 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		length, err := h.Db.StrLen(key)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewInteger(0)
 		}
 		// #nosec G115 - length is bounded by practical data size limits
 		return proto.NewInteger(int64(length))
 
-	// Bitmap commands
 	case "SETBIT":
 		if len(args) < 3 {
 			return proto.NewError("ERR wrong number of arguments for 'SETBIT' command")
@@ -2202,7 +2421,13 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		key := string(args[0])
 		value, err := h.Db.LPop(key)
-		if err != nil || value == "" {
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NewBulkString(nil)
+		}
+		if value == "" {
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString([]byte(value))
@@ -2213,7 +2438,13 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		key := string(args[0])
 		value, err := h.Db.RPop(key)
-		if err != nil || value == "" {
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NewBulkString(nil)
+		}
+		if value == "" {
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString([]byte(value))
@@ -2225,6 +2456,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		key := string(args[0])
 		length, err := h.Db.LLen(key)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewInteger(0)
 		}
 		// #nosec G115 - length is bounded by practical data size limits
@@ -2240,7 +2474,13 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
 		value, err := h.Db.LIndex(key, index)
-		if err != nil || value == "" {
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NewBulkString(nil)
+		}
+		if value == "" {
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString([]byte(value))
@@ -2257,6 +2497,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		values, err := h.Db.LRange(key, start, stop)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return &proto.Array{Args: [][]byte{}}
 		}
 		results := make([][]byte, len(values))
@@ -2388,7 +2631,13 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		source, destination := string(args[0]), string(args[1])
 		h.markDirtyKeys(state, source, destination)
 		value, err := h.Db.RPopLPush(source, destination)
-		if err != nil || value == "" {
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NewBulkString(nil)
+		}
+		if value == "" {
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString([]byte(value))
@@ -2513,7 +2762,13 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR timeout is not an integer or out of range")
 		}
 		value, err := h.Db.BRPOPLPUSHBlocking(state.ctx, source, destination, timeout)
-		if err != nil || value == "" {
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NewBulkString(nil)
+		}
+		if value == "" {
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString([]byte(value))
@@ -2583,6 +2838,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		key := string(args[0])
 		length, err := h.Db.HLen(key)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewInteger(0)
 		}
 		// #nosec G115 - length is bounded by practical data size limits
@@ -2595,6 +2853,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		key := string(args[0])
 		data, err := h.Db.HGetAll(key)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return &proto.Array{Args: [][]byte{}}
 		}
 		results := make([][]byte, 0, len(data)*2)
@@ -2610,6 +2871,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		key, field := string(args[0]), string(args[1])
 		exists, err := h.Db.HExists(key, field)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewInteger(0)
 		}
 		return proto.NewInteger(int64(boolToInt(exists)))
@@ -2621,6 +2885,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		key := string(args[0])
 		keys, err := h.Db.HKeys(key)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return &proto.Array{Args: [][]byte{}}
 		}
 		results := make([][]byte, len(keys))
@@ -2636,6 +2903,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		key := string(args[0])
 		values, err := h.Db.HVals(key)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return &proto.Array{Args: [][]byte{}}
 		}
 		results := make([][]byte, len(values))
@@ -2733,6 +3003,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		key, field := string(args[0]), string(args[1])
 		length, err := h.Db.HStrLen(key, field)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewInteger(0)
 		}
 		// #nosec G115 - length is bounded by practical data size limits
@@ -3001,20 +3274,23 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
-		// 转换为响应数组
-		resp := make([][]byte, len(results))
+		elems := make([]proto.RESP, len(results))
 		for i, v := range results {
-			resp[i] = []byte(strconv.FormatInt(v, 10))
+			elems[i] = proto.Integer(v)
 		}
-		return &proto.Array{Args: resp}
+		return &proto.NestedArray{Elems: elems}
 
 	case "SINTERCARD":
-		if len(args) < 1 {
+		if len(args) < 2 {
 			return proto.NewError("ERR wrong number of arguments for 'SINTERCARD' command")
 		}
-		sinterKeys := make([]string, len(args))
-		for i, arg := range args {
-			sinterKeys[i] = string(arg)
+		numkeys, err := strconv.Atoi(string(args[0]))
+		if err != nil || numkeys < 1 || numkeys > len(args)-1 {
+			return proto.NewError("ERR wrong number of arguments for 'SINTERCARD' command")
+		}
+		sinterKeys := make([]string, numkeys)
+		for i := 0; i < numkeys; i++ {
+			sinterKeys[i] = string(args[i+1])
 		}
 		count, err := h.Db.SInterCard(sinterKeys...)
 		if err != nil {
@@ -3246,8 +3522,14 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR timeout is not an integer or out of range")
 		}
 		key, member, err := h.Db.BZPopMax(keys, timeout)
-		if err != nil || key == "" {
-			return &proto.Array{Args: [][]byte{}}
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NilArray{}
+		}
+		if key == "" {
+			return proto.NilArray{}
 		}
 		return &proto.Array{Args: [][]byte{[]byte(key), []byte(member.Member), []byte(fmt.Sprintf("%.10g", member.Score))}}
 
@@ -3264,8 +3546,14 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR timeout is not an integer or out of range")
 		}
 		key, member, err := h.Db.BZPopMin(keys, timeout)
-		if err != nil || key == "" {
-			return &proto.Array{Args: [][]byte{}}
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NilArray{}
+		}
+		if key == "" {
+			return proto.NilArray{}
 		}
 		return &proto.Array{Args: [][]byte{[]byte(key), []byte(member.Member), []byte(fmt.Sprintf("%.10g", member.Score))}}
 
@@ -3567,7 +3855,58 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if len(args) < 1 {
 			return proto.NewError("ERR wrong number of arguments for 'ZRANDMEMBER' command")
 		}
-		return proto.NewError("ERR command 'ZRANDMEMBER' not implemented")
+		key := string(args[0])
+		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+			return resp
+		}
+		count := 0
+		withScores := false
+		if len(args) >= 2 {
+			c, err := strconv.Atoi(string(args[1]))
+			if err != nil {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			count = c
+		}
+		for i := 2; i < len(args); i++ {
+			if strings.EqualFold(string(args[i]), "WITHSCORES") {
+				withScores = true
+			}
+		}
+		members, err := h.Db.ZRandMember(key, count)
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		if len(members) == 0 {
+			if count == 0 {
+				return proto.NewBulkString(nil)
+			}
+			return &proto.Array{Args: [][]byte{}}
+		}
+		if count == 0 && !withScores {
+			return proto.NewBulkString([]byte(members[0].Member))
+		}
+		if count == 0 && withScores {
+			return &proto.Array{Args: [][]byte{
+				[]byte(members[0].Member),
+				[]byte(strconv.FormatFloat(members[0].Score, 'f', -1, 64)),
+			}}
+		}
+		if withScores {
+			result := make([][]byte, 0, len(members)*2)
+			for _, m := range members {
+				result = append(result, []byte(m.Member), []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)))
+			}
+			return &proto.Array{Args: result}
+		}
+		result := make([][]byte, len(members))
+		for i, m := range members {
+			result[i] = []byte(m.Member)
+		}
+		return &proto.Array{Args: result}
 
 	case "ZMPOP":
 		if len(args) < 2 {
@@ -3705,6 +4044,50 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewInteger(count)
+
+	case "ZDIFF":
+		if len(args) < 2 {
+			return proto.NewError("ERR wrong number of arguments for 'ZDIFF' command")
+		}
+		numKeys, err := strconv.Atoi(string(args[0]))
+		if err != nil {
+			return proto.NewError("ERR value is not an integer")
+		}
+		if numKeys < 1 {
+			return proto.NewError("ERR syntax error")
+		}
+		keys := make([]string, numKeys)
+		for i := 0; i < numKeys; i++ {
+			keys[i] = string(args[1+i])
+		}
+		withScores := false
+		for i := 1 + numKeys; i < len(args); i++ {
+			if strings.EqualFold(string(args[i]), "WITHSCORES") {
+				withScores = true
+			}
+		}
+		members, err := h.Db.ZDiff(keys)
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		if len(members) == 0 {
+			return &proto.Array{Args: [][]byte{}}
+		}
+		if withScores {
+			result := make([][]byte, 0, len(members)*2)
+			for _, m := range members {
+				result = append(result, []byte(m.Member), []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)))
+			}
+			return &proto.Array{Args: result}
+		}
+		result := make([][]byte, len(members))
+		for i, m := range members {
+			result[i] = []byte(m.Member)
+		}
+		return &proto.Array{Args: result}
 
 	case "ZLEXCOUNT":
 		// ZLEXCOUNT key min max
@@ -4465,10 +4848,10 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			Responses: make([]proto.RESP, len(subscribed)),
 		}
 		for i, ch := range subscribed {
-			resp.Responses[i] = &proto.Array{Args: [][]byte{
-				[]byte("subscribe"),
-				[]byte(ch),
-				[]byte(strconv.Itoa(i + 1)),
+			resp.Responses[i] = &proto.NestedArray{Elems: []proto.RESP{
+				proto.NewBulkString([]byte("subscribe")),
+				proto.NewBulkString([]byte(ch)),
+				proto.NewInteger(int64(i + 1)),
 			}}
 		}
 		return resp
@@ -4494,10 +4877,10 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			Responses: make([]proto.RESP, len(subscribed)),
 		}
 		for i, p := range subscribed {
-			resp.Responses[i] = &proto.Array{Args: [][]byte{
-				[]byte("psubscribe"),
-				[]byte(p),
-				[]byte(strconv.Itoa(i + 1)),
+			resp.Responses[i] = &proto.NestedArray{Elems: []proto.RESP{
+				proto.NewBulkString([]byte("psubscribe")),
+				proto.NewBulkString([]byte(p)),
+				proto.NewInteger(int64(i + 1)),
 			}}
 		}
 		return resp
@@ -4512,10 +4895,10 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if len(args) >= 1 {
 				channel = string(args[0])
 			}
-			return &proto.Array{Args: [][]byte{
-				[]byte("unsubscribe"),
-				[]byte(channel),
-				[]byte("0"),
+			return &proto.NestedArray{Elems: []proto.RESP{
+				proto.NewBulkString([]byte("unsubscribe")),
+				proto.NewBulkString([]byte(channel)),
+				proto.NewInteger(0),
 			}}
 		}
 		var unsubscribed []string
@@ -4529,20 +4912,20 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			unsubscribed = h.PubSub.Unsubscribe(state.subscriber)
 		}
 		if len(unsubscribed) == 0 {
-			return &proto.Array{Args: [][]byte{
-				[]byte("unsubscribe"),
-				[]byte(""),
-				[]byte("0"),
+			return &proto.NestedArray{Elems: []proto.RESP{
+				proto.NewBulkString([]byte("unsubscribe")),
+				proto.NewBulkString([]byte("")),
+				proto.NewInteger(0),
 			}}
 		}
 		resp := &MultiResponse{
 			Responses: make([]proto.RESP, len(unsubscribed)),
 		}
 		for i, ch := range unsubscribed {
-			resp.Responses[i] = &proto.Array{Args: [][]byte{
-				[]byte("unsubscribe"),
-				[]byte(ch),
-				[]byte("0"),
+			resp.Responses[i] = &proto.NestedArray{Elems: []proto.RESP{
+				proto.NewBulkString([]byte("unsubscribe")),
+				proto.NewBulkString([]byte(ch)),
+				proto.NewInteger(0),
 			}}
 		}
 		return resp
@@ -4557,10 +4940,10 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if len(args) >= 1 {
 				pattern = string(args[0])
 			}
-			return &proto.Array{Args: [][]byte{
-				[]byte("punsubscribe"),
-				[]byte(pattern),
-				[]byte("0"),
+			return &proto.NestedArray{Elems: []proto.RESP{
+				proto.NewBulkString([]byte("punsubscribe")),
+				proto.NewBulkString([]byte(pattern)),
+				proto.NewInteger(0),
 			}}
 		}
 		var unsubscribed []string
@@ -4574,20 +4957,20 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			unsubscribed = h.PubSub.PUnsubscribe(state.subscriber)
 		}
 		if len(unsubscribed) == 0 {
-			return &proto.Array{Args: [][]byte{
-				[]byte("punsubscribe"),
-				[]byte(""),
-				[]byte("0"),
+			return &proto.NestedArray{Elems: []proto.RESP{
+				proto.NewBulkString([]byte("punsubscribe")),
+				proto.NewBulkString([]byte("")),
+				proto.NewInteger(0),
 			}}
 		}
 		resp := &MultiResponse{
 			Responses: make([]proto.RESP, len(unsubscribed)),
 		}
 		for i, p := range unsubscribed {
-			resp.Responses[i] = &proto.Array{Args: [][]byte{
-				[]byte("punsubscribe"),
-				[]byte(p),
-				[]byte("0"),
+			resp.Responses[i] = &proto.NestedArray{Elems: []proto.RESP{
+				proto.NewBulkString([]byte("punsubscribe")),
+				proto.NewBulkString([]byte(p)),
+				proto.NewInteger(0),
 			}}
 		}
 		return resp
@@ -4675,13 +5058,22 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i, tc := range state.commands {
 			results[i] = h.executeQueuedCommand(tc.Command, tc.Args)
 		}
+
+		// 传播事务中的写命令到从节点
+		if h.Replication != nil && h.Replication.IsMaster() {
+			for _, tc := range state.commands {
+				if isWriteCommand(tc.Command) {
+					fullArgs := make([][]byte, 1, len(tc.Args)+1)
+					fullArgs[0] = []byte(tc.Command)
+					fullArgs = append(fullArgs, tc.Args...)
+					h.Replication.PropagateCommand(fullArgs)
+				}
+			}
+		}
+
 		state.inTransaction = false
 		state.commands = nil
-		flatArgs := make([][]byte, len(results))
-		for i, r := range results {
-			flatArgs[i] = []byte(r.String())
-		}
-		return &proto.Array{Args: flatArgs}
+		return &proto.NestedArray{Elems: results}
 
 	case "DISCARD":
 		if !state.inTransaction {
@@ -5180,27 +5572,33 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 
 		// Format response
-		var response [][]byte
-		for _, streamMap := range results {
-			for streamKey, entries := range streamMap {
-				response = append(response, []byte(streamKey))
-				entryArray := make([][]byte, 0)
-				for _, entry := range entries {
-					entryArray = append(entryArray, []byte(entry.ID))
-					fieldArray := make([][]byte, 0)
-					for k, v := range entry.Fields {
-						fieldArray = append(fieldArray, []byte(k))
-						fieldArray = append(fieldArray, []byte(v))
-					}
-					entryArray = append(entryArray, fieldArray...)
-				}
-				response = append(response, entryArray...)
-			}
-		}
-		if len(response) == 0 {
+		if len(results) == 0 {
 			return proto.NewBulkString(nil)
 		}
-		return &proto.Array{Args: response}
+		streamResults := make([]proto.RESP, 0, len(results))
+		for _, streamMap := range results {
+			for streamKey, entries := range streamMap {
+				entriesResp := make([]proto.RESP, 0, len(entries))
+				for _, entry := range entries {
+					fieldsResp := make([]proto.RESP, 0, len(entry.Fields)*2)
+					for k, v := range entry.Fields {
+						fieldsResp = append(fieldsResp,
+							proto.NewBulkString([]byte(k)),
+							proto.NewBulkString([]byte(v)),
+						)
+					}
+					entriesResp = append(entriesResp, &proto.NestedArray{Elems: []proto.RESP{
+						proto.NewBulkString([]byte(entry.ID)),
+						&proto.NestedArray{Elems: fieldsResp},
+					}})
+				}
+				streamResults = append(streamResults, &proto.NestedArray{Elems: []proto.RESP{
+					proto.NewBulkString([]byte(streamKey)),
+					&proto.NestedArray{Elems: entriesResp},
+				}})
+			}
+		}
+		return &proto.NestedArray{Elems: streamResults}
 
 	// ==================== XRANGE ====================
 	case "XRANGE":
@@ -6518,6 +6916,16 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			}
 		}
 		return &proto.Array{Args: arr}
+
+	case "MONITOR":
+		if len(args) > 0 {
+			return proto.NewError("ERR wrong number of arguments for 'MONITOR' command")
+		}
+		state.mu.Lock()
+		state.monitoring = true
+		state.mu.Unlock()
+		h.registerMonitorClient(state)
+		return proto.OK
 
 	default:
 		if state.inTransaction {

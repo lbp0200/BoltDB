@@ -39,6 +39,19 @@ func (s *BotreonStore) listKey(key string, parts ...string) string {
 func (s *BotreonStore) listLength(key string) (uint64, error) {
 	var length uint64
 	errView := s.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(TypeOfKeyGet(key))
+		if err == nil {
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			keyType := string(val)
+			if keyType != "" && keyType != KeyTypeList {
+				return ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
 		// 获取长度
 		// 通过 listKey 方法生成存储长度信息的键
 		lengthItem, err := txn.Get([]byte(s.listKey(key, "length")))
@@ -200,7 +213,11 @@ func (s *BotreonStore) LPush(key string, values ...string) (int, error) {
 // RPOP 实现
 func (s *BotreonStore) RPop(key string) (string, error) {
 	var value string
-	err := s.retryUpdate(func(txn *badger.Txn) error {
+	err := s.checkTypeBeforeOp(key, KeyTypeList)
+	if err != nil {
+		return "", err
+	}
+	err = s.retryUpdate(func(txn *badger.Txn) error {
 		length, start, end, err := s.listGetMeta(key)
 		if err != nil {
 			// 如果列表不存在，返回空字符串
@@ -409,7 +426,11 @@ func (s *BotreonStore) RPush(key string, values ...string) (int, error) {
 // LPOP 实现 Redis LPOP 命令
 func (s *BotreonStore) LPop(key string) (string, error) {
 	var value string
-	err := s.retryUpdate(func(txn *badger.Txn) error {
+	err := s.checkTypeBeforeOp(key, KeyTypeList)
+	if err != nil {
+		return "", err
+	}
+	err = s.retryUpdate(func(txn *badger.Txn) error {
 		length, start, end, err := s.listGetMeta(key)
 		if err != nil {
 			if length == 0 {
@@ -470,6 +491,9 @@ func (s *BotreonStore) LPop(key string) (string, error) {
 func (s *BotreonStore) LIndex(key string, index int64) (string, error) {
 	var value string
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeList); err != nil {
+			return err
+		}
 		_, val, err := s.getNodeByIndex(txn, key, index)
 		if err != nil {
 			return err
@@ -484,6 +508,9 @@ func (s *BotreonStore) LIndex(key string, index int64) (string, error) {
 func (s *BotreonStore) LRange(key string, start, stop int64) ([]string, error) {
 	var result []string
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeList); err != nil {
+			return err
+		}
 		length, startID, _, err := s.listGetMeta(key)
 		if err != nil {
 			return nil // 列表不存在，返回空列表
