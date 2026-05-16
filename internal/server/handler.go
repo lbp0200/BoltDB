@@ -1209,6 +1209,10 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	case "PING":
 		return proto.NewSimpleString("PONG")
 
+	case "QUIT":
+		state.cancel()
+		return proto.NewSimpleString("OK")
+
 	case "ROLE":
 		// 返回角色信息，兼容 redis-sentinel
 		// 格式: [master|slave|sentinel, master地址, 复制偏移量]
@@ -5493,6 +5497,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 		resultID, err := h.Db.XAdd(key, opts, id, fields)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewBulkString([]byte(resultID))
@@ -5505,6 +5512,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		key := string(args[0])
 		length, err := h.Db.XLen(key)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewInteger(length)
@@ -5568,6 +5578,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 		results, err := h.Db.XRead(state.ctx, count, block, allArgs...)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 
@@ -5627,6 +5640,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 		entries, err := h.Db.XRange(key, start, stop, count)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 
@@ -5682,6 +5698,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 		entries, err := h.Db.XRevRange(key, start, stop, count)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 
@@ -5719,6 +5738,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		deleted, err := h.Db.XDel(key, ids...)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewInteger(deleted)
@@ -5772,6 +5794,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			group := string(args[2])
 			err := h.Db.XGroupDestroy(key, group)
 			if err != nil {
+				if errors.Is(err, store.ErrWrongType) {
+					return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+				}
 				return proto.NewError(fmt.Sprintf("ERR %v", err))
 			}
 			return proto.NewInteger(1)
@@ -5784,6 +5809,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			id := string(args[3])
 			err := h.Db.XGroupSetID(key, group, id)
 			if err != nil {
+				if errors.Is(err, store.ErrWrongType) {
+					return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+				}
 				return proto.NewError(fmt.Sprintf("ERR %v", err))
 			}
 			return proto.OK
@@ -5796,6 +5824,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			consumer := string(args[3])
 			removed, err := h.Db.XGroupDelConsumer(key, group, consumer)
 			if err != nil {
+				if errors.Is(err, store.ErrWrongType) {
+					return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+				}
 				return proto.NewError(fmt.Sprintf("ERR %v", err))
 			}
 			return proto.NewInteger(removed)
@@ -5912,6 +5943,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 		results, err := h.Db.XReadGroup(group, consumer, count, block, streamKeys...)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 
@@ -5970,6 +6004,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		claimed, err := h.Db.XClaim(key, group, consumer, minIdleTime, ids...)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		// XCLAIM returns array of message IDs
@@ -6019,6 +6056,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 		result, err := h.Db.XAutoClaim(key, group, consumer, minIdleTime, start, opts)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 
@@ -6052,6 +6092,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		group := string(args[1])
 		entries, err := h.Db.XPending(key, group)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		// Redis XPENDING format: [pending_count, min_id, max_id, [[id, consumer, delivery_count, last_delivery_time], ...]]
@@ -6122,6 +6165,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			key := string(args[1])
 			info, err := h.Db.XInfo(key)
 			if err != nil {
+				if errors.Is(err, store.ErrWrongType) {
+					return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+				}
 				return proto.NewError(fmt.Sprintf("ERR %v", err))
 			}
 			response := [][]byte{
@@ -6142,6 +6188,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			key := string(args[1])
 			groups, err := h.Db.XInfoGroups(key)
 			if err != nil {
+				if errors.Is(err, store.ErrWrongType) {
+					return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+				}
 				return proto.NewError(fmt.Sprintf("ERR %v", err))
 			}
 			// Return array of groups, each group is a nested array of [key, value, ...]
@@ -6166,6 +6215,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			group := string(args[2])
 			consumers, err := h.Db.XInfoConsumers(key, group)
 			if err != nil {
+				if errors.Is(err, store.ErrWrongType) {
+					return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+				}
 				return proto.NewError(fmt.Sprintf("ERR %v", err))
 			}
 			response := make([][]byte, 0)
@@ -6252,6 +6304,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 		trimmed, err := h.Db.XTrim(key, maxLen, minID)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewInteger(trimmed)

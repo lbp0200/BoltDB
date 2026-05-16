@@ -227,8 +227,19 @@ func (s *BotreonStore) XAdd(key string, opts StreamXAddOptions, id string, field
 	var resultID string
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {
-		// Set type key
+		// Check type first
 		typeKey := TypeOfKeyGet(key)
+		typeItem, typeErr := txn.Get(typeKey)
+		if typeErr == nil {
+			typeVal, _ := typeItem.ValueCopy(nil)
+			if string(typeVal) != "" && string(typeVal) != KeyTypeStream {
+				return ErrWrongType
+			}
+		} else if !errors.Is(typeErr, badger.ErrKeyNotFound) {
+			return typeErr
+		}
+
+		// Set type key
 		if err := txn.Set(typeKey, []byte(KeyTypeStream)); err != nil {
 			logger.Logger.Error().Err(err).Str("key", key).Msg("XAdd: Failed to set type")
 			return err
