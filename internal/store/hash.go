@@ -832,3 +832,91 @@ type hashField struct {
 	Field string
 	Value []byte
 }
+
+// HScanResult HSCAN结果
+type HScanResult struct {
+	Cursor uint64
+	Fields map[string][]byte
+}
+
+// HScan 实现 Redis HSCAN 命令，增量迭代哈希表的字段
+func (s *BotreonStore) HScan(key string, cursor uint64, pattern string, count int) (HScanResult, error) {
+	var result HScanResult
+	result.Cursor = 0
+	result.Fields = make(map[string][]byte)
+
+	if count <= 0 {
+		count = 10
+	}
+
+	err := s.db.View(func(txn *badger.Txn) error {
+		typeKey := TypeOfKeyGet(key)
+		item, err := txn.Get(typeKey)
+		if err != nil {
+			if errors.Is(err, badger.ErrKeyNotFound) {
+				return nil
+			}
+			return err
+		}
+		val, _ := item.ValueCopy(nil)
+		if string(val) != "" && string(val) != KeyTypeHash {
+			return ErrWrongType
+		}
+
+		prefix := []byte(fmt.Sprintf("%s:%s:", KeyTypeHash, key))
+		opts := badger.DefaultIteratorOptions
+		opts.Prefix = prefix
+		opts.PrefetchValues = true
+
+		iter := txn.NewIterator(opts)
+		defer iter.Close()
+
+		currentPos := uint64(0)
+		collected := 0
+
+		if cursor > 0 {
+			for iter.Seek(prefix); iter.ValidForPrefix(prefix) && currentPos < cursor; iter.Next() {
+				currentPos++
+			}
+		} else {
+			iter.Seek(prefix)
+		}
+
+		for iter.ValidForPrefix(prefix) && collected < count {
+			item := iter.Item()
+			keyBytes := item.KeyCopy(nil)
+			fieldName := string(keyBytes[len(prefix):])
+
+			if fieldName == "__count__" {
+				currentPos++
+				iter.Next()
+				continue
+			}
+
+			if pattern == "" || pattern == "*" || matchPattern(fieldName, pattern) {
+				fieldVal, err := item.ValueCopy(nil)
+				if err != nil {
+					return err
+				}
+				result.Fields[fieldName] = fieldVal
+				collected++
+			}
+
+			currentPos++
+			iter.Next()
+		}
+
+		if iter.ValidForPrefix(prefix) {
+			result.Cursor = currentPos
+		} else {
+			result.Cursor = 0
+		}
+
+		return nil
+	})
+
+	if errors.Is(err, ErrWrongType) {
+		return result, err
+	}
+	return result, nil
+}

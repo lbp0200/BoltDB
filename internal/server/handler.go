@@ -1209,6 +1209,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	case "PING":
 		return proto.NewSimpleString("PONG")
 
+	case "COMMAND":
+		return &proto.Array{Args: [][]byte{}}
+
 	case "QUIT":
 		state.cancel()
 		return proto.NewSimpleString("OK")
@@ -1416,6 +1419,80 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewBulkString([]byte(value))
+
+	case "GETDEL":
+		if len(args) < 1 {
+			return proto.NewError("ERR wrong number of arguments for 'GETDEL' command")
+		}
+		gdKey := string(args[0])
+		if resp := h.checkAndHandleRedirect(state, gdKey); resp != nil {
+			return resp
+		}
+		gdValue, gdErr := h.Db.Get(gdKey)
+		if gdErr != nil {
+			if errors.Is(gdErr, store.ErrKeyNotFound) {
+				return proto.NewBulkString(nil)
+			}
+			if errors.Is(gdErr, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NewError(fmt.Sprintf("ERR %v", gdErr))
+		}
+		h.markDirtyKeys(state, gdKey)
+		if _, err := h.Db.Del(gdKey); err != nil {
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		return proto.NewBulkString([]byte(gdValue))
+
+	case "GETEX":
+		if len(args) < 1 {
+			return proto.NewError("ERR wrong number of arguments for 'GETEX' command")
+		}
+		gexKey := string(args[0])
+		if resp := h.checkAndHandleRedirect(state, gexKey); resp != nil {
+			return resp
+		}
+		gexSeconds := 0
+		if len(args) > 1 {
+			opt := strings.ToUpper(string(args[1]))
+			if opt == "EX" && len(args) > 2 {
+				s, err := strconv.Atoi(string(args[2]))
+				if err != nil {
+					return proto.NewError("ERR value is not an integer")
+				}
+				gexSeconds = s
+			} else if opt == "PX" && len(args) > 2 {
+				s, err := strconv.Atoi(string(args[2]))
+				if err != nil {
+					return proto.NewError("ERR value is not an integer")
+				}
+				gexSeconds = s / 1000
+			} else if opt == "PERSIST" {
+				h.markDirtyKeys(state, gexKey)
+				if _, err := h.Db.Persist(gexKey); err != nil {
+					return proto.NewError(fmt.Sprintf("ERR %v", err))
+				}
+			} else {
+				return proto.NewError("ERR syntax error")
+			}
+		}
+		gexValue, gexErr := h.Db.Get(gexKey)
+		if gexErr != nil {
+			if errors.Is(gexErr, store.ErrKeyNotFound) {
+				return proto.NewBulkString(nil)
+			}
+			if errors.Is(gexErr, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NewError(fmt.Sprintf("ERR %v", gexErr))
+		}
+		if gexSeconds > 0 {
+			h.markDirtyKeys(state, gexKey)
+			if _, err := h.Db.Expire(gexKey, gexSeconds); err != nil {
+				return proto.NewError(fmt.Sprintf("ERR %v", err))
+			}
+		}
+		return proto.NewBulkString([]byte(gexValue))
 
 	case "SETEX":
 		if len(args) < 3 {
@@ -3375,6 +3452,48 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			response = append(response, []byte(m))
 		}
 		return &proto.Array{Args: response}
+
+	// ==================== HSCAN ====================
+	case "HSCAN":
+		if len(args) < 2 {
+			return proto.NewError("ERR wrong number of arguments for 'HSCAN' command")
+		}
+		hscanKey := string(args[0])
+		hscanCursor, err := strconv.ParseUint(string(args[1]), 10, 64)
+		if err != nil {
+			return proto.NewError("ERR value is not an integer")
+		}
+		hscanPattern := ""
+		hscanCount := 10
+		if len(args) > 2 {
+			for i := 2; i < len(args); i++ {
+				opt := strings.ToUpper(string(args[i]))
+				if opt == "MATCH" && i+1 < len(args) {
+					hscanPattern = string(args[i+1])
+					i++
+				} else if opt == "COUNT" && i+1 < len(args) {
+					hscanCount, err = strconv.Atoi(string(args[i+1]))
+					if err != nil {
+						return proto.NewError("ERR value is not an integer")
+					}
+					i++
+				}
+			}
+		}
+		hscanResult, err := h.Db.HScan(hscanKey, hscanCursor, hscanPattern, hscanCount)
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		hscanResp := make([][]byte, 0, 2+len(hscanResult.Fields)*2)
+		hscanResp = append(hscanResp, []byte(strconv.FormatUint(hscanResult.Cursor, 10)))
+		for fieldName, fieldVal := range hscanResult.Fields {
+			hscanResp = append(hscanResp, []byte(fieldName))
+			hscanResp = append(hscanResp, fieldVal)
+		}
+		return &proto.Array{Args: hscanResp}
 
 	// SortedSet命令 - 由于代码太长，这里只实现主要命令
 	case "ZADD":
