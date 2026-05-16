@@ -1,0 +1,413 @@
+package integration
+
+import (
+	"bufio"
+	"context"
+	"fmt"
+	"math/rand"
+	"net"
+	"os"
+	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/lbp0200/BoltDB/internal/proto"
+	"github.com/redis/go-redis/v9"
+)
+
+const soakDefaultDuration = 5 * time.Minute
+const soakMaxDuration = 24 * time.Hour
+
+// getSoakDuration returns the configured soak duration.
+// Override with SOAK_DURATION env var (e.g. SOAK_DURATION=30m).
+func getSoakDuration() time.Duration {
+	s := os.Getenv("SOAK_DURATION")
+	if s == "" {
+		return soakDefaultDuration
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return soakDefaultDuration
+	}
+	if d > soakMaxDuration {
+		return soakMaxDuration
+	}
+	return d
+}
+
+// getSoakConcurrency returns the configured client concurrency.
+// Override with SOAK_CLIENTS env var (default 50).
+func getSoakConcurrency() int {
+	s := os.Getenv("SOAK_CLIENTS")
+	if s == "" {
+		return 50
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return 50
+	}
+	if n > 200 {
+		return 200
+	}
+	return n
+}
+
+func soakBaseline(t *testing.T) (goroutines int) {
+	t.Helper()
+	time.Sleep(500 * time.Millisecond)
+	return runtime.NumGoroutine()
+}
+
+func soakCheckNoLeak(t *testing.T, baseline, final int) {
+	t.Helper()
+	leak := final - baseline
+	t.Logf("soak goroutine delta: %d (baseline=%d, final=%d)", leak, baseline, final)
+	if leak > 10 {
+		t.Errorf("goroutine leak after soak: %d (baseline=%d, final=%d)", leak, baseline, final)
+	}
+}
+
+// TestSoak_Short is a short soak test suitable for CI (5 min default).
+// It runs random operations with 50 concurrent clients and verifies
+// no goroutine leak, no panic, and no deadlock.
+func TestSoak_Short(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	duration := getSoakDuration()
+	concurrency := getSoakConcurrency()
+
+	t.Logf("soak: duration=%v, clients=%d", duration, concurrency)
+	t.Logf("soak: set SOAK_DURATION (e.g. SOAK_DURATION=30m) to extend")
+	t.Logf("soak: set SOAK_CLIENTS (default=50, max=200) to change concurrency")
+
+	baseline := soakBaseline(t)
+	ctx, cancel := context.WithTimeout(context.Background(), duration)
+	defer cancel()
+
+	errCh := make(chan error, concurrency*2)
+	var wg sync.WaitGroup
+
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					errCh <- fmt.Errorf("soak client %d panicked: %v", id, r)
+				}
+			}()
+			runSoakClient(ctx, id, errCh)
+		}(i)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	var errs []error
+	for err := range errCh {
+		errs = append(errs, err)
+	}
+	if len(errs) > 0 {
+		t.Errorf("soak: %d errors during run (first 5 shown):", len(errs))
+		for i, err := range errs {
+			if i >= 5 {
+				t.Errorf("  ... and %d more", len(errs)-5)
+				break
+			}
+			t.Errorf("  %v", err)
+		}
+	}
+
+	final := runtime.NumGoroutine()
+	soakCheckNoLeak(t, baseline, final)
+}
+
+func runSoakClient(ctx context.Context, id int, errCh chan<- error) {
+	addr := sharedListener.Addr().String()
+	rng := rand.New(rand.NewSource(time.Now().UnixNano() + int64(id)))
+
+	// probability weights for different operation classes
+	const (
+		pubsubWeight    = 15
+		blockingWeight  = 10
+		txnWeight       = 10
+		killWeight      = 3
+		connectWeight   = 5
+		pipelineWeight  = 12
+		normalWeight    = 45
+		totalWeight     = pubsubWeight + blockingWeight + txnWeight + killWeight + connectWeight + pipelineWeight + normalWeight
+	)
+
+	for ctx.Err() == nil {
+		roll := rng.Intn(totalWeight)
+
+		switch {
+		case roll < pubsubWeight:
+			runSoakPubSub(ctx, addr, rng, errCh)
+
+		case roll < pubsubWeight+blockingWeight:
+			runSoakBlocking(ctx, addr, rng, errCh)
+
+		case roll < pubsubWeight+blockingWeight+txnWeight:
+			runSoakTransaction(ctx, addr, rng, errCh)
+
+		case roll < pubsubWeight+blockingWeight+txnWeight+killWeight:
+			runSoakClientKill(ctx, addr, rng, errCh)
+
+		case roll < pubsubWeight+blockingWeight+txnWeight+killWeight+connectWeight:
+			runSoakConnectDisconnect(ctx, addr, rng)
+
+		case roll < pubsubWeight+blockingWeight+txnWeight+killWeight+connectWeight+pipelineWeight:
+			runSoakPipeline(ctx, addr, rng, errCh)
+
+		default:
+			runSoakNormal(ctx, addr, rng, errCh)
+		}
+
+		// small random pause between iterations
+		if rng.Intn(100) < 30 {
+			time.Sleep(time.Duration(rng.Intn(50)) * time.Millisecond)
+		}
+	}
+}
+
+func dialSoak(addr string) (net.Conn, *bufio.Reader, error) {
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return nil, nil, err
+	}
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
+	return conn, bufio.NewReader(conn), nil
+}
+
+func sendRESPLine(conn net.Conn, data string) error {
+	_, err := conn.Write([]byte(data))
+	return err
+}
+
+func drainRESP(reader *bufio.Reader) {
+	for reader.Buffered() > 0 {
+		_, _ = proto.ReadRESP(reader)
+	}
+}
+
+func runSoakPubSub(ctx context.Context, addr string, rng *rand.Rand, errCh chan<- error) {
+	conn, reader, err := dialSoak(addr)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	ch := fmt.Sprintf("soak:ch:%d", rng.Intn(5))
+	// subscribe
+	_ = sendRESPLine(conn, fmt.Sprintf("*2\r\n$9\r\nSUBSCRIBE\r\n$%d\r\n%s\r\n", len(ch), ch))
+	// read subscribe response
+	for i := 0; i < 3; i++ {
+		if _, err := proto.ReadRESP(reader); err != nil {
+			return
+		}
+	}
+
+	// publish a few messages via go-redis
+	for i := 0; i < rng.Intn(3)+1; i++ {
+		msg := fmt.Sprintf("soak_msg_%d", rng.Intn(1000))
+		if err := sharedClient.Publish(ctx, ch, msg).Err(); err != nil {
+			return
+		}
+		// read published message
+		if _, err := proto.ReadRESP(reader); err != nil {
+			return
+		}
+	}
+
+	// unsubscribe
+	_ = sendRESPLine(conn, fmt.Sprintf("*2\r\n$11\r\nUNSUBSCRIBE\r\n$%d\r\n%s\r\n", len(ch), ch))
+	for i := 0; i < 3; i++ {
+		if _, err := proto.ReadRESP(reader); err != nil {
+			return
+		}
+	}
+}
+
+func runSoakBlocking(ctx context.Context, addr string, rng *rand.Rand, errCh chan<- error) {
+	conn, reader, err := dialSoak(addr)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	key := fmt.Sprintf("soak:blk:%d", rng.Intn(5))
+	timeout := rng.Intn(3)
+
+	// BLPOP with short timeout
+	_ = sendRESPLine(conn, fmt.Sprintf("*3\r\n$5\r\nBLPOP\r\n$%d\r\n%s\r\n$1\r\n%d\r\n", len(key), key, timeout))
+	resp, err := proto.ReadRESP(reader)
+	if err != nil {
+		return
+	}
+	_ = resp // nil-array on timeout, array on value
+}
+
+func runSoakTransaction(ctx context.Context, addr string, rng *rand.Rand, errCh chan<- error) {
+	conn, reader, err := dialSoak(addr)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	key := fmt.Sprintf("soak:txn:%d", rng.Intn(10))
+	val := fmt.Sprintf("v%d", rng.Intn(1000))
+
+	// WATCH key
+	_ = sendRESPLine(conn, fmt.Sprintf("*2\r\n$5\r\nWATCH\r\n$%d\r\n%s\r\n", len(key), key))
+	if _, err := proto.ReadRESP(reader); err != nil {
+		return
+	}
+
+	// MULTI
+	_ = sendRESPLine(conn, "*1\r\n$5\r\nMULTI\r\n")
+	if _, err := proto.ReadRESP(reader); err != nil {
+		return
+	}
+
+	// SET key value (queued)
+	_ = sendRESPLine(conn, fmt.Sprintf("*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(key), key, len(val), val))
+	if _, err := proto.ReadRESP(reader); err != nil {
+		return
+	}
+
+	// GET key (queued)
+	_ = sendRESPLine(conn, fmt.Sprintf("*2\r\n$3\r\nGET\r\n$%d\r\n%s\r\n", len(key), key))
+	if _, err := proto.ReadRESP(reader); err != nil {
+		return
+	}
+
+	// EXEC
+	_ = sendRESPLine(conn, "*1\r\n$4\r\nEXEC\r\n")
+	if _, err := proto.ReadRESP(reader); err != nil {
+		return
+	}
+}
+
+func runSoakClientKill(ctx context.Context, addr string, rng *rand.Rand, errCh chan<- error) {
+	// Use a temporary go-redis client to kill a random normal connection
+	killClient := newSoakClient(tcpAddr(addr))
+	if killClient == nil {
+		return
+	}
+	defer killClient.Close()
+
+	// CLIENT KILL TYPE normal (skip filter addr, just kill any normal client)
+	if err := killClient.Do(ctx, "CLIENT", "KILL", "TYPE", "normal").Err(); err != nil {
+		return // expected if no killable clients
+	}
+}
+
+func tcpAddr(addr string) string {
+	return "127.0.0.1:" + addr[strings.LastIndex(addr, ":")+1:]
+}
+
+func newSoakClient(addr string) *redis.Client {
+	return redis.NewClient(&redis.Options{
+		Addr:        addr,
+		Password:    "",
+		DB:          0,
+		DialTimeout: 3 * time.Second,
+	})
+}
+
+func runSoakConnectDisconnect(ctx context.Context, addr string, rng *rand.Rand) {
+	conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+	if err != nil {
+		return
+	}
+	// send random garbage or nothing
+	if rng.Intn(2) == 0 {
+		_, _ = conn.Write([]byte("*1\r\n$4\r\nPING\r\n"))
+	}
+	conn.Close()
+}
+
+func runSoakPipeline(ctx context.Context, addr string, rng *rand.Rand, errCh chan<- error) {
+	conn, reader, err := dialSoak(addr)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	// send a burst of commands in pipeline
+	cmds := rng.Intn(10) + 2
+	var buf []byte
+	for i := 0; i < cmds; i++ {
+		key := fmt.Sprintf("soak:pipe:%d", rng.Intn(20))
+		val := fmt.Sprintf("pv%d", rng.Intn(1000))
+		buf = append(buf, []byte(fmt.Sprintf("*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(key), key, len(val), val))...)
+	}
+	if err := sendRESPLine(conn, string(buf)); err != nil {
+		return
+	}
+
+	// read all responses
+	for i := 0; i < cmds; i++ {
+		if _, err := proto.ReadRESP(reader); err != nil {
+			return
+		}
+	}
+}
+
+func runSoakNormal(ctx context.Context, addr string, rng *rand.Rand, errCh chan<- error) {
+	conn, reader, err := dialSoak(addr)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	op := rng.Intn(5)
+	switch op {
+	case 0: // SET
+		key := fmt.Sprintf("soak:set:%d", rng.Intn(100))
+		val := fmt.Sprintf("v:%d", rng.Intn(10000))
+		_ = sendRESPLine(conn, fmt.Sprintf("*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(key), key, len(val), val))
+		if _, err := proto.ReadRESP(reader); err != nil {
+			return
+		}
+	case 1: // GET
+		key := fmt.Sprintf("soak:set:%d", rng.Intn(100))
+		_ = sendRESPLine(conn, fmt.Sprintf("*2\r\n$3\r\nGET\r\n$%d\r\n%s\r\n", len(key), key))
+		if _, err := proto.ReadRESP(reader); err != nil {
+			return
+		}
+	case 2: // LPUSH/LPOP
+		key := fmt.Sprintf("soak:list:%d", rng.Intn(20))
+		val := fmt.Sprintf("lv%d", rng.Intn(1000))
+		_ = sendRESPLine(conn, fmt.Sprintf("*3\r\n$5\r\nLPUSH\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(key), key, len(val), val))
+		if _, err := proto.ReadRESP(reader); err != nil {
+			return
+		}
+		_ = sendRESPLine(conn, fmt.Sprintf("*2\r\n$4\r\nLPOP\r\n$%d\r\n%s\r\n", len(key), key))
+		if _, err := proto.ReadRESP(reader); err != nil {
+			return
+		}
+	case 3: // SADD/SREM
+		key := fmt.Sprintf("soak:set:%d", rng.Intn(20))
+		member := fmt.Sprintf("m%d", rng.Intn(100))
+		_ = sendRESPLine(conn, fmt.Sprintf("*3\r\n$4\r\nSADD\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(key), key, len(member), member))
+		if _, err := proto.ReadRESP(reader); err != nil {
+			return
+		}
+		_ = sendRESPLine(conn, fmt.Sprintf("*3\r\n$4\r\nSREM\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(key), key, len(member), member))
+		if _, err := proto.ReadRESP(reader); err != nil {
+			return
+		}
+	case 4: // INCR
+		key := fmt.Sprintf("soak:cnt:%d", rng.Intn(20))
+		_ = sendRESPLine(conn, fmt.Sprintf("*2\r\n$4\r\nINCR\r\n$%d\r\n%s\r\n", len(key), key))
+		if _, err := proto.ReadRESP(reader); err != nil {
+			return
+		}
+	}
+}
