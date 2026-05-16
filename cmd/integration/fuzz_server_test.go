@@ -37,6 +37,16 @@ const (
 	opLPUSH
 	opSADD
 	opZADD
+	// v8.3 expansion
+	opHSET
+	opHGET
+	opINCR
+	opEXPIRE
+	opRPUSH
+	opRENAME
+	opSMEMBERS
+	opGEOADD
+	opMONITOR
 	opCount
 )
 
@@ -61,6 +71,15 @@ var opNames = map[byte]string{
 	opLPUSH:      "LPUSH",
 	opSADD:       "SADD",
 	opZADD:       "ZADD",
+	opHSET:       "HSET",
+	opHGET:       "HGET",
+	opINCR:       "INCR",
+	opEXPIRE:     "EXPIRE",
+	opRPUSH:      "RPUSH",
+	opRENAME:     "RENAME",
+	opSMEMBERS:   "SMEMBERS",
+	opGEOADD:     "GEOADD",
+	opMONITOR:    "MONITOR",
 }
 
 // FuzzServerCommandSequence fuzzes state-machine command sequences.
@@ -80,7 +99,9 @@ func FuzzServerCommandSequence(f *testing.F) {
 		// Blocking sequences
 		{opBLPOP},
 		{opLPUSH, opBLPOP},
-
+		{opBZPOPMAX},
+		{opZADD, opBZPOPMAX},
+		{opXREAD},
 		// Mixed sequences
 		{opMULTI, opBLPOP, opEXEC},
 		{opSUBSCRIBE, opWATCH},
@@ -91,6 +112,25 @@ func FuzzServerCommandSequence(f *testing.F) {
 		{opPING, opPING, opPING},
 		{opQUIT},
 		{opCLIENTKILL},
+		// v8.3 expansion — hash
+		{opHSET, opHGET},
+		{opHSET, opHSET, opHGET},
+		// v8.3 expansion — counter + ttl
+		{opINCR, opGET},
+		{opSET, opEXPIRE, opGET},
+		{opINCR, opEXPIRE, opGET},
+		// v8.3 expansion — list
+		{opRPUSH, opLPUSH, opBLPOP},
+		{opRPUSH, opLPUSH, opBLPOP, opBLPOP},
+		// v8.3 expansion — rename
+		{opSET, opRENAME, opGET},
+		{opSET, opRENAME, opDEL},
+		// v8.3 expansion — set cross-type
+		{opSADD, opSMEMBERS},
+		// v8.3 expansion — geo
+		{opGEOADD},
+		// v8.3 expansion — monitor
+		{opMONITOR, opQUIT},
 	}
 	for _, s := range seeds {
 		f.Add(s)
@@ -326,6 +366,50 @@ func executeFuzzOp(t *testing.T, conn net.Conn, reader *bufio.Reader, op byte, i
 		member := randString(rng, 8)
 		sendRESP(conn, "ZADD", key, score, member)
 		return true
+	case opHSET:
+		key := randKey(rng)
+		field := randString(rng, 8)
+		val := randString(rng, 16)
+		sendRESP(conn, "HSET", key, field, val)
+		return true
+	case opHGET:
+		key := randKey(rng)
+		field := randString(rng, 8)
+		sendRESP(conn, "HGET", key, field)
+		return true
+	case opINCR:
+		key := randKey(rng)
+		sendRESP(conn, "INCR", key)
+		return true
+	case opEXPIRE:
+		key := randKey(rng)
+		ttl := fmt.Sprintf("%d", rng.Intn(100)+1)
+		sendRESP(conn, "EXPIRE", key, ttl)
+		return true
+	case opRPUSH:
+		key := randKey(rng)
+		val := randString(rng, 16)
+		sendRESP(conn, "RPUSH", key, val)
+		return true
+	case opRENAME:
+		key := randKey(rng)
+		newKey := randKey(rng)
+		sendRESP(conn, "RENAME", key, newKey)
+		return true
+	case opSMEMBERS:
+		key := randKey(rng)
+		sendRESP(conn, "SMEMBERS", key)
+		return true
+	case opGEOADD:
+		key := randKey(rng)
+		lng := fmt.Sprintf("%f", (rng.Float64()*360-180))
+		lat := fmt.Sprintf("%f", (rng.Float64()*180-90))
+		member := randString(rng, 8)
+		sendRESP(conn, "GEOADD", key, lng, lat, member)
+		return true
+	case opMONITOR:
+		sendRESP(conn, "MONITOR")
+		return true
 	default:
 		return false
 	}
@@ -353,6 +437,179 @@ func isConnClosed(conn net.Conn) bool {
 	n, err := conn.Read(make([]byte, 1))
 	conn.SetReadDeadline(time.Time{})
 	return n == 0 && err != nil
+}
+
+// FuzzServerPipeline fuzzes RESP pipeline bursts (multiple commands in one write).
+// Tests parser robustness under pipelined command sequences.
+func FuzzServerPipeline(f *testing.F) {
+	seeds := [][]byte{
+		[]byte("*1\r\n$4\r\nPING\r\n"),
+		[]byte("*1\r\n$4\r\nPING\r\n*1\r\n$4\r\nPING\r\n"),
+		[]byte("*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n*2\r\n$3\r\nSET\r\n$3\r\nkey\r\n$1\r\na\r\n"),
+		[]byte("*3\r\n$3\r\nSET\r\n$3\r\na\r\n$1\r\nb\r\n*3\r\n$3\r\nSET\r\n$3\r\nc\r\n$1\r\nd\r\n*2\r\n$3\r\nGET\r\n$3\r\na\r\n"),
+		[]byte("*1\r\n$5\r\nMULTI\r\n*3\r\n$3\r\nSET\r\n$2\r\nk\r\n$1\r\nv\r\n*1\r\n$4\r\nEXEC\r\n"),
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		if len(data) == 0 {
+			return
+		}
+
+		setupTest(t)
+		defer teardownTest(t)
+
+		baseline := runtime.NumGoroutine()
+
+		conn, err := net.DialTimeout("tcp", sharedListener.Addr().String(), 5*time.Second)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		conn.SetDeadline(time.Now().Add(3 * time.Second))
+		if _, err := conn.Write(data); err != nil {
+			return
+		}
+
+		reader := bufio.NewReaderSize(conn, 4096)
+		for i := 0; i < 200; i++ {
+			if _, err := proto.ReadRESP(reader); err != nil {
+				break
+			}
+		}
+
+		conn.SetDeadline(time.Time{})
+		conn.Close()
+		time.Sleep(goroutineSettleTime)
+
+		finalGoroutines := runtime.NumGoroutine()
+		if leak := finalGoroutines - baseline; leak > goroutineTolerance {
+			t.Errorf("goroutine leak after pipeline: %d (baseline=%d, final=%d)",
+				leak, baseline, finalGoroutines)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := sharedClient.Ping(ctx).Err(); err != nil {
+			t.Fatalf("server not responsive after pipeline fuzz: %v", err)
+		}
+	})
+}
+
+// FuzzServerConcurrent fuzzes concurrent operations from multiple connections.
+// Tests race conditions, deadlocks, and state corruption under contention.
+func FuzzServerConcurrent(f *testing.F) {
+	seeds := [][]byte{
+		{2, 0, 5},             // 2 clients, 5 ops each
+		{3, 0, 3},             // 3 clients, 3 ops each
+		{5, 1, 2},             // 5 clients, 2 ops each (shared key range)
+		{10, 0, 1},            // 10 clients, 1 op each
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+
+	f.Fuzz(func(t *testing.T, params []byte) {
+		if len(params) < 3 {
+			return
+		}
+
+		numClients := int(params[0]) % 15
+		if numClients < 2 {
+			numClients = 2
+		}
+		sharedKeys := int(params[1]) % 2 // 0 = each client has own keys, 1 = shared key range
+		opsPerClient := int(params[2]) % 8
+		if opsPerClient < 1 {
+			opsPerClient = 1
+		}
+
+		setupTest(t)
+		defer teardownTest(t)
+
+		baseline := runtime.NumGoroutine()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		var wg sync.WaitGroup
+
+		for i := 0; i < numClients; i++ {
+			wg.Add(1)
+			go func(clientID int) {
+				defer wg.Done()
+				rng := rand.New(rand.NewSource(time.Now().UnixNano() + int64(clientID)))
+				conn, err := net.DialTimeout("tcp", sharedListener.Addr().String(), 3*time.Second)
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				reader := bufio.NewReaderSize(conn, 256)
+
+				for j := 0; j < opsPerClient; j++ {
+					if ctx.Err() != nil {
+						return
+					}
+
+					var key string
+					if sharedKeys == 1 {
+						key = fmt.Sprintf("con:fuzz:%d", rng.Intn(5)) // shared: 5 keys
+					} else {
+						key = fmt.Sprintf("con:fuzz:%d_%d", clientID, j)
+					}
+
+					op := rng.Intn(6)
+					switch op {
+					case 0: // SET + GET contention
+						sendRESP(conn, "SET", key, randString(rng, 8))
+						_, _ = proto.ReadRESP(reader)
+						sendRESP(conn, "GET", key)
+						_, _ = proto.ReadRESP(reader)
+					case 1: // INCR contention
+						sendRESP(conn, "INCR", key)
+						_, _ = proto.ReadRESP(reader)
+					case 2: // LPUSH + LPOP
+						sendRESP(conn, "LPUSH", key, randString(rng, 8))
+						_, _ = proto.ReadRESP(reader)
+					case 3: // DEL contention
+						sendRESP(conn, "DEL", key)
+						_, _ = proto.ReadRESP(reader)
+					case 4: // WATCH + MULTI + EXEC
+						sendRESP(conn, "WATCH", key)
+						_, _ = proto.ReadRESP(reader)
+						sendRESP(conn, "MULTI")
+						_, _ = proto.ReadRESP(reader)
+						sendRESP(conn, "SET", key, randString(rng, 8))
+						_, _ = proto.ReadRESP(reader)
+						sendRESP(conn, "EXEC")
+						_, _ = proto.ReadRESP(reader)
+					case 5: // HSET + HGET
+						field := randString(rng, 4)
+						sendRESP(conn, "HSET", key, field, randString(rng, 8))
+						_, _ = proto.ReadRESP(reader)
+					}
+				}
+			}(i)
+		}
+
+		wg.Wait()
+		cancel()
+		time.Sleep(goroutineSettleTime)
+
+		finalGoroutines := runtime.NumGoroutine()
+		if leak := finalGoroutines - baseline; leak > goroutineTolerance {
+			t.Errorf("goroutine leak after concurrent fuzz: %d (baseline=%d, final=%d)",
+				leak, baseline, finalGoroutines)
+		}
+
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel2()
+		if err := sharedClient.Ping(ctx2).Err(); err != nil {
+			t.Fatalf("server not responsive after concurrent fuzz: %v", err)
+		}
+	})
 }
 
 var _ sync.Locker
