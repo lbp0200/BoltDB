@@ -220,8 +220,8 @@ async function test_sets(r) {
   const spopResult = await r.sPop("js:set", 1);
   check("SPOP", 1, spopResult.length);
   const sremResult = await r.sRem("js:set", spopResult[0]);
-  check("SREM", 1, sremResult);
-  check("SCARD after SREM", 0, await r.sCard("js:set"));
+  check("SREM after SPOP", 0, sremResult);
+  check("SCARD after SREM", 1, await r.sCard("js:set"));
   await r.del("js:set");
 
   await r.sAdd("js:sa", ["a", "b", "c"]);
@@ -403,9 +403,21 @@ async function run_all(port) {
   return FAIL === 0 ? 0 : 1;
 }
 
-function startBoltdb() {
+function isPortAvailable(port) {
+  try {
+    execSync(`lsof -i :${port}`, { stdio: "pipe" });
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+async function startBoltdb() {
   const dataDir = mkdtempSync(join(tmpdir(), "boltdb_node_"));
-  const port = 19889;
+  let port = 19889;
+  while (!isPortAvailable(port) && port < 19999) {
+    port++;
+  }
 
   const binary = join(dataDir, "boltDB");
   execSync(`go build -a -o ${binary} cmd/boltDB/main.go`, {
@@ -435,7 +447,7 @@ async function main() {
   if (port === null) {
     console.log("Starting temporary BoltDB instance...");
     try {
-      const result = startBoltdb();
+      const result = await startBoltdb();
       tempProc = result.proc;
       tempDir = result.dataDir;
       port = result.port;
