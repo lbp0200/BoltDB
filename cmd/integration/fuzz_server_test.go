@@ -131,6 +131,25 @@ func FuzzServerCommandSequence(f *testing.F) {
 		{opGEOADD},
 		// v8.3 expansion — monitor
 		{opMONITOR, opQUIT},
+		// State machine chaos expansions — mixed state transitions
+		{opSUBSCRIBE, opBLPOP, opQUIT},
+		{opSUBSCRIBE, opXREAD, opUNSUBSCRIBE},
+		{opSUBSCRIBE, opCLIENTKILL},
+		{opMONITOR, opBLPOP, opQUIT},
+		{opMONITOR, opCLIENTKILL},
+		{opWATCH, opSUBSCRIBE, opEXEC},
+		{opMULTI, opSUBSCRIBE, opBLPOP, opEXEC},
+		{opBLPOP, opCLIENTKILL},
+		{opBLPOP, opMULTI, opEXEC},
+		{opXREAD, opBLPOP, opCLIENTKILL},
+		{opLPUSH, opBLPOP, opXREAD},
+		{opRPUSH, opBLPOP, opBZPOPMAX},
+		{opSADD, opDEL, opSUBSCRIBE, opCLIENTKILL},
+		{opMONITOR, opSUBSCRIBE, opQUIT},
+		{opSUBSCRIBE, opMONITOR, opBLPOP},
+		{opSET, opEXPIRE, opGET, opSUBSCRIBE, opUNSUBSCRIBE},
+		{opWATCH, opMULTI, opSET, opSUBSCRIBE, opEXEC},
+		{opBLPOP, opBZPOPMAX, opXREAD, opQUIT},
 	}
 	for _, s := range seeds {
 		f.Add(s)
