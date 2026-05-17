@@ -93,13 +93,20 @@ func TestSoakReplication(t *testing.T) {
 		runSoakReplLifecycle(soakCtx, t, master, slave, errCh)
 	}()
 
+	// drain errCh in background to prevent deadlock when buffer fills
+	// (writers block on errCh <- err, WaitGroup never completes)
+	var errs []error
+	errsDone := make(chan struct{})
+	go func() {
+		for err := range errCh {
+			errs = append(errs, err)
+		}
+		close(errsDone)
+	}()
+
 	wg.Wait()
 	close(errCh)
-
-	var errs []error
-	for err := range errCh {
-		errs = append(errs, err)
-	}
+	<-errsDone
 	if len(errs) > 0 {
 		t.Errorf("soak-repl: %d errors during run (first 10 shown):", len(errs))
 		for i, err := range errs {

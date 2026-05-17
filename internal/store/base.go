@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/crc64"
 	"strconv"
 	"strings"
 	"time"
@@ -1192,10 +1193,11 @@ func (s *BotreonStore) Dump(key string) ([]byte, error) {
 			return fmt.Errorf("ERR unsupported key type: %s", keyType)
 		}
 
-		// 写入 footer
+		// 写入 footer + CRC64 校验和
 		buf.WriteByte(0xFF)
-		// CRC64 校验和（简化实现，填充 0）
-		buf.Write(make([]byte, 8))
+		hash := crc64.New(crc64.MakeTable(crc64.ECMA))
+		hash.Write(buf.Bytes())
+		buf.Write(hash.Sum(nil))
 
 		serializedData = buf.Bytes()
 		return nil

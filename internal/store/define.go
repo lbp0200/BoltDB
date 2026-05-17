@@ -351,6 +351,26 @@ func (s *BotreonStore) GetDB() *badger.DB {
 	return s.db
 }
 
+// IterateRawKeys 遍历所有 TYPE_ 记录，对每个逻辑 key 调用 fn。
+// fn 返回 false 时停止遍历。
+func (s *BotreonStore) IterateRawKeys(fn func(rawKey string) bool) error {
+	return s.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.Prefix = prefixKeyTypeBytes
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			k := string(item.Key())
+			rawKey := strings.TrimPrefix(k, string(prefixKeyTypeBytes))
+			if !fn(rawKey) {
+				break
+			}
+		}
+		return nil
+	})
+}
+
 // FlushDB 删除数据库中的所有键
 // NOTE: 使用 ClearAllData 替代 DropAll 以避免在集成测试中遇到 DropAll 的阻塞问题
 func (s *BotreonStore) FlushDB() error {

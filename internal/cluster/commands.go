@@ -145,9 +145,21 @@ func (cc *ClusterCommands) handleGetKeysInSlot(args []string) ([]string, error) 
 		return nil, fmt.Errorf("ERR slot out of range")
 	}
 
-	// 简化实现：返回空列表
-	// 实际应该扫描数据库，找到属于该槽位的所有键
-	return []string{}, nil
+	var keys []string
+	err = cc.cluster.Store.IterateRawKeys(func(rawKey string) bool {
+		if Slot(rawKey) == uint32(slot) {
+			keys = append(keys, rawKey)
+			if len(keys) >= int(count) {
+				return false
+			}
+		}
+		return true
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return keys, nil
 }
 
 // handleSetSlot 处理CLUSTER SETSLOT命令
@@ -362,9 +374,18 @@ func (cc *ClusterCommands) handleCountKeysInSlot(args []string) (int64, error) {
 		return 0, fmt.Errorf("ERR slot out of range")
 	}
 
-	// 简化实现：返回0
-	// 实际应该扫描数据库，统计属于该槽位的键数量
-	return 0, nil
+	var count int64
+	err = cc.cluster.Store.IterateRawKeys(func(rawKey string) bool {
+		if Slot(rawKey) == uint32(slot) {
+			count++
+		}
+		return true
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
 }
 
 // handleMyID 处理CLUSTER MYID命令

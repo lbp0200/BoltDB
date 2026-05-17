@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"hash/crc64"
 	"io"
 	"time"
 
@@ -199,8 +200,9 @@ func (enc *RDBEncoder) WriteSortedSetKeyValue(key string, members []*store.ZSetM
 // WriteFooter 写入RDB文件尾
 func (enc *RDBEncoder) WriteFooter() {
 	enc.buf.WriteByte(0xFF) // FF = end of RDB file
-	// 校验和（简化实现，实际应该计算CRC64）
-	enc.buf.Write(make([]byte, 8))
+	hash := crc64.New(crc64.MakeTable(crc64.ECMA))
+	hash.Write(enc.buf.Bytes())
+	enc.buf.Write(hash.Sum(nil))
 }
 
 // Bytes 获取编码后的字节
