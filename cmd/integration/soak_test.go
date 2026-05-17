@@ -7,14 +7,18 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/lbp0200/BoltDB/internal/backup"
 	"github.com/lbp0200/BoltDB/internal/proto"
+	"github.com/lbp0200/BoltDB/internal/replication"
+	"github.com/lbp0200/BoltDB/internal/server"
+	"github.com/lbp0200/BoltDB/internal/store"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -55,6 +59,17 @@ func getSoakConcurrency() int {
 	return n
 }
 
+func getSoakDataDir() string {
+	if s := os.Getenv("SOAK_DATA_DIR"); s != "" {
+		return s
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "/tmp/soak_boltdb_data"
+	}
+	return filepath.Join(home, "soak_boltdb_data")
+}
+
 func soakBaseline(t *testing.T) (goroutines int) {
 	t.Helper()
 	time.Sleep(500 * time.Millisecond)
@@ -70,23 +85,68 @@ func soakCheckNoLeak(t *testing.T, baseline, final int) {
 	}
 }
 
-// TestSoak_Short is a short soak test suitable for CI (5 min default).
-// It runs random operations with 50 concurrent clients and verifies
-// no goroutine leak, no panic, and no deadlock.
-func TestSoak_Short(t *testing.T) {
-	setupTest(t)
-	defer teardownTest(t)
-
+// TestSoak is a soak test that runs random operations with concurrent clients.
+// Default duration is 5 minutes; override with SOAK_DURATION (e.g. SOAK_DURATION=3h).
+// Default concurrency is 50; override with SOAK_CLIENTS.
+// Data directory is ~/soak_boltdb_data; override with SOAK_DATA_DIR.
+func TestSoak(t *testing.T) {
 	duration := getSoakDuration()
 	concurrency := getSoakConcurrency()
+	dataDir := getSoakDataDir()
 
-	t.Logf("soak: duration=%v, clients=%d", duration, concurrency)
-	t.Logf("soak: set SOAK_DURATION (e.g. SOAK_DURATION=30m) to extend")
+	t.Logf("soak: duration=%v, clients=%d, data=%s", duration, concurrency, dataDir)
+	t.Logf("soak: set SOAK_DURATION (e.g. SOAK_DURATION=3h) to extend")
 	t.Logf("soak: set SOAK_CLIENTS (default=50, max=200) to change concurrency")
+	t.Logf("soak: set SOAK_DATA_DIR to change data path")
+
+	// Start standalone server
+	os.RemoveAll(dataDir)
+	db, err := store.NewBotreonStore(dataDir)
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer db.Close()
+
+	pubsubMgr := store.NewPubSubManager()
+	replMgr := replication.NewReplicationManager(db)
+	backupMgr := backup.NewBackupManager(db, dataDir)
+
+	h := &server.Handler{
+		Db:         db,
+		PubSub:     pubsubMgr,
+		Backup:     backupMgr,
+		Replication: replMgr,
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+
+	go func() {
+		_ = h.ServeTCP(listener)
+	}()
+
+	time.Sleep(200 * time.Millisecond)
+
+	addr := listener.Addr().String()
+	client := redis.NewClient(&redis.Options{
+		Addr:        addr,
+		Password:    "",
+		DB:          0,
+		DialTimeout: 5 * time.Second,
+	})
+	defer client.Close()
+
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
+	if err := client.Ping(pingCtx).Err(); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
 
 	baseline := soakBaseline(t)
-	ctx, cancel := context.WithTimeout(context.Background(), duration)
-	defer cancel()
+	soakCtx, soakCancel := context.WithTimeout(context.Background(), duration)
+	defer soakCancel()
 
 	errCh := make(chan error, concurrency*2)
 	var wg sync.WaitGroup
@@ -100,7 +160,7 @@ func TestSoak_Short(t *testing.T) {
 					errCh <- fmt.Errorf("soak client %d panicked: %v", id, r)
 				}
 			}()
-			runSoakClient(ctx, id, errCh)
+			runSoakClient(soakCtx, addr, id, errCh)
 		}(i)
 	}
 
@@ -124,10 +184,15 @@ func TestSoak_Short(t *testing.T) {
 
 	final := runtime.NumGoroutine()
 	soakCheckNoLeak(t, baseline, final)
+
+	listener.Close()
+	client.Close()
+	pubsubMgr.Clear()
+	db.Close()
+	os.RemoveAll(dataDir)
 }
 
-func runSoakClient(ctx context.Context, id int, errCh chan<- error) {
-	addr := sharedListener.Addr().String()
+func runSoakClient(ctx context.Context, addr string, id int, errCh chan<- error) {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano() + int64(id)))
 
 	// probability weights for different operation classes
@@ -205,23 +270,22 @@ func runSoakPubSub(ctx context.Context, addr string, rng *rand.Rand, errCh chan<
 	ch := fmt.Sprintf("soak:ch:%d", rng.Intn(5))
 	// subscribe
 	_ = sendRESPLine(conn, fmt.Sprintf("*2\r\n$9\r\nSUBSCRIBE\r\n$%d\r\n%s\r\n", len(ch), ch))
-	// read subscribe response
+	// read subscribe response (3 messages: subscribe + 2 pattern messages)
 	for i := 0; i < 3; i++ {
 		if _, err := proto.ReadRESP(reader); err != nil {
 			return
 		}
 	}
 
-	// publish a few messages via go-redis
-	for i := 0; i < rng.Intn(3)+1; i++ {
-		msg := fmt.Sprintf("soak_msg_%d", rng.Intn(1000))
-		if err := sharedClient.Publish(ctx, ch, msg).Err(); err != nil {
-			return
+	// publish messages via raw RESP over the same connection
+	conn2, reader2, err := dialSoak(addr)
+	if err == nil {
+		for i := 0; i < rng.Intn(3)+1; i++ {
+			msg := fmt.Sprintf("soak_msg_%d", rng.Intn(1000))
+			_ = sendRESPLine(conn2, fmt.Sprintf("*3\r\n$7\r\nPUBLISH\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(ch), ch, len(msg), msg))
+			_, _ = proto.ReadRESP(reader2)
 		}
-		// read published message
-		if _, err := proto.ReadRESP(reader); err != nil {
-			return
-		}
+		conn2.Close()
 	}
 
 	// unsubscribe
@@ -294,21 +358,15 @@ func runSoakTransaction(ctx context.Context, addr string, rng *rand.Rand, errCh 
 }
 
 func runSoakClientKill(ctx context.Context, addr string, rng *rand.Rand, errCh chan<- error) {
-	// Use a temporary go-redis client to kill a random normal connection
-	killClient := newSoakClient(tcpAddr(addr))
+	killClient := newSoakClient(addr)
 	if killClient == nil {
 		return
 	}
 	defer killClient.Close()
 
-	// CLIENT KILL TYPE normal (skip filter addr, just kill any normal client)
 	if err := killClient.Do(ctx, "CLIENT", "KILL", "TYPE", "normal").Err(); err != nil {
-		return // expected if no killable clients
+		return
 	}
-}
-
-func tcpAddr(addr string) string {
-	return "127.0.0.1:" + addr[strings.LastIndex(addr, ":")+1:]
 }
 
 func newSoakClient(addr string) *redis.Client {
