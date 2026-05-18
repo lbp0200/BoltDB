@@ -135,6 +135,9 @@ func batchInsertZSet(s *BotreonStore, key string, n int) error {
 }
 
 func TestBoundary_LargeList100K(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping 100K list test in short mode")
+	}
 	s := setupBoundaryStore(t)
 	const n = 100000
 
@@ -161,6 +164,9 @@ func TestBoundary_LargeList100K(t *testing.T) {
 }
 
 func TestBoundary_LargeSet100K(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping 100K set test in short mode")
+	}
 	s := setupBoundaryStore(t)
 	const n = 100000
 
@@ -187,6 +193,9 @@ func TestBoundary_LargeSet100K(t *testing.T) {
 }
 
 func TestBoundary_LargeZSet100K(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping 100K zset test in short mode")
+	}
 	s := setupBoundaryStore(t)
 	const n = 100000
 
@@ -213,6 +222,9 @@ func TestBoundary_LargeZSet100K(t *testing.T) {
 }
 
 func TestBoundary_LargeHash100K(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping 100K hash test in short mode")
+	}
 	s := setupBoundaryStore(t)
 	const n = 100000
 
