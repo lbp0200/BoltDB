@@ -10,13 +10,14 @@ import (
 
 // TestServerStringCommands tests string type commands
 func TestServerStringCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// First set up initial values
-	handler.executeCommand(testState, "SET", [][]byte{[]byte("key1"), []byte("hello")}, "127.0.0.1:12345")
-	handler.executeCommand(testState, "SET", [][]byte{[]byte("counter"), []byte("0")}, "127.0.0.1:12345")
-	handler.executeCommand(testState, "SET", [][]byte{[]byte("floatkey"), []byte("0")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SET", [][]byte{[]byte("key1"), []byte("hello")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SET", [][]byte{[]byte("counter"), []byte("0")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SET", [][]byte{[]byte("floatkey"), []byte("0")}, "127.0.0.1:12345")
 
 	tests := []struct {
 		name  string
@@ -133,7 +134,7 @@ func TestServerStringCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -141,11 +142,12 @@ func TestServerStringCommands(t *testing.T) {
 
 // TestServerKeyCommands tests key management commands
 func TestServerKeyCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// Set up test data
-	handler.executeCommand(testState, "SET", [][]byte{[]byte("testkey"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SET", [][]byte{[]byte("testkey"), []byte("value")}, "127.0.0.1:12345")
 
 	tests := []struct {
 		name  string
@@ -265,7 +267,7 @@ func TestServerKeyCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -273,7 +275,8 @@ func TestServerKeyCommands(t *testing.T) {
 
 // TestServerHashCommands tests hash type commands
 func TestServerHashCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	tests := []struct {
@@ -416,7 +419,7 @@ func TestServerHashCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -424,7 +427,8 @@ func TestServerHashCommands(t *testing.T) {
 
 // TestServerSetCommands tests set type commands
 func TestServerSetCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	tests := []struct {
@@ -503,7 +507,7 @@ func TestServerSetCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -511,7 +515,8 @@ func TestServerSetCommands(t *testing.T) {
 
 // TestServerSortedSetCommands tests sorted set commands
 func TestServerSortedSetCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	tests := []struct {
@@ -623,7 +628,7 @@ func TestServerSortedSetCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -631,7 +636,8 @@ func TestServerSortedSetCommands(t *testing.T) {
 
 // TestServerListCommands tests list type commands
 func TestServerListCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	tests := []struct {
@@ -721,7 +727,7 @@ func TestServerListCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}

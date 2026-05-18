@@ -11,6 +11,7 @@ import (
 )
 
 func TestArrayString(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		args     [][]byte
@@ -48,6 +49,7 @@ func TestArrayString(t *testing.T) {
 }
 
 func TestBulkString(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		data     []byte
@@ -80,6 +82,7 @@ func TestBulkString(t *testing.T) {
 }
 
 func TestSimpleString(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		s        SimpleString
@@ -99,6 +102,7 @@ func TestSimpleString(t *testing.T) {
 }
 
 func TestError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		e        Error
@@ -118,6 +122,7 @@ func TestError(t *testing.T) {
 }
 
 func TestInteger(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		i        Integer
@@ -138,6 +143,7 @@ func TestInteger(t *testing.T) {
 }
 
 func TestReadRESPArray(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -208,6 +214,7 @@ func TestReadRESPArray(t *testing.T) {
 }
 
 func TestWriteRESP(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		resp     RESP
@@ -251,6 +258,7 @@ func TestWriteRESP(t *testing.T) {
 }
 
 func TestParseInlineCommand(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		line     []byte
@@ -289,6 +297,7 @@ func TestParseInlineCommand(t *testing.T) {
 }
 
 func TestJoinBulkStrings(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		args     [][]byte
@@ -325,6 +334,7 @@ func TestJoinBulkStrings(t *testing.T) {
 }
 
 func TestNewFactoryFunctions(t *testing.T) {
+	t.Parallel()
 	// Test factory functions
 	ss := NewSimpleString("test")
 	assert.Equal(t, "+test\r\n", ss.String())
@@ -405,6 +415,7 @@ func FuzzBulkString(f *testing.F) {
 
 // TestNestedArrayString tests NestedArray String method
 func TestNestedArrayString(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		elems    []RESP
@@ -445,6 +456,7 @@ func TestNestedArrayString(t *testing.T) {
 
 // TestRawString tests RawString String method
 func TestRawString(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    RawString
@@ -481,6 +493,7 @@ func TestRawString(t *testing.T) {
 }
 
 func TestReadRESP_PartialPackets(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -585,6 +598,7 @@ func TestReadRESP_PartialPackets(t *testing.T) {
 }
 
 func TestReadRESP_TruncatedInlineCommand(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		input   string
@@ -617,6 +631,7 @@ func TestReadRESP_TruncatedInlineCommand(t *testing.T) {
 
 // TestNewScanResponse tests NewScanResponse function
 func TestNewScanResponse(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		cursor   uint64

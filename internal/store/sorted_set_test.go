@@ -8,6 +8,7 @@ import (
 
 // TestZAdd tests ZAdd operations
 func TestZAdd(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	zSetName := "myset"
@@ -40,6 +41,7 @@ func TestZAdd(t *testing.T) {
 
 // TestZCard tests ZCard operations using table-driven approach
 func TestZCard(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	tests := []struct {
@@ -76,6 +78,7 @@ func TestZCard(t *testing.T) {
 
 // TestZScore tests ZScore operations using table-driven approach
 func TestZScore(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 准备数据
@@ -128,6 +131,7 @@ func TestZScore(t *testing.T) {
 
 // TestZCount tests ZCount operations
 func TestZCount(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 准备数据
@@ -175,6 +179,7 @@ func TestZCount(t *testing.T) {
 
 // TestZIncrBy tests ZIncrBy operations
 func TestZIncrBy(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	zSetName := "myset"
@@ -201,6 +206,7 @@ func TestZIncrBy(t *testing.T) {
 }
 
 func TestZRank(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 准备数据（按分数排序：member2(-2.0), member3(0.0), member1(1.5)）
@@ -247,6 +253,7 @@ func TestZRank(t *testing.T) {
 }
 
 func TestZRevRank(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 准备数据（按分数排序：member2(-2.0), member3(0.0), member1(1.5)）
@@ -293,6 +300,7 @@ func TestZRevRank(t *testing.T) {
 }
 
 func TestZRange(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	zSetName := "myset"
@@ -324,6 +332,7 @@ func TestZRange(t *testing.T) {
 }
 
 func TestZRevRange(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	zSetName := "myset"
@@ -351,6 +360,7 @@ func TestZRevRange(t *testing.T) {
 }
 
 func TestZRangeByScore(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	zSetName := "myset"
@@ -378,6 +388,7 @@ func TestZRangeByScore(t *testing.T) {
 }
 
 func TestZRevRangeByScore(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	zSetName := "myset"
@@ -399,6 +410,7 @@ func TestZRevRangeByScore(t *testing.T) {
 }
 
 func TestZRem(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	zSetName := "myset"
@@ -427,6 +439,7 @@ func TestZRem(t *testing.T) {
 }
 
 func TestZRemRangeByRank(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	zSetName := "myset"
@@ -453,6 +466,7 @@ func TestZRemRangeByRank(t *testing.T) {
 }
 
 func TestZRemRangeByScore(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	zSetName := "myset"
@@ -476,6 +490,7 @@ func TestZRemRangeByScore(t *testing.T) {
 }
 
 func TestZPopMax(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	zSetName := "myset"
@@ -507,6 +522,7 @@ func TestZPopMax(t *testing.T) {
 }
 
 func TestZPopMin(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	zSetName := "myset"
@@ -538,6 +554,7 @@ func TestZPopMin(t *testing.T) {
 }
 
 func TestZSetDel(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	zSetName := "myset"
@@ -561,6 +578,7 @@ func TestZSetDel(t *testing.T) {
 }
 
 func TestSortedSetEdgeCases(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	zSetName := "myset"
@@ -606,6 +624,7 @@ func TestSortedSetEdgeCases(t *testing.T) {
 }
 
 func TestSortedSetOperations(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	zSetName := "myset"
@@ -644,6 +663,7 @@ func TestSortedSetOperations(t *testing.T) {
 }
 
 func TestZUnionStore(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 创建两个有序集合
@@ -690,6 +710,7 @@ func TestZUnionStore(t *testing.T) {
 }
 
 func TestZInterStore(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 创建两个有序集合
@@ -719,6 +740,7 @@ func TestZInterStore(t *testing.T) {
 }
 
 func TestZDiffStore(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 创建两个有序集合
@@ -744,6 +766,7 @@ func TestZDiffStore(t *testing.T) {
 }
 
 func TestZLexCount(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 创建有序集合（相同分数，按字典序）
@@ -765,6 +788,7 @@ func TestZLexCount(t *testing.T) {
 }
 
 func TestZRangeByLex(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 创建有序集合（相同分数，按字典序）
@@ -792,6 +816,7 @@ func TestZRangeByLex(t *testing.T) {
 }
 
 func TestZRevRangeByLex(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 创建有序集合
@@ -811,6 +836,7 @@ func TestZRevRangeByLex(t *testing.T) {
 }
 
 func TestZRemRangeByLex(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 创建有序集合
@@ -834,6 +860,7 @@ func TestZRemRangeByLex(t *testing.T) {
 }
 
 func TestZMScore(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 创建有序集合
@@ -855,6 +882,7 @@ func TestZMScore(t *testing.T) {
 
 // TestBZPopMax 测试 BZPOPMAX 命令
 func TestBZPopMax(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add elements to sorted set
@@ -878,6 +906,7 @@ func TestBZPopMax(t *testing.T) {
 
 // TestBZPopMin 测试 BZPOPMIN 命令
 func TestBZPopMin(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add elements to sorted set
@@ -901,6 +930,7 @@ func TestBZPopMin(t *testing.T) {
 
 // TestZScan 测试 ZSCAN 命令
 func TestZScan(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add elements to sorted set

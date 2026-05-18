@@ -11,6 +11,7 @@ import (
 )
 
 func TestRetryUpdate_SuccessOnFirstTry(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	callCount := 0
 	err := s.retryUpdate(func(txn *badger.Txn) error {
@@ -26,6 +27,7 @@ func TestRetryUpdate_SuccessOnFirstTry(t *testing.T) {
 }
 
 func TestRetryUpdate_SuccessAfterConflict(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	callCount := 0
 	err := s.retryUpdate(func(txn *badger.Txn) error {
@@ -44,6 +46,7 @@ func TestRetryUpdate_SuccessAfterConflict(t *testing.T) {
 }
 
 func TestRetryUpdate_SuccessAfterWritesBlocked(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	callCount := 0
 	err := s.retryUpdate(func(txn *badger.Txn) error {
@@ -62,6 +65,7 @@ func TestRetryUpdate_SuccessAfterWritesBlocked(t *testing.T) {
 }
 
 func TestRetryUpdate_SuccessAfterWritesBlockedWithConflicts(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	callCount := 0
 	err := s.retryUpdate(func(txn *badger.Txn) error {
@@ -84,6 +88,7 @@ func TestRetryUpdate_SuccessAfterWritesBlockedWithConflicts(t *testing.T) {
 }
 
 func TestRetryUpdate_ConflictExhaustRetries(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	maxRetries := 3
 	callCount := 0
@@ -103,6 +108,7 @@ func TestRetryUpdate_ConflictExhaustRetries(t *testing.T) {
 }
 
 func TestRetryUpdate_WritesBlockedExhaustRetries(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	maxRetries := 3
 	callCount := 0
@@ -119,6 +125,7 @@ func TestRetryUpdate_WritesBlockedExhaustRetries(t *testing.T) {
 }
 
 func TestRetryUpdate_NonRetryableError(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	callCount := 0
 	sentinel := "some non-retryable error"
@@ -138,6 +145,7 @@ func TestRetryUpdate_NonRetryableError(t *testing.T) {
 }
 
 func TestRetryUpdate_NonRetryableAfterRetries(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	// Use "Writes are blocked" instead of ErrConflict because BadgerDB's
 	// Update() internally retries on ErrConflict, inflating the call count.
@@ -162,6 +170,7 @@ func TestRetryUpdate_NonRetryableAfterRetries(t *testing.T) {
 }
 
 func TestRetryUpdate_SingleRetry(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		return badger.ErrConflict
@@ -176,6 +185,7 @@ func TestRetryUpdate_SingleRetry(t *testing.T) {
 
 // TestRetryUpdate_BackoffBounds validates that conflict backoff does not exceed expected cap.
 func TestRetryUpdate_ConflictBackoffCap(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	start := time.Now()
 	_ = s.retryUpdate(func(txn *badger.Txn) error {
@@ -191,6 +201,7 @@ func TestRetryUpdate_ConflictBackoffCap(t *testing.T) {
 }
 
 func TestRetryUpdate_ErrorWrap(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	inner := errors.New("Writes are blocked")
 	err := s.retryUpdate(func(txn *badger.Txn) error {
@@ -205,6 +216,7 @@ func TestRetryUpdate_ErrorWrap(t *testing.T) {
 }
 
 func TestRetryUpdate_NoSideEffectOnSuccess(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	key := fmt.Sprintf("retry-success-%d", time.Now().UnixNano())
 	err := s.retryUpdate(func(txn *badger.Txn) error {

@@ -8,6 +8,7 @@ import (
 
 // TestFailoverManager_New tests NewFailoverManager
 func TestFailoverManager_New(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -18,6 +19,7 @@ func TestFailoverManager_New(t *testing.T) {
 
 // TestFailoverManager_StartFailover_NotFound tests StartFailover with non-existent master
 func TestFailoverManager_StartFailover_NotFound(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -30,6 +32,7 @@ func TestFailoverManager_StartFailover_NotFound(t *testing.T) {
 
 // TestFailoverManager_AutoFailover_NotFound tests AutoFailover with non-existent master
 func TestFailoverManager_AutoFailover_NotFound(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -42,6 +45,7 @@ func TestFailoverManager_AutoFailover_NotFound(t *testing.T) {
 
 // TestFailoverManager_SelectNewMaster_NoSlaves tests selectNewMaster with no slaves
 func TestFailoverManager_SelectNewMaster_NoSlaves(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -61,6 +65,7 @@ func TestFailoverManager_SelectNewMaster_NoSlaves(t *testing.T) {
 
 // TestFailoverManager_UpdateConfiguration tests updateConfiguration
 func TestFailoverManager_UpdateConfiguration(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -88,6 +93,7 @@ func TestFailoverManager_UpdateConfiguration(t *testing.T) {
 
 // TestSentinelInstance_New tests SentinelInstance creation
 func TestSentinelInstance_New(t *testing.T) {
+	t.Parallel()
 	si := NewSentinelInstance("sentinel1", "127.0.0.1:26379")
 
 	assert.Equal(t, "sentinel1", si.ID)
@@ -96,6 +102,7 @@ func TestSentinelInstance_New(t *testing.T) {
 
 // TestSlaveInstance_Fields tests SlaveInstance fields
 func TestSlaveInstance_Fields(t *testing.T) {
+	t.Parallel()
 	slave := NewSlaveInstance("slave1", "127.0.0.1:6380")
 
 	// Check initial state
@@ -107,6 +114,7 @@ func TestSlaveInstance_Fields(t *testing.T) {
 
 // TestNewSentinelConnection tests NewSentinelConnection
 func TestNewSentinelConnection(t *testing.T) {
+	t.Parallel()
 	// Test with invalid address (no server running)
 	// This will fail to connect, which is expected
 	_, err := NewSentinelConnection("127.0.0.1:99999")
@@ -116,6 +124,7 @@ func TestNewSentinelConnection(t *testing.T) {
 
 // TestFailoverManager_StartFailover_NotDown tests StartFailover when master is not down
 func TestFailoverManager_StartFailover_NotDown(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -137,6 +146,7 @@ func TestFailoverManager_StartFailover_NotDown(t *testing.T) {
 
 // TestFailoverManager_StartFailover_AlreadyInProgress tests StartFailover when failover is already in progress
 func TestFailoverManager_StartFailover_AlreadyInProgress(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -158,6 +168,7 @@ func TestFailoverManager_StartFailover_AlreadyInProgress(t *testing.T) {
 
 // TestFailoverManager_selectNewMaster tests selectNewMaster with slaves
 func TestFailoverManager_selectNewMaster(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -183,6 +194,7 @@ func TestFailoverManager_selectNewMaster(t *testing.T) {
 
 // TestFailoverManager_selectNewMaster_OfflineSlave tests selectNewMaster with offline slave
 func TestFailoverManager_selectNewMaster_OfflineSlave(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -207,6 +219,7 @@ func TestFailoverManager_selectNewMaster_OfflineSlave(t *testing.T) {
 
 // TestFailoverManager_AutoFailover_NotODown tests AutoFailover when master is not objectively down
 func TestFailoverManager_AutoFailover_NotODown(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -228,6 +241,7 @@ func TestFailoverManager_AutoFailover_NotODown(t *testing.T) {
 
 // TestFailoverManager_AutoFailover_FailoverInProgress tests AutoFailover when failover is already in progress
 func TestFailoverManager_AutoFailover_FailoverInProgress(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -249,6 +263,7 @@ func TestFailoverManager_AutoFailover_FailoverInProgress(t *testing.T) {
 
 // TestFailoverManager_UpdateConfiguration_Coverage tests updateConfiguration indirectly
 func TestFailoverManager_UpdateConfiguration_Coverage(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -278,6 +293,7 @@ func TestFailoverManager_UpdateConfiguration_Coverage(t *testing.T) {
 
 // TestFailoverManager_UpdateConfiguration_WithSlave tests updateConfiguration with a valid slave
 func TestFailoverManager_UpdateConfiguration_WithSlave(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 

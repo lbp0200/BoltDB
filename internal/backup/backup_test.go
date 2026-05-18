@@ -23,6 +23,7 @@ func setupTestStore(t *testing.T) *store.BotreonStore {
 }
 
 func TestBackupManager_New(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	bm := NewBackupManager(testStore, t.TempDir())
 
@@ -30,6 +31,7 @@ func TestBackupManager_New(t *testing.T) {
 }
 
 func TestBackupManager_LastSave(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	bm := NewBackupManager(testStore, t.TempDir())
 
@@ -39,6 +41,7 @@ func TestBackupManager_LastSave(t *testing.T) {
 }
 
 func TestBackupManager_Save(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	bm := NewBackupManager(testStore, t.TempDir())
 
@@ -55,6 +58,7 @@ func TestBackupManager_Save(t *testing.T) {
 }
 
 func TestRestoreManager_New(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewRestoreManager(testStore)
 
@@ -62,6 +66,7 @@ func TestRestoreManager_New(t *testing.T) {
 }
 
 func TestRestoreManager_RestoreFromPath_NotFound(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewRestoreManager(testStore)
 
@@ -72,6 +77,7 @@ func TestRestoreManager_RestoreFromPath_NotFound(t *testing.T) {
 
 // TestRDBBackupRestore_RoundTrip 测试RDB备份-恢复完整往返
 func TestRDBBackupRestore_RoundTrip(t *testing.T) {
+	t.Parallel()
 	// Step 1: 创建源库并写入数据
 	sourceStore := setupTestStore(t)
 
@@ -132,6 +138,7 @@ func TestRDBBackupRestore_RoundTrip(t *testing.T) {
 
 // TestRDBBackupCompressRestore_RoundTrip 测试压缩备份-恢复往返
 func TestRDBBackupCompressRestore_RoundTrip(t *testing.T) {
+	t.Parallel()
 	sourceStore := setupTestStore(t)
 
 	// 写入不同类型数据

@@ -11,6 +11,7 @@ import (
 
 // TestStreamXAdd tests XAdd function
 func TestStreamXAdd(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add entry to stream
@@ -26,6 +27,7 @@ func TestStreamXAdd(t *testing.T) {
 
 // TestStreamXAdd_WithID tests XAdd with specific ID
 func TestStreamXAdd_WithID(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add entry with specific ID
@@ -37,6 +39,7 @@ func TestStreamXAdd_WithID(t *testing.T) {
 
 // TestStreamXLen tests XLen function
 func TestStreamXLen(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add entries
@@ -57,6 +60,7 @@ func TestStreamXLen(t *testing.T) {
 
 // TestStreamXRANGE tests XRANGE function
 func TestStreamXRANGE(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add entries
@@ -72,6 +76,7 @@ func TestStreamXRANGE(t *testing.T) {
 
 // TestStreamXREVRANGE tests XREVRANGE function
 func TestStreamXREVRANGE(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add entries
@@ -87,6 +92,7 @@ func TestStreamXREVRANGE(t *testing.T) {
 
 // TestStreamXDel tests XDel function
 func TestStreamXDel(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add entries
@@ -105,6 +111,7 @@ func TestStreamXDel(t *testing.T) {
 
 // TestStreamXRead tests XRead function
 func TestStreamXRead(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add entries
@@ -120,6 +127,7 @@ func TestStreamXRead(t *testing.T) {
 }
 
 func TestStreamXReadBlocking(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Start blocking XRead in a goroutine
@@ -151,6 +159,7 @@ func TestStreamXReadBlocking(t *testing.T) {
 }
 
 func TestStreamXReadBlockingAlreadyHasData(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add data first
@@ -165,6 +174,7 @@ func TestStreamXReadBlockingAlreadyHasData(t *testing.T) {
 }
 
 func TestStreamXReadBlockingTimeout(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Block on non-existent stream with short timeout
@@ -180,6 +190,7 @@ func TestStreamXReadBlockingTimeout(t *testing.T) {
 }
 
 func TestStreamXReadBlockingConcurrent(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	const numReaders = 5
@@ -216,6 +227,7 @@ func TestStreamXReadBlockingConcurrent(t *testing.T) {
 
 // TestStreamInfo tests XInfo function
 func TestStreamInfo(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add entries
@@ -230,6 +242,7 @@ func TestStreamInfo(t *testing.T) {
 
 // TestStreamXGroupCreate tests XGroup Create function
 func TestStreamXGroupCreate(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add entries first
@@ -247,6 +260,7 @@ func TestStreamXGroupCreate(t *testing.T) {
 
 // TestStreamXReadGroup tests XReadGroup function
 func TestStreamXReadGroup(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add entries
@@ -263,6 +277,7 @@ func TestStreamXReadGroup(t *testing.T) {
 
 // TestStreamXPending tests XPending function
 func TestStreamXPending(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add entries
@@ -282,6 +297,7 @@ func TestStreamXPending(t *testing.T) {
 
 // TestStreamXClaim tests XClaim function
 func TestStreamXClaim(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add entries
@@ -299,6 +315,7 @@ func TestStreamXClaim(t *testing.T) {
 
 // TestStreamXTrim tests XTrim function
 func TestStreamXTrim(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add entries
@@ -318,6 +335,7 @@ func TestStreamXTrim(t *testing.T) {
 
 // TestStreamXAutoClaim tests XAutoClaim function
 func TestStreamXAutoClaim(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add entries
@@ -337,6 +355,7 @@ func TestStreamXAutoClaim(t *testing.T) {
 
 // TestStreamXAck tests XAck function
 func TestStreamXAck(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add entries
@@ -350,6 +369,7 @@ func TestStreamXAck(t *testing.T) {
 
 // TestStreamXGroupDelConsumer tests XGroupDelConsumer function
 func TestStreamXGroupDelConsumer(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add entries and create group
@@ -365,6 +385,7 @@ func TestStreamXGroupDelConsumer(t *testing.T) {
 
 // TestStreamXGroupDestroy tests XGroupDestroy function
 func TestStreamXGroupDestroy(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Create group
@@ -378,6 +399,7 @@ func TestStreamXGroupDestroy(t *testing.T) {
 
 // TestStreamXGroupSetID tests XGroupSetID function
 func TestStreamXGroupSetID(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add entries and create group
@@ -391,6 +413,7 @@ func TestStreamXGroupSetID(t *testing.T) {
 
 // TestStreamXInfoGroups tests XInfoGroups function
 func TestStreamXInfoGroups(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Test on non-existent stream - returns empty groups, not error
@@ -410,6 +433,7 @@ func TestStreamXInfoGroups(t *testing.T) {
 
 // TestStreamXInfoConsumers tests XInfoConsumers function
 func TestStreamXInfoConsumers(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Test on non-existent stream - returns empty consumers, not error
@@ -429,6 +453,7 @@ func TestStreamXInfoConsumers(t *testing.T) {
 
 // TestStreamType tests StreamType function
 func TestStreamType(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Test on non-existent key - should return false, no error
@@ -447,6 +472,7 @@ func TestStreamType(t *testing.T) {
 
 // TestGetStreamEntry tests GetStreamEntry function
 func TestGetStreamEntry(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Test on non-existent stream

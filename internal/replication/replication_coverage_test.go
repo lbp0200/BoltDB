@@ -10,6 +10,7 @@ import (
 
 // TestSerializeCommand tests serializeCommand function
 func TestSerializeCommand(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		cmd  [][]byte
@@ -52,6 +53,7 @@ func TestSerializeCommand(t *testing.T) {
 
 // TestExecuteReplicatedCommand_SET tests executeReplicatedCommand for SET
 func TestExecuteReplicatedCommand_SET(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -66,6 +68,7 @@ func TestExecuteReplicatedCommand_SET(t *testing.T) {
 
 // TestExecuteReplicatedCommand_DEL tests executeReplicatedCommand for DEL
 func TestExecuteReplicatedCommand_DEL(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -83,6 +86,7 @@ func TestExecuteReplicatedCommand_DEL(t *testing.T) {
 
 // TestExecuteReplicatedCommand_INCR tests executeReplicatedCommand for INCR
 func TestExecuteReplicatedCommand_INCR(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -97,6 +101,7 @@ func TestExecuteReplicatedCommand_INCR(t *testing.T) {
 
 // TestExecuteReplicatedCommand_INCRBY tests executeReplicatedCommand for INCRBY
 func TestExecuteReplicatedCommand_INCRBY(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -111,6 +116,7 @@ func TestExecuteReplicatedCommand_INCRBY(t *testing.T) {
 
 // TestExecuteReplicatedCommand_DECR tests executeReplicatedCommand for DECR
 func TestExecuteReplicatedCommand_DECR(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -125,6 +131,7 @@ func TestExecuteReplicatedCommand_DECR(t *testing.T) {
 
 // TestExecuteReplicatedCommand_DECRBY tests executeReplicatedCommand for DECRBY
 func TestExecuteReplicatedCommand_DECRBY(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -139,6 +146,7 @@ func TestExecuteReplicatedCommand_DECRBY(t *testing.T) {
 
 // TestExecuteReplicatedCommand_APPEND tests executeReplicatedCommand for APPEND
 func TestExecuteReplicatedCommand_APPEND(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -156,6 +164,7 @@ func TestExecuteReplicatedCommand_APPEND(t *testing.T) {
 
 // TestExecuteReplicatedCommand_HSET tests executeReplicatedCommand for HSET
 func TestExecuteReplicatedCommand_HSET(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -170,6 +179,7 @@ func TestExecuteReplicatedCommand_HSET(t *testing.T) {
 
 // TestExecuteReplicatedCommand_SADD tests executeReplicatedCommand for SADD
 func TestExecuteReplicatedCommand_SADD(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -184,6 +194,7 @@ func TestExecuteReplicatedCommand_SADD(t *testing.T) {
 
 // TestExecuteReplicatedCommand_ZADD tests executeReplicatedCommand for ZADD
 func TestExecuteReplicatedCommand_ZADD(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -200,6 +211,7 @@ func TestExecuteReplicatedCommand_ZADD(t *testing.T) {
 
 // TestExecuteReplicatedCommand_RPUSH tests executeReplicatedCommand for RPUSH
 func TestExecuteReplicatedCommand_RPUSH(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -214,6 +226,7 @@ func TestExecuteReplicatedCommand_RPUSH(t *testing.T) {
 
 // TestExecuteReplicatedCommand_LPUSH tests executeReplicatedCommand for LPUSH
 func TestExecuteReplicatedCommand_LPUSH(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -228,6 +241,7 @@ func TestExecuteReplicatedCommand_LPUSH(t *testing.T) {
 
 // TestExecuteReplicatedCommand_EmptyArgs tests executeReplicatedCommand with empty args
 func TestExecuteReplicatedCommand_EmptyArgs(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -240,6 +254,7 @@ func TestExecuteReplicatedCommand_EmptyArgs(t *testing.T) {
 
 // TestExecuteReplicatedCommand_WithTTL tests SET with EX option
 func TestExecuteReplicatedCommand_SetWithTTL(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -254,6 +269,7 @@ func TestExecuteReplicatedCommand_SetWithTTL(t *testing.T) {
 
 // TestExecuteReplicatedCommand_SetWithPX tests SET with PX option
 func TestExecuteReplicatedCommand_SetWithPX(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -268,6 +284,7 @@ func TestExecuteReplicatedCommand_SetWithPX(t *testing.T) {
 
 // TestAddSlave tests AddSlave method
 func TestAddSlave(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -291,6 +308,7 @@ func TestAddSlave(t *testing.T) {
 
 // TestRemoveSlave tests RemoveSlave method
 func TestRemoveSlave(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -312,6 +330,7 @@ func TestRemoveSlave(t *testing.T) {
 
 // TestRemoveNonExistentSlave tests RemoveSlave with non-existent ID
 func TestRemoveNonExistentSlave(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -323,6 +342,7 @@ func TestRemoveNonExistentSlave(t *testing.T) {
 
 // TestGetSlaveByID tests GetSlaveByID method
 func TestGetSlaveByID(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -345,6 +365,7 @@ func TestGetSlaveByID(t *testing.T) {
 
 // TestGetSlaveByAddr tests GetSlaveByAddr method
 func TestGetSlaveByAddr(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -367,6 +388,7 @@ func TestGetSlaveByAddr(t *testing.T) {
 
 // TestUpdateSlaveAckOffset tests UpdateSlaveAckOffset method
 func TestUpdateSlaveAckOffset(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -388,6 +410,7 @@ func TestUpdateSlaveAckOffset(t *testing.T) {
 
 // TestUpdateSlaveAckOffset_NonExistent tests UpdateSlaveAckOffset with non-existent slave
 func TestUpdateSlaveAckOffset_NonExistent(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -398,6 +421,7 @@ func TestUpdateSlaveAckOffset_NonExistent(t *testing.T) {
 
 // TestSetMasterConnection tests SetMasterConnection and GetMasterConnection
 func TestSetMasterConnection(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -425,6 +449,7 @@ func TestSetMasterConnection(t *testing.T) {
 
 // TestStopSlaveReplication tests StopSlaveReplication function
 func TestStopSlaveReplication(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -447,6 +472,7 @@ func TestStopSlaveReplication(t *testing.T) {
 
 // TestStartSlaveReplication_ConnectionFailure tests StartSlaveReplication with invalid address
 func TestStartSlaveReplication_ConnectionFailure(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -463,6 +489,7 @@ func TestStartSlaveReplication_ConnectionFailure(t *testing.T) {
 
 // TestStartSlaveReplication_SetsRole tests that StartSlaveReplication sets role to slave
 func TestStartSlaveReplication_SetsRole(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -478,6 +505,7 @@ func TestStartSlaveReplication_SetsRole(t *testing.T) {
 
 // TestHandlePSync_PartialSync tests HandlePSync with partial sync scenario
 func TestHandlePSync_PartialSync(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -495,6 +523,7 @@ func TestHandlePSync_PartialSync(t *testing.T) {
 
 // TestHandlePSync_ValidPartialSync tests HandlePSync with valid partial sync offset
 func TestHandlePSync_ValidPartialSync(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -519,6 +548,7 @@ func TestHandlePSync_ValidPartialSync(t *testing.T) {
 
 // TestHandlePSync_DifferentReplId tests HandlePSync with different repl ID
 func TestHandlePSync_DifferentReplId(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -537,6 +567,7 @@ func TestHandlePSync_DifferentReplId(t *testing.T) {
 
 // TestPropagateCommand_WithSlaves tests PropagateCommand with active slaves
 func TestPropagateCommand_WithSlaves(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -562,6 +593,7 @@ func TestPropagateCommand_WithSlaves(t *testing.T) {
 
 // TestReplicationManager_MultipleSlaves tests managing multiple slaves
 func TestReplicationManager_MultipleSlaves(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -585,6 +617,7 @@ func TestReplicationManager_MultipleSlaves(t *testing.T) {
 
 // TestExecuteReplicatedCommand_HINCRBY tests executeReplicatedCommand for HINCRBY
 func TestExecuteReplicatedCommand_HINCRBY(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -602,6 +635,7 @@ func TestExecuteReplicatedCommand_HINCRBY(t *testing.T) {
 
 // TestExecuteReplicatedCommand_HDEL tests executeReplicatedCommand for HDEL
 func TestExecuteReplicatedCommand_HDEL(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -624,6 +658,7 @@ func TestExecuteReplicatedCommand_HDEL(t *testing.T) {
 
 // TestExecuteReplicatedCommand_ZREM tests executeReplicatedCommand for ZREM
 func TestExecuteReplicatedCommand_ZREM(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -644,6 +679,7 @@ func TestExecuteReplicatedCommand_ZREM(t *testing.T) {
 
 // TestExecuteReplicatedCommand_SREM tests executeReplicatedCommand for SREM
 func TestExecuteReplicatedCommand_SREM(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -661,6 +697,7 @@ func TestExecuteReplicatedCommand_SREM(t *testing.T) {
 
 // TestExecuteReplicatedCommand_LSET tests executeReplicatedCommand for LSET
 func TestExecuteReplicatedCommand_LSET(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -678,6 +715,7 @@ func TestExecuteReplicatedCommand_LSET(t *testing.T) {
 
 // TestExecuteReplicatedCommand_LREM tests executeReplicatedCommand for LREM
 func TestExecuteReplicatedCommand_LREM(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -695,6 +733,7 @@ func TestExecuteReplicatedCommand_LREM(t *testing.T) {
 
 // TestExecuteReplicatedCommand_LTRIM tests executeReplicatedCommand for LTRIM
 func TestExecuteReplicatedCommand_LTRIM(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -712,6 +751,7 @@ func TestExecuteReplicatedCommand_LTRIM(t *testing.T) {
 
 // TestExecuteReplicatedCommand_ZINCRBY tests executeReplicatedCommand for ZINCRBY
 func TestExecuteReplicatedCommand_ZINCRBY(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 

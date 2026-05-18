@@ -9,6 +9,7 @@ import (
 )
 
 func TestRDBEncoder_New(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 
 	// 验证 RDB 头部
@@ -17,6 +18,7 @@ func TestRDBEncoder_New(t *testing.T) {
 }
 
 func TestRDBEncoder_WriteStringKeyValue(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 
 	// 写入字符串键值
@@ -28,6 +30,7 @@ func TestRDBEncoder_WriteStringKeyValue(t *testing.T) {
 }
 
 func TestRDBEncoder_WriteStringKeyValue_WithTTL(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 
 	// 写入带 TTL 的字符串键值
@@ -39,6 +42,7 @@ func TestRDBEncoder_WriteStringKeyValue_WithTTL(t *testing.T) {
 }
 
 func TestRDBEncoder_WriteListKeyValue(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 
 	// 写入列表键值
@@ -50,6 +54,7 @@ func TestRDBEncoder_WriteListKeyValue(t *testing.T) {
 }
 
 func TestRDBEncoder_WriteHashKeyValue(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 
 	// 写入哈希键值
@@ -64,6 +69,7 @@ func TestRDBEncoder_WriteHashKeyValue(t *testing.T) {
 }
 
 func TestRDBEncoder_WriteSetKeyValue(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 
 	// 写入集合键值
@@ -75,6 +81,7 @@ func TestRDBEncoder_WriteSetKeyValue(t *testing.T) {
 }
 
 func TestRDBEncoder_WriteSortedSetKeyValue(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 
 	// 写入有序集合键值
@@ -89,6 +96,7 @@ func TestRDBEncoder_WriteSortedSetKeyValue(t *testing.T) {
 }
 
 func TestRDBEncoder_Bytes(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 	enc.WriteStringKeyValue("key", "value", 0)
 
@@ -98,6 +106,7 @@ func TestRDBEncoder_Bytes(t *testing.T) {
 }
 
 func TestRDBEncoder_WriteTo(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 	enc.WriteStringKeyValue("key", "value", 0)
 
@@ -112,6 +121,7 @@ func TestRDBEncoder_WriteTo(t *testing.T) {
 }
 
 func TestRDBEncoder_Footer(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 	enc.WriteStringKeyValue("key", "value", 0)
 	enc.WriteFooter()

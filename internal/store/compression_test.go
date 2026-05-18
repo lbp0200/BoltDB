@@ -132,6 +132,7 @@ func BenchmarkStoreCompression(b *testing.B) {
 }
 
 func TestCompressionLZ4(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 	store.SetCompression(CompressionLZ4)
 
@@ -150,6 +151,7 @@ func TestCompressionLZ4(t *testing.T) {
 }
 
 func TestCompressionZSTD(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 	store.SetCompression(CompressionZSTD)
 
@@ -168,6 +170,7 @@ func TestCompressionZSTD(t *testing.T) {
 }
 
 func TestCompressionNone(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 	store.SetCompression(CompressionNone)
 
@@ -186,6 +189,7 @@ func TestCompressionNone(t *testing.T) {
 }
 
 func TestCompressionDefaultIsSnappy(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	// 不指定压缩算法，使用默认
 	store, err := NewBotreonStore(dbPath)
@@ -196,6 +200,7 @@ func TestCompressionDefaultIsSnappy(t *testing.T) {
 }
 
 func TestCompressionSmallData(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 	store.SetCompression(CompressionLZ4)
 
@@ -214,6 +219,7 @@ func TestCompressionSmallData(t *testing.T) {
 }
 
 func TestCompressionHash(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 	store.SetCompression(CompressionLZ4)
 
@@ -230,6 +236,7 @@ func TestCompressionHash(t *testing.T) {
 }
 
 func TestCompressionBackwardCompatibility(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 
 	// 先不使用压缩写入数据
@@ -259,6 +266,7 @@ func TestCompressionBackwardCompatibility(t *testing.T) {
 }
 
 func TestCompressionSnappy(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 	store.SetCompression(CompressionSnappy)
 
@@ -277,6 +285,7 @@ func TestCompressionSnappy(t *testing.T) {
 }
 
 func TestCompressionSwitch(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 	store.SetCompression(CompressionLZ4)
 

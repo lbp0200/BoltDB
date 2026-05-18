@@ -8,6 +8,7 @@ import (
 
 // TestHandlePSync_NewMaster tests HandlePSync with a new master
 func TestHandlePSync_NewMaster(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -24,6 +25,7 @@ func TestHandlePSync_NewMaster(t *testing.T) {
 
 // TestHandlePSync_WithOffset tests HandlePSync with specific offset
 func TestHandlePSync_WithOffset(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -39,6 +41,7 @@ func TestHandlePSync_WithOffset(t *testing.T) {
 
 // TestPSyncFunctionsExist tests PSync functions compile correctly
 func TestPSyncFunctionsExist(t *testing.T) {
+	t.Parallel()
 	// PSync functions require real network connections to test properly.
 	// The compiler verifies function definitions exist.
 	//nolint:staticcheck // SA9003 - intentional no-op: existence verified at compile time
@@ -46,6 +49,7 @@ func TestPSyncFunctionsExist(t *testing.T) {
 
 // TestGenerateRDB_EmptyStore tests GenerateRDB with empty store
 func TestGenerateRDB_EmptyStore(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -56,6 +60,7 @@ func TestGenerateRDB_EmptyStore(t *testing.T) {
 
 // TestGenerateRDB_WithData tests GenerateRDB with data
 func TestGenerateRDB_WithData(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -69,6 +74,7 @@ func TestGenerateRDB_WithData(t *testing.T) {
 
 // TestLoadRDBWithStore_EmptyData tests LoadRDBWithStore with empty data
 func TestLoadRDBWithStore_EmptyData(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -80,6 +86,7 @@ func TestLoadRDBWithStore_EmptyData(t *testing.T) {
 
 // TestLoadRDBWithStore_InvalidData tests LoadRDBWithStore with invalid data
 func TestLoadRDBWithStore_InvalidData(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -90,6 +97,7 @@ func TestLoadRDBWithStore_InvalidData(t *testing.T) {
 
 // TestReplicationBacklog_Additional tests for ReplicationBacklog
 func TestReplicationBacklog_Additional(t *testing.T) {
+	t.Parallel()
 	backlog := NewReplicationBacklog(1000)
 
 	// Test Append and GetRange
@@ -104,6 +112,7 @@ func TestReplicationBacklog_Additional(t *testing.T) {
 
 // TestReplicationManager_Stop tests ReplicationManager Stop
 func TestReplicationManager_Stop(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 
@@ -114,6 +123,7 @@ func TestReplicationManager_Stop(t *testing.T) {
 
 // TestReplicationManager_SetGetMasterAddr tests SetMasterAddr and GetMasterAddr
 func TestReplicationManager_SetGetMasterAddr(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -128,6 +138,7 @@ func TestReplicationManager_SetGetMasterAddr(t *testing.T) {
 
 // TestReplicationManager_IsMaster tests IsMaster
 func TestReplicationManager_IsMaster(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()

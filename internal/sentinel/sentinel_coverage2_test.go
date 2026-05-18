@@ -8,6 +8,7 @@ import (
 
 // TestConfigProvider_GetMasterAddrByName tests GetMasterAddrByName method
 func TestConfigProvider_GetMasterAddrByName_Coverage(t *testing.T) {
+	t.Parallel()
 	sentinelInstance := NewSentinel(1, 0)
 	sentinelInstance.AddMaster("mymaster", "127.0.0.1:6379", 2)
 
@@ -19,6 +20,7 @@ func TestConfigProvider_GetMasterAddrByName_Coverage(t *testing.T) {
 
 // TestConfigProvider_GetMasterAddrByName_NotFound tests GetMasterAddrByName with non-existent master
 func TestConfigProvider_GetMasterAddrByName_NotFound_Coverage(t *testing.T) {
+	t.Parallel()
 	sentinelInstance := NewSentinel(1, 0)
 
 	provider := NewConfigProvider(sentinelInstance)
@@ -28,6 +30,7 @@ func TestConfigProvider_GetMasterAddrByName_NotFound_Coverage(t *testing.T) {
 
 // TestConfigProvider_GetMasters tests GetMasters method
 func TestConfigProvider_GetMasters_Coverage(t *testing.T) {
+	t.Parallel()
 	sentinelInstance := NewSentinel(1, 0)
 	sentinelInstance.AddMaster("master1", "127.0.0.1:6379", 2)
 	sentinelInstance.AddMaster("master2", "127.0.0.1:6380", 2)
@@ -39,6 +42,7 @@ func TestConfigProvider_GetMasters_Coverage(t *testing.T) {
 
 // TestConfigProvider_GetSlaves tests GetSlaves method
 func TestConfigProvider_GetSlaves_Coverage(t *testing.T) {
+	t.Parallel()
 	sentinelInstance := NewSentinel(1, 0)
 	sentinelInstance.AddMaster("mymaster", "127.0.0.1:6379", 2)
 
@@ -50,24 +54,28 @@ func TestConfigProvider_GetSlaves_Coverage(t *testing.T) {
 
 // TestMasterInstance_GetQuorum tests GetQuorum method
 func TestMasterInstance_GetQuorum_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 3)
 	assert.Equal(t, 3, master.GetQuorum())
 }
 
 // TestMasterInstance_GetName tests GetName method
 func TestMasterInstance_GetName_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 	assert.Equal(t, "test-master", master.GetName())
 }
 
 // TestMasterInstance_GetAddr tests GetAddr method
 func TestMasterInstance_GetAddr_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 	assert.Equal(t, "127.0.0.1:6379", master.GetAddr())
 }
 
 // TestMasterInstance_SetAddr tests SetAddr method
 func TestMasterInstance_SetAddr_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 	master.SetAddr("127.0.0.1:6380")
 	assert.Equal(t, "127.0.0.1:6380", master.GetAddr())
@@ -75,6 +83,7 @@ func TestMasterInstance_SetAddr_Coverage(t *testing.T) {
 
 // TestSentinel_AddMaster_Duplicate tests adding duplicate master
 func TestSentinel_AddMaster_Duplicate_Coverage(t *testing.T) {
+	t.Parallel()
 	sentinelInstance := NewSentinel(1, 0)
 
 	// Add first master
@@ -88,6 +97,7 @@ func TestSentinel_AddMaster_Duplicate_Coverage(t *testing.T) {
 
 // TestMasterInstance_IncrSdownCount tests IncrSdownCount method
 func TestMasterInstance_IncrSdownCount_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	initial := master.GetSdownCount()

@@ -18,6 +18,7 @@ func isError(r proto.RESP) bool {
 
 // TestSentinelHandler_New tests NewSentinelHandler
 func TestSentinelHandler_New(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -28,6 +29,7 @@ func TestSentinelHandler_New(t *testing.T) {
 
 // TestSentinelHandler_HandleConnection_PING tests HandleConnection with PING command
 func TestSentinelHandler_HandleConnection_PING(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -59,6 +61,7 @@ func TestSentinelHandler_HandleConnection_PING(t *testing.T) {
 
 // TestSentinelHandler_executeCommand_Unknown tests executeCommand with unknown command
 func TestSentinelHandler_executeCommand_Unknown(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -69,6 +72,7 @@ func TestSentinelHandler_executeCommand_Unknown(t *testing.T) {
 
 // TestSentinelHandler_executeCommand_Sentinel tests executeCommand with SENTINEL subcommand
 func TestSentinelHandler_executeCommand_Sentinel(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -81,6 +85,7 @@ func TestSentinelHandler_executeCommand_Sentinel(t *testing.T) {
 
 // TestSentinelHandler_handleSentinelCommand_Masters tests handleSentinelCommand with MASTERS subcommand
 func TestSentinelHandler_handleSentinelCommand_Masters(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -92,6 +97,7 @@ func TestSentinelHandler_handleSentinelCommand_Masters(t *testing.T) {
 
 // TestSentinelHandler_handleSentinelCommand_GetMasterAddrByName tests with empty args
 func TestSentinelHandler_handleSentinelCommand_GetMasterAddrByName(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -103,6 +109,7 @@ func TestSentinelHandler_handleSentinelCommand_GetMasterAddrByName(t *testing.T)
 
 // TestSentinelHandler_handleSentinelCommand_Slaves tests with no args
 func TestSentinelHandler_handleSentinelCommand_Slaves(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -114,6 +121,7 @@ func TestSentinelHandler_handleSentinelCommand_Slaves(t *testing.T) {
 
 // TestSentinelHandler_handleSentinelCommand_Failover tests with no args
 func TestSentinelHandler_handleSentinelCommand_Failover(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -125,6 +133,7 @@ func TestSentinelHandler_handleSentinelCommand_Failover(t *testing.T) {
 
 // TestSentinelHandler_handleSentinelCommand_UnknownSubcommand tests unknown subcommand
 func TestSentinelHandler_handleSentinelCommand_UnknownSubcommand(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -135,6 +144,7 @@ func TestSentinelHandler_handleSentinelCommand_UnknownSubcommand(t *testing.T) {
 
 // TestSentinelHandler_HandleConnection_EmptyArgs tests HandleConnection with empty command args
 func TestSentinelHandler_HandleConnection_EmptyArgs(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -159,6 +169,7 @@ func TestSentinelHandler_HandleConnection_EmptyArgs(t *testing.T) {
 
 // TestSentinelHandler_HandleConnection_ReadError tests HandleConnection with read error
 func TestSentinelHandler_HandleConnection_ReadError(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -174,6 +185,7 @@ func TestSentinelHandler_HandleConnection_ReadError(t *testing.T) {
 
 // TestSentinelHandler_handleSentinelCommand_Monitor tests MONITOR subcommand
 func TestSentinelHandler_handleSentinelCommand_Monitor(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -191,6 +203,7 @@ func TestSentinelHandler_handleSentinelCommand_Monitor(t *testing.T) {
 
 // TestSentinelHandler_handleSentinelCommand_MonitorInsufficientArgs tests MONITOR with insufficient args
 func TestSentinelHandler_handleSentinelCommand_MonitorInsufficientArgs(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -205,6 +218,7 @@ func TestSentinelHandler_handleSentinelCommand_MonitorInsufficientArgs(t *testin
 
 // TestSentinelHandler_executeCommand_PING tests executeCommand with PING
 func TestSentinelHandler_executeCommand_PING(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 

@@ -4,18 +4,22 @@
 
 ---
 
-## P1
+## P1 — 已完成
 
-- **大规模边界测试** — 新增 100MB/512MB 字符串、100K 集合（List/Set/ZSet/Hash）元素的写入/读取测试，验证 BadgerDB value log 分割和 B+ 树深度行为（来源：test-effectiveness-audit.md Phase 2）
-- **重试逻辑单元测试** — 新建 `internal/store/retry_update_test.go`，覆盖 maxRetries 边界、退避范围、抖动随机性、非冲突错误透传（来源：test-effectiveness-audit.md Phase 4）
-- **WRONGTYPE 集成层覆盖** — stream / JSON / TimeSeries / Geo 的 WRONGTYPE 测试（来源：test-audit-report.md）
+- [x] **大规模边界测试** — `internal/store/boundary_test.go`（100MB/10MB/1MB 字符串, 100K List/Set/ZSet/Hash）
+- [x] **重试逻辑单元测试** — `internal/store/retry_update_test.go`（11 tests, maxRetries/backoff/jitter/error wrap）
+- [x] **WRONGTYPE 集成层覆盖** — 全部 9 种数据类型（stream/JSON/TimeSeries/Geo 覆盖完成）
 
 ## P2
 
 - **LSM 压缩/重平衡测试** — 大量写入后触发的 SSTable 合并、大量删除后的孤儿键清理、压缩期间并发读写（来源：test-effectiveness-audit.md Phase 2）
-- **确定性冲突测试** — 手动制造 txn 冲突，断言重试次数和 fallback 行为（来源：test-effectiveness-audit.md Phase 3）
-- **`t.Parallel()`** — 全仓库零使用，所有测试串行执行。添加后可加速 CI（来源：test-effectiveness-audit.md）
-- **并发规模提升** — 现有并发测试仅 10 goroutines，升级到 100/1000；添加读写比例变体（来源：test-effectiveness-audit.md Phase 3）
+- [x] **确定性冲突测试** — `internal/store/conflict_test.go`（10/100/20 goroutines, 多个冲突场景）
+- [x] **`t.Parallel()`** — **Phase 1+2 完成**。55 文件，约 900 测试函数已并行化。
+  - Phase 1: backup/cluster/helper/proto/replication/sentinel + store-boundary+pubsub + integration-replication+soak（41 文件，~500 tests）
+  - Phase 2: store 全部（移除 sharedStore 全局，per-test BadgerDB）+ server 全部（移除 testState 全局，per-test connState）。14 文件，~400 tests
+  - 不启用：logger（全局 level 有并发写竞争，1.3s 边际收益低），integration（共享服务器），cmd/boltDB（全局 flag）
+  - 效果：server 包 33s→25s（-24%），store 包维持接近
+- **并发规模提升** — 现有并发测试仅 10 goroutines，升级到 100/1000；添加读写比例变体（来源：test-effectiveness-audit.md Phase 3。注：conflict_test 已有 100 goroutines 测试）
 
 ## 功能缺口（v0.3 已标注）
 

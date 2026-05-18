@@ -11,7 +11,7 @@ import (
 
 
 // setupBenchmarkHandler creates a handler for benchmark testing
-func setupBenchmarkHandler(b *testing.B) *Handler {
+func setupBenchmarkHandler(b *testing.B) (*Handler, *connState) {
 	dbPath := b.TempDir()
 	testDB, err := store.NewBadgerStore(dbPath)
 	if err != nil {
@@ -29,69 +29,69 @@ func setupBenchmarkHandler(b *testing.B) *Handler {
 		Replication: replMgr,
 		Port:        6337,
 		conns:       make(map[*connState]*connMeta),
-	}
+	}, &connState{}
 }
 
 // BenchmarkExecuteCommand_PING benchmarks PING command
 func BenchmarkExecuteCommand_PING(b *testing.B) {
-	handler := setupBenchmarkHandler(b)
+	handler, state := setupBenchmarkHandler(b)
 	defer handler.Db.Close()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		handler.executeCommand(testState, "PING", nil, "127.0.0.1:12345")
+		handler.executeCommand(state, "PING", nil, "127.0.0.1:12345")
 	}
 }
 
 // BenchmarkExecuteCommand_SET benchmarks SET command
 func BenchmarkExecuteCommand_SET(b *testing.B) {
-	handler := setupBenchmarkHandler(b)
+	handler, state := setupBenchmarkHandler(b)
 	defer handler.Db.Close()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		handler.executeCommand(testState, "SET", [][]byte{[]byte("key"), []byte("value")}, "127.0.0.1:12345")
+		handler.executeCommand(state, "SET", [][]byte{[]byte("key"), []byte("value")}, "127.0.0.1:12345")
 	}
 }
 
 // BenchmarkExecuteCommand_GET benchmarks GET command
 func BenchmarkExecuteCommand_GET(b *testing.B) {
-	handler := setupBenchmarkHandler(b)
+	handler, state := setupBenchmarkHandler(b)
 	defer handler.Db.Close()
 
 	// Pre-populate
-	handler.executeCommand(testState, "SET", [][]byte{[]byte("key"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SET", [][]byte{[]byte("key"), []byte("value")}, "127.0.0.1:12345")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		handler.executeCommand(testState, "GET", [][]byte{[]byte("key")}, "127.0.0.1:12345")
+		handler.executeCommand(state, "GET", [][]byte{[]byte("key")}, "127.0.0.1:12345")
 	}
 }
 
 // BenchmarkExecuteCommand_INCR benchmarks INCR command
 func BenchmarkExecuteCommand_INCR(b *testing.B) {
-	handler := setupBenchmarkHandler(b)
+	handler, state := setupBenchmarkHandler(b)
 	defer handler.Db.Close()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		handler.executeCommand(testState, "INCR", [][]byte{[]byte("counter")}, "127.0.0.1:12345")
+		handler.executeCommand(state, "INCR", [][]byte{[]byte("counter")}, "127.0.0.1:12345")
 	}
 }
 
 // BenchmarkExecuteCommand_DEL benchmarks DEL command
 func BenchmarkExecuteCommand_DEL(b *testing.B) {
-	handler := setupBenchmarkHandler(b)
+	handler, state := setupBenchmarkHandler(b)
 	defer handler.Db.Close()
 
 	// Pre-populate
 	for i := 0; i < 100; i++ {
-		handler.executeCommand(testState, "SET", [][]byte{[]byte("key"), []byte("value")}, "127.0.0.1:12345")
+		handler.executeCommand(state, "SET", [][]byte{[]byte("key"), []byte("value")}, "127.0.0.1:12345")
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		handler.executeCommand(testState, "DEL", [][]byte{[]byte("key")}, "127.0.0.1:12345")
+		handler.executeCommand(state, "DEL", [][]byte{[]byte("key")}, "127.0.0.1:12345")
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 
 // TestMasterInstance_IsDown_Coverage tests IsDown method
 func TestMasterInstance_IsDown_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Initially not down (sdown count < quorum)
@@ -20,6 +21,7 @@ func TestMasterInstance_IsDown_Coverage(t *testing.T) {
 
 // TestMasterInstance_SetODown_Coverage tests SetODown method
 func TestMasterInstance_SetODown_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Set ODown
@@ -32,6 +34,7 @@ func TestMasterInstance_SetODown_Coverage(t *testing.T) {
 
 // TestMasterInstance_Stop_Coverage tests Stop method
 func TestMasterInstance_Stop_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Stop should not panic
@@ -41,6 +44,7 @@ func TestMasterInstance_Stop_Coverage(t *testing.T) {
 
 // TestMasterInstance_AddSentinel_Coverage tests AddSentinel method
 func TestMasterInstance_AddSentinel_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Initially 1 sentinel (itself)
@@ -56,6 +60,7 @@ func TestMasterInstance_AddSentinel_Coverage(t *testing.T) {
 
 // TestMasterInstance_UpdateSlaveOffset_Coverage tests UpdateSlaveOffset method
 func TestMasterInstance_UpdateSlaveOffset_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Add a slave first
@@ -69,6 +74,7 @@ func TestMasterInstance_UpdateSlaveOffset_Coverage(t *testing.T) {
 
 // TestSentinelInstance_Coverage tests SentinelInstance creation
 func TestSentinelInstance_Coverage(t *testing.T) {
+	t.Parallel()
 	instance := NewSentinelInstance("sentinel1", "127.0.0.1:26379")
 
 	assert.Equal(t, "sentinel1", instance.ID)
@@ -77,6 +83,7 @@ func TestSentinelInstance_Coverage(t *testing.T) {
 
 // TestSlaveInstance_Coverage tests SlaveInstance creation
 func TestSlaveInstance_Coverage(t *testing.T) {
+	t.Parallel()
 	slave := NewSlaveInstance("slave1", "127.0.0.1:6380")
 
 	assert.Equal(t, "slave1", slave.ID)
@@ -86,6 +93,7 @@ func TestSlaveInstance_Coverage(t *testing.T) {
 
 // TestFailoverManager_New_Coverage tests FailoverManager creation
 func TestFailoverManager_New_Coverage(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, time.Second)
 	manager := NewFailoverManager(sentinel)
 
@@ -94,6 +102,7 @@ func TestFailoverManager_New_Coverage(t *testing.T) {
 
 // TestSentinel_GetRunID_Coverage tests Sentinel GetRunID method
 func TestSentinel_GetRunID_Coverage(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, time.Second)
 
 	runID := sentinel.GetRunID()
@@ -104,6 +113,7 @@ func TestSentinel_GetRunID_Coverage(t *testing.T) {
 
 // TestSentinel_GetConfigEpoch_Coverage tests Sentinel GetConfigEpoch method
 func TestSentinel_GetConfigEpoch_Coverage(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, time.Second)
 
 	epoch := sentinel.GetConfigEpoch()
@@ -112,6 +122,7 @@ func TestSentinel_GetConfigEpoch_Coverage(t *testing.T) {
 
 // TestSentinel_IncrementConfigEpoch_Coverage tests Sentinel IncrementConfigEpoch method
 func TestSentinel_IncrementConfigEpoch_Coverage(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, time.Second)
 
 	// Initial epoch
@@ -126,6 +137,7 @@ func TestSentinel_IncrementConfigEpoch_Coverage(t *testing.T) {
 
 // TestSentinel_AddMaster_Coverage tests Sentinel AddMaster method
 func TestSentinel_AddMaster_Coverage(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, time.Second)
 
 	// Add a master
@@ -139,6 +151,7 @@ func TestSentinel_AddMaster_Coverage(t *testing.T) {
 
 // TestSentinel_RemoveMaster_Coverage tests Sentinel RemoveMaster method
 func TestSentinel_RemoveMaster_Coverage(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, time.Second)
 
 	// Add a master
@@ -154,6 +167,7 @@ func TestSentinel_RemoveMaster_Coverage(t *testing.T) {
 
 // TestSentinel_GetAllMasters_Coverage tests Sentinel GetAllMasters method
 func TestSentinel_GetAllMasters_Coverage(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, time.Second)
 
 	// Add multiple masters
@@ -167,6 +181,7 @@ func TestSentinel_GetAllMasters_Coverage(t *testing.T) {
 
 // TestSentinel_Stop_Coverage tests Sentinel Stop method
 func TestSentinel_Stop_Coverage(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, time.Second)
 
 	// Stop should not panic
@@ -176,6 +191,7 @@ func TestSentinel_Stop_Coverage(t *testing.T) {
 
 // TestMasterInstance_MultipleSlaves_Coverage tests managing multiple slaves
 func TestMasterInstance_MultipleSlaves_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Add multiple slaves
@@ -194,6 +210,7 @@ func TestMasterInstance_MultipleSlaves_Coverage(t *testing.T) {
 
 // TestMasterInstance_SlaveOffset_Coverage tests slave offset tracking
 func TestMasterInstance_SlaveOffset_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Add a slave
@@ -211,6 +228,7 @@ func TestMasterInstance_SlaveOffset_Coverage(t *testing.T) {
 
 // TestMasterInstance_UpdateSlaveOffset_NonExistent_Coverage tests updating offset for non-existent slave
 func TestMasterInstance_UpdateSlaveOffset_NonExistent_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Update offset for non-existent slave - should not panic
@@ -220,6 +238,7 @@ func TestMasterInstance_UpdateSlaveOffset_NonExistent_Coverage(t *testing.T) {
 
 // TestMasterInstance_GetState_SetState_Coverage tests GetState and SetState methods
 func TestMasterInstance_GetState_SetState_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Get initial state
@@ -233,6 +252,7 @@ func TestMasterInstance_GetState_SetState_Coverage(t *testing.T) {
 
 // TestMasterInstance_GetName_GetAddr_Coverage tests GetName and GetAddr methods
 func TestMasterInstance_GetName_GetAddr_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	assert.Equal(t, "test-master", master.GetName())
@@ -241,6 +261,7 @@ func TestMasterInstance_GetName_GetAddr_Coverage(t *testing.T) {
 
 // TestMasterInstance_SdownCount_Coverage tests sdown count methods
 func TestMasterInstance_SdownCount_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Initial sdown count should be 0
@@ -256,6 +277,7 @@ func TestMasterInstance_SdownCount_Coverage(t *testing.T) {
 
 // TestMasterInstance_GetSlaves_Coverage tests GetSlaves method
 func TestMasterInstance_GetSlaves_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Initially no slaves
@@ -273,6 +295,7 @@ func TestMasterInstance_GetSlaves_Coverage(t *testing.T) {
 
 // TestMasterInstance_GetSentinelCount_Coverage tests GetSentinelCount method
 func TestMasterInstance_GetSentinelCount_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Initially 1 (itself)
@@ -288,6 +311,7 @@ func TestMasterInstance_GetSentinelCount_Coverage(t *testing.T) {
 
 // TestMasterInstance_GetBestSlave_Coverage tests GetBestSlave method
 func TestMasterInstance_GetBestSlave_Coverage(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// No slaves, should return nil

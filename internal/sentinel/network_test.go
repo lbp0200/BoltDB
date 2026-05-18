@@ -9,35 +9,41 @@ import (
 )
 
 func TestNetwork_SendPing(t *testing.T) {
+	t.Parallel()
 	ok, err := SendPing("invalid-address")
 	assert.Error(t, err)
 	assert.False(t, ok)
 }
 
 func TestNetwork_SendInfoReplication(t *testing.T) {
+	t.Parallel()
 	info, err := SendInfoReplication("invalid-address")
 	assert.Error(t, err)
 	assert.Equal(t, "", info)
 }
 
 func TestNetwork_GetRole(t *testing.T) {
+	t.Parallel()
 	role, err := GetRole("invalid-address")
 	assert.Error(t, err)
 	assert.Equal(t, "", role)
 }
 
 func TestNetwork_SendSlaveOfNoOne(t *testing.T) {
+	t.Parallel()
 	err := SendSlaveOfNoOne("invalid-address")
 	assert.Error(t, err)
 }
 
 func TestNetwork_SendReplicaOf(t *testing.T) {
+	t.Parallel()
 	err := SendReplicaOf("invalid-address", "invalid-master")
 	assert.Error(t, err)
 }
 
 // TestSentinelConnection_Close tests Close method
 func TestSentinelConnection_Close(t *testing.T) {
+	t.Parallel()
 	// Create a listener
 	listener, err := net.Listen("tcp", "localhost:0")
 	assert.NoError(t, err)
@@ -59,6 +65,7 @@ func TestSentinelConnection_Close(t *testing.T) {
 }
 
 func TestSentinelConnection_SendCommand(t *testing.T) {
+	t.Parallel()
 	listener, err := net.Listen("tcp", "localhost:0")
 	assert.NoError(t, err)
 	defer listener.Close()
@@ -92,6 +99,7 @@ func TestSentinelConnection_SendCommand(t *testing.T) {
 }
 
 func TestSentinelConnection_ReadResponse(t *testing.T) {
+	t.Parallel()
 	listener, err := net.Listen("tcp", "localhost:0")
 	assert.NoError(t, err)
 	defer listener.Close()
@@ -131,6 +139,7 @@ func TestSentinelConnection_ReadResponse(t *testing.T) {
 
 // TestSentinelConnection_ReadResponse_Error tests ReadResponse with error
 func TestSentinelConnection_ReadResponse_Error(t *testing.T) {
+	t.Parallel()
 	// Create a listener
 	listener, err := net.Listen("tcp", "localhost:0")
 	assert.NoError(t, err)
@@ -157,6 +166,7 @@ func TestSentinelConnection_ReadResponse_Error(t *testing.T) {
 
 // TestSentinelConnection_SendCommand_WriteError tests SendCommand with write error
 func TestSentinelConnection_SendCommand_WriteError(t *testing.T) {
+	t.Parallel()
 	// Create a listener
 	listener, err := net.Listen("tcp", "localhost:0")
 	assert.NoError(t, err)

@@ -8,6 +8,7 @@ import (
 
 // TestReplicationTakeoverSignal_String tests String method
 func TestReplicationTakeoverSignal_String(t *testing.T) {
+	t.Parallel()
 	sig := ReplicationTakeoverSignal{}
 	str := sig.String()
 	assert.Equal(t, "replication-takeover", str)
@@ -15,6 +16,7 @@ func TestReplicationTakeoverSignal_String(t *testing.T) {
 
 // TestReplicationTakeoverSignal_Error tests Error method
 func TestReplicationTakeoverSignal_Error(t *testing.T) {
+	t.Parallel()
 	sig := ReplicationTakeoverSignal{}
 	err := sig.Error()
 	assert.Equal(t, "replication takeover", err)
@@ -22,6 +24,7 @@ func TestReplicationTakeoverSignal_Error(t *testing.T) {
 
 // TestReplicationTakeoverSignal_IsError tests IsError method
 func TestReplicationTakeoverSignal_IsError(t *testing.T) {
+	t.Parallel()
 	sig := ReplicationTakeoverSignal{}
 	// IsError returns false
 	assert.False(t, sig.IsError())

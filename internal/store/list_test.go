@@ -12,6 +12,7 @@ import (
 
 // TestLPush 测试 LPUSH 命令
 func TestLPush(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "mylist"
@@ -39,6 +40,7 @@ func TestLPush(t *testing.T) {
 
 // TestRPush 测试 RPUSH 命令
 func TestRPush(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "mylist"
@@ -69,6 +71,7 @@ func TestRPush(t *testing.T) {
 
 // TestLPop 测试 LPOP 命令
 func TestLPop(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "mylist"
@@ -99,6 +102,7 @@ func TestLPop(t *testing.T) {
 
 // TestRPop 测试 RPOP 命令
 func TestRPop(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "mylist"
@@ -129,6 +133,7 @@ func TestRPop(t *testing.T) {
 
 // TestLLen 测试 LLEN 命令
 func TestLLen(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "mylist"
@@ -147,6 +152,7 @@ func TestLLen(t *testing.T) {
 
 // TestLIndex 测试 LINDEX 命令
 func TestLIndex(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "mylist"
@@ -184,6 +190,7 @@ func TestLIndex(t *testing.T) {
 
 // TestLRange 测试 LRANGE 命令
 func TestLRange(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "mylist"
@@ -214,6 +221,7 @@ func TestLRange(t *testing.T) {
 
 // TestLSet 测试 LSET 命令
 func TestLSet(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "mylist"
@@ -236,6 +244,7 @@ func TestLSet(t *testing.T) {
 
 // TestLTrim 测试 LTRIM 命令
 func TestLTrim(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "mylist"
@@ -261,6 +270,7 @@ func TestLTrim(t *testing.T) {
 
 // TestLInsert 测试 LINSERT 命令
 func TestLInsert(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "mylist"
@@ -295,6 +305,7 @@ func TestLInsert(t *testing.T) {
 
 // TestLRem 测试 LREM 命令
 func TestLRem(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "mylist"
@@ -330,6 +341,7 @@ func TestLRem(t *testing.T) {
 
 // TestRPopLPush 测试 RPOPLPUSH 命令
 func TestRPopLPush(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	source := "source"
@@ -362,6 +374,7 @@ func TestRPopLPush(t *testing.T) {
 
 // TestListEdgeCases 测试边界情况
 func TestListEdgeCases(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "mylist"
@@ -390,6 +403,7 @@ func TestListEdgeCases(t *testing.T) {
 }
 
 func TestLPUSHX(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "test_lpushx"
@@ -413,6 +427,7 @@ func TestLPUSHX(t *testing.T) {
 }
 
 func TestRPUSHX(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "test_rpushx"
@@ -436,6 +451,7 @@ func TestRPUSHX(t *testing.T) {
 }
 
 func TestBLPOP(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 测试非空列表
@@ -453,6 +469,7 @@ func TestBLPOP(t *testing.T) {
 }
 
 func TestBRPOP(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 测试非空列表
@@ -470,6 +487,7 @@ func TestBRPOP(t *testing.T) {
 }
 
 func TestBRPOPLPUSH(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 测试非空列表
@@ -485,6 +503,7 @@ func TestBRPOPLPUSH(t *testing.T) {
 
 // TestLPos 测试 LPOS 命令
 func TestLPos(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Create a list with duplicate values
@@ -515,6 +534,7 @@ func TestLPos(t *testing.T) {
 
 // TestLMove 测试 LMOVE 命令
 func TestLMove(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Create source list
@@ -542,6 +562,7 @@ func TestLMove(t *testing.T) {
 
 // TestBLMove 测试 BLMOVE 命令
 func TestBLMove(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Test BLMOVE with existing element
@@ -556,6 +577,7 @@ func TestBLMove(t *testing.T) {
 }
 
 func TestBLPOPBlockingRace(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Stress the TOCTOU race: start BLPOP before data exists, then LPush.
@@ -585,6 +607,7 @@ func TestBLPOPBlockingRace(t *testing.T) {
 }
 
 func TestBRPOPBlockingRace(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	for i := 0; i < 50; i++ {
@@ -611,6 +634,7 @@ func TestBRPOPBlockingRace(t *testing.T) {
 }
 
 func TestBLPOPBlockingMultipleKeysRace(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Multiple keys, only one gets data after registration
@@ -638,6 +662,7 @@ func TestBLPOPBlockingMultipleKeysRace(t *testing.T) {
 }
 
 func TestBLPOPBlockingConcurrentPushers(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 	const numPushers = 10
 
@@ -674,6 +699,7 @@ func TestBLPOPBlockingConcurrentPushers(t *testing.T) {
 }
 
 func TestBLPOPBlockingAlreadyHasData(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Data exists before BLPOP - should return immediately via the
@@ -688,6 +714,7 @@ func TestBLPOPBlockingAlreadyHasData(t *testing.T) {
 }
 
 func TestBLPOPBlockingUnregisterCleanup(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// When timeout triggers, the channel should be properly cleaned up
@@ -715,6 +742,7 @@ func TestBLPOPBlockingUnregisterCleanup(t *testing.T) {
 
 // TestListWrongType tests that LPush/RPush returns ErrWrongType when key exists with different type
 func TestListWrongType(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Create a hash key first

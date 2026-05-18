@@ -2,74 +2,31 @@ package store
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"testing"
-	"time"
 )
 
-// sharedStore is a single BadgerDB instance reused across all tests.
-// This reduces test suite runtime from 180s+ to ~30s by avoiding
-// goroutine accumulation from creating 279+ separate Badger instances.
-var sharedStore *BotreonStore
-
-// TestMain sets up the shared store before tests and closes it after.
-func TestMain(m *testing.M) {
-	// Use a dedicated temp directory for the test suite
-	dbPath := fmt.Sprintf("%s/boltdb_shared_test", os.TempDir())
-	// Clean up any previous run
-	os.RemoveAll(dbPath)
-
-	var err error
-	sharedStore, err = NewBadgerStore(dbPath)
-	if err != nil {
-		fmt.Printf("failed to create shared store: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Run tests
-	code := m.Run()
-
-	// Clean up: attempt non-blocking close with timeout
-	// The publisher goroutine can block indefinitely; we prioritize test
-	// completion over graceful shutdown since temp dirs are auto-cleaned.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	done := make(chan error, 1)
-	go func() {
-		done <- sharedStore.Close()
-	}()
-	select {
-	case err := <-done:
-		if err != nil {
-			fmt.Printf("failed to close shared store: %v\n", err)
-		}
-	case <-ctx.Done():
-		// Close is blocked (known BadgerDB doWrites bug). Exit anyway.
-	}
-	os.RemoveAll(dbPath)
-
-	os.Exit(code)
-}
-
-// setupTestStore returns the shared store after clearing all data.
-// Each test gets a clean database state without creating a new instance.
-// The returned store is the shared singleton; callers should NOT close it.
+// setupTestStore creates a new store in a temp directory for each test.
+// The store is automatically closed and cleaned up via t.Cleanup.
 func setupTestStore(t *testing.T) *BotreonStore {
 	t.Helper()
-	if sharedStore == nil {
-		t.Fatal("sharedStore not initialized - TestMain not running?")
+	dir := t.TempDir()
+	store, err := NewBadgerStore(dir)
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
 	}
-	// Clear all data synchronously before each test.
-	// ClearAllData uses iterative deletion and must succeed for test isolation.
-	if err := sharedStore.ClearAllData(); err != nil {
-		t.Fatalf("ClearAllData failed: %v", err)
-	}
-	if sharedStore.readCache != nil {
-		sharedStore.readCache.Clear()
-	}
-
-	return sharedStore
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), CloseTimeout)
+		defer cancel()
+		done := make(chan error, 1)
+		go func() {
+			done <- store.Close()
+		}()
+		select {
+		case <-done:
+		case <-ctx.Done():
+		}
+	})
+	return store
 }
 
 // mustSet is a helper that calls Set and fails the test on error

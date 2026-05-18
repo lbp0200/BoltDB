@@ -8,6 +8,7 @@ import (
 
 // TestGeoAdd tests GeoAdd function
 func TestGeoAdd(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add geo points
@@ -21,6 +22,7 @@ func TestGeoAdd(t *testing.T) {
 
 // TestGeoAddWrongType tests that GeoAdd returns ErrWrongType when key exists with different type
 func TestGeoAddWrongType(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// First set a string key
@@ -88,6 +90,7 @@ func TestGeoAddWrongType(t *testing.T) {
 
 // TestGeoPos tests GeoPos function
 func TestGeoPos(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add geo points
@@ -103,6 +106,7 @@ func TestGeoPos(t *testing.T) {
 
 // TestGeoHash tests GeoHash function
 func TestGeoHash(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add geo points
@@ -119,6 +123,7 @@ func TestGeoHash(t *testing.T) {
 
 // TestGeoDist tests GeoDist function
 func TestGeoDist(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add geo points
@@ -135,6 +140,7 @@ func TestGeoDist(t *testing.T) {
 
 // TestGeoRadius tests GeoRadius function
 func TestGeoRadius(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add geo points
@@ -151,6 +157,7 @@ func TestGeoRadius(t *testing.T) {
 
 // TestGeoMembers tests GeoMembers function
 func TestGeoMembers(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add geo points
@@ -167,6 +174,7 @@ func TestGeoMembers(t *testing.T) {
 
 // TestGeoCard tests GeoCard function
 func TestGeoCard(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Test empty key
@@ -177,6 +185,7 @@ func TestGeoCard(t *testing.T) {
 
 // TestGeoRadiusByMember tests GeoRadiusByMember function
 func TestGeoRadiusByMember(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add geo points

@@ -11,6 +11,7 @@ import (
 
 // TestBackupManager_ListBackups tests ListBackups function
 func TestBackupManager_ListBackups(t *testing.T) {
+	t.Parallel()
 	// Test with empty directory
 	emptyDir := t.TempDir()
 	backups, err := ListBackups(emptyDir)
@@ -20,6 +21,7 @@ func TestBackupManager_ListBackups(t *testing.T) {
 
 // TestBackupManager_ListBackups_WithFiles tests ListBackups with files
 func TestBackupManager_ListBackups_WithFiles(t *testing.T) {
+	t.Parallel()
 	// Create a temp dir with some backup files
 	tmpDir := t.TempDir()
 
@@ -40,6 +42,7 @@ func TestBackupManager_ListBackups_WithFiles(t *testing.T) {
 
 // TestBackupManager_CopyBackup tests CopyBackup function
 func TestBackupManager_CopyBackup(t *testing.T) {
+	t.Parallel()
 	// Create source and destination files
 	tmpDir := t.TempDir()
 	src := filepath.Join(tmpDir, "source.bak")
@@ -61,6 +64,7 @@ func TestBackupManager_CopyBackup(t *testing.T) {
 
 // TestBackupManager_CopyBackup_NotFound tests CopyBackup with non-existent source
 func TestBackupManager_CopyBackup_NotFound(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	src := filepath.Join(tmpDir, "nonexistent.bak")
 	dst := filepath.Join(tmpDir, "dest.bak")
@@ -71,6 +75,7 @@ func TestBackupManager_CopyBackup_NotFound(t *testing.T) {
 
 // TestRestoreTo_NotFound tests RestoreTo with non-existent file
 func TestRestoreTo_NotFound(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	err := RestoreTo("/nonexistent/path", tmpDir)
 	assert.Error(t, err)
@@ -78,6 +83,7 @@ func TestRestoreTo_NotFound(t *testing.T) {
 
 // TestBadgerBackupManager_New tests BadgerBackupManager creation
 func TestBadgerBackupManager_New(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -90,6 +96,7 @@ func TestBadgerBackupManager_New(t *testing.T) {
 
 // TestBackupManager_Save2 tests Save
 func TestBackupManager_Save2(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -107,6 +114,7 @@ func TestBackupManager_Save2(t *testing.T) {
 
 // TestBackupManager_LastSave2 tests LastSave
 func TestBackupManager_LastSave2(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)

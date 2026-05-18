@@ -6,6 +6,7 @@ import (
 
 // TestHyperLogLogEncodeDecode tests encodeRegister and decodeRegister
 func TestHyperLogLogEncodeDecode(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    uint8
@@ -33,6 +34,7 @@ func TestHyperLogLogEncodeDecode(t *testing.T) {
 
 // TestNewHyperLogLog tests newHyperLogLog
 func TestNewHyperLogLog(t *testing.T) {
+	t.Parallel()
 	hll := newHyperLogLog()
 	if hll == nil {
 		t.Fatal("newHyperLogLog returned nil")
@@ -47,6 +49,7 @@ func TestNewHyperLogLog(t *testing.T) {
 
 // TestHashData tests hashData
 func TestHashData(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input string
@@ -73,6 +76,7 @@ func TestHashData(t *testing.T) {
 
 // TestCountTrailingZeros tests countTrailingZeros
 func TestCountTrailingZeros(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    uint64
@@ -100,6 +104,7 @@ func TestCountTrailingZeros(t *testing.T) {
 
 // TestHyperLogLogEstimate tests Estimate with various states
 func TestHyperLogLogEstimate(t *testing.T) {
+	t.Parallel()
 	// Test uninitialized HLL
 	t.Run("uninitialized", func(t *testing.T) {
 		hll := &HyperLogLog{encoding: 0}
@@ -136,6 +141,7 @@ func TestHyperLogLogEstimate(t *testing.T) {
 
 // TestHyperLogLogAdd tests add method
 func TestHyperLogLogAdd(t *testing.T) {
+	t.Parallel()
 	hll := newHyperLogLog()
 
 	// First add should return true (changed)
@@ -164,6 +170,7 @@ func TestHyperLogLogAdd(t *testing.T) {
 
 // TestHyperLogLogCount tests count method
 func TestHyperLogLogCount(t *testing.T) {
+	t.Parallel()
 	hll := &HyperLogLog{
 		encoding:  2,
 		registers: make([]byte, 16384),
@@ -188,6 +195,7 @@ func TestHyperLogLogCount(t *testing.T) {
 
 // TestHyperLogLogCountZeros tests countZeros
 func TestHyperLogLogCountZeros(t *testing.T) {
+	t.Parallel()
 	hll := &HyperLogLog{
 		encoding:  2,
 		registers: make([]byte, 16384),
@@ -209,6 +217,7 @@ func TestHyperLogLogCountZeros(t *testing.T) {
 
 // TestHyperLogLogMerge tests merge method
 func TestHyperLogLogMerge(t *testing.T) {
+	t.Parallel()
 	// Test merge with uninitialized other
 	t.Run("merge with uninitialized", func(t *testing.T) {
 		hll := newHyperLogLog()
@@ -256,6 +265,7 @@ func TestHyperLogLogMerge(t *testing.T) {
 
 // TestPFAdd tests the store-level PFAdd function
 func TestPFAdd(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Test basic PFAdd
@@ -288,6 +298,7 @@ func TestPFAdd(t *testing.T) {
 
 // TestPFCount tests the store-level PFCount function
 func TestPFCount(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Add elements to first HLL
@@ -326,6 +337,7 @@ func TestPFCount(t *testing.T) {
 
 // TestPFMerge tests the store-level PFMerge function
 func TestPFMerge(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Create two HLLs
@@ -350,6 +362,7 @@ func TestPFMerge(t *testing.T) {
 
 // TestPFInfo tests the store-level PFInfo function
 func TestPFInfo(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Test PFInfo on non-existent key

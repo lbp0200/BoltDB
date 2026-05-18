@@ -9,6 +9,7 @@ import (
 
 // TestCluster_GetNodeBySlot tests GetNodeBySlot
 func TestCluster_GetNodeBySlot(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -29,6 +30,7 @@ func TestCluster_GetNodeBySlot(t *testing.T) {
 
 // TestCluster_GetNodeByID tests GetNodeByID
 func TestCluster_GetNodeByID(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -44,6 +46,7 @@ func TestCluster_GetNodeByID(t *testing.T) {
 
 // TestCluster_RemoveNode tests RemoveNode
 func TestCluster_RemoveNode(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -61,6 +64,7 @@ func TestCluster_RemoveNode(t *testing.T) {
 
 // TestCluster_AssignSlot tests AssignSlot
 func TestCluster_AssignSlot(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -79,6 +83,7 @@ func TestCluster_AssignSlot(t *testing.T) {
 
 // TestCluster_AssignSlotRange tests AssignSlotRange
 func TestCluster_AssignSlotRange(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -97,6 +102,7 @@ func TestCluster_AssignSlotRange(t *testing.T) {
 
 // TestCluster_GetSlotOwner tests GetSlotOwner
 func TestCluster_GetSlotOwner(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -116,6 +122,7 @@ func TestCluster_GetSlotOwner(t *testing.T) {
 
 // TestCluster_GetClusterNodes tests GetClusterNodes
 func TestCluster_GetClusterNodes(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -139,6 +146,7 @@ func TestCluster_GetClusterNodes(t *testing.T) {
 
 // TestCluster_GetClusterSlots tests GetClusterSlots
 func TestCluster_GetClusterSlots(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -154,6 +162,7 @@ func TestCluster_GetClusterSlots(t *testing.T) {
 
 // TestCluster_GetMyself tests GetMyself
 func TestCluster_GetMyself(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -164,6 +173,7 @@ func TestCluster_GetMyself(t *testing.T) {
 
 // TestCluster_Epoch tests IncrementEpoch and GetEpoch
 func TestCluster_Epoch(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -178,6 +188,7 @@ func TestCluster_Epoch(t *testing.T) {
 
 // TestCluster_UpdateNodeEpoch tests UpdateNodeEpoch
 func TestCluster_UpdateNodeEpoch(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -196,6 +207,7 @@ func TestCluster_UpdateNodeEpoch(t *testing.T) {
 
 // TestCluster_ImportingSlots tests IsImportingSlot
 func TestCluster_ImportingSlots(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -222,6 +234,7 @@ func TestCluster_ImportingSlots(t *testing.T) {
 
 // TestCluster_MigratingSlots tests IsMigratingSlot
 func TestCluster_MigratingSlots(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -248,6 +261,7 @@ func TestCluster_MigratingSlots(t *testing.T) {
 
 // TestCluster_ClearSlotMigration tests ClearSlotMigration
 func TestCluster_ClearSlotMigration(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 

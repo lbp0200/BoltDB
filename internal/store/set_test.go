@@ -8,6 +8,7 @@ import (
 )
 
 func TestSAdd(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "myset"
@@ -34,6 +35,7 @@ func TestSAdd(t *testing.T) {
 
 // TestSAddWrongType tests that SADD returns ErrWrongType when key exists with different type
 func TestSAddWrongType(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Create a hash key first
@@ -70,6 +72,7 @@ func TestSAddWrongType(t *testing.T) {
 }
 
 func TestSRem(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "myset"
@@ -98,6 +101,7 @@ func TestSRem(t *testing.T) {
 }
 
 func TestSCard(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "myset"
@@ -115,6 +119,7 @@ func TestSCard(t *testing.T) {
 }
 
 func TestSIsMember(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "myset"
@@ -139,6 +144,7 @@ func TestSIsMember(t *testing.T) {
 }
 
 func TestSMembers(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "myset"
@@ -165,6 +171,7 @@ func TestSMembers(t *testing.T) {
 }
 
 func TestSPop(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "myset"
@@ -192,6 +199,7 @@ func TestSPop(t *testing.T) {
 }
 
 func TestSPopN(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "myset"
@@ -225,6 +233,7 @@ func TestSPopN(t *testing.T) {
 }
 
 func TestSRandMember(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "myset"
@@ -252,6 +261,7 @@ func TestSRandMember(t *testing.T) {
 }
 
 func TestSRandMemberN(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key := "myset"
@@ -282,6 +292,7 @@ func TestSRandMemberN(t *testing.T) {
 }
 
 func TestSMove(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	source := "source"
@@ -321,6 +332,7 @@ func TestSMove(t *testing.T) {
 }
 
 func TestSInter(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key1 := "set1"
@@ -364,6 +376,7 @@ func TestSInter(t *testing.T) {
 }
 
 func TestSUnion(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key1 := "set1"
@@ -401,6 +414,7 @@ func TestSUnion(t *testing.T) {
 }
 
 func TestSDiff(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key1 := "set1"
@@ -436,6 +450,7 @@ func TestSDiff(t *testing.T) {
 }
 
 func TestSInterStore(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key1 := "set1"
@@ -473,6 +488,7 @@ func TestSInterStore(t *testing.T) {
 }
 
 func TestSUnionStore(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key1 := "set1"
@@ -511,6 +527,7 @@ func TestSUnionStore(t *testing.T) {
 }
 
 func TestSDiffStore(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	key1 := "set1"
@@ -543,6 +560,7 @@ func TestSDiffStore(t *testing.T) {
 }
 
 func TestSetEdgeCases(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 测试空集合操作
@@ -573,6 +591,7 @@ func TestSetEdgeCases(t *testing.T) {
 
 // TestSMIsMember 测试 SMISMEMBER 命令
 func TestSMIsMember(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Create a set
@@ -594,6 +613,7 @@ func TestSMIsMember(t *testing.T) {
 
 // TestSInterCard 测试 SINTERCARD 命令
 func TestSInterCard(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Create sets
@@ -619,6 +639,7 @@ func TestSInterCard(t *testing.T) {
 
 // TestSScan 测试 SSCAN 命令
 func TestSScan(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Create a set with many members

@@ -10,7 +10,8 @@ import (
 
 // TestServerInfoCommand tests INFO command
 func TestServerInfoCommand(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	tests := []struct {
@@ -78,9 +79,9 @@ func TestServerInfoCommand(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var resp proto.RESP
 			if tt.args == nil {
-				resp = handler.executeCommand(testState, "INFO", nil, "127.0.0.1:12345")
+				resp = handler.executeCommand(state, "INFO", nil, "127.0.0.1:12345")
 			} else {
-				resp = handler.executeCommand(testState, "INFO", tt.args, "127.0.0.1:12345")
+				resp = handler.executeCommand(state, "INFO", tt.args, "127.0.0.1:12345")
 			}
 			tt.check(t, resp)
 		})
@@ -89,11 +90,12 @@ func TestServerInfoCommand(t *testing.T) {
 
 // TestServerManagementCommands tests server management commands
 func TestServerManagementCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// Set up some data first
-	handler.executeCommand(testState, "SET", [][]byte{[]byte("key1"), []byte("value1")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SET", [][]byte{[]byte("key1"), []byte("value1")}, "127.0.0.1:12345")
 
 	tests := []struct {
 		name  string
@@ -138,9 +140,9 @@ func TestServerManagementCommands(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var resp proto.RESP
 			if tt.args == nil {
-				resp = handler.executeCommand(testState, tt.cmd, nil, "127.0.0.1:12345")
+				resp = handler.executeCommand(state, tt.cmd, nil, "127.0.0.1:12345")
 			} else {
-				resp = handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+				resp = handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			}
 			tt.check(t, resp)
 		})
@@ -149,7 +151,8 @@ func TestServerManagementCommands(t *testing.T) {
 
 // TestServerConnectionCommands tests connection-related commands
 func TestServerConnectionCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	tests := []struct {
@@ -184,9 +187,9 @@ func TestServerConnectionCommands(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var resp proto.RESP
 			if tt.args == nil {
-				resp = handler.executeCommand(testState, tt.cmd, nil, "127.0.0.1:12345")
+				resp = handler.executeCommand(state, tt.cmd, nil, "127.0.0.1:12345")
 			} else {
-				resp = handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+				resp = handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			}
 			tt.check(t, resp)
 		})
@@ -195,11 +198,12 @@ func TestServerConnectionCommands(t *testing.T) {
 
 // TestServerSlowLogCommands tests slowlog commands
 func TestServerSlowLogCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// SLOWLOG LEN
-	resp := handler.executeCommand(testState, "SLOWLOG", [][]byte{[]byte("LEN")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(state, "SLOWLOG", [][]byte{[]byte("LEN")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.True(t, int64(*integer) >= 0)

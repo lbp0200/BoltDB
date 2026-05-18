@@ -7,6 +7,7 @@ import (
 )
 
 func TestIsWriteCommand(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		cmd      string
 		expected bool
@@ -119,6 +120,7 @@ func TestIsWriteCommand(t *testing.T) {
 }
 
 func TestIsWriteCommand_CaseSensitivity(t *testing.T) {
+	t.Parallel()
 	// isWriteCommand should be case sensitive
 	assert.False(t, isWriteCommand("set"))
 	assert.False(t, isWriteCommand("Set"))

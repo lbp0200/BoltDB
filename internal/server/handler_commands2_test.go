@@ -11,12 +11,13 @@ import (
 
 // TestServerListCommands2 tests more list commands
 func TestServerListCommands2(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// Setup list
-	handler.executeCommand(testState, "LPUSH", [][]byte{[]byte("mylist"), []byte("value1")}, "127.0.0.1:12345")
-	handler.executeCommand(testState, "LPUSH", [][]byte{[]byte("mylist"), []byte("value2")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("mylist"), []byte("value1")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("mylist"), []byte("value2")}, "127.0.0.1:12345")
 
 	tests := []struct {
 		name  string
@@ -49,7 +50,7 @@ func TestServerListCommands2(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -57,12 +58,13 @@ func TestServerListCommands2(t *testing.T) {
 
 // TestServerSetCommands2 tests more set commands
 func TestServerSetCommands2(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// Setup set
-	handler.executeCommand(testState, "SADD", [][]byte{[]byte("myset"), []byte("member1")}, "127.0.0.1:12345")
-	handler.executeCommand(testState, "SADD", [][]byte{[]byte("myset"), []byte("member2")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SADD", [][]byte{[]byte("myset"), []byte("member1")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SADD", [][]byte{[]byte("myset"), []byte("member2")}, "127.0.0.1:12345")
 
 	tests := []struct {
 		name  string
@@ -105,7 +107,7 @@ func TestServerSetCommands2(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -113,7 +115,8 @@ func TestServerSetCommands2(t *testing.T) {
 
 // TestServerSortedSetCommands2 tests more sorted set commands
 func TestServerSortedSetCommands2(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// Setup sorted set using store.ZSetMember
@@ -153,7 +156,7 @@ func TestServerSortedSetCommands2(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -161,12 +164,13 @@ func TestServerSortedSetCommands2(t *testing.T) {
 
 // TestServerHashCommands2 tests more hash commands
 func TestServerHashCommands2(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// Setup hash
-	handler.executeCommand(testState, "HSET", [][]byte{[]byte("myhash"), []byte("field1"), []byte("value1")}, "127.0.0.1:12345")
-	handler.executeCommand(testState, "HSET", [][]byte{[]byte("myhash"), []byte("field2"), []byte("value2")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "HSET", [][]byte{[]byte("myhash"), []byte("field1"), []byte("value1")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "HSET", [][]byte{[]byte("myhash"), []byte("field2"), []byte("value2")}, "127.0.0.1:12345")
 
 	tests := []struct {
 		name  string
@@ -209,7 +213,7 @@ func TestServerHashCommands2(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}

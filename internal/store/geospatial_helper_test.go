@@ -6,6 +6,7 @@ import (
 
 // TestStringToGeoHash tests stringToGeoHash
 func TestStringToGeoHash(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		input     string
@@ -73,6 +74,7 @@ func TestStringToGeoHash(t *testing.T) {
 
 // TestGeoMembersKey tests geoMembersKey
 func TestGeoMembersKey(t *testing.T) {
+	t.Parallel()
 	key := geoMembersKey("mykey")
 	expected := "geo:mykey:members:"
 	if string(key) != expected {
@@ -82,6 +84,7 @@ func TestGeoMembersKey(t *testing.T) {
 
 // TestExtractMembers tests extractMembers
 func TestExtractMembers(t *testing.T) {
+	t.Parallel()
 	t.Run("empty results", func(t *testing.T) {
 		results := []GeoSearchResult{}
 		members := extractMembers(results)
@@ -118,6 +121,7 @@ func TestExtractMembers(t *testing.T) {
 
 // TestGeoHashRoundTrip tests encoding and decoding round trip
 func TestGeoHashRoundTrip(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		lat  float64
@@ -152,6 +156,7 @@ func TestGeoHashRoundTrip(t *testing.T) {
 
 // TestGeoHashToString tests geoHashToString
 func TestGeoHashToString(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		hash     uint64
@@ -173,6 +178,7 @@ func TestGeoHashToString(t *testing.T) {
 
 // TestGeoHashToBoundingBox tests geoHashToBoundingBox
 func TestGeoHashToBoundingBox(t *testing.T) {
+	t.Parallel()
 	// Test with known hash
 	hash := encodeGeoHash(0, 0)
 	minLat, maxLat, minLon, maxLon := geoHashToBoundingBox(hash)
@@ -194,6 +200,7 @@ func TestGeoHashToBoundingBox(t *testing.T) {
 
 // TestExpandBoundingBox tests expandBoundingBox
 func TestExpandBoundingBox(t *testing.T) {
+	t.Parallel()
 	t.Run("normal expansion", func(t *testing.T) {
 		minLat, maxLat := -1.0, 1.0
 		minLon, maxLon := -1.0, 1.0
@@ -251,6 +258,7 @@ func TestExpandBoundingBox(t *testing.T) {
 
 // TestCalculateDistance tests calculateDistance
 func TestCalculateDistance(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		lat1, lon1  float64

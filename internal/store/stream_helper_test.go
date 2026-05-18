@@ -7,6 +7,7 @@ import (
 
 // TestParseStreamID tests parseStreamID
 func TestParseStreamID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		id      string
@@ -49,6 +50,7 @@ func TestParseStreamID(t *testing.T) {
 
 // TestCompareStreamID tests compareStreamID
 func TestCompareStreamID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		id1      string
@@ -76,6 +78,7 @@ func TestCompareStreamID(t *testing.T) {
 
 // TestStreamKey tests streamKey
 func TestStreamKey(t *testing.T) {
+	t.Parallel()
 	key := streamKey("mystream")
 	expected := "stream:mystream:meta"
 	if string(key) != expected {
@@ -85,6 +88,7 @@ func TestStreamKey(t *testing.T) {
 
 // TestStreamDataKey tests streamDataKey
 func TestStreamDataKey(t *testing.T) {
+	t.Parallel()
 	key := streamDataKey("mystream", "123-0")
 	expected := "stream:mystream:data:123-0"
 	if string(key) != expected {
@@ -94,6 +98,7 @@ func TestStreamDataKey(t *testing.T) {
 
 // TestStreamDataPrefix tests streamDataPrefix
 func TestStreamDataPrefix(t *testing.T) {
+	t.Parallel()
 	prefix := streamDataPrefix("mystream")
 	expected := "stream:mystream:data:"
 	if string(prefix) != expected {
@@ -103,6 +108,7 @@ func TestStreamDataPrefix(t *testing.T) {
 
 // TestStreamGroupKey tests streamGroupKey
 func TestStreamGroupKey(t *testing.T) {
+	t.Parallel()
 	key := streamGroupKey("mystream")
 	expected := "stream:mystream:groups"
 	if string(key) != expected {
@@ -112,6 +118,7 @@ func TestStreamGroupKey(t *testing.T) {
 
 // TestStreamGroupDataKey tests streamGroupDataKey
 func TestStreamGroupDataKey(t *testing.T) {
+	t.Parallel()
 	key := streamGroupDataKey("mystream", "mygroup")
 	expected := "stream:mystream:groups:mygroup"
 	if string(key) != expected {
@@ -121,6 +128,7 @@ func TestStreamGroupDataKey(t *testing.T) {
 
 // TestStreamPendingKey tests streamPendingKey
 func TestStreamPendingKey(t *testing.T) {
+	t.Parallel()
 	key := streamPendingKey("mystream", "mygroup")
 	expected := "stream:mystream:pending:mygroup"
 	if string(key) != expected {
@@ -130,6 +138,7 @@ func TestStreamPendingKey(t *testing.T) {
 
 // TestEncodeDecodeStreamMeta tests encodeStreamMeta and decodeStreamMeta
 func TestEncodeDecodeStreamMeta(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		meta *streamMetaData
@@ -206,6 +215,7 @@ func TestEncodeDecodeStreamMeta(t *testing.T) {
 
 // TestDecodeStreamMetaError tests decodeStreamMeta error cases
 func TestDecodeStreamMetaError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input []byte
@@ -227,6 +237,7 @@ func TestDecodeStreamMetaError(t *testing.T) {
 
 // TestFormatStreamID tests formatStreamID
 func TestFormatStreamID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		timestamp int64
@@ -251,6 +262,7 @@ func TestFormatStreamID(t *testing.T) {
 
 // TestStreamIDErrorHandling tests parseStreamID error handling in detail
 func TestStreamIDErrorHandling(t *testing.T) {
+	t.Parallel()
 	// Test that invalid IDs return proper errors
 	invalidIDs := []string{
 		"abc-def-ghi",
@@ -270,6 +282,7 @@ func TestStreamIDErrorHandling(t *testing.T) {
 
 // TestStreamPendingKeyNilGroup tests streamPendingKey with empty group name
 func TestStreamPendingKeyNilGroup(t *testing.T) {
+	t.Parallel()
 	// This tests edge case behavior
 	key := streamPendingKey("", "")
 	expected := "stream::pending:"
@@ -280,6 +293,7 @@ func TestStreamPendingKeyNilGroup(t *testing.T) {
 
 // TestStreamErrorTypes tests error types from stream operations
 func TestStreamErrorTypes(t *testing.T) {
+	t.Parallel()
 	// Test that we can detect stream-specific errors
 	err1 := errors.New("ERR ID must be greater than the last entry ID")
 	err2 := errors.New("ERR wrong number of arguments for 'XREAD' command")

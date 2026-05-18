@@ -5,6 +5,7 @@ import (
 )
 
 func TestJSONSet(t *testing.T) {
+	t.Parallel()
 	db := setupTestStore(t)
 	var err error
 
@@ -46,6 +47,7 @@ func TestJSONSet(t *testing.T) {
 }
 
 func TestJSONGet(t *testing.T) {
+	t.Parallel()
 	db := setupTestStore(t)
 	var err error
 
@@ -66,6 +68,7 @@ func TestJSONGet(t *testing.T) {
 }
 
 func TestJSONDel(t *testing.T) {
+	t.Parallel()
 	db := setupTestStore(t)
 	var err error
 
@@ -95,6 +98,7 @@ func TestJSONDel(t *testing.T) {
 }
 
 func TestJSONType(t *testing.T) {
+	t.Parallel()
 	db := setupTestStore(t)
 	var err error
 
@@ -115,6 +119,7 @@ func TestJSONType(t *testing.T) {
 }
 
 func TestJSONArrAppend(t *testing.T) {
+	t.Parallel()
 	db := setupTestStore(t)
 	var err error
 
@@ -144,6 +149,7 @@ func TestJSONArrAppend(t *testing.T) {
 }
 
 func TestJSONObjKeys(t *testing.T) {
+	t.Parallel()
 	db := setupTestStore(t)
 	var err error
 
@@ -164,6 +170,7 @@ func TestJSONObjKeys(t *testing.T) {
 }
 
 func TestJSONNumIncrBy(t *testing.T) {
+	t.Parallel()
 	db := setupTestStore(t)
 	var err error
 
@@ -184,6 +191,7 @@ func TestJSONNumIncrBy(t *testing.T) {
 }
 
 func TestJSONNumMultBy(t *testing.T) {
+	t.Parallel()
 	db := setupTestStore(t)
 	var err error
 
@@ -204,6 +212,7 @@ func TestJSONNumMultBy(t *testing.T) {
 }
 
 func TestJSONClear(t *testing.T) {
+	t.Parallel()
 	db := setupTestStore(t)
 	var err error
 
@@ -224,6 +233,7 @@ func TestJSONClear(t *testing.T) {
 }
 
 func TestJSONDebugMemory(t *testing.T) {
+	t.Parallel()
 	db := setupTestStore(t)
 	var err error
 
@@ -244,6 +254,7 @@ func TestJSONDebugMemory(t *testing.T) {
 }
 
 func TestJSONDebugMemoryPath(t *testing.T) {
+	t.Parallel()
 	db := setupTestStore(t)
 
 	// Set up nested object
@@ -278,6 +289,7 @@ func TestJSONDebugMemoryPath(t *testing.T) {
 }
 
 func TestJSONMGet(t *testing.T) {
+	t.Parallel()
 	db := setupTestStore(t)
 	var err error
 
@@ -303,6 +315,7 @@ func TestJSONMGet(t *testing.T) {
 
 // Test for WRONGTYPE error
 func TestJSONSetWrongType(t *testing.T) {
+	t.Parallel()
 	db := setupTestStore(t)
 	var err error
 
@@ -330,6 +343,7 @@ func TestJSONSetWrongType(t *testing.T) {
 
 // Test for key not found scenarios
 func TestJSONKeyNotFound(t *testing.T) {
+	t.Parallel()
 	db := setupTestStore(t)
 	var err error
 

@@ -11,6 +11,7 @@ import (
 
 // TestDefaultGossipConfig tests DefaultGossipConfig
 func TestDefaultGossipConfig(t *testing.T) {
+	t.Parallel()
 	config := DefaultGossipConfig()
 	assert.True(t, config != nil)
 	assert.True(t, config.HelloInterval > 0)
@@ -18,6 +19,7 @@ func TestDefaultGossipConfig(t *testing.T) {
 
 // TestNewGossipProtocol tests NewGossipProtocol
 func TestNewGossipProtocol(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -29,6 +31,7 @@ func TestNewGossipProtocol(t *testing.T) {
 
 // TestNewGossipProtocol_WithConfig tests NewGossipProtocol with custom config
 func TestNewGossipProtocol_WithConfig(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -41,6 +44,7 @@ func TestNewGossipProtocol_WithConfig(t *testing.T) {
 
 // TestGossipProtocol_GetPort tests GetPort
 func TestGossipProtocol_GetPort(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -53,6 +57,7 @@ func TestGossipProtocol_GetPort(t *testing.T) {
 
 // TestGossipProtocol_FormatHello tests formatHello
 func TestGossipProtocol_FormatHello(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -65,6 +70,7 @@ func TestGossipProtocol_FormatHello(t *testing.T) {
 
 // TestGossipProtocol_FormatPong tests formatPong
 func TestGossipProtocol_FormatPong(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -76,6 +82,7 @@ func TestGossipProtocol_FormatPong(t *testing.T) {
 
 // TestGossipProtocol_GetPeersCount tests GetPeersCount
 func TestGossipProtocol_GetPeersCount(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -87,6 +94,7 @@ func TestGossipProtocol_GetPeersCount(t *testing.T) {
 
 // TestGossipProtocol_AddUpdatePeer tests addOrUpdatePeer
 func TestGossipProtocol_AddUpdatePeer(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -104,6 +112,7 @@ func TestGossipProtocol_AddUpdatePeer(t *testing.T) {
 
 // TestGossipProtocol_RemovePeer tests removePeer
 func TestGossipProtocol_RemovePeer(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -119,6 +128,7 @@ func TestGossipProtocol_RemovePeer(t *testing.T) {
 
 // TestGossipProtocol_TouchPeer tests touchPeer
 func TestGossipProtocol_TouchPeer(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -131,6 +141,7 @@ func TestGossipProtocol_TouchPeer(t *testing.T) {
 
 // TestGossipProtocol_Start_Stop tests Start and Stop methods
 func TestGossipProtocol_Start_Stop(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -150,6 +161,7 @@ func TestGossipProtocol_Start_Stop(t *testing.T) {
 
 // TestGossipProtocol_Stop_WithoutStart tests Stop without Start
 func TestGossipProtocol_Stop_WithoutStart(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -161,6 +173,7 @@ func TestGossipProtocol_Stop_WithoutStart(t *testing.T) {
 
 // TestGossipProtocol_sendMessage tests sendMessage method
 func TestGossipProtocol_sendMessage(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -188,6 +201,7 @@ func TestGossipProtocol_sendMessage(t *testing.T) {
 
 // TestGossipProtocol_BroadcastSdown tests BroadcastSdown method
 func TestGossipProtocol_BroadcastSdown(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -203,6 +217,7 @@ func TestGossipProtocol_BroadcastSdown(t *testing.T) {
 
 // TestGossipProtocol_managePeers tests managePeers method
 func TestGossipProtocol_managePeers(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -227,6 +242,7 @@ func TestGossipProtocol_managePeers(t *testing.T) {
 
 // TestGossipProtocol_sendHello tests sendHello method
 func TestGossipProtocol_sendHello(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -240,6 +256,7 @@ func TestGossipProtocol_sendHello(t *testing.T) {
 
 // TestGossipProtocol_handleMessage tests handleMessage method
 func TestGossipProtocol_handleMessage(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -288,6 +305,7 @@ func TestGossipProtocol_handleMessage(t *testing.T) {
 
 // TestGossipProtocol_sendHellos tests sendHellos method
 func TestGossipProtocol_sendHellos(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 

@@ -9,6 +9,7 @@ import (
 )
 
 func TestNewSlaveReconnector(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -19,6 +20,7 @@ func TestNewSlaveReconnector(t *testing.T) {
 }
 
 func TestSlaveReconnector_StartStop(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -36,6 +38,7 @@ func TestSlaveReconnector_StartStop(t *testing.T) {
 }
 
 func TestReconnectConfig_Defaults(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, 0, DefaultReconnectConfig.MaxRetries)
 	assert.Equal(t, 1*time.Second, DefaultReconnectConfig.BaseBackoff)
 	assert.Equal(t, 60*time.Second, DefaultReconnectConfig.MaxBackoff)
@@ -43,6 +46,7 @@ func TestReconnectConfig_Defaults(t *testing.T) {
 }
 
 func TestSlaveReconnector_GoroutineLeak(t *testing.T) {
+	t.Parallel()
 	before := runtime.NumGoroutine()
 
 	for i := 0; i < 5; i++ {

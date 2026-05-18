@@ -17,22 +17,22 @@ import (
 )
 
 
-var testState = &connState{}
 
 // setupTestHandler 创建测试用的Handler
-func setupTestHandler(t *testing.T) *Handler {
+func setupTestHandler(t *testing.T) (*Handler, *connState) {
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
 	return &Handler{
 		Db:    db,
 		conns: make(map[*connState]*connMeta),
-	}
+	}, &connState{}
 }
 
 // TestExecuteCommand 单元测试：直接测试executeCommand函数
 func TestExecuteCommand(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	tests := []struct {
@@ -59,7 +59,7 @@ func TestExecuteCommand(t *testing.T) {
 			validate: func(t *testing.T, resp proto.RESP) {
 				assert.Equal(t, proto.OK, resp)
 				// Test GET
-				getResp := handler.executeCommand(testState, "GET", [][]byte{[]byte("key1")}, "127.0.0.1:12345")
+				getResp := handler.executeCommand(state, "GET", [][]byte{[]byte("key1")}, "127.0.0.1:12345")
 				bulk, ok := getResp.(*proto.BulkString)
 				assert.True(t, ok)
 				assert.Equal(t, "value1", string(*bulk))
@@ -109,7 +109,7 @@ func TestExecuteCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.validate(t, resp)
 		})
 	}
@@ -165,7 +165,8 @@ func readRESPResponse(reader *bufio.Reader) (proto.RESP, error) {
 
 // TestTCPIntegration 集成测试：通过TCP连接测试完整的请求-响应流程
 func TestTCPIntegration(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// 启动测试服务器
@@ -310,23 +311,24 @@ func TestTCPIntegration(t *testing.T) {
 
 // TestListCommands 测试List相关命令
 func TestListCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// LPUSH
-	resp := handler.executeCommand(testState, "LPUSH", [][]byte{[]byte("mylist"), []byte("world"), []byte("hello")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(state, "LPUSH", [][]byte{[]byte("mylist"), []byte("world"), []byte("hello")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
 
 	// LLEN
-	resp = handler.executeCommand(testState, "LLEN", [][]byte{[]byte("mylist")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(state, "LLEN", [][]byte{[]byte("mylist")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
 
 	// LPOP
-	resp = handler.executeCommand(testState, "LPOP", [][]byte{[]byte("mylist")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(state, "LPOP", [][]byte{[]byte("mylist")}, "127.0.0.1:12345")
 	bulk, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "hello", string(*bulk))
@@ -334,23 +336,24 @@ func TestListCommands(t *testing.T) {
 
 // TestHashCommands 测试Hash相关命令
 func TestHashCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// HSET
-	resp := handler.executeCommand(testState, "HSET", [][]byte{[]byte("user:1"), []byte("name"), []byte("Alice"), []byte("age"), []byte("30")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(state, "HSET", [][]byte{[]byte("user:1"), []byte("name"), []byte("Alice"), []byte("age"), []byte("30")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
 
 	// HGET
-	resp = handler.executeCommand(testState, "HGET", [][]byte{[]byte("user:1"), []byte("name")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(state, "HGET", [][]byte{[]byte("user:1"), []byte("name")}, "127.0.0.1:12345")
 	bulk, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "Alice", string(*bulk))
 
 	// HLEN
-	resp = handler.executeCommand(testState, "HLEN", [][]byte{[]byte("user:1")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(state, "HLEN", [][]byte{[]byte("user:1")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
@@ -358,23 +361,24 @@ func TestHashCommands(t *testing.T) {
 
 // TestSetCommands 测试Set相关命令
 func TestSetCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// SADD
-	resp := handler.executeCommand(testState, "SADD", [][]byte{[]byte("myset"), []byte("member1"), []byte("member2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(state, "SADD", [][]byte{[]byte("myset"), []byte("member1"), []byte("member2")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
 
 	// SCARD
-	resp = handler.executeCommand(testState, "SCARD", [][]byte{[]byte("myset")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(state, "SCARD", [][]byte{[]byte("myset")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
 
 	// SISMEMBER
-	resp = handler.executeCommand(testState, "SISMEMBER", [][]byte{[]byte("myset"), []byte("member1")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(state, "SISMEMBER", [][]byte{[]byte("myset"), []byte("member1")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), int64(*integer))
@@ -382,11 +386,12 @@ func TestSetCommands(t *testing.T) {
 
 // TestSortedSetCommands 测试SortedSet相关命令
 func TestSortedSetCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// ZADD
-	resp := handler.executeCommand(testState, "ZADD", [][]byte{
+	resp := handler.executeCommand(state, "ZADD", [][]byte{
 		[]byte("zset"),
 		[]byte("1.0"),
 		[]byte("member1"),
@@ -398,13 +403,13 @@ func TestSortedSetCommands(t *testing.T) {
 	assert.Equal(t, int64(2), int64(*integer))
 
 	// ZCARD
-	resp = handler.executeCommand(testState, "ZCARD", [][]byte{[]byte("zset")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(state, "ZCARD", [][]byte{[]byte("zset")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
 
 	// ZSCORE
-	resp = handler.executeCommand(testState, "ZSCORE", [][]byte{[]byte("zset"), []byte("member1")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(state, "ZSCORE", [][]byte{[]byte("zset"), []byte("member1")}, "127.0.0.1:12345")
 	bulk, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.Equal(t, "1", string(*bulk))
@@ -412,7 +417,8 @@ func TestSortedSetCommands(t *testing.T) {
 
 // TestErrorHandling 测试错误处理
 func TestErrorHandling(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	tests := []struct {
@@ -454,7 +460,7 @@ func TestErrorHandling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			err, ok := resp.(*proto.Error)
 			if tt.wantErr {
 				assert.True(t, ok)
@@ -468,7 +474,8 @@ func TestErrorHandling(t *testing.T) {
 
 // TestConcurrentConnections 测试并发连接
 func TestConcurrentConnections(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -529,15 +536,15 @@ func TestConcurrentConnections(t *testing.T) {
 
 // BenchmarkExecuteCommand 性能测试
 func BenchmarkExecuteCommand(b *testing.B) {
-	handler := setupTestHandler(&testing.T{})
+	handler, state := setupTestHandler(&testing.T{})
 	defer handler.Db.Close()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("key%d", i)
 		value := fmt.Sprintf("value%d", i)
-		_ = handler.executeCommand(testState, "SET", [][]byte{[]byte(key), []byte(value)}, "127.0.0.1:12345")
-		_ = handler.executeCommand(testState, "GET", [][]byte{[]byte(key)}, "127.0.0.1:12345")
+		_ = handler.executeCommand(state, "SET", [][]byte{[]byte(key), []byte(value)}, "127.0.0.1:12345")
+		_ = handler.executeCommand(state, "GET", [][]byte{[]byte(key)}, "127.0.0.1:12345")
 	}
 }
 
@@ -557,15 +564,16 @@ func sendCommand(conn net.Conn, reader *bufio.Reader, cmd string, args ...string
 	return readRESPResponse(reader)
 }
 
-func setupTestHandlerWithPubSub(t *testing.T) *Handler {
-	h := setupTestHandler(t)
+func setupTestHandlerWithPubSub(t *testing.T) (*Handler, *connState) {
+	h, state := setupTestHandler(t)
 	h.PubSub = store.NewPubSubManager()
-	return h
+	return h, state
 }
 
 // TestWatchCleanupOnDisconnect 验证 WATCH 连接断开后 watchMonitors 被正确清理
 func TestWatchCleanupOnDisconnect(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -603,7 +611,8 @@ func TestWatchCleanupOnDisconnect(t *testing.T) {
 
 // TestWatchCleanupOnDisconnectMultipleKeys 验证多 key WATCH 断开后全部被清理
 func TestWatchCleanupOnDisconnectMultipleKeys(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -633,7 +642,8 @@ func TestWatchCleanupOnDisconnectMultipleKeys(t *testing.T) {
 
 // TestSubscriberCleanupOnDisconnect 验证 SUBSCRIBE 连接断开后 subscriber 被移除
 func TestSubscriberCleanupOnDisconnect(t *testing.T) {
-	handler := setupTestHandlerWithPubSub(t)
+	t.Parallel()
+	handler, _ := setupTestHandlerWithPubSub(t)
 	defer handler.Db.Close()
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -675,7 +685,8 @@ func TestSubscriberCleanupOnDisconnect(t *testing.T) {
 
 // TestDisconnectMidTransaction 验证事务中断开后没有泄漏
 func TestDisconnectMidTransaction(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -715,7 +726,8 @@ func TestDisconnectMidTransaction(t *testing.T) {
 
 // TestDisconnectCleanupAfterPipeline 验证 pipeline 中段断开后状态清理
 func TestDisconnectCleanupAfterPipeline(t *testing.T) {
-	handler := setupTestHandlerWithPubSub(t)
+	t.Parallel()
+	handler, _ := setupTestHandlerWithPubSub(t)
 	defer handler.Db.Close()
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -753,7 +765,8 @@ func TestDisconnectCleanupAfterPipeline(t *testing.T) {
 
 // TestRealWorldScenario 测试真实场景
 func TestRealWorldScenario(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

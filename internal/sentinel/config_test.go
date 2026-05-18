@@ -8,6 +8,7 @@ import (
 )
 
 func TestConfigProvider_New(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 	cp := NewConfigProvider(s)
 
@@ -15,6 +16,7 @@ func TestConfigProvider_New(t *testing.T) {
 }
 
 func TestConfigProvider_GetMasterAddrByName(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 	cp := NewConfigProvider(s)
 
@@ -25,6 +27,7 @@ func TestConfigProvider_GetMasterAddrByName(t *testing.T) {
 }
 
 func TestConfigProvider_GetMasters(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 	cp := NewConfigProvider(s)
 
@@ -34,6 +37,7 @@ func TestConfigProvider_GetMasters(t *testing.T) {
 }
 
 func TestConfigProvider_GetSlaves(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 	cp := NewConfigProvider(s)
 

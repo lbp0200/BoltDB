@@ -24,6 +24,7 @@ func mustReceiveMessage(t *testing.T, ch chan *Message) *Message {
 }
 
 func TestPubSubManagerCreation(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 	assert.NotNil(t, psm)
 	assert.NotNil(t, psm.channels)
@@ -32,6 +33,7 @@ func TestPubSubManagerCreation(t *testing.T) {
 }
 
 func TestSubscriberCreation(t *testing.T) {
+	t.Parallel()
 	sub := NewSubscriber("test-sub")
 	assert.NotNil(t, sub)
 	assert.Equal(t, "test-sub", sub.ID)
@@ -42,6 +44,7 @@ func TestSubscriberCreation(t *testing.T) {
 }
 
 func TestSubscribe(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 	sub := NewSubscriber("sub1")
 
@@ -76,6 +79,7 @@ func existsIn(slice []string, val string) bool {
 }
 
 func TestPSubscribe(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 	sub := NewSubscriber("sub1")
 
@@ -91,6 +95,7 @@ func TestPSubscribe(t *testing.T) {
 }
 
 func TestUnsubscribe(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 	sub := NewSubscriber("sub1")
 
@@ -115,6 +120,7 @@ func TestUnsubscribe(t *testing.T) {
 }
 
 func TestPUnsubscribe(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 	sub := NewSubscriber("sub1")
 
@@ -134,6 +140,7 @@ func TestPUnsubscribe(t *testing.T) {
 }
 
 func TestPublish(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 	sub := NewSubscriber("sub1")
 
@@ -152,6 +159,7 @@ func TestPublish(t *testing.T) {
 }
 
 func TestPublishMultipleSubscribers(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 
 	sub1 := NewSubscriber("sub1")
@@ -173,6 +181,7 @@ func TestPublishMultipleSubscribers(t *testing.T) {
 }
 
 func TestPublishPatternMatch(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 	sub := NewSubscriber("sub1")
 
@@ -191,6 +200,7 @@ func TestPublishPatternMatch(t *testing.T) {
 }
 
 func TestPublishNoSubscribers(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 
 	// Publish to channel with no subscribers
@@ -199,6 +209,7 @@ func TestPublishNoSubscribers(t *testing.T) {
 }
 
 func TestPublishChannelAndPattern(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 	sub := NewSubscriber("sub1")
 
@@ -219,6 +230,7 @@ func TestPublishChannelAndPattern(t *testing.T) {
 }
 
 func TestRemoveSubscriber(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 	sub := NewSubscriber("sub1")
 
@@ -243,6 +255,7 @@ func TestRemoveSubscriber(t *testing.T) {
 }
 
 func TestGetChannels(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 
 	// Initially empty
@@ -267,6 +280,7 @@ func TestGetChannels(t *testing.T) {
 }
 
 func TestConcurrentSubscribe(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 	sub := NewSubscriber("sub1")
 
@@ -290,6 +304,7 @@ func TestConcurrentSubscribe(t *testing.T) {
 }
 
 func TestConcurrentPublish(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 	sub := NewSubscriber("sub1")
 	psm.Subscribe(sub, "channel")
@@ -318,6 +333,7 @@ func TestConcurrentPublish(t *testing.T) {
 }
 
 func TestSubscriberCount(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 
 	// Initially 0
@@ -340,6 +356,7 @@ func TestSubscriberCount(t *testing.T) {
 }
 
 func TestMessageChannelBuffering(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 	sub := NewSubscriber("sub1")
 	psm.Subscribe(sub, "channel")
@@ -355,6 +372,7 @@ func TestMessageChannelBuffering(t *testing.T) {
 }
 
 func TestUnsubscribeFromNonSubscribedChannel(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 	sub := NewSubscriber("sub1")
 
@@ -364,6 +382,7 @@ func TestUnsubscribeFromNonSubscribedChannel(t *testing.T) {
 }
 
 func TestPUnsubscribeFromNonSubscribedPattern(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 	sub := NewSubscriber("sub1")
 
@@ -374,6 +393,7 @@ func TestPUnsubscribeFromNonSubscribedPattern(t *testing.T) {
 
 // TestGetPatternCount tests GetPatternCount function
 func TestGetPatternCount(t *testing.T) {
+	t.Parallel()
 	psm := NewPubSubManager()
 	sub1 := NewSubscriber("sub1")
 	sub2 := NewSubscriber("sub2")

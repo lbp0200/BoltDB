@@ -10,6 +10,7 @@ import (
 
 // TestLoadRDB_Valid tests LoadRDB with valid RDB data
 func TestLoadRDB_Valid(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -25,6 +26,7 @@ func TestLoadRDB_Valid(t *testing.T) {
 
 // TestLoadRDB_WithStringData tests LoadRDB with string data
 func TestLoadRDB_WithStringData(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -50,6 +52,7 @@ func TestLoadRDB_WithStringData(t *testing.T) {
 
 // TestLoadRDB_WithListData tests LoadRDB with list data
 func TestLoadRDB_WithListData(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -75,6 +78,7 @@ func TestLoadRDB_WithListData(t *testing.T) {
 
 // TestLoadRDB_WithHashData tests LoadRDB with hash data
 func TestLoadRDB_WithHashData(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -101,6 +105,7 @@ func TestLoadRDB_WithHashData(t *testing.T) {
 
 // TestLoadRDB_WithSetData tests LoadRDB with set data
 func TestLoadRDB_WithSetData(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -126,6 +131,7 @@ func TestLoadRDB_WithSetData(t *testing.T) {
 
 // TestLoadRDB_WithSortedSetData tests LoadRDB with sorted set data
 func TestLoadRDB_WithSortedSetData(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -154,6 +160,7 @@ func TestLoadRDB_WithSortedSetData(t *testing.T) {
 
 // TestLoadRDB_MultipleDataTypes tests LoadRDB with multiple data types
 func TestLoadRDB_MultipleDataTypes(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -191,6 +198,7 @@ func TestLoadRDB_MultipleDataTypes(t *testing.T) {
 
 // TestLoadRDB_EmptyData tests LoadRDB with empty data
 func TestLoadRDB_EmptyData(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -202,6 +210,7 @@ func TestLoadRDB_EmptyData(t *testing.T) {
 
 // TestLoadRDB_InvalidHeader tests LoadRDB with invalid header
 func TestLoadRDB_InvalidHeader(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -213,6 +222,7 @@ func TestLoadRDB_InvalidHeader(t *testing.T) {
 
 // TestLoadRDB_TruncatedData tests LoadRDB with truncated data
 func TestLoadRDB_TruncatedData(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -224,6 +234,7 @@ func TestLoadRDB_TruncatedData(t *testing.T) {
 
 // TestWriteKeyValue tests WriteKeyValue function
 func TestWriteKeyValue(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -242,6 +253,7 @@ func TestWriteKeyValue(t *testing.T) {
 
 // TestWriteListKeyValue tests WriteListKeyValue function
 func TestWriteListKeyValue(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -258,6 +270,7 @@ func TestWriteListKeyValue(t *testing.T) {
 
 // TestWriteHashKeyValue tests WriteHashKeyValue function
 func TestWriteHashKeyValue(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -274,6 +287,7 @@ func TestWriteHashKeyValue(t *testing.T) {
 
 // TestWriteSetKeyValue tests WriteSetKeyValue function
 func TestWriteSetKeyValue(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -290,6 +304,7 @@ func TestWriteSetKeyValue(t *testing.T) {
 
 // TestWriteSortedSetKeyValue tests WriteSortedSetKeyValue function
 func TestWriteSortedSetKeyValue(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -309,6 +324,7 @@ func TestWriteSortedSetKeyValue(t *testing.T) {
 
 // TestGenerateRDB_MultipleKeys tests GenerateRDB with multiple keys
 func TestGenerateRDB_MultipleKeys(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -326,6 +342,7 @@ func TestGenerateRDB_MultipleKeys(t *testing.T) {
 
 // TestLoadRDB_Overwrite tests LoadRDB overwrites existing data
 func TestLoadRDB_Overwrite(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
@@ -353,6 +370,7 @@ func TestLoadRDB_Overwrite(t *testing.T) {
 
 // TestWriteKeyValue_StringType tests WriteKeyValue with string type
 func TestWriteKeyValue_StringType(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 	err := enc.WriteKeyValue("testkey", "testvalue", store.KeyTypeString, 0)
 	assert.NoError(t, err)
@@ -363,6 +381,7 @@ func TestWriteKeyValue_StringType(t *testing.T) {
 
 // TestWriteKeyValue_WithTTL tests WriteKeyValue with TTL
 func TestWriteKeyValue_WithTTL(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 	err := enc.WriteKeyValue("testkey", "testvalue", store.KeyTypeString, 60)
 	assert.NoError(t, err)
@@ -373,6 +392,7 @@ func TestWriteKeyValue_WithTTL(t *testing.T) {
 
 // TestWriteKeyValue_ListType tests WriteKeyValue with list type
 func TestWriteKeyValue_ListType(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 	err := enc.WriteKeyValue("testkey", []string{"a", "b", "c"}, store.KeyTypeList, 0)
 	assert.NoError(t, err)
@@ -383,6 +403,7 @@ func TestWriteKeyValue_ListType(t *testing.T) {
 
 // TestWriteKeyValue_SetType tests WriteKeyValue with set type
 func TestWriteKeyValue_SetType(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 	err := enc.WriteKeyValue("testkey", []string{"a", "b", "c"}, store.KeyTypeSet, 0)
 	assert.NoError(t, err)
@@ -393,6 +414,7 @@ func TestWriteKeyValue_SetType(t *testing.T) {
 
 // TestWriteKeyValue_HashType tests WriteKeyValue with hash type
 func TestWriteKeyValue_HashType(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 	err := enc.WriteKeyValue("testkey", map[string][]byte{"field1": []byte("value1")}, store.KeyTypeHash, 0)
 	assert.NoError(t, err)
@@ -404,6 +426,7 @@ func TestWriteKeyValue_HashType(t *testing.T) {
 // TestWriteKeyValue_ZSetType tests WriteKeyValue with sorted set type
 // Note: WriteKeyValue writes the value as a string even for ZSET type (no error)
 func TestWriteKeyValue_ZSetType(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 	err := enc.WriteKeyValue("testkey", "dummy", store.KeyTypeSortedSet, 0)
 	// No error is returned - it just writes the string value
@@ -415,6 +438,7 @@ func TestWriteKeyValue_ZSetType(t *testing.T) {
 
 // TestWriteKeyValue_LargeList tests WriteKeyValue with large list (triggers 14-bit and 32-bit length encoding)
 func TestWriteKeyValue_LargeList(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 	// Create a list with 100+ elements to trigger 14-bit length encoding
 	values := make([]string, 150)
@@ -430,6 +454,7 @@ func TestWriteKeyValue_LargeList(t *testing.T) {
 
 // TestWriteKeyValue_LargeHash tests WriteKeyValue with large hash
 func TestWriteKeyValue_LargeHash(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 	// Create a hash with 100+ fields to trigger 14-bit length encoding
 	fields := make(map[string][]byte, 150)
@@ -445,6 +470,7 @@ func TestWriteKeyValue_LargeHash(t *testing.T) {
 
 // TestWriteKeyValue_LargeSet tests WriteKeyValue with large set
 func TestWriteKeyValue_LargeSet(t *testing.T) {
+	t.Parallel()
 	enc := NewRDBEncoder()
 	// Create a set with 100+ members to trigger 14-bit length encoding
 	members := make([]string, 150)

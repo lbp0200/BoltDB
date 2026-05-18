@@ -10,6 +10,7 @@ import (
 
 // TestMasterInstance_New tests MasterInstance creation
 func TestMasterInstance_New(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	assert.Equal(t, "test-master", master.GetName())
@@ -19,6 +20,7 @@ func TestMasterInstance_New(t *testing.T) {
 
 // TestMasterInstance_State tests MasterInstance state management
 func TestMasterInstance_State(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Initial state should be "ok"
@@ -31,6 +33,7 @@ func TestMasterInstance_State(t *testing.T) {
 
 // TestMasterInstance_Sdown tests sdown count
 func TestMasterInstance_Sdown(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Initial sdown count should be 0
@@ -46,6 +49,7 @@ func TestMasterInstance_Sdown(t *testing.T) {
 
 // TestMasterInstance_Slaves tests slave management
 func TestMasterInstance_Slaves(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Initial slaves should be empty
@@ -63,6 +67,7 @@ func TestMasterInstance_Slaves(t *testing.T) {
 
 // TestMasterInstance_Sentinel tests sentinel management
 func TestMasterInstance_Sentinel(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Initial known sentinel count is 1 (the sentinel itself)
@@ -72,6 +77,7 @@ func TestMasterInstance_Sentinel(t *testing.T) {
 
 // TestMasterInstance_Addr tests address management
 func TestMasterInstance_Addr(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Initial address
@@ -84,6 +90,7 @@ func TestMasterInstance_Addr(t *testing.T) {
 
 // TestMasterInstance_IsDown tests IsDown
 func TestMasterInstance_IsDown(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Initially not down
@@ -92,6 +99,7 @@ func TestMasterInstance_IsDown(t *testing.T) {
 
 // TestMasterInstance_SetODown tests SetODown
 func TestMasterInstance_SetODown(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Set ODown
@@ -103,6 +111,7 @@ func TestMasterInstance_SetODown(t *testing.T) {
 
 // TestMasterInstance_UpdateSlaveOffset tests UpdateSlaveOffset
 func TestMasterInstance_UpdateSlaveOffset(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Update slave offset - should not panic
@@ -112,6 +121,7 @@ func TestMasterInstance_UpdateSlaveOffset(t *testing.T) {
 
 // TestMasterInstance_GetBestSlave tests GetBestSlave
 func TestMasterInstance_GetBestSlave(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// No slaves - should return nil
@@ -121,6 +131,7 @@ func TestMasterInstance_GetBestSlave(t *testing.T) {
 
 // TestMasterInstance_Stop tests Stop
 func TestMasterInstance_Stop(t *testing.T) {
+	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
 	// Stop should not panic
@@ -130,6 +141,7 @@ func TestMasterInstance_Stop(t *testing.T) {
 
 // TestSlaveInstance_New tests SlaveInstance creation
 func TestSlaveInstance_New(t *testing.T) {
+	t.Parallel()
 	slave := NewSlaveInstance("slave1", "127.0.0.1:6380")
 
 	assert.Equal(t, "slave1", slave.ID)
@@ -138,6 +150,7 @@ func TestSlaveInstance_New(t *testing.T) {
 
 // TestSentinel_GetRunID tests GetRunID
 func TestSentinel_GetRunID(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -147,6 +160,7 @@ func TestSentinel_GetRunID(t *testing.T) {
 
 // TestSentinel_GetConfigEpoch tests GetConfigEpoch
 func TestSentinel_GetConfigEpoch(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -156,6 +170,7 @@ func TestSentinel_GetConfigEpoch(t *testing.T) {
 
 // TestSentinel_IncrementConfigEpoch tests IncrementConfigEpoch
 func TestSentinel_IncrementConfigEpoch(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -168,6 +183,7 @@ func TestSentinel_IncrementConfigEpoch(t *testing.T) {
 
 // TestSentinel_GetMaster tests GetMaster
 func TestSentinel_GetMaster(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -183,6 +199,7 @@ func TestSentinel_GetMaster(t *testing.T) {
 
 // TestSentinel_GetMaster_NotFound tests GetMaster when not found
 func TestSentinel_GetMaster_NotFound(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -193,6 +210,7 @@ func TestSentinel_GetMaster_NotFound(t *testing.T) {
 
 // TestMasterInstance_StartMonitoring tests StartMonitoring method
 func TestMasterInstance_StartMonitoring(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -220,6 +238,7 @@ func TestMasterInstance_StartMonitoring(t *testing.T) {
 
 // TestMasterInstance_checkMaster tests checkMaster method
 func TestMasterInstance_checkMaster(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -239,6 +258,7 @@ func TestMasterInstance_checkMaster(t *testing.T) {
 }
 
 func TestMasterInstance_checkMaster_Recovery(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
@@ -270,6 +290,7 @@ func TestMasterInstance_checkMaster_Recovery(t *testing.T) {
 
 // TestMasterInstance_checkMaster_AlreadySdown tests checkMaster when already in sdown
 func TestMasterInstance_checkMaster_AlreadySdown(t *testing.T) {
+	t.Parallel()
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 

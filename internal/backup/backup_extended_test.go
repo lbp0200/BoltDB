@@ -9,6 +9,7 @@ import (
 
 // TestRDBBackupManager_New tests RDBBackupManager creation
 func TestRDBBackupManager_New(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -21,6 +22,7 @@ func TestRDBBackupManager_New(t *testing.T) {
 
 // TestListRDBBackups tests ListRDBBackups function
 func TestListRDBBackups(t *testing.T) {
+	t.Parallel()
 	// Test with empty directory
 	emptyDir := t.TempDir()
 	backups, err := ListRDBBackups(emptyDir)
@@ -30,6 +32,7 @@ func TestListRDBBackups(t *testing.T) {
 
 // TestRestoreManager_BadgerRestore tests RestoreFromBadger with non-existent file
 func TestRestoreManager_BadgerRestore(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -43,6 +46,7 @@ func TestRestoreManager_BadgerRestore(t *testing.T) {
 
 // TestRestoreManager_RDBRestore tests RestoreFromRDB with non-existent file
 func TestRestoreManager_RDBRestore(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -56,6 +60,7 @@ func TestRestoreManager_RDBRestore(t *testing.T) {
 
 // TestRestoreManager_PathRestore tests RestoreFromPath with non-existent path
 func TestRestoreManager_PathRestore(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -69,6 +74,7 @@ func TestRestoreManager_PathRestore(t *testing.T) {
 
 // TestBackupManager_BGSave tests BGSave
 func TestBackupManager_BGSave(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -85,6 +91,7 @@ func TestBackupManager_BGSave(t *testing.T) {
 
 // TestBackupManager_BackupBadger tests BackupBadger
 func TestBackupManager_BackupBadger(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -101,6 +108,7 @@ func TestBackupManager_BackupBadger(t *testing.T) {
 
 // TestBackupManager_BackupRDB tests BackupRDB
 func TestBackupManager_BackupRDB(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -117,6 +125,7 @@ func TestBackupManager_BackupRDB(t *testing.T) {
 
 // TestBackupManager_BackupBoth tests BackupBoth
 func TestBackupManager_BackupBoth(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -133,6 +142,7 @@ func TestBackupManager_BackupBoth(t *testing.T) {
 
 // TestRDBBackupManager_Backup tests RDBBackupManager Backup
 func TestRDBBackupManager_Backup(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -149,6 +159,7 @@ func TestRDBBackupManager_Backup(t *testing.T) {
 
 // TestRDBBackupManager_BackupWithCompression tests BackupWithCompression
 func TestRDBBackupManager_BackupWithCompression(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -165,6 +176,7 @@ func TestRDBBackupManager_BackupWithCompression(t *testing.T) {
 
 // TestRDBBackupManager_GetBackupInfo tests GetBackupInfo
 func TestRDBBackupManager_GetBackupInfo(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)

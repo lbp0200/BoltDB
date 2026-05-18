@@ -8,6 +8,7 @@ import (
 )
 
 func TestUint64ToBytes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    uint64
 		expected []byte
@@ -27,6 +28,7 @@ func TestUint64ToBytes(t *testing.T) {
 }
 
 func TestBytesToUint64(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    []byte
 		expected uint64
@@ -46,6 +48,7 @@ func TestBytesToUint64(t *testing.T) {
 }
 
 func TestBytesToUint64_InvalidLength(t *testing.T) {
+	t.Parallel()
 	// Test with invalid length
 	result := BytesToUint64([]byte{1, 2, 3})
 	assert.Equal(t, uint64(0), result)
@@ -56,6 +59,7 @@ func TestBytesToUint64_InvalidLength(t *testing.T) {
 }
 
 func TestFloat64ToBytes(t *testing.T) {
+	t.Parallel()
 	tests := []float64{
 		0,
 		1,
@@ -74,6 +78,7 @@ func TestFloat64ToBytes(t *testing.T) {
 }
 
 func TestBytesToFloat64(t *testing.T) {
+	t.Parallel()
 	tests := []float64{
 		0,
 		1,
@@ -92,6 +97,7 @@ func TestBytesToFloat64(t *testing.T) {
 }
 
 func TestBytesToFloat64_InvalidLength(t *testing.T) {
+	t.Parallel()
 	// Test with invalid length
 	_, err := BytesToFloat64([]byte{1, 2, 3})
 	assert.Error(t, err)
@@ -102,6 +108,7 @@ func TestBytesToFloat64_InvalidLength(t *testing.T) {
 }
 
 func TestInterfaceToBytes(t *testing.T) {
+	t.Parallel()
 	// Test with string
 	data := "hello world"
 	bytes, err := InterfaceToBytes(data)

@@ -8,6 +8,7 @@ import (
 )
 
 func TestSentinel_New(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 
 	assert.NotEqual(t, nil, s)
@@ -16,6 +17,7 @@ func TestSentinel_New(t *testing.T) {
 }
 
 func TestSentinel_GenerateRunID(t *testing.T) {
+	t.Parallel()
 	// 测试 RunID 生成
 	s := NewSentinel(2, 30*time.Second)
 	runID := s.GetRunID()
@@ -25,6 +27,7 @@ func TestSentinel_GenerateRunID(t *testing.T) {
 }
 
 func TestSentinel_AddMaster(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 
 	// 添加主节点
@@ -38,6 +41,7 @@ func TestSentinel_AddMaster(t *testing.T) {
 }
 
 func TestSentinel_AddMaster_Duplicate(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 
 	// 添加主节点
@@ -50,6 +54,7 @@ func TestSentinel_AddMaster_Duplicate(t *testing.T) {
 }
 
 func TestSentinel_RemoveMaster(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 
 	// 添加主节点
@@ -66,6 +71,7 @@ func TestSentinel_RemoveMaster(t *testing.T) {
 }
 
 func TestSentinel_RemoveMaster_NotFound(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 
 	// 移除不存在的主节点应该返回错误
@@ -74,6 +80,7 @@ func TestSentinel_RemoveMaster_NotFound(t *testing.T) {
 }
 
 func TestSentinel_GetAllMasters(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 
 	// 初始为空
@@ -89,6 +96,7 @@ func TestSentinel_GetAllMasters(t *testing.T) {
 }
 
 func TestSentinel_AddSentinel(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 
 	// 添加哨兵地址（这个只是记录，不建立连接）
@@ -98,6 +106,7 @@ func TestSentinel_AddSentinel(t *testing.T) {
 }
 
 func TestSentinel_ConfigEpoch(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 
 	// 初始为 0
@@ -113,6 +122,7 @@ func TestSentinel_ConfigEpoch(t *testing.T) {
 }
 
 func TestSentinel_Stop(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 
 	// 添加主节点
@@ -123,6 +133,7 @@ func TestSentinel_Stop(t *testing.T) {
 }
 
 func TestSentinel_Start(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 
 	// 添加主节点
@@ -136,6 +147,7 @@ func TestSentinel_Start(t *testing.T) {
 }
 
 func TestSentinel_BroadcastSdown(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 
 	// 添加主节点
@@ -153,6 +165,7 @@ func TestSentinel_BroadcastSdown(t *testing.T) {
 
 // TestSentinel_processGossipMessage tests processGossipMessage method
 func TestSentinel_processGossipMessage(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 	defer s.Stop()
 
@@ -183,6 +196,7 @@ func TestSentinel_processGossipMessage(t *testing.T) {
 
 // TestSentinel_handleSdownMessage tests handleSdownMessage method
 func TestSentinel_handleSdownMessage(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 	defer s.Stop()
 
@@ -220,6 +234,7 @@ func TestSentinel_handleSdownMessage(t *testing.T) {
 
 // TestSentinel_handleHelloMessage tests handleHelloMessage method
 func TestSentinel_handleHelloMessage(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 	defer s.Stop()
 
@@ -239,6 +254,7 @@ func TestSentinel_handleHelloMessage(t *testing.T) {
 
 // TestSentinel_SendHello tests SendHello method
 func TestSentinel_SendHello(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 	defer s.Stop()
 
@@ -250,6 +266,7 @@ func TestSentinel_SendHello(t *testing.T) {
 
 // TestSentinel_StartGossip tests StartGossip method
 func TestSentinel_StartGossip(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 	defer s.Stop()
 
@@ -269,6 +286,7 @@ func TestSentinel_StartGossip(t *testing.T) {
 
 // TestSentinel_startGossipProcessor tests startGossipProcessor method
 func TestSentinel_startGossipProcessor(t *testing.T) {
+	t.Parallel()
 	s := NewSentinel(2, 30*time.Second)
 	defer s.Stop()
 

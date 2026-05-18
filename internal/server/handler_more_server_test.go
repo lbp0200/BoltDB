@@ -10,7 +10,8 @@ import (
 
 // TestServerAdditionalCommands tests additional server commands
 func TestServerAdditionalCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	tests := []struct {
@@ -164,7 +165,7 @@ func TestServerAdditionalCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -172,7 +173,8 @@ func TestServerAdditionalCommands(t *testing.T) {
 
 // TestServerPubSubCommands tests PUBSUB commands
 func TestServerPubSubCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	tests := []struct {
@@ -235,7 +237,7 @@ func TestServerPubSubCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -243,11 +245,12 @@ func TestServerPubSubCommands(t *testing.T) {
 
 // TestServerDebugCommands tests DEBUG commands
 func TestServerDebugCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// Set up a key for testing
-	handler.executeCommand(testState, "SET", [][]byte{[]byte("debugkey"), []byte("debugvalue")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SET", [][]byte{[]byte("debugkey"), []byte("debugvalue")}, "127.0.0.1:12345")
 
 	tests := []struct {
 		name  string
@@ -300,7 +303,7 @@ func TestServerDebugCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -308,10 +311,11 @@ func TestServerDebugCommands(t *testing.T) {
 
 // TestServerRoleCommand tests ROLE command
 func TestServerRoleCommand(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(testState, "ROLE", nil, "127.0.0.1:12345")
+	resp := handler.executeCommand(state, "ROLE", nil, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.True(t, len(arr.Args) > 0)

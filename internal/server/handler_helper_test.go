@@ -8,6 +8,7 @@ import (
 )
 
 func TestParseScore(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    string
 		expected float64
@@ -60,6 +61,7 @@ func TestParseScore(t *testing.T) {
 }
 
 func TestParseScoreExclusive(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input       string
 		expectedVal float64

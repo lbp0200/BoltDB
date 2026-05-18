@@ -7,17 +7,20 @@ import (
 )
 
 func TestBacklog_New(t *testing.T) {
+	t.Parallel()
 	backlog := NewReplicationBacklog(1024)
 	assert.Equal(t, int64(0), backlog.GetCurrentOffset())
 	assert.Equal(t, int64(1024), backlog.GetSize())
 }
 
 func TestBacklog_New_DefaultSize(t *testing.T) {
+	t.Parallel()
 	b := NewReplicationBacklog(0)
 	assert.Equal(t, DefaultBacklogSize, b.GetSize())
 }
 
 func TestBacklog_Append(t *testing.T) {
+	t.Parallel()
 	backlog := NewReplicationBacklog(100)
 
 	offset1 := backlog.Append([]byte("hello"))
@@ -30,6 +33,7 @@ func TestBacklog_Append(t *testing.T) {
 }
 
 func TestBacklog_GetRange(t *testing.T) {
+	t.Parallel()
 	backlog := NewReplicationBacklog(100)
 	backlog.Append([]byte("hello world"))
 
@@ -51,6 +55,7 @@ func TestBacklog_GetRange(t *testing.T) {
 }
 
 func TestBacklog_CumulativeOffset(t *testing.T) {
+	t.Parallel()
 	backlog := NewReplicationBacklog(10)
 
 	backlog.Append([]byte("abcde"))
@@ -72,6 +77,7 @@ func TestBacklog_CumulativeOffset(t *testing.T) {
 }
 
 func TestBacklog_GetRange_Circular(t *testing.T) {
+	t.Parallel()
 	backlog := NewReplicationBacklog(10)
 
 	backlog.Append([]byte("abcdefghij"))
@@ -89,6 +95,7 @@ func TestBacklog_GetRange_Circular(t *testing.T) {
 }
 
 func TestBacklog_GetRange_Errors(t *testing.T) {
+	t.Parallel()
 	backlog := NewReplicationBacklog(100)
 	backlog.Append([]byte("hello"))
 
@@ -109,6 +116,7 @@ func TestBacklog_GetRange_Errors(t *testing.T) {
 }
 
 func TestBacklog_GetRange_Empty(t *testing.T) {
+	t.Parallel()
 	backlog := NewReplicationBacklog(100)
 
 	_, err := backlog.GetRange(0, 0)
@@ -116,6 +124,7 @@ func TestBacklog_GetRange_Empty(t *testing.T) {
 }
 
 func TestBacklog_MultipleAppends(t *testing.T) {
+	t.Parallel()
 	backlog := NewReplicationBacklog(50)
 
 	offsets := []int64{}
@@ -132,6 +141,7 @@ func TestBacklog_MultipleAppends(t *testing.T) {
 }
 
 func TestBacklog_DataTooLarge(t *testing.T) {
+	t.Parallel()
 	backlog := NewReplicationBacklog(10)
 
 	backlog.Append([]byte("abcdefghijklmnopqrst"))
@@ -143,6 +153,7 @@ func TestBacklog_DataTooLarge(t *testing.T) {
 }
 
 func TestBacklog_BasicWriteRead(t *testing.T) {
+	t.Parallel()
 	backlog := NewReplicationBacklog(100)
 
 	backlog.Append([]byte("test"))
@@ -154,6 +165,7 @@ func TestBacklog_BasicWriteRead(t *testing.T) {
 }
 
 func TestBacklog_WrapAround(t *testing.T) {
+	t.Parallel()
 	backlog := NewReplicationBacklog(10)
 
 	for i := 0; i < 15; i++ {
@@ -167,6 +179,7 @@ func TestBacklog_WrapAround(t *testing.T) {
 }
 
 func TestBacklog_AvailableStartOffset(t *testing.T) {
+	t.Parallel()
 	backlog := NewReplicationBacklog(100)
 	assert.Equal(t, int64(0), backlog.AvailableStartOffset())
 
@@ -181,6 +194,7 @@ func TestBacklog_AvailableStartOffset(t *testing.T) {
 }
 
 func TestBacklog_IsOffsetAvailable(t *testing.T) {
+	t.Parallel()
 	backlog := NewReplicationBacklog(100)
 
 	assert.False(t, backlog.IsOffsetAvailable(0))
@@ -200,6 +214,7 @@ func TestBacklog_IsOffsetAvailable(t *testing.T) {
 }
 
 func TestBacklog_GetAvailableLength(t *testing.T) {
+	t.Parallel()
 	backlog := NewReplicationBacklog(100)
 	assert.Equal(t, int64(0), backlog.GetAvailableLength())
 

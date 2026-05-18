@@ -75,6 +75,7 @@ func (m *mockMasterConn) SetWriteDeadline(t time.Time) error { return nil }
 var _ net.Conn = (*mockMasterConn)(nil)
 
 func TestMasterConnection_New(t *testing.T) {
+	t.Parallel()
 	// Start a test server
 	addr, cleanup := startTestServer(t)
 	defer cleanup()
@@ -95,6 +96,7 @@ func TestMasterConnection_New(t *testing.T) {
 }
 
 func TestMasterConnection_ReplOffset(t *testing.T) {
+	t.Parallel()
 	// 直接创建 MasterConnection 结构体来测试导出的字段
 	mc := &MasterConnection{
 		Addr:       "127.0.0.1:6379",
@@ -113,6 +115,7 @@ func TestMasterConnection_ReplOffset(t *testing.T) {
 }
 
 func TestMasterConnection_ReplId(t *testing.T) {
+	t.Parallel()
 	mc := &MasterConnection{
 		Addr:       "127.0.0.1:6379",
 		ReplOffset: 0,
@@ -125,6 +128,7 @@ func TestMasterConnection_ReplId(t *testing.T) {
 }
 
 func TestMasterConnection_IsClosed(t *testing.T) {
+	t.Parallel()
 	mc := &MasterConnection{
 		Addr:       "127.0.0.1:6379",
 		ReplOffset: 0,
@@ -142,6 +146,7 @@ func TestMasterConnection_IsClosed(t *testing.T) {
 }
 
 func TestMasterConnection_Close(t *testing.T) {
+	t.Parallel()
 	mock := newMockMasterConn()
 	mc := &MasterConnection{
 		Addr:   "127.0.0.1:6379",
@@ -158,6 +163,7 @@ func TestMasterConnection_Close(t *testing.T) {
 }
 
 func TestMasterConnection_Close_Double(t *testing.T) {
+	t.Parallel()
 	mock := newMockMasterConn()
 	mc := &MasterConnection{
 		Addr:   "127.0.0.1:6379",
@@ -177,6 +183,7 @@ func TestMasterConnection_Close_Double(t *testing.T) {
 }
 
 func TestMasterConnection_SendCommand(t *testing.T) {
+	t.Parallel()
 	mock := newMockMasterConn()
 	mc := &MasterConnection{
 		Addr:   "127.0.0.1:6379",
@@ -197,6 +204,7 @@ func TestMasterConnection_SendCommand(t *testing.T) {
 }
 
 func TestMasterConnection_ReadResponse_SimpleString(t *testing.T) {
+	t.Parallel()
 	mock := newMockMasterConn()
 	mock.readBuffer = []byte("+PONG\r\n")
 	mc := &MasterConnection{
@@ -217,6 +225,7 @@ func TestMasterConnection_ReadResponse_SimpleString(t *testing.T) {
 }
 
 func TestMasterConnection_ReadResponse_Error(t *testing.T) {
+	t.Parallel()
 	mock := newMockMasterConn()
 	mock.readBuffer = []byte("-ERR test error\r\n")
 	mc := &MasterConnection{
@@ -237,6 +246,7 @@ func TestMasterConnection_ReadResponse_Error(t *testing.T) {
 }
 
 func TestMasterConnection_ReadResponse_Integer(t *testing.T) {
+	t.Parallel()
 	mock := newMockMasterConn()
 	mock.readBuffer = []byte(":1000\r\n")
 	mc := &MasterConnection{
@@ -258,6 +268,7 @@ func TestMasterConnection_ReadResponse_Integer(t *testing.T) {
 }
 
 func TestMasterConnection_ReadBulkString(t *testing.T) {
+	t.Parallel()
 	mock := newMockMasterConn()
 	mock.readBuffer = []byte("$5\r\nhello\r\n")
 	mc := &MasterConnection{
@@ -277,6 +288,7 @@ func TestMasterConnection_ReadBulkString(t *testing.T) {
 }
 
 func TestMasterConnection_ReadBulkString_Null(t *testing.T) {
+	t.Parallel()
 	mock := newMockMasterConn()
 	mock.readBuffer = []byte("$-1\r\n")
 	mc := &MasterConnection{
@@ -296,21 +308,25 @@ func TestMasterConnection_ReadBulkString_Null(t *testing.T) {
 }
 
 func TestMasterConnection_ReadBulkString_EOF(t *testing.T) {
+	t.Parallel()
 	// Skip this test as it requires a more complex mock
 	t.Skip("EOF test requires more complex mock setup")
 }
 
 func TestMasterConnection_readUntilEOF(t *testing.T) {
+	t.Parallel()
 	// Skip this test as it requires a more complex mock setup
 	t.Skip("readUntilEOF test requires more complex mock setup")
 }
 
 func TestMasterConnection_ReadResponse_BulkString(t *testing.T) {
+	t.Parallel()
 	// Skip this test - the implementation doesn't parse nested arrays correctly
 	t.Skip("Array response parsing needs more work")
 }
 
 func TestMasterConnection_SendCommand_MultipleArgs(t *testing.T) {
+	t.Parallel()
 	mock := newMockMasterConn()
 	mc := &MasterConnection{
 		Addr:   "127.0.0.1:6379",

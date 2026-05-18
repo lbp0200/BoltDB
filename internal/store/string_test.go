@@ -8,6 +8,7 @@ import (
 
 // TestSetAndGet 测试 SET 和 GET 命令
 func TestSetAndGet(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Test SET
@@ -27,6 +28,7 @@ func TestSetAndGet(t *testing.T) {
 
 // TestSetEX 测试 SETEX 命令
 func TestSetEX(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	err := store.SetEX("key1", "value1", 1)
@@ -40,6 +42,7 @@ func TestSetEX(t *testing.T) {
 
 // TestPSETEX 测试 PSETEX 命令
 func TestPSETEX(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 使用较长的TTL以确保在测试期间不会过期
@@ -54,6 +57,7 @@ func TestPSETEX(t *testing.T) {
 
 // TestSetNX 测试 SETNX 命令
 func TestSetNX(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 第一次设置应该成功
@@ -79,6 +83,7 @@ func TestSetNX(t *testing.T) {
 
 // TestGetSet 测试 GETSET 命令
 func TestGetSet(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 设置初始值
@@ -107,6 +112,7 @@ func TestGetSet(t *testing.T) {
 
 // TestMGet 测试 MGET 命令
 func TestMGet(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 设置多个键
@@ -126,6 +132,7 @@ func TestMGet(t *testing.T) {
 
 // TestMGetWrongType tests that MGet returns ErrWrongType when a key is not a string
 func TestMGetWrongType(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Create a hash key
@@ -151,6 +158,7 @@ func TestMGetWrongType(t *testing.T) {
 
 // TestMSet 测试 MSET 命令
 func TestMSet(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 设置多个键值对
@@ -168,6 +176,7 @@ func TestMSet(t *testing.T) {
 
 // TestMSetNX 测试 MSETNX 命令
 func TestMSetNX(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 第一次设置应该成功（所有键都不存在）
@@ -195,6 +204,7 @@ func TestMSetNX(t *testing.T) {
 
 // TestINCR 测试 INCR 命令
 func TestINCR(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 对不存在的键执行 INCR
@@ -215,6 +225,7 @@ func TestINCR(t *testing.T) {
 
 // TestINCRBY 测试 INCRBY 命令
 func TestINCRBY(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 设置初始值
@@ -234,6 +245,7 @@ func TestINCRBY(t *testing.T) {
 
 // TestDECR 测试 DECR 命令
 func TestDECR(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 设置初始值
@@ -253,6 +265,7 @@ func TestDECR(t *testing.T) {
 
 // TestDECRBY 测试 DECRBY 命令
 func TestDECRBY(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 设置初始值
@@ -272,6 +285,7 @@ func TestDECRBY(t *testing.T) {
 
 // TestINCRBYFLOAT 测试 INCRBYFLOAT 命令
 func TestINCRBYFLOAT(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 设置初始值
@@ -297,6 +311,7 @@ func TestINCRBYFLOAT(t *testing.T) {
 
 // TestAPPEND 测试 APPEND 命令
 func TestAPPEND(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 设置初始值
@@ -325,6 +340,7 @@ func TestAPPEND(t *testing.T) {
 
 // TestStrLen 测试 STRLEN 命令
 func TestStrLen(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 设置值
@@ -344,6 +360,7 @@ func TestStrLen(t *testing.T) {
 
 // TestGetRange 测试 GETRANGE 命令
 func TestGetRange(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 设置值
@@ -373,6 +390,7 @@ func TestGetRange(t *testing.T) {
 
 // TestSetRange 测试 SETRANGE 命令
 func TestSetRange(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 设置初始值
@@ -401,6 +419,7 @@ func TestSetRange(t *testing.T) {
 
 // TestGetBit 测试 GETBIT 命令
 func TestGetBit(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 设置值 "A" = 0x41 = 01000001
@@ -429,6 +448,7 @@ func TestGetBit(t *testing.T) {
 
 // TestSetBit 测试 SETBIT 命令
 func TestSetBit(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 设置值 "A" = 0x41 = 01000001
@@ -458,6 +478,7 @@ func TestSetBit(t *testing.T) {
 
 // TestBitCount 测试 BITCOUNT 命令
 func TestBitCount(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 设置值 "A" = 0x41 = 01000001 (2个1)
@@ -482,6 +503,7 @@ func TestBitCount(t *testing.T) {
 
 // TestBitOp 测试 BITOP 命令
 func TestBitOp(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 设置值
@@ -529,6 +551,7 @@ func TestBitOp(t *testing.T) {
 
 // TestBitPos 测试 BITPOS 命令
 func TestBitPos(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 设置值 "\x00\xFF" = 00000000 11111111
@@ -553,6 +576,7 @@ func TestBitPos(t *testing.T) {
 
 // TestStringEdgeCases 测试边界情况
 func TestStringEdgeCases(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 空字符串
@@ -580,6 +604,7 @@ func TestStringEdgeCases(t *testing.T) {
 
 // TestBitLen 测试 BITLEN 命令
 func TestBitLen(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Test with value
@@ -597,6 +622,7 @@ func TestBitLen(t *testing.T) {
 
 // TestBitFieldDebug 测试 BITFIELD 调试
 func TestBitFieldDebug(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// 测试 SET 后立即 GET
@@ -661,6 +687,7 @@ func TestBitFieldDebug(t *testing.T) {
 
 // TestBitField 测试 BITFIELD 命令
 func TestBitField(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Test GET operation on non-existent key
@@ -699,6 +726,7 @@ func TestBitField(t *testing.T) {
 
 // TestBitFieldOverflow 测试 BITFIELD 溢出情况
 func TestBitFieldOverflow(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Test with 16-bit
@@ -714,6 +742,7 @@ func TestBitFieldOverflow(t *testing.T) {
 
 // TestSetWrongType tests that SET returns ErrWrongType when key exists with different type
 func TestSetWrongType(t *testing.T) {
+	t.Parallel()
 	store := setupTestStore(t)
 
 	// Create a hash key first

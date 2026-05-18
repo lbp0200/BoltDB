@@ -37,6 +37,7 @@ func deterministicConflictWrite(s *BotreonStore, key string, maxRetries int) err
 // TestDeterministicConflict_Counter10 verifies that 10 concurrent goroutines
 // incrementing the same counter all succeed via retryUpdate conflict resolution.
 func TestDeterministicConflict_Counter10(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	key := "counter:10"
 	const goroutines = 10
@@ -81,6 +82,7 @@ func TestDeterministicConflict_Counter10(t *testing.T) {
 
 // TestDeterministicConflict_Counter100 verifies 100 concurrent goroutines.
 func TestDeterministicConflict_Counter100(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping 100-goroutine conflict test in short mode")
 	}
@@ -125,6 +127,7 @@ func TestDeterministicConflict_Counter100(t *testing.T) {
 // TestDeterministicConflict_RetryExhaustion verifies that a conflict that
 // persists beyond maxRetries produces an error.
 func TestDeterministicConflict_RetryExhaustion(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	key := "counter:exhaust"
 
@@ -152,6 +155,7 @@ func TestDeterministicConflict_RetryExhaustion(t *testing.T) {
 // TestDeterministicConflict_ConflictThenNonConflictError verifies that
 // after some conflict retries, a non-retryable error is returned immediately.
 func TestDeterministicConflict_ConflictThenNonConflictError(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	key := "counter:mixed"
 	sentinel := errors.New("some fatal error")
@@ -197,6 +201,7 @@ func TestDeterministicConflict_ConflictThenNonConflictError(t *testing.T) {
 // TestDeterministicConflict_HSetSameField creates conflicts via HSet on the
 // same hash field, which uses retryUpdate without key-level locking.
 func TestDeterministicConflict_HSetSameField(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	const goroutines = 20
 
@@ -228,6 +233,7 @@ func TestDeterministicConflict_HSetSameField(t *testing.T) {
 // TestDeterministicConflict_RetryUpdateSuccessAfterConflict verifies that
 // retryUpdate correctly retries on TransactionConflict and eventually succeeds.
 func TestDeterministicConflict_RetryUpdateSuccessAfterConflict(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	key := "counter:success"
 

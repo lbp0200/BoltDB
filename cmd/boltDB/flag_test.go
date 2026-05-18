@@ -7,6 +7,7 @@ import (
 
 // TestSkipStartupCleanupFlag tests that the -skip-startup-cleanup flag is defined
 func TestSkipStartupCleanupFlag(t *testing.T) {
+	t.Parallel()
 	// This test verifies the flag exists
 	// It will fail if the flag is not defined in main
 	f := flag.Lookup("skip-startup-cleanup")
@@ -21,6 +22,7 @@ func TestSkipStartupCleanupFlag(t *testing.T) {
 
 // TestSkipStartupCleanupFlagUsage tests that the flag has proper usage text
 func TestSkipStartupCleanupFlagUsage(t *testing.T) {
+	t.Parallel()
 	f := flag.Lookup("skip-startup-cleanup")
 	if f == nil {
 		t.Skip("flag not defined, skipping")

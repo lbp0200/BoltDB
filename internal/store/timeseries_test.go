@@ -9,6 +9,7 @@ import (
 )
 
 func TestTSCreate(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	var err error
 
@@ -35,6 +36,7 @@ func TestTSCreate(t *testing.T) {
 }
 
 func TestTSAdd(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	var err error
 
@@ -59,6 +61,7 @@ func TestTSAdd(t *testing.T) {
 }
 
 func TestTSGet(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	var err error
 
@@ -85,6 +88,7 @@ func TestTSGet(t *testing.T) {
 }
 
 func TestTSRange(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	var err error
 
@@ -121,6 +125,7 @@ func TestTSRange(t *testing.T) {
 }
 
 func TestTSDel(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	var err error
 
@@ -152,6 +157,7 @@ func TestTSDel(t *testing.T) {
 }
 
 func TestTSInfo(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	var err error
 
@@ -174,6 +180,7 @@ func TestTSInfo(t *testing.T) {
 }
 
 func TestTSLen(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	var err error
 
@@ -192,6 +199,7 @@ func TestTSLen(t *testing.T) {
 }
 
 func TestTSMGet(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	var err error
 
@@ -214,6 +222,7 @@ func TestTSMGet(t *testing.T) {
 }
 
 func TestTSDuplicatePolicy(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	var err error
 
@@ -248,6 +257,7 @@ func TestTSDuplicatePolicy(t *testing.T) {
 }
 
 func TestTSType(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	var err error
 
@@ -266,6 +276,7 @@ func TestTSType(t *testing.T) {
 }
 
 func TestTSAutoTimestamp(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	var err error
 
@@ -279,6 +290,7 @@ func TestTSAutoTimestamp(t *testing.T) {
 
 // TestTSAddWrongType tests that TSAdd returns ErrWrongType when key exists with different type
 func TestTSAddWrongType(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	var err error
 

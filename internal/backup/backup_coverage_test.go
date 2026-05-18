@@ -12,6 +12,7 @@ import (
 
 // TestBadgerBackupManager_IncrementalBackup tests IncrementalBackup function
 func TestBadgerBackupManager_IncrementalBackup(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := badger.Open(badger.DefaultOptions(dbPath))
 	assert.NoError(t, err)
@@ -35,6 +36,7 @@ func TestBadgerBackupManager_IncrementalBackup(t *testing.T) {
 
 // TestBadgerBackupManager_IncrementalBackup_Since tests IncrementalBackup with since parameter
 func TestBadgerBackupManager_IncrementalBackup_Since(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := badger.Open(badger.DefaultOptions(dbPath))
 	assert.NoError(t, err)
@@ -62,6 +64,7 @@ func TestBadgerBackupManager_IncrementalBackup_Since(t *testing.T) {
 
 // TestBadgerBackupManager_IncrementalBackup_PathTraversal tests IncrementalBackup path traversal protection
 func TestBadgerBackupManager_IncrementalBackup_PathTraversal(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := badger.Open(badger.DefaultOptions(dbPath))
 	assert.NoError(t, err)
@@ -78,6 +81,7 @@ func TestBadgerBackupManager_IncrementalBackup_PathTraversal(t *testing.T) {
 
 // TestBadgerBackupManager_GetBackupInfo tests GetBackupInfo function
 func TestBadgerBackupManager_GetBackupInfo(t *testing.T) {
+	t.Parallel()
 	// First create a backup file
 	dbPath := t.TempDir()
 	db, err := badger.Open(badger.DefaultOptions(dbPath))
@@ -106,12 +110,14 @@ func TestBadgerBackupManager_GetBackupInfo(t *testing.T) {
 
 // TestBadgerBackupManager_GetBackupInfo_NotFound tests GetBackupInfo with non-existent file
 func TestBadgerBackupManager_GetBackupInfo_NotFound(t *testing.T) {
+	t.Parallel()
 	_, err := GetBackupInfo("/nonexistent/backup/file")
 	assert.Error(t, err)
 }
 
 // TestBadgerBackupManager_Restore tests Restore function
 func TestBadgerBackupManager_Restore(t *testing.T) {
+	t.Parallel()
 	// First create a backup file
 	dbPath := t.TempDir()
 	db, err := badger.Open(badger.DefaultOptions(dbPath))
@@ -155,6 +161,7 @@ func TestBadgerBackupManager_Restore(t *testing.T) {
 
 // TestBadgerBackupManager_Restore_NotFound tests Restore with non-existent file
 func TestBadgerBackupManager_Restore_NotFound(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := badger.Open(badger.DefaultOptions(dbPath))
 	assert.NoError(t, err)
@@ -167,6 +174,7 @@ func TestBadgerBackupManager_Restore_NotFound(t *testing.T) {
 
 // TestRestoreTo tests RestoreTo function
 func TestRestoreTo(t *testing.T) {
+	t.Parallel()
 	// First create a backup file
 	dbPath := t.TempDir()
 	db, err := badger.Open(badger.DefaultOptions(dbPath))
@@ -209,6 +217,7 @@ func TestRestoreTo(t *testing.T) {
 
 // TestRestoreTo_InvalidBackup tests RestoreTo with non-existent backup file
 func TestRestoreTo_InvalidBackup(t *testing.T) {
+	t.Parallel()
 	newDbPath := t.TempDir()
 	err := RestoreTo("/nonexistent/backup/file", newDbPath)
 	assert.Error(t, err)
@@ -216,6 +225,7 @@ func TestRestoreTo_InvalidBackup(t *testing.T) {
 
 // TestRestoreTo_InvalidDBPath tests RestoreTo with invalid database path
 func TestRestoreTo_InvalidDBPath(t *testing.T) {
+	t.Parallel()
 	// Create a valid backup first
 	dbPath := t.TempDir()
 	db, err := badger.Open(badger.DefaultOptions(dbPath))
@@ -239,6 +249,7 @@ func TestRestoreTo_InvalidDBPath(t *testing.T) {
 
 // TestBadgerBackupManager_StoreBased tests using BadgerBackupManager with store's GetDB
 func TestBadgerBackupManager_StoreBased(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	s, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -266,6 +277,7 @@ func TestBadgerBackupManager_StoreBased(t *testing.T) {
 
 // TestBadgerBackupManager_IncrementalBackup_Empty tests IncrementalBackup with empty since
 func TestBadgerBackupManager_IncrementalBackup_Empty(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := badger.Open(badger.DefaultOptions(dbPath))
 	assert.NoError(t, err)
@@ -288,6 +300,7 @@ func TestBadgerBackupManager_IncrementalBackup_Empty(t *testing.T) {
 
 // TestBadgerBackupManager_RestoreAndIncrementalRestore tests full restore and incremental restore cycle
 func TestBadgerBackupManager_RestoreAndIncrementalRestore(t *testing.T) {
+	t.Parallel()
 	// Create source database with initial data
 	sourcePath := t.TempDir()
 	db1, err := badger.Open(badger.DefaultOptions(sourcePath))
@@ -344,6 +357,7 @@ func TestBadgerBackupManager_RestoreAndIncrementalRestore(t *testing.T) {
 
 // TestGetBackupInfo_FileInfo tests that GetBackupInfo returns correct file info
 func TestGetBackupInfo_FileInfo(t *testing.T) {
+	t.Parallel()
 	// Create a backup file
 	dbPath := t.TempDir()
 	db, err := badger.Open(badger.DefaultOptions(dbPath))
@@ -374,6 +388,7 @@ func TestGetBackupInfo_FileInfo(t *testing.T) {
 
 // TestListBackups_WithInvalidExt tests ListBackups with different file extensions
 func TestListBackups_WithInvalidExt(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 
 	// Create files with various extensions
@@ -404,6 +419,7 @@ func TestListBackups_WithInvalidExt(t *testing.T) {
 
 // TestRDBBackupManager_GetBackupInfoFile tests GetBackupInfo for RDB files with success case
 func TestRDBBackupManager_GetBackupInfoFile(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 
 	// Create a test RDB file
@@ -420,6 +436,7 @@ func TestRDBBackupManager_GetBackupInfoFile(t *testing.T) {
 
 // TestListRDBBackupsWithFiles tests ListRDBBackups function with files
 func TestListRDBBackupsWithFiles(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 
 	// Create RDB files

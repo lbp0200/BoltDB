@@ -7,6 +7,7 @@ import (
 )
 
 func TestRDBDecoder_New(t *testing.T) {
+	t.Parallel()
 	// 创建一个简单的 RDB 数据
 	rdbData := []byte{
 		'R', 'E', 'D', 'I', 'S', '0', '0', '0', '9', // header
@@ -20,6 +21,7 @@ func TestRDBDecoder_New(t *testing.T) {
 }
 
 func TestRDBDecoder_DecodeHeader(t *testing.T) {
+	t.Parallel()
 	// 创建一个有效的 RDB 头部
 	rdbData := []byte{
 		'R', 'E', 'D', 'I', 'S', '0', '0', '0', '9', // header
@@ -31,6 +33,7 @@ func TestRDBDecoder_DecodeHeader(t *testing.T) {
 }
 
 func TestRDBDecoder_DecodeHeader_Invalid(t *testing.T) {
+	t.Parallel()
 	// 无效的 RDB 头部 - magic string 不匹配
 	rdbData := []byte{
 		'X', 'R', 'E', 'D', 'I', 'S', // invalid magic (only 6 bytes)

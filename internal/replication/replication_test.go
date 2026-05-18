@@ -23,6 +23,7 @@ func setupTestStore(t *testing.T) *store.BotreonStore {
 }
 
 func TestReplicationManager_New(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 
@@ -33,6 +34,7 @@ func TestReplicationManager_New(t *testing.T) {
 }
 
 func TestReplicationManager_Role(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 
@@ -51,6 +53,7 @@ func TestReplicationManager_Role(t *testing.T) {
 }
 
 func TestReplicationManager_ReplOffset(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 
@@ -67,6 +70,7 @@ func TestReplicationManager_ReplOffset(t *testing.T) {
 }
 
 func TestReplicationManager_MasterAddr(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 
@@ -79,6 +83,7 @@ func TestReplicationManager_MasterAddr(t *testing.T) {
 }
 
 func TestReplicationManager_SlaveManagement(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 
@@ -95,6 +100,7 @@ func TestReplicationManager_SlaveManagement(t *testing.T) {
 }
 
 func TestReplicationManager_Backlog(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 
@@ -104,6 +110,7 @@ func TestReplicationManager_Backlog(t *testing.T) {
 }
 
 func TestReplicationManager_GenerateReplId(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 
@@ -113,6 +120,7 @@ func TestReplicationManager_GenerateReplId(t *testing.T) {
 }
 
 func TestReplicationManager_PropagateCommand(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 
@@ -134,6 +142,7 @@ func TestReplicationManager_PropagateCommand(t *testing.T) {
 }
 
 func TestReplicationManager_MultipleSlaveIds(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 

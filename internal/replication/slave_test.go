@@ -53,6 +53,7 @@ func (m *mockConn) SetReadDeadline(t time.Time) error  { return nil }
 func (m *mockConn) SetWriteDeadline(t time.Time) error { return nil }
 
 func TestSlaveConnection_New(t *testing.T) {
+	t.Parallel()
 	conn := newMockConn()
 	slave := NewSlaveConnection(conn)
 
@@ -64,6 +65,7 @@ func TestSlaveConnection_New(t *testing.T) {
 }
 
 func TestSlaveConnection_ReadyState(t *testing.T) {
+	t.Parallel()
 	conn := newMockConn()
 	slave := NewSlaveConnection(conn)
 
@@ -80,6 +82,7 @@ func TestSlaveConnection_ReadyState(t *testing.T) {
 }
 
 func TestSlaveConnection_ReplOffset(t *testing.T) {
+	t.Parallel()
 	conn := newMockConn()
 	slave := NewSlaveConnection(conn)
 
@@ -95,6 +98,7 @@ func TestSlaveConnection_ReplOffset(t *testing.T) {
 }
 
 func TestSlaveConnection_Write(t *testing.T) {
+	t.Parallel()
 	conn := newMockConn()
 	slave := NewSlaveConnection(conn)
 
@@ -109,6 +113,7 @@ func TestSlaveConnection_Write(t *testing.T) {
 }
 
 func TestSlaveConnection_Close(t *testing.T) {
+	t.Parallel()
 	conn := newMockConn()
 	slave := NewSlaveConnection(conn)
 
@@ -126,6 +131,7 @@ func TestSlaveConnection_Close(t *testing.T) {
 }
 
 func TestSlaveConnection_GetLastAckTime(t *testing.T) {
+	t.Parallel()
 	conn := newMockConn()
 	slave := NewSlaveConnection(conn)
 
@@ -143,6 +149,7 @@ func TestSlaveConnection_GetLastAckTime(t *testing.T) {
 var _ net.Conn = (*mockConn)(nil)
 
 func TestSlaveConnection_BufferedWriter(t *testing.T) {
+	t.Parallel()
 	conn := newMockConn()
 	slave := NewSlaveConnection(conn)
 
@@ -151,6 +158,7 @@ func TestSlaveConnection_BufferedWriter(t *testing.T) {
 }
 
 func TestSlaveConnection_IDGeneration(t *testing.T) {
+	t.Parallel()
 	conn1 := newMockConn()
 	conn2 := newMockConn()
 
@@ -166,6 +174,7 @@ func TestSlaveConnection_IDGeneration(t *testing.T) {
 
 // TestSendFullResync tests SendFullResync function
 func TestSendFullResync(t *testing.T) {
+	t.Parallel()
 	conn := newMockConn()
 	slave := NewSlaveConnection(conn)
 
@@ -178,6 +187,7 @@ func TestSendFullResync(t *testing.T) {
 
 // TestSendContinueResync tests SendContinueResync function
 func TestSendContinueResync(t *testing.T) {
+	t.Parallel()
 	conn := newMockConn()
 	slave := NewSlaveConnection(conn)
 
@@ -190,6 +200,7 @@ func TestSendContinueResync(t *testing.T) {
 
 // TestSendBacklogData tests SendBacklogData function
 func TestSendBacklogData(t *testing.T) {
+	t.Parallel()
 	conn := newMockConn()
 	slave := NewSlaveConnection(conn)
 
@@ -206,6 +217,7 @@ func TestSendBacklogData(t *testing.T) {
 
 // TestSendBacklogData_EmptyRange tests SendBacklogData with empty range
 func TestSendBacklogData_EmptyRange(t *testing.T) {
+	t.Parallel()
 	conn := newMockConn()
 	slave := NewSlaveConnection(conn)
 
@@ -221,6 +233,7 @@ func TestSendBacklogData_EmptyRange(t *testing.T) {
 
 // TestSlaveConnection_SendRDB tests SendRDB function
 func TestSlaveConnection_SendRDB(t *testing.T) {
+	t.Parallel()
 	conn := newMockConn()
 	slave := NewSlaveConnection(conn)
 
@@ -236,6 +249,7 @@ func TestSlaveConnection_SendRDB(t *testing.T) {
 
 // TestSlaveConnection_SendResponse tests SendResponse function
 func TestSlaveConnection_SendResponse(t *testing.T) {
+	t.Parallel()
 	conn := newMockConn()
 	slave := NewSlaveConnection(conn)
 
@@ -250,6 +264,7 @@ func TestSlaveConnection_SendResponse(t *testing.T) {
 
 // TestSlaveConnection_SendRDB_Empty tests SendRDB with empty data
 func TestSlaveConnection_SendRDB_Empty(t *testing.T) {
+	t.Parallel()
 	conn := newMockConn()
 	slave := NewSlaveConnection(conn)
 
@@ -264,6 +279,7 @@ func TestSlaveConnection_SendRDB_Empty(t *testing.T) {
 
 // TestSlaveConnection_ReadCommand tests ReadCommand function
 func TestSlaveConnection_ReadCommand(t *testing.T) {
+	t.Parallel()
 	conn := newMockConn()
 	conn.readBuffer = []byte("*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n")
 	slave := NewSlaveConnection(conn)

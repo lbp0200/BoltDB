@@ -8,6 +8,7 @@ import (
 
 // TestReplicationManagerExtended_Role tests role management
 func TestReplicationManagerExtended_Role(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -31,6 +32,7 @@ func TestReplicationManagerExtended_Role(t *testing.T) {
 
 // TestReplicationManagerExtended_ReplicationID tests replication ID
 func TestReplicationManagerExtended_ReplicationID(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -41,6 +43,7 @@ func TestReplicationManagerExtended_ReplicationID(t *testing.T) {
 
 // TestReplicationManagerExtended_MasterAddr tests master address management
 func TestReplicationManagerExtended_MasterAddr(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -55,6 +58,7 @@ func TestReplicationManagerExtended_MasterAddr(t *testing.T) {
 
 // TestReplicationManagerExtended_SlaveByID tests getting slave by ID
 func TestReplicationManagerExtended_SlaveByID(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -66,6 +70,7 @@ func TestReplicationManagerExtended_SlaveByID(t *testing.T) {
 
 // TestReplicationManagerExtended_SlaveByAddr tests getting slave by address
 func TestReplicationManagerExtended_SlaveByAddr(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -77,6 +82,7 @@ func TestReplicationManagerExtended_SlaveByAddr(t *testing.T) {
 
 // TestReplicationManagerExtended_SlaveCount tests slave count
 func TestReplicationManagerExtended_SlaveCount(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -87,6 +93,7 @@ func TestReplicationManagerExtended_SlaveCount(t *testing.T) {
 
 // TestReplicationManagerExtended_GetSlaves tests getting all slaves
 func TestReplicationManagerExtended_GetSlaves(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -98,6 +105,7 @@ func TestReplicationManagerExtended_GetSlaves(t *testing.T) {
 
 // TestReplicationManagerExtended_Offset tests replication offset
 func TestReplicationManagerExtended_Offset(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -116,6 +124,7 @@ func TestReplicationManagerExtended_Offset(t *testing.T) {
 
 // TestReplicationManagerExtended_Backlog tests backlog
 func TestReplicationManagerExtended_Backlog(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -127,6 +136,7 @@ func TestReplicationManagerExtended_Backlog(t *testing.T) {
 
 // TestReplicationManagerExtended_MasterConnection tests master connection
 func TestReplicationManagerExtended_MasterConnection(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -137,6 +147,7 @@ func TestReplicationManagerExtended_MasterConnection(t *testing.T) {
 
 // TestReplicationManagerExtended_UpdateSlaveAckOffset tests UpdateSlaveAckOffset
 func TestReplicationManagerExtended_UpdateSlaveAckOffset(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
@@ -148,6 +159,7 @@ func TestReplicationManagerExtended_UpdateSlaveAckOffset(t *testing.T) {
 
 // TestReplicationManager_LoadRDB tests LoadRDB
 func TestReplicationManager_LoadRDB(t *testing.T) {
+	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()

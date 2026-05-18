@@ -10,12 +10,13 @@ import (
 
 // TestServerMoreStringCommands tests more string commands
 func TestServerMoreStringCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// Setup initial values
-	handler.executeCommand(testState, "SET", [][]byte{[]byte("strkey"), []byte("hello")}, "127.0.0.1:12345")
-	handler.executeCommand(testState, "SET", [][]byte{[]byte("rangekey"), []byte("HelloWorld")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SET", [][]byte{[]byte("strkey"), []byte("hello")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SET", [][]byte{[]byte("rangekey"), []byte("HelloWorld")}, "127.0.0.1:12345")
 
 	tests := []struct {
 		name  string
@@ -109,7 +110,7 @@ func TestServerMoreStringCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -117,11 +118,12 @@ func TestServerMoreStringCommands(t *testing.T) {
 
 // TestServerKeyExpirationCommands tests key expiration commands
 func TestServerKeyExpirationCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// Setup key
-	handler.executeCommand(testState, "SET", [][]byte{[]byte("exkey"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SET", [][]byte{[]byte("exkey"), []byte("value")}, "127.0.0.1:12345")
 
 	tests := []struct {
 		name  string
@@ -210,7 +212,7 @@ func TestServerKeyExpirationCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}
@@ -218,14 +220,15 @@ func TestServerKeyExpirationCommands(t *testing.T) {
 
 // TestServerTypeAndExistsCommands tests TYPE and EXISTS commands
 func TestServerTypeAndExistsCommands(t *testing.T) {
-	handler := setupTestHandler(t)
+	t.Parallel()
+	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	// Setup keys
-	handler.executeCommand(testState, "SET", [][]byte{[]byte("stringkey"), []byte("value")}, "127.0.0.1:12345")
-	handler.executeCommand(testState, "HSET", [][]byte{[]byte("hashkey"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
-	handler.executeCommand(testState, "LPUSH", [][]byte{[]byte("listkey"), []byte("value")}, "127.0.0.1:12345")
-	handler.executeCommand(testState, "SADD", [][]byte{[]byte("setkey"), []byte("member")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SET", [][]byte{[]byte("stringkey"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "HSET", [][]byte{[]byte("hashkey"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("listkey"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SADD", [][]byte{[]byte("setkey"), []byte("member")}, "127.0.0.1:12345")
 
 	tests := []struct {
 		name  string
@@ -314,7 +317,7 @@ func TestServerTypeAndExistsCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(testState, tt.cmd, tt.args, "127.0.0.1:12345")
+			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
 			tt.check(t, resp)
 		})
 	}

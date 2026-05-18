@@ -22,6 +22,7 @@ func setupBoundaryStore(t *testing.T) *BotreonStore {
 }
 
 func TestBoundary_LargeString1MB(t *testing.T) {
+	t.Parallel()
 	s := setupBoundaryStore(t)
 
 	data := strings.Repeat("A", 1024*1024) // 1MB
@@ -41,6 +42,7 @@ func TestBoundary_LargeString1MB(t *testing.T) {
 }
 
 func TestBoundary_LargeString10MB(t *testing.T) {
+	t.Parallel()
 	s := setupBoundaryStore(t)
 
 	data := strings.Repeat("ABCDEFGH", 1024*1024*10/8) // 10MB
@@ -60,6 +62,7 @@ func TestBoundary_LargeString10MB(t *testing.T) {
 }
 
 func TestBoundary_LargeString100MB(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping 100MB string test in short mode")
 	}
@@ -135,6 +138,7 @@ func batchInsertZSet(s *BotreonStore, key string, n int) error {
 }
 
 func TestBoundary_LargeList100K(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping 100K list test in short mode")
 	}
@@ -164,6 +168,7 @@ func TestBoundary_LargeList100K(t *testing.T) {
 }
 
 func TestBoundary_LargeSet100K(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping 100K set test in short mode")
 	}
@@ -193,6 +198,7 @@ func TestBoundary_LargeSet100K(t *testing.T) {
 }
 
 func TestBoundary_LargeZSet100K(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping 100K zset test in short mode")
 	}
@@ -222,6 +228,7 @@ func TestBoundary_LargeZSet100K(t *testing.T) {
 }
 
 func TestBoundary_LargeHash100K(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping 100K hash test in short mode")
 	}

@@ -8,6 +8,7 @@ import (
 
 // TestNode_New tests Node creation
 func TestNode_New(t *testing.T) {
+	t.Parallel()
 	node := NewNode("node1", "127.0.0.1:6379")
 
 	assert.Equal(t, "node1", node.ID)
@@ -16,6 +17,7 @@ func TestNode_New(t *testing.T) {
 
 // TestNode_SlotRange tests slot range management
 func TestNode_SlotRange(t *testing.T) {
+	t.Parallel()
 	node := NewNode("node1", "127.0.0.1:6379")
 
 	// Initially no slots
@@ -38,6 +40,7 @@ func TestNode_SlotRange(t *testing.T) {
 
 // TestNode_MultipleSlotRanges tests multiple slot ranges
 func TestNode_MultipleSlotRanges(t *testing.T) {
+	t.Parallel()
 	node := NewNode("node1", "127.0.0.1:6379")
 
 	// Add multiple slot ranges
@@ -54,6 +57,7 @@ func TestNode_MultipleSlotRanges(t *testing.T) {
 }
 
 func TestNode_Role(t *testing.T) {
+	t.Parallel()
 	node := NewNode("node1", "127.0.0.1:6379")
 
 	assert.False(t, node.IsMaster())
@@ -62,6 +66,7 @@ func TestNode_Role(t *testing.T) {
 
 // TestNode_Myself tests IsMyself
 func TestNode_Myself(t *testing.T) {
+	t.Parallel()
 	node := NewNode("node1", "127.0.0.1:6379")
 
 	// Initially not myself
@@ -74,6 +79,7 @@ func TestNode_Myself(t *testing.T) {
 
 // TestNode_String tests node string representation
 func TestNode_String(t *testing.T) {
+	t.Parallel()
 	node := NewNode("node1", "127.0.0.1:6379")
 	node.AddSlotRange(0, 100)
 
@@ -83,6 +89,7 @@ func TestNode_String(t *testing.T) {
 
 // TestNode_GetHostPort tests GetHostPort
 func TestNode_GetHostPort(t *testing.T) {
+	t.Parallel()
 	node := NewNode("node1", "127.0.0.1:6379")
 
 	host, port, err := node.GetHostPort()
@@ -93,6 +100,7 @@ func TestNode_GetHostPort(t *testing.T) {
 
 // TestNode_ImportingSlots tests importing slot management
 func TestNode_ImportingSlots(t *testing.T) {
+	t.Parallel()
 	node := NewNode("node1", "127.0.0.1:6379")
 
 	// Initially no importing slots
@@ -114,6 +122,7 @@ func TestNode_ImportingSlots(t *testing.T) {
 
 // TestNode_MigratingSlots tests migrating slot management
 func TestNode_MigratingSlots(t *testing.T) {
+	t.Parallel()
 	node := NewNode("node1", "127.0.0.1:6379")
 
 	// Initially no migrating slots
@@ -135,6 +144,7 @@ func TestNode_MigratingSlots(t *testing.T) {
 
 // TestNode_ClearSlotMigration tests clearing slot migration
 func TestNode_ClearSlotMigration(t *testing.T) {
+	t.Parallel()
 	node := NewNode("node1", "127.0.0.1:6379")
 
 	// Set migrating slot
@@ -147,6 +157,7 @@ func TestNode_ClearSlotMigration(t *testing.T) {
 }
 
 func TestNode_UpdatePong(t *testing.T) {
+	t.Parallel()
 	node := NewNode("node1", "127.0.0.1:6379")
 	assert.Equal(t, int64(0), node.PongRecv)
 
@@ -157,6 +168,7 @@ func TestNode_UpdatePong(t *testing.T) {
 
 // TestNode_IsFailed tests IsFailed
 func TestNode_IsFailed(t *testing.T) {
+	t.Parallel()
 	node := NewNode("node1", "127.0.0.1:6379")
 
 	// Initially not failed
@@ -165,6 +177,7 @@ func TestNode_IsFailed(t *testing.T) {
 
 // TestGenerateNodeID tests generateNodeID
 func TestGenerateNodeID(t *testing.T) {
+	t.Parallel()
 	id1, err := generateNodeID()
 	assert.NoError(t, err)
 	assert.True(t, len(id1) > 0)

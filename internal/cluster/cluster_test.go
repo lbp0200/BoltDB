@@ -24,6 +24,7 @@ func setupTestCluster(t *testing.T) (*Cluster, func()) {
 }
 
 func TestSlotCalculation(t *testing.T) {
+	t.Parallel()
 	// 测试基本槽位计算
 	slot := Slot("testkey")
 	assert.True(t, slot < SlotCount)
@@ -40,6 +41,7 @@ func TestSlotCalculation(t *testing.T) {
 }
 
 func TestClusterCreation(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -51,6 +53,7 @@ func TestClusterCreation(t *testing.T) {
 }
 
 func TestClusterSlotMigration(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -72,6 +75,7 @@ func TestClusterSlotMigration(t *testing.T) {
 }
 
 func TestClusterGetAskRedirect(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -81,6 +85,7 @@ func TestClusterGetAskRedirect(t *testing.T) {
 }
 
 func TestSlotAssignment(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -100,6 +105,7 @@ func TestSlotAssignment(t *testing.T) {
 }
 
 func TestSlotRangeAssignment(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -121,6 +127,7 @@ func TestSlotRangeAssignment(t *testing.T) {
 }
 
 func TestIsSlotLocal(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -139,6 +146,7 @@ func TestIsSlotLocal(t *testing.T) {
 }
 
 func TestClusterCommands(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
@@ -181,6 +189,7 @@ func TestClusterCommands(t *testing.T) {
 }
 
 func TestClusterMeet(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
@@ -195,6 +204,7 @@ func TestClusterMeet(t *testing.T) {
 }
 
 func TestClusterAddSlots(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
@@ -214,6 +224,7 @@ func TestClusterAddSlots(t *testing.T) {
 }
 
 func TestRedirectError(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -234,6 +245,7 @@ func TestRedirectError(t *testing.T) {
 }
 
 func TestNewMovedError(t *testing.T) {
+	t.Parallel()
 	err := NewMovedError(100, "127.0.0.1:6380")
 	assert.Equal(t, "MOVED", err.Type)
 	assert.Equal(t, uint32(100), err.Slot)
@@ -242,6 +254,7 @@ func TestNewMovedError(t *testing.T) {
 }
 
 func TestNewAskError(t *testing.T) {
+	t.Parallel()
 	err := NewAskError(200, "127.0.0.1:6381")
 	assert.Equal(t, "ASK", err.Type)
 	assert.Equal(t, uint32(200), err.Slot)
@@ -250,6 +263,7 @@ func TestNewAskError(t *testing.T) {
 }
 
 func TestClusterGetRedirectAddress(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -266,6 +280,7 @@ func TestClusterGetRedirectAddress(t *testing.T) {
 }
 
 func TestClusterCheckSlotRedirect(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -276,6 +291,7 @@ func TestClusterCheckSlotRedirect(t *testing.T) {
 }
 
 func TestHandleGetKeysInSlot(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
@@ -302,6 +318,7 @@ func TestHandleGetKeysInSlot(t *testing.T) {
 }
 
 func TestHandleSetSlot(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
@@ -350,6 +367,7 @@ func TestHandleSetSlot(t *testing.T) {
 }
 
 func TestHandleForget(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
@@ -377,6 +395,7 @@ func TestHandleForget(t *testing.T) {
 }
 
 func TestHandleReplicate(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
@@ -410,6 +429,7 @@ func TestHandleReplicate(t *testing.T) {
 }
 
 func TestHandleSaveConfig(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
@@ -421,6 +441,7 @@ func TestHandleSaveConfig(t *testing.T) {
 }
 
 func TestHandleDelSlots(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
@@ -444,6 +465,7 @@ func TestHandleDelSlots(t *testing.T) {
 }
 
 func TestHandleFlushSlots(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
@@ -467,6 +489,7 @@ func TestHandleFlushSlots(t *testing.T) {
 }
 
 func TestHandleCountKeysInSlot(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
@@ -490,6 +513,7 @@ func TestHandleCountKeysInSlot(t *testing.T) {
 }
 
 func TestHandleEpoch(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
@@ -503,6 +527,7 @@ func TestHandleEpoch(t *testing.T) {
 }
 
 func TestHandleSlaves(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
@@ -537,6 +562,7 @@ func TestHandleSlaves(t *testing.T) {
 }
 
 func TestHandleReset(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
@@ -568,6 +594,7 @@ func TestHandleReset(t *testing.T) {
 }
 
 func TestHandleCalls(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
@@ -582,6 +609,7 @@ func TestHandleCalls(t *testing.T) {
 }
 
 func TestHandleTotalKeys(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
@@ -605,6 +633,7 @@ func TestHandleTotalKeys(t *testing.T) {
 }
 
 func TestNodeUpdatePing(t *testing.T) {
+	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
