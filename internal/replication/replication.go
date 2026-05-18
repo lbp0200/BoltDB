@@ -134,6 +134,16 @@ func (rm *ReplicationManager) GetSlaveCount() int {
 	return len(rm.slaves)
 }
 
+// GetSlaveReplOffset 获取从节点的复制偏移量（slave角色时有效）
+func (rm *ReplicationManager) GetSlaveReplOffset() int64 {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	if rm.slaveReconnector != nil {
+		return rm.slaveReconnector.GetLastOffset()
+	}
+	return 0
+}
+
 // SetRole 设置角色
 func (rm *ReplicationManager) SetRole(role string) {
 	rm.mu.Lock()
@@ -186,18 +196,18 @@ func (rm *ReplicationManager) PropagateCommand(cmd [][]byte) {
 	backlog := rm.backlog
 	rm.mu.RUnlock()
 
-	if len(slaves) == 0 {
-		return
-	}
-
-	// 将命令添加到backlog
+	// 总是将命令添加到backlog并更新offset，无论是否有从节点
+	// 这使得断连期间的写操作不会丢失，重连后可通过PSYNC增量同步
 	cmdBytes := serializeCommand(cmd)
-	offset := backlog.Append(cmdBytes)
+	cmdOffset := backlog.Append(cmdBytes)
+
+	// 更新复制偏移量（在Slave建立前也必须有正确的offset）
+	rm.IncrementReplOffset(int64(len(cmdBytes)))
 
 	// 传播到所有从节点
 	for _, slave := range slaves {
 		if slave.IsReady() {
-			if err := slave.SendCommand(cmdBytes, offset); err != nil {
+			if err := slave.SendCommand(cmdBytes, cmdOffset); err != nil {
 				logger.Logger.Warn().
 					Str("slave_id", slave.ID).
 					Err(err).
@@ -206,9 +216,6 @@ func (rm *ReplicationManager) PropagateCommand(cmd [][]byte) {
 			}
 		}
 	}
-
-	// 更新复制偏移量
-	rm.IncrementReplOffset(int64(len(cmdBytes)))
 }
 
 // serializeCommand 序列化命令为RESP格式

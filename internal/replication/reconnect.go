@@ -51,7 +51,7 @@ type SlaveReconnector struct {
 	wg             sync.WaitGroup
 	conn           atomic.Pointer[MasterConnection]
 	lastReplId     string
-	lastOffset     int64
+	lastOffset     atomic.Int64
 	connectedSince time.Time
 }
 
@@ -67,6 +67,10 @@ func NewSlaveReconnector(rm *ReplicationManager, store *store.BotreonStore, mast
 
 func (sr *SlaveReconnector) GetState() SlaveState {
 	return SlaveState(sr.state.Load())
+}
+
+func (sr *SlaveReconnector) GetLastOffset() int64 {
+	return sr.lastOffset.Load()
 }
 
 func (sr *SlaveReconnector) GetMasterAddr() string {
@@ -237,7 +241,7 @@ func (sr *SlaveReconnector) sendPSYNC(mc *MasterConnection) (fullResync bool, er
 	if psyncReplId == "" {
 		psyncReplId = "?"
 	}
-	psyncOffset := sr.lastOffset
+	psyncOffset := sr.lastOffset.Load()
 	if psyncReplId == "?" {
 		psyncOffset = -1
 	}
@@ -261,7 +265,7 @@ func (sr *SlaveReconnector) sendPSYNC(mc *MasterConnection) (fullResync bool, er
 		if len(parts) >= 3 {
 			sr.lastReplId = parts[1]
 			offset, _ := strconv.ParseInt(parts[2], 10, 64)
-			sr.lastOffset = offset
+			sr.lastOffset.Store(offset)
 		}
 		return true, nil
 	}
@@ -306,7 +310,7 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 		}
 
 		cmdBytes := serializeCommand(req.Args)
-		sr.lastOffset += int64(len(cmdBytes))
+		sr.lastOffset.Add(int64(len(cmdBytes)))
 	}
 }
 

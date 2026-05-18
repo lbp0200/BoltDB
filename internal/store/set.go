@@ -40,6 +40,16 @@ func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int) e
 			time.Sleep(backoff)
 			continue
 		}
+		if strings.Contains(errStr, "Writes are blocked") {
+			baseBackoff := time.Duration(1<<uint(i)) * time.Millisecond
+			if baseBackoff > 2*time.Second {
+				baseBackoff = 2 * time.Second
+			}
+			jitter := time.Duration(randomFloat64() * float64(baseBackoff) * 0.2)
+			backoff := baseBackoff + jitter
+			time.Sleep(backoff)
+			continue
+		}
 		return err
 	}
 	return fmt.Errorf("max retries exhausted (%d): %w", maxRetries, err)

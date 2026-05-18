@@ -635,7 +635,47 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 	} else {
 		// 发送CONTINUE响应
 		response := fmt.Sprintf("+CONTINUE %s\r\n", result.ReplId)
-		return proto.NewSimpleString(strings.TrimSpace(response))
+		if _, err := writer.WriteString(response); err != nil {
+			logger.Logger.Error().Err(err).Msg("发送CONTINUE失败")
+			return proto.NewError("ERR failed to send CONTINUE")
+		}
+		if err := writer.Flush(); err != nil {
+			logger.Logger.Error().Err(err).Msg("刷新CONTINUE writer失败")
+			return proto.NewError("ERR failed to flush CONTINUE")
+		}
+
+		// 创建从节点连接（暂不注册，防止 AddSlave 后 PropagateCommand 抢写）
+		slaveConn := replication.NewSlaveConnection(conn)
+		slaveConn.SetReplOffset(result.Offset)
+
+		// 先发送backlog数据（从请求offset到当前offset），再注册
+		// 顺序很重要：必须先发送 backlog，再 AddSlave，
+		// 否则 PropagateCommand 可能抢在 backlog 之前写命令到 slave，造成乱序
+		backlog := h.Replication.GetBacklog()
+		currentOffset := h.Replication.GetMasterReplOffset()
+		if err := replication.SendBacklogData(slaveConn, backlog, result.Offset, currentOffset); err != nil {
+			logger.Logger.Error().Err(err).
+				Int64("start_offset", result.Offset).
+				Int64("end_offset", currentOffset).
+				Msg("发送CONTINUE backlog数据失败")
+			return proto.NewError("ERR failed to send CONTINUE backlog")
+		}
+
+		slaveConn.SetReady(true)
+		h.Replication.AddSlave(slaveConn)
+
+		logger.Logger.Info().
+			Str("slave_addr", remoteAddr).
+			Str("repl_id", result.ReplId).
+			Int64("offset", result.Offset).
+			Int64("current_offset", currentOffset).
+			Msg("发送CONTINUE和backlog到从节点")
+
+		// 启动goroutine处理从节点的复制连接
+		go h.handleSlaveReplicationConnection(h.Ctx, slaveConn)
+
+		// 返回复制接管信号
+		return ReplicationTakeoverSignal{}
 	}
 }
 
@@ -1295,6 +1335,42 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			}
 			return proto.NewInteger(1)
 		case "KILL":
+			// CLIENT KILL TYPE <type> — kill by connection type
+			if len(args) >= 3 && strings.ToUpper(string(args[1])) == "TYPE" {
+				killType := strings.ToUpper(string(args[2]))
+				var killed int
+				switch killType {
+				case "SLAVE":
+					slaves := h.Replication.GetSlaves()
+					for _, slave := range slaves {
+						if err := slave.Close(); err != nil {
+							logger.Logger.Debug().Err(err).Str("slave_id", slave.ID).Msg("close slave on CLIENT KILL TYPE slave")
+						}
+						h.Replication.RemoveSlave(slave.ID)
+						killed++
+					}
+				case "NORMAL":
+					h.connsMu.RLock()
+					var targets []*connState
+					for s, m := range h.conns {
+						targets = append(targets, s)
+						_ = m
+					}
+					h.connsMu.RUnlock()
+					for _, s := range targets {
+						s.mu.Lock()
+						if s.cancel != nil {
+							s.cancel()
+						}
+						s.mu.Unlock()
+					}
+					killed = len(targets)
+				default:
+					return proto.NewError(fmt.Sprintf("ERR unsupported CLIENT KILL TYPE '%s'", killType))
+				}
+				return proto.NewInteger(int64(killed))
+			}
+
 			if len(args) < 2 {
 				return proto.NewError("ERR wrong number of arguments for 'CLIENT KILL' command")
 			}

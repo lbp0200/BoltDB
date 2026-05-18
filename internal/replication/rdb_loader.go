@@ -131,6 +131,10 @@ func (dec *RDBDecoder) readExpireTime() (int64, error) {
 
 // LoadRDB 加载RDB数据到存储
 func (rm *ReplicationManager) LoadRDB(data []byte) error {
+	if err := rm.store.FlushDB(); err != nil {
+		return fmt.Errorf("failed to flush old data before RDB load: %w", err)
+	}
+
 	dec := NewRDBDecoder(data)
 
 	// 解码头部

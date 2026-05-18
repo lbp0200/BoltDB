@@ -116,14 +116,21 @@ func TestReplicationManager_PropagateCommand(t *testing.T) {
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
 
-	// 注意：当没有从节点时，PropagateCommand 会提前返回，不记录到 backlog
-	// 这是当前实现的行为
+	// PropagateCommand 现在总是记录到 backlog 并更新 offset，
+	// 确保断连期间的写操作不会丢失
 	cmd := [][]byte{[]byte("SET"), []byte("key"), []byte("value")}
 	rm.PropagateCommand(cmd)
 
-	// 由于没有从节点，offset 不会增加（当前实现行为）
+	// offset 应该增加了（即使没有从节点）
+	cmdBytes := serializeCommand(cmd)
 	t.Logf("offset after propagate (no slaves): %d", rm.GetMasterReplOffset())
-	assert.Equal(t, int64(0), rm.GetMasterReplOffset())
+	assert.Equal(t, int64(len(cmdBytes)), rm.GetMasterReplOffset())
+
+	// backlog 应该包含命令
+	backlog := rm.GetBacklog()
+	data, err := backlog.GetRange(0, int64(len(cmdBytes)))
+	assert.NoError(t, err)
+	assert.Equal(t, cmdBytes, data)
 }
 
 func TestReplicationManager_MultipleSlaveIds(t *testing.T) {

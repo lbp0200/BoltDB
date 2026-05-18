@@ -16,6 +16,9 @@ import (
 	"github.com/zeebo/assert"
 )
 
+// retryTimeout is the default timeout for retryable operations during dataset comparison
+const retryTimeout = 30 * time.Second
+
 const soakReplDefaultDuration = 5 * time.Minute
 const soakReplMaxDuration = 24 * time.Hour
 
@@ -118,7 +121,7 @@ func TestSoakReplication(t *testing.T) {
 	}
 
 	// Wait for replication to stabilize after chaos
-	time.Sleep(2 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	// Final verification: compare master and slave datasets
 	t.Log("soak-repl: comparing master/slave datasets...")
@@ -400,18 +403,47 @@ func runSoakReplLifecycle(ctx context.Context, t *testing.T, master, slaveClient
 	}
 }
 
+// scanKeysWithRetry scans all keys using SCAN with retry and backoff.
+func scanKeysWithRetry(client *redis.Client, label string) ([]string, error) {
+	deadline := time.Now().Add(retryTimeout)
+	for attempt := 0; ; attempt++ {
+		var allKeys []string
+		var cursor uint64
+		ok := true
+		for ok {
+			scanCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			keys, nextCursor, err := client.Scan(scanCtx, cursor, "*", int64(1000)).Result()
+			cancel()
+			if err != nil {
+				if time.Now().After(deadline) {
+					return nil, fmt.Errorf("%s SCAN failed after %d attempts: %w", label, attempt+1, err)
+				}
+				backoff := time.Duration(1<<min(attempt, 6)) * 100 * time.Millisecond
+				time.Sleep(backoff)
+				ok = false // retry from start
+				continue
+			}
+			allKeys = append(allKeys, keys...)
+			cursor = nextCursor
+			if cursor == 0 {
+				return allKeys, nil
+			}
+		}
+	}
+}
+
 // compareDatasets scans all keys on master and slave and compares them.
 func compareDatasets(t *testing.T, master, slave *redis.Client) {
 	ctx := context.Background()
 
-	masterKeys, err := master.Keys(ctx, "*").Result()
+	masterKeys, err := scanKeysWithRetry(master, "master")
 	if err != nil {
-		t.Fatalf("master KEYS failed: %v", err)
+		t.Fatalf("master SCAN failed: %v", err)
 	}
 
-	slaveKeys, err := slave.Keys(ctx, "*").Result()
+	slaveKeys, err := scanKeysWithRetry(slave, "slave")
 	if err != nil {
-		t.Fatalf("slave KEYS failed: %v", err)
+		t.Fatalf("slave SCAN failed: %v", err)
 	}
 
 	t.Logf("soak-repl: master keys=%d, slave keys=%d", len(masterKeys), len(slaveKeys))
