@@ -292,6 +292,9 @@ func (s *BotreonStore) TSGet(key string) (*TimeSeriesDataPoint, error) {
 	var result *TimeSeriesDataPoint
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeTimeSeries); err != nil {
+			return err
+		}
 		// Get metadata
 		metaKey := tsMetaKey(key)
 		item, err := txn.Get(metaKey)
@@ -348,6 +351,9 @@ func (s *BotreonStore) TSRange(key string, start, stop string, count int64) ([]T
 	var result []TimeSeriesDataPoint
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeTimeSeries); err != nil {
+			return err
+		}
 		// Parse timestamps
 		startTS, err := parseTimestamp(start)
 		if err != nil {
@@ -412,6 +418,9 @@ func (s *BotreonStore) TSDel(key string, start, stop string) (int64, error) {
 	var deleted int64
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeTimeSeries); err != nil {
+			return err
+		}
 		// Get metadata
 		metaKey := tsMetaKey(key)
 		item, err := txn.Get(metaKey)
@@ -516,6 +525,9 @@ func (s *BotreonStore) TSInfo(key string) (*TimeSeriesInfo, error) {
 	var info *TimeSeriesInfo
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeTimeSeries); err != nil {
+			return err
+		}
 		metaKey := tsMetaKey(key)
 		item, err := txn.Get(metaKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -552,6 +564,9 @@ func (s *BotreonStore) TSLen(key string) (int64, error) {
 	var length int64
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeTimeSeries); err != nil {
+			return err
+		}
 		metaKey := tsMetaKey(key)
 		item, err := txn.Get(metaKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {

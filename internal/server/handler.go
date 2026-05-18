@@ -5362,6 +5362,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		positions, err := h.Db.GeoPos(key, members...)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		results := make([][]byte, len(positions))
@@ -5386,6 +5389,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		hashes, err := h.Db.GeoHash(key, members...)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		hashResults := make([][]byte, len(hashes))
@@ -5408,6 +5414,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		dist, err := h.Db.GeoDist(key, member1, member2, unit)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewBulkString([]byte(fmt.Sprintf("%.4f", dist)))
@@ -6855,6 +6864,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if errors.Is(err, store.ErrKeyNotFound) {
 				return proto.NewBulkString(nil)
 			}
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		if len(result) == 1 {
@@ -6879,6 +6891,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		count, err := h.Db.JSONDel(key, paths...)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewInteger(count)
@@ -6897,6 +6912,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if errors.Is(err, store.ErrKeyNotFound) {
 				return proto.NewBulkString(nil)
 			}
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewBulkString([]byte(result))
@@ -6912,6 +6930,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		result, err := h.Db.JSONMGet(path, keys...)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		arr := make([][]byte, len(result))
@@ -6936,6 +6957,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		count, err := h.Db.JSONArrAppend(key, path, values...)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewInteger(count)
@@ -6951,6 +6975,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		count, err := h.Db.JSONArrLen(key, path)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewInteger(count)
@@ -6966,6 +6993,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		keys, err := h.Db.JSONObjKeys(key, path)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		arr := make([][]byte, len(keys))
@@ -6986,6 +7016,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		result, err := h.Db.JSONNumIncrBy(key, path, increment)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewBulkString([]byte(strconv.FormatFloat(result, 'f', -1, 64)))
@@ -7002,6 +7035,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		result, err := h.Db.JSONNumMultBy(key, path, multiplier)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewBulkString([]byte(strconv.FormatFloat(result, 'f', -1, 64)))
@@ -7018,6 +7054,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		count, err := h.Db.JSONClear(key, path)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewInteger(count)
@@ -7039,6 +7078,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			if errors.Is(err, store.ErrKeyNotFound) {
 				return proto.NewBulkString(nil)
+			}
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -7133,6 +7175,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if errors.Is(err, store.ErrKeyNotFound) {
 				return proto.NewBulkString(nil)
 			}
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		// Return as array: [timestamp, value]
@@ -7163,6 +7208,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		results, err := h.Db.TSRange(key, start, stop, count)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		arr := make([][]byte, 0, len(results)*2)
@@ -7182,6 +7230,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		deleted, err := h.Db.TSDel(key, start, stop)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewInteger(deleted)
@@ -7195,6 +7246,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			if errors.Is(err, store.ErrKeyNotFound) {
 				return proto.NewBulkString(nil)
+			}
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
@@ -7221,6 +7275,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if errors.Is(err, store.ErrKeyNotFound) {
 				return proto.NewBulkString(nil)
 			}
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewInteger(length)
@@ -7236,6 +7293,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		results, err := h.Db.TSMGet(filter, keys...)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		arr := make([][]byte, 0, len(results)*2)

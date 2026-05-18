@@ -391,8 +391,10 @@ func (s *BotreonStore) XAdd(key string, opts StreamXAddOptions, id string, field
 // XLen returns the number of entries in a stream
 func (s *BotreonStore) XLen(key string) (int64, error) {
 	var length int64
-
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeStream); err != nil {
+			return err
+		}
 		metaKey := streamKey(key)
 		item, err := txn.Get(metaKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -428,6 +430,9 @@ func (s *BotreonStore) XRead(ctx context.Context, count int64, block int64, args
 	err := s.db.View(func(txn *badger.Txn) error {
 		for i := 0; i < len(args); i += 2 {
 			key := args[i]
+			if err := checkKeyType(txn, key, KeyTypeStream); err != nil {
+				return err
+			}
 			startID := args[i+1]
 
 			// Get stream metadata
@@ -617,6 +622,9 @@ func (s *BotreonStore) xReadImmediate(count int64, args ...string) ([]map[string
 	err := s.db.View(func(txn *badger.Txn) error {
 		for i := 0; i < len(args); i += 2 {
 			key := args[i]
+			if err := checkKeyType(txn, key, KeyTypeStream); err != nil {
+				return err
+			}
 			startID := args[i+1]
 
 			// Get stream metadata
@@ -710,6 +718,9 @@ func (s *BotreonStore) XRange(key, start, stop string, count int64) ([]StreamEnt
 	var entries []StreamEntry
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeStream); err != nil {
+			return err
+		}
 		prefix := streamDataPrefix(key)
 		it := txn.NewIterator(badger.DefaultIteratorOptions)
 		defer it.Close()
@@ -784,6 +795,9 @@ func (s *BotreonStore) XDel(key string, ids ...string) (int64, error) {
 	var deleted int64
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeStream); err != nil {
+			return err
+		}
 		metaKey := streamKey(key)
 		var meta *streamMetaData
 
@@ -887,6 +901,9 @@ func (s *BotreonStore) XInfo(key string) (*StreamInfo, error) {
 	var info StreamInfo
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeStream); err != nil {
+			return err
+		}
 		metaKey := streamKey(key)
 		item, err := txn.Get(metaKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -938,6 +955,9 @@ func (s *BotreonStore) XTrim(key string, maxLen int64, minID string) (int64, err
 	var trimmed int64
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeStream); err != nil {
+			return err
+		}
 		metaKey := streamKey(key)
 		var meta *streamMetaData
 
@@ -1166,6 +1186,9 @@ func (s *BotreonStore) XReadGroup(group, consumer string, count int64, block int
 		now := time.Now().UnixNano() / int64(time.Millisecond)
 
 		for _, key := range keys {
+			if err := checkKeyType(txn, key, KeyTypeStream); err != nil {
+				return err
+			}
 			// Get group info
 			groupKey := streamGroupDataKey(key, group)
 			item, err := txn.Get(groupKey)
@@ -1319,6 +1342,9 @@ func (s *BotreonStore) XPending(key, group string) ([]StreamPendingEntry, error)
 	var pending []StreamPendingEntry
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeStream); err != nil {
+			return err
+		}
 		groupKey := streamGroupDataKey(key, group)
 		item, err := txn.Get(groupKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -1397,6 +1423,9 @@ func (s *BotreonStore) XInfoGroups(key string) ([]*StreamGroup, error) {
 	var groups []*StreamGroup
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeStream); err != nil {
+			return err
+		}
 		prefix := streamGroupKey(key)
 		it := txn.NewIterator(badger.DefaultIteratorOptions)
 		defer it.Close()
@@ -1422,6 +1451,9 @@ func (s *BotreonStore) XInfoConsumers(key, group string) ([]*StreamConsumer, err
 	var consumers []*StreamConsumer
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeStream); err != nil {
+			return err
+		}
 		groupKey := streamGroupDataKey(key, group)
 		item, err := txn.Get(groupKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -1451,6 +1483,9 @@ func (s *BotreonStore) XInfoConsumers(key, group string) ([]*StreamConsumer, err
 func (s *BotreonStore) StreamType(key string) (bool, error) {
 	var exists bool
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeStream); err != nil {
+			return err
+		}
 		metaKey := streamKey(key)
 		_, err := txn.Get(metaKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -1471,6 +1506,9 @@ func (s *BotreonStore) GetStreamEntry(key, id string) (*StreamEntry, error) {
 	var entry *StreamEntry
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeStream); err != nil {
+			return err
+		}
 		dataKey := streamDataKey(key, id)
 		item, err := txn.Get(dataKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {

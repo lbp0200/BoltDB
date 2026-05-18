@@ -287,6 +287,9 @@ func (s *BotreonStore) GeoAdd(key string, members []GeoMember) (int64, error) {
 func (s *BotreonStore) GeoPos(key string, members ...string) ([][2]float64, error) {
 	var results [][2]float64
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeGeo); err != nil {
+			return err
+		}
 		for _, member := range members {
 			hashKey := geoIndexKey(key, member)
 			item, err := txn.Get(hashKey)
@@ -317,6 +320,9 @@ func (s *BotreonStore) GeoPos(key string, members ...string) ([][2]float64, erro
 func (s *BotreonStore) GeoHash(key string, members ...string) ([]string, error) {
 	var results []string
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeGeo); err != nil {
+			return err
+		}
 		for _, member := range members {
 			hashKey := geoIndexKey(key, member)
 			item, err := txn.Get(hashKey)
@@ -347,6 +353,9 @@ func (s *BotreonStore) GeoDist(key, member1, member2, unit string) (float64, err
 	var dist float64
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeGeo); err != nil {
+			return err
+		}
 		// Get first member position
 		hashKey1 := geoIndexKey(key, member1)
 		item1, err := txn.Get(hashKey1)
@@ -474,6 +483,9 @@ func (s *BotreonStore) GeoRadius(key string, lon, lat, radius float64, unit stri
 	minScore := float64(encodeGeoHash(minLat, minLon))
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeGeo); err != nil {
+			return err
+		}
 		opts := badger.DefaultIteratorOptions
 		prefix := keyBadgerGet(prefixKeySortedSetBytes, []byte(key+sortedSetIndex))
 		opts.Prefix = prefix

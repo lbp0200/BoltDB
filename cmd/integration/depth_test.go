@@ -683,68 +683,204 @@ func TestSortedSetError_WrongTypeIntegration(t *testing.T) {
 	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
 }
 
+func assertWrongType(t *testing.T, name string, err error) {
+	t.Helper()
+	if err == nil {
+		t.Errorf("%s: expected error (WRONGTYPE), got nil", name)
+		return
+	}
+	if !strings.Contains(err.Error(), "WRONGTYPE") {
+		t.Errorf("%s: expected WRONGTYPE, got: %v", name, err)
+	}
+}
+
+func setStringKey(t *testing.T) context.Context {
+	t.Helper()
+	ctx := context.Background()
+	sharedClient.Set(ctx, "wrongtype_key", "value", 0)
+	return ctx
+}
+
 // TestStreamError_WrongTypeIntegration tests stream commands on wrong types (integration level)
 func TestStreamError_WrongTypeIntegration(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
+	ctx := setStringKey(t)
 
-	ctx := context.Background()
-
-	// Create a string key
-	sharedClient.Set(ctx, "string_key", "value", 0)
-
-	// XGROUP CREATE on string should return WRONGTYPE
-	err := sharedClient.Do(ctx, "XGROUP", "CREATE", "string_key", "mygroup", "$").Err()
-	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+	t.Run("XADD", func(t *testing.T) {
+		err := sharedClient.Do(ctx, "XADD", "wrongtype_key", "*", "field", "val").Err()
+		assertWrongType(t, "XADD", err)
+	})
+	t.Run("XLEN", func(t *testing.T) {
+		err := sharedClient.Do(ctx, "XLEN", "wrongtype_key").Err()
+		assertWrongType(t, "XLEN", err)
+	})
+	t.Run("XREAD", func(t *testing.T) {
+		err := sharedClient.Do(ctx, "XREAD", "STREAMS", "wrongtype_key", "0").Err()
+		assertWrongType(t, "XREAD", err)
+	})
+	t.Run("XRANGE", func(t *testing.T) {
+		err := sharedClient.Do(ctx, "XRANGE", "wrongtype_key", "-", "+").Err()
+		assertWrongType(t, "XRANGE", err)
+	})
+	t.Run("XREVRANGE", func(t *testing.T) {
+		err := sharedClient.Do(ctx, "XREVRANGE", "wrongtype_key", "+", "-").Err()
+		assertWrongType(t, "XREVRANGE", err)
+	})
+	t.Run("XDEL", func(t *testing.T) {
+		err := sharedClient.Do(ctx, "XDEL", "wrongtype_key", "123").Err()
+		assertWrongType(t, "XDEL", err)
+	})
+	t.Run("XGROUP_CREATE", func(t *testing.T) {
+		err := sharedClient.Do(ctx, "XGROUP", "CREATE", "wrongtype_key", "mygroup", "$").Err()
+		assertWrongType(t, "XGROUP CREATE", err)
+	})
+	t.Run("XREADGROUP", func(t *testing.T) {
+		err := sharedClient.Do(ctx, "XREADGROUP", "GROUP", "mygroup", "consumer", "STREAMS", "wrongtype_key", ">").Err()
+		assertWrongType(t, "XREADGROUP", err)
+	})
+	t.Run("XTRIM", func(t *testing.T) {
+		err := sharedClient.Do(ctx, "XTRIM", "wrongtype_key", "MAXLEN", "0").Err()
+		assertWrongType(t, "XTRIM", err)
+	})
+	t.Run("XPENDING", func(t *testing.T) {
+		err := sharedClient.Do(ctx, "XPENDING", "wrongtype_key", "mygroup").Err()
+		assertWrongType(t, "XPENDING", err)
+	})
+	t.Run("XINFO_STREAM", func(t *testing.T) {
+		err := sharedClient.Do(ctx, "XINFO", "STREAM", "wrongtype_key").Err()
+		assertWrongType(t, "XINFO STREAM", err)
+	})
+	t.Run("XINFO_GROUPS", func(t *testing.T) {
+		err := sharedClient.Do(ctx, "XINFO", "GROUPS", "wrongtype_key").Err()
+		assertWrongType(t, "XINFO GROUPS", err)
+	})
 }
 
 // TestJsonError_WrongTypeIntegration tests JSON commands on wrong types (integration level)
 func TestJsonError_WrongTypeIntegration(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
+	ctx := setStringKey(t)
 
-	ctx := context.Background()
+	tests := []struct {
+		name string
+		do   func() error
+	}{
+		{"JSON.SET", func() error {
+			return sharedClient.Do(ctx, "JSON.SET", "wrongtype_key", "$", `{"a":1}`).Err()
+		}},
+		{"JSON.GET", func() error {
+			return sharedClient.Do(ctx, "JSON.GET", "wrongtype_key").Err()
+		}},
+		{"JSON.TYPE", func() error {
+			return sharedClient.Do(ctx, "JSON.TYPE", "wrongtype_key").Err()
+		}},
+		{"JSON.DEL", func() error {
+			return sharedClient.Do(ctx, "JSON.DEL", "wrongtype_key").Err()
+		}},
+		{"JSON.ARRAPPEND", func() error {
+			return sharedClient.Do(ctx, "JSON.ARRAPPEND", "wrongtype_key", "$", `"val"`).Err()
+		}},
+		{"JSON.ARRLEN", func() error {
+			return sharedClient.Do(ctx, "JSON.ARRLEN", "wrongtype_key").Err()
+		}},
+		{"JSON.OBJKEYS", func() error {
+			return sharedClient.Do(ctx, "JSON.OBJKEYS", "wrongtype_key").Err()
+		}},
+		{"JSON.NUMINCRBY", func() error {
+			return sharedClient.Do(ctx, "JSON.NUMINCRBY", "wrongtype_key", "$", "1").Err()
+		}},
+		{"JSON.NUMMULTBY", func() error {
+			return sharedClient.Do(ctx, "JSON.NUMMULTBY", "wrongtype_key", "$", "2").Err()
+		}},
+		{"JSON.CLEAR", func() error {
+			return sharedClient.Do(ctx, "JSON.CLEAR", "wrongtype_key").Err()
+		}},
+		{"JSON.DEBUG", func() error {
+			return sharedClient.Do(ctx, "JSON.DEBUG", "MEMORY", "wrongtype_key").Err()
+		}},
+	}
 
-	// Create a string key
-	sharedClient.Set(ctx, "string_key", "value", 0)
-
-	// JSON.SET on string should return WRONGTYPE
-	err := sharedClient.Do(ctx, "JSON.SET", "string_key", "$", `{"a":1}`).Err()
-	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertWrongType(t, tt.name, tt.do())
+		})
+	}
 }
 
 // TestTimeSeriesError_WrongTypeIntegration tests time series commands on wrong types (integration level)
 func TestTimeSeriesError_WrongTypeIntegration(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
+	ctx := setStringKey(t)
 
-	ctx := context.Background()
+	tests := []struct {
+		name string
+		do   func() error
+	}{
+		{"TS.ADD", func() error {
+			return sharedClient.Do(ctx, "TS.ADD", "wrongtype_key", "1000", "25.5").Err()
+		}},
+		{"TS.GET", func() error {
+			return sharedClient.Do(ctx, "TS.GET", "wrongtype_key").Err()
+		}},
+		{"TS.RANGE", func() error {
+			return sharedClient.Do(ctx, "TS.RANGE", "wrongtype_key", "-", "+").Err()
+		}},
+		{"TS.DEL", func() error {
+			return sharedClient.Do(ctx, "TS.DEL", "wrongtype_key", "-", "+").Err()
+		}},
+		{"TS.INFO", func() error {
+			return sharedClient.Do(ctx, "TS.INFO", "wrongtype_key").Err()
+		}},
+		{"TS.LEN", func() error {
+			return sharedClient.Do(ctx, "TS.LEN", "wrongtype_key").Err()
+		}},
+		{"TS.MGET", func() error {
+			return sharedClient.Do(ctx, "TS.MGET", "filter=test", "wrongtype_key").Err()
+		}},
+	}
 
-	// Create a string key
-	sharedClient.Set(ctx, "string_key", "value", 0)
-
-	// TS.ADD on string should return WRONGTYPE
-	err := sharedClient.Do(ctx, "TS.ADD", "string_key", "1000", "25.5").Err()
-	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertWrongType(t, tt.name, tt.do())
+		})
+	}
 }
 
 // TestGeoError_WrongTypeIntegration tests geospatial commands on wrong types (integration level)
 func TestGeoError_WrongTypeIntegration(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
+	ctx := setStringKey(t)
 
-	ctx := context.Background()
+	tests := []struct {
+		name string
+		do   func() error
+	}{
+		{"GEOADD", func() error {
+			return sharedClient.Do(ctx, "GEOADD", "wrongtype_key", "116.40", "39.90", "beijing").Err()
+		}},
+		{"GEOPOS", func() error {
+			return sharedClient.Do(ctx, "GEOPOS", "wrongtype_key", "member1").Err()
+		}},
+		{"GEOHASH", func() error {
+			return sharedClient.Do(ctx, "GEOHASH", "wrongtype_key", "member1").Err()
+		}},
+		{"GEODIST", func() error {
+			return sharedClient.Do(ctx, "GEODIST", "wrongtype_key", "member1", "member2").Err()
+		}},
+		{"GEORADIUS", func() error {
+			return sharedClient.Do(ctx, "GEORADIUS", "wrongtype_key", "116.40", "39.90", "100", "km").Err()
+		}},
+	}
 
-	// Create a string key
-	sharedClient.Set(ctx, "string_key", "value", 0)
-
-	// GEOADD on string should return WRONGTYPE
-	err := sharedClient.Do(ctx, "GEOADD", "string_key", "116.40", "39.90", "beijing").Err()
-	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertWrongType(t, tt.name, tt.do())
+		})
+	}
 }
 
 // TestClusterConcurrent_ClusterCallsRace tests concurrent CLUSTER command calls

@@ -115,6 +115,9 @@ func (s *BotreonStore) JSONGet(key string, paths ...string) ([]string, error) {
 	var jsonData []byte
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeJSON); err != nil {
+			return err
+		}
 		item, err := txn.Get([]byte(jsonKey))
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			return ErrKeyNotFound
@@ -172,6 +175,9 @@ func (s *BotreonStore) JSONDel(key string, paths ...string) (int64, error) {
 	var jsonData []byte
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeJSON); err != nil {
+			return err
+		}
 		item, err := txn.Get([]byte(jsonKey))
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			return ErrKeyNotFound
@@ -236,6 +242,9 @@ func (s *BotreonStore) JSONType(key string, path string) (string, error) {
 	var jsonData []byte
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeJSON); err != nil {
+			return err
+		}
 		item, err := txn.Get([]byte(jsonKey))
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			return ErrKeyNotFound
@@ -306,6 +315,9 @@ func (s *BotreonStore) JSONArrAppend(key, path string, values ...string) (int64,
 	var jsonData []byte
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeJSON); err != nil {
+			return err
+		}
 		item, err := txn.Get([]byte(jsonKey))
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			return ErrKeyNotFound
@@ -391,6 +403,9 @@ func (s *BotreonStore) JSONArrLen(key, path string) (int64, error) {
 	var jsonData []byte
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeJSON); err != nil {
+			return err
+		}
 		item, err := txn.Get([]byte(jsonKey))
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			return ErrKeyNotFound
@@ -443,6 +458,9 @@ func (s *BotreonStore) JSONObjKeys(key, path string) ([]string, error) {
 	var jsonData []byte
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeJSON); err != nil {
+			return err
+		}
 		item, err := txn.Get([]byte(jsonKey))
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			return ErrKeyNotFound
@@ -499,6 +517,9 @@ func (s *BotreonStore) JSONNumIncrBy(key, path string, increment float64) (float
 	var jsonData []byte
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeJSON); err != nil {
+			return err
+		}
 		item, err := txn.Get([]byte(jsonKey))
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			return ErrKeyNotFound
@@ -598,6 +619,9 @@ func (s *BotreonStore) JSONNumMultBy(key, path string, multiplier float64) (floa
 	var jsonData []byte
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeJSON); err != nil {
+			return err
+		}
 		item, err := txn.Get([]byte(jsonKey))
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			return ErrKeyNotFound
@@ -697,6 +721,9 @@ func (s *BotreonStore) JSONClear(key, path string) (int64, error) {
 	var jsonData []byte
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeJSON); err != nil {
+			return err
+		}
 		item, err := txn.Get([]byte(jsonKey))
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			return ErrKeyNotFound
@@ -758,6 +785,9 @@ func (s *BotreonStore) JSONDebugMemory(key, path string) (int64, error) {
 	var jsonData []byte
 
 	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeJSON); err != nil {
+			return err
+		}
 		item, err := txn.Get([]byte(jsonKey))
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			return ErrKeyNotFound
