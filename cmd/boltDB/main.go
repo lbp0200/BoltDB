@@ -115,6 +115,9 @@ func main() {
 		logger.Logger.Info().Msg("服务器已停止")
 	}
 
+	logger.Logger.Info().Msg("开始执行关闭序列...")
 	replMgr.Stop()
 	cancel()
+	handler.Shutdown()
+	logger.Logger.Info().Msg("关闭序列完成")
 }

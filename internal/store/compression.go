@@ -230,3 +230,17 @@ func (s *BotreonStore) getValueWithDecompression(item *badger.Item) ([]byte, err
 	}
 	return decompressData(value)
 }
+
+// ReadValueInTxn 在给定事务中读取键的值并解压缩，用于 RDB 快照等需要在一致性视图内读取的场景
+func (s *BotreonStore) ReadValueInTxn(txn *badger.Txn, key []byte) ([]byte, error) {
+	item, err := txn.Get(key)
+	if err != nil {
+		return nil, err
+	}
+	return s.getValueWithDecompression(item)
+}
+
+// DecompressData 导出解压缩函数，供 replication 包在 RDB 生成中使用
+func DecompressData(data []byte) ([]byte, error) {
+	return decompressData(data)
+}

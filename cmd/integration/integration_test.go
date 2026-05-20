@@ -2583,6 +2583,10 @@ func teardownSharedServer() {
 	if sharedListener != nil {
 		sharedListener.Close()
 	}
+	// 等待所有 handler goroutine 退出，确保 DB 关闭前无并发访问
+	if sharedServer != nil {
+		sharedServer.Shutdown()
+	}
 	if sharedDB != nil {
 		sharedDB.Close()
 	}

@@ -145,8 +145,12 @@ func TestSoak(t *testing.T) {
 	}
 
 	baseline := soakBaseline(t)
+
+	// 压力监控
+	pm := NewPressureMonitor(db, replMgr)
 	soakCtx, soakCancel := context.WithTimeout(context.Background(), duration)
 	defer soakCancel()
+	pm.Start(soakCtx, 30*time.Second)
 
 	errCh := make(chan error, concurrency*2)
 	var wg sync.WaitGroup
@@ -181,6 +185,10 @@ func TestSoak(t *testing.T) {
 			t.Errorf("  %v", err)
 		}
 	}
+
+	// 压力汇总 + 退化检查
+	pm.LogSummary(t)
+	pm.CheckDegradation(t, DefaultDegradationAssertion(), baseline)
 
 	final := runtime.NumGoroutine()
 	soakCheckNoLeak(t, baseline, final)

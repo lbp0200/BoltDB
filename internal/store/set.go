@@ -21,10 +21,39 @@ func randomFloat64() float64 {
 }
 
 func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int) error {
+	// 主动背压：在进入 retry 循环前检查 L0 状态
+	if s.bpConfig.Enabled {
+		delay, reject := s.preWriteCheck()
+		if reject {
+			s.retryMu.Lock()
+			s.retryMetrics.l0Rejected++
+			s.retryMu.Unlock()
+			return fmt.Errorf("write rejected: L0 score %.1f exceeds hard threshold %.0f",
+				s.l0ScoreCached(), s.bpConfig.L0HardThreshold)
+		}
+		if delay > 0 {
+			s.retryMu.Lock()
+			s.retryMetrics.l0Delayed++
+			s.retryMu.Unlock()
+			time.Sleep(delay)
+		}
+	}
+
+	// 限流：防止 retry goroutine 雪崩
+	s.backpressure.Acquire()
+	defer s.backpressure.Release()
+
+	s.retryMu.Lock()
+	s.retryMetrics.activeRetries++
+	s.retryMu.Unlock()
+
 	var err error
 	for i := 0; i < maxRetries; i++ {
 		err = s.db.Update(fn)
 		if err == nil {
+			s.retryMu.Lock()
+			s.retryMetrics.activeRetries--
+			s.retryMu.Unlock()
 			return nil
 		}
 		errStr := err.Error()
@@ -41,6 +70,9 @@ func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int) e
 			continue
 		}
 		if strings.Contains(errStr, "Writes are blocked") {
+			s.retryMu.Lock()
+			s.retryMetrics.writesBlocked++
+			s.retryMu.Unlock()
 			baseBackoff := time.Duration(1<<uint(i)) * time.Millisecond
 			if baseBackoff > 2*time.Second {
 				baseBackoff = 2 * time.Second
@@ -50,8 +82,14 @@ func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int) e
 			time.Sleep(backoff)
 			continue
 		}
+		s.retryMu.Lock()
+		s.retryMetrics.activeRetries--
+		s.retryMu.Unlock()
 		return err
 	}
+	s.retryMu.Lock()
+	s.retryMetrics.activeRetries--
+	s.retryMu.Unlock()
 	return fmt.Errorf("max retries exhausted (%d): %w", maxRetries, err)
 }
 

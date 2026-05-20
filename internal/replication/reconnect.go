@@ -53,6 +53,8 @@ type SlaveReconnector struct {
 	lastReplId     string
 	lastOffset     atomic.Int64
 	connectedSince time.Time
+
+	reconnectCount atomic.Int64
 }
 
 func NewSlaveReconnector(rm *ReplicationManager, store *store.BotreonStore, masterAddr string) *SlaveReconnector {
@@ -75,6 +77,10 @@ func (sr *SlaveReconnector) GetLastOffset() int64 {
 
 func (sr *SlaveReconnector) GetMasterAddr() string {
 	return sr.masterAddr
+}
+
+func (sr *SlaveReconnector) GetReconnectCount() int64 {
+	return sr.reconnectCount.Load()
 }
 
 func (sr *SlaveReconnector) Start() {
@@ -107,6 +113,7 @@ func (sr *SlaveReconnector) reconnectLoop() {
 		default:
 		}
 
+		sr.reconnectCount.Add(1)
 		sr.state.Store(int32(SlaveConnecting))
 
 		err := sr.tryReplicate()
@@ -303,6 +310,12 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 		}
 
 		if err := executeReplicatedCommand(sr.store, req.Args); err != nil {
+			if isTransientReplicationError(err) {
+				logger.Logger.Warn().Err(err).
+					Str("cmd", string(req.Args[0])).
+					Msg("复制命令暂时失败，跳过")
+				continue
+			}
 			logger.Logger.Error().Err(err).
 				Str("cmd", string(req.Args[0])).
 				Msg("执行复制命令失败，重新同步")
@@ -339,4 +352,26 @@ func errorsIsStop(err error, stopCh <-chan struct{}) bool {
 	default:
 		return false
 	}
+}
+
+// isTransientReplicationError 判断复制命令的错误是否属于临时性错误
+// 临时性错误只记录日志并跳过，不触发全量重同步
+func isTransientReplicationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	// retryUpdate 重试耗尽（L0 压力大时发生，不触发全量同步）
+	if strings.Contains(errStr, "max retries exhausted") {
+		return true
+	}
+	// 主动拒绝（P1-B 背压限制）
+	if strings.Contains(errStr, "write rejected") {
+		return true
+	}
+	// 键不存在（主从切换时的正常现象）
+	if strings.Contains(errStr, "key not found") || strings.Contains(errStr, "ErrKeyNotFound") {
+		return true
+	}
+	return false
 }

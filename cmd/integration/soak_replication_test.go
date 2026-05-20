@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"net"
 	"os"
 	"runtime"
 	"strconv"
@@ -12,6 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lbp0200/BoltDB/internal/backup"
+	"github.com/lbp0200/BoltDB/internal/replication"
+	"github.com/lbp0200/BoltDB/internal/server"
+	"github.com/lbp0200/BoltDB/internal/store"
 	"github.com/redis/go-redis/v9"
 	"github.com/zeebo/assert"
 )
@@ -46,6 +51,130 @@ func getSoakReplDuration() time.Duration {
 //	go test -race -timeout 30m ./cmd/integration/ -run TestSoakReplication
 //	SOAK_REPL_DURATION=3h go test -race -timeout 4h ./cmd/integration/ -run TestSoakReplication
 //	SOAK_REPL_DURATION=30m SOAK_REPL_WRITERS=10 go test -race -timeout 40m ./cmd/integration/ -run TestSoakReplication
+type soakReplEnv struct {
+	masterClient *redis.Client
+	slaveClient  *redis.Client
+	masterDB     *store.BotreonStore
+	slaveDB      *store.BotreonStore
+	masterRepl   *replication.ReplicationManager
+	slaveRepl    *replication.ReplicationManager
+	cleanup      func()
+}
+
+func setupSoakReplication(t *testing.T) *soakReplEnv {
+	t.Helper()
+	var err error
+
+	masterDBPath := t.TempDir()
+	masterDB, err := store.NewBotreonStore(masterDBPath)
+	if err != nil {
+		t.Fatalf("failed to create master store: %v", err)
+	}
+
+	masterPubsub := store.NewPubSubManager()
+	masterBackup := backup.NewBackupManager(masterDB, masterDBPath+"/backup")
+	masterRepl := replication.NewReplicationManager(masterDB)
+
+	masterHandler := &server.Handler{
+		Db:          masterDB,
+		Replication: masterRepl,
+		Backup:      masterBackup,
+		PubSub:      masterPubsub,
+	}
+
+	masterListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		masterDB.Close()
+		t.Fatalf("failed to listen on master: %v", err)
+	}
+
+	go func() {
+		_ = masterHandler.ServeTCP(masterListener)
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	masterClient := redis.NewClient(&redis.Options{
+		Addr: masterListener.Addr().String(),
+	})
+	ctx := context.Background()
+	if _, err := masterClient.Ping(ctx).Result(); err != nil {
+		masterListener.Close()
+		masterDB.Close()
+		t.Fatalf("failed to ping master: %v", err)
+	}
+
+	slaveDBPath := t.TempDir()
+	slaveDB, err := store.NewBotreonStore(slaveDBPath)
+	if err != nil {
+		masterListener.Close()
+		masterDB.Close()
+		t.Fatalf("failed to create slave store: %v", err)
+	}
+
+	slavePubsub := store.NewPubSubManager()
+	slaveBackup := backup.NewBackupManager(slaveDB, slaveDBPath+"/backup")
+	slaveRepl := replication.NewReplicationManager(slaveDB)
+
+	slaveHandler := &server.Handler{
+		Db:          slaveDB,
+		Replication: slaveRepl,
+		Backup:      slaveBackup,
+		PubSub:      slavePubsub,
+	}
+
+	slaveListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		masterListener.Close()
+		masterDB.Close()
+		slaveDB.Close()
+		t.Fatalf("failed to listen on slave: %v", err)
+	}
+
+	go func() {
+		_ = slaveHandler.ServeTCP(slaveListener)
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	slaveClient := redis.NewClient(&redis.Options{
+		Addr: slaveListener.Addr().String(),
+	})
+	if _, err := slaveClient.Ping(ctx).Result(); err != nil {
+		masterListener.Close()
+		masterDB.Close()
+		slaveListener.Close()
+		slaveDB.Close()
+		t.Fatalf("failed to ping slave: %v", err)
+	}
+
+	if err := replication.StartSlaveReplication(slaveRepl, slaveDB, masterListener.Addr().String()); err != nil {
+		masterListener.Close()
+		masterDB.Close()
+		slaveListener.Close()
+		slaveDB.Close()
+		t.Fatalf("failed to start slave replication: %v", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	cleanup := func() {
+		slaveClient.Close()
+		masterClient.Close()
+		slaveListener.Close()
+		masterListener.Close()
+		slaveDB.Close()
+		masterDB.Close()
+	}
+
+	return &soakReplEnv{
+		masterClient: masterClient,
+		slaveClient:  slaveClient,
+		masterDB:     masterDB,
+		slaveDB:      slaveDB,
+		masterRepl:   masterRepl,
+		slaveRepl:    slaveRepl,
+		cleanup:      cleanup,
+	}
+}
+
 func TestSoakReplication(t *testing.T) {
 	duration := getSoakReplDuration()
 	writers := getSoakReplWriters()
@@ -54,9 +183,11 @@ func TestSoakReplication(t *testing.T) {
 	t.Logf("soak-repl: set SOAK_REPL_DURATION (e.g. SOAK_REPL_DURATION=3h) to extend")
 	t.Logf("soak-repl: set SOAK_REPL_WRITERS (default=4) to change write concurrency")
 
-	master, slave, cleanup := setupMasterSlaveServer(t)
-	defer cleanup()
+	env := setupSoakReplication(t)
+	defer env.cleanup()
 
+	master := env.masterClient
+	slave := env.slaveClient
 	ctx := context.Background()
 
 	// verify initial replication
@@ -69,8 +200,12 @@ func TestSoakReplication(t *testing.T) {
 	assert.Equal(t, "ok", val)
 
 	baseline := runtime.NumGoroutine()
+
+	// 压力监控（监控 master）
+	pm := NewPressureMonitor(env.masterDB, env.masterRepl)
 	soakCtx, soakCancel := context.WithTimeout(ctx, duration)
 	defer soakCancel()
+	pm.Start(soakCtx, 30*time.Second)
 
 	errCh := make(chan error, writers*10)
 	var wg sync.WaitGroup
@@ -97,7 +232,6 @@ func TestSoakReplication(t *testing.T) {
 	}()
 
 	// drain errCh in background to prevent deadlock when buffer fills
-	// (writers block on errCh <- err, WaitGroup never completes)
 	var errs []error
 	errsDone := make(chan struct{})
 	go func() {
@@ -122,6 +256,10 @@ func TestSoakReplication(t *testing.T) {
 
 	// Wait for replication to stabilize after chaos
 	time.Sleep(5 * time.Second)
+
+	// 压力汇总 + 退化检查
+	pm.LogSummary(t)
+	pm.CheckDegradation(t, DefaultDegradationAssertion(), baseline)
 
 	// Final verification: compare master and slave datasets
 	t.Log("soak-repl: comparing master/slave datasets...")

@@ -68,6 +68,9 @@ type Handler struct {
 	// 当连接的待发送数据超过此值时，服务器断开该连接（slow client protection）
 	// 0 表示不限制
 	OutputBufferLimit int64
+
+	// wg 跟踪所有后台 goroutine，确保关闭时完整收束
+	wg sync.WaitGroup
 }
 
 // connMeta 连接元数据
@@ -232,11 +235,44 @@ func (h *Handler) ServeTCP(l net.Listener) error {
 			}
 			return err
 		}
+		h.wg.Add(1)
 		go h.handleConnection(conn)
 	}
 }
 
+// Shutdown 执行优雅关闭：关闭所有连接 → 等待所有 goroutine 退出
+func (h *Handler) Shutdown() {
+	logger.Logger.Info().Msg("开始关闭 handler 所有连接...")
+
+	// 关闭所有活跃 TCP 连接（解除 ReadRESP 阻塞，让 goroutine 自然退出）
+	h.connsMu.RLock()
+	var targets []struct {
+		state *connState
+		conn  net.Conn
+	}
+	for state, meta := range h.conns {
+		targets = append(targets, struct {
+			state *connState
+			conn  net.Conn
+		}{state, meta.conn})
+	}
+	h.connsMu.RUnlock()
+
+	for _, t := range targets {
+		t.state.cancel()
+		if t.conn != nil {
+			if err := t.conn.Close(); err != nil {
+				logger.Logger.Debug().Err(err).Msg("关闭客户端连接")
+			}
+		}
+	}
+
+	h.wg.Wait()
+	logger.Logger.Info().Msg("handler 所有 goroutine 已退出")
+}
+
 func (h *Handler) handleConnection(conn net.Conn) {
+	defer h.wg.Done()
 	remoteAddr := conn.RemoteAddr().String()
 	logger.Logger.Debug().Str("remote_addr", remoteAddr).Msg("新连接建立")
 
@@ -628,6 +664,7 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 		h.Replication.AddSlave(slaveConn)
 
 		// 启动goroutine处理从节点的复制连接（接收REPLCONF ACK等）
+		h.wg.Add(1)
 		go h.handleSlaveReplicationConnection(h.Ctx, slaveConn)
 
 		// 返回复制接管信号，主handler不会关闭连接
@@ -672,6 +709,7 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 			Msg("发送CONTINUE和backlog到从节点")
 
 		// 启动goroutine处理从节点的复制连接
+		h.wg.Add(1)
 		go h.handleSlaveReplicationConnection(h.Ctx, slaveConn)
 
 		// 返回复制接管信号
@@ -1104,6 +1142,7 @@ func (h *Handler) processMonitorCommand(req *proto.Array, remoteAddr string) pro
 // 2. 保持连接打开，直到从节点断开
 // 3. 负责关闭连接
 func (h *Handler) handleSlaveReplicationConnection(ctx context.Context, slave *replication.SlaveConnection) {
+	defer h.wg.Done()
 	if ctx == nil {
 		ctx = context.Background()
 	}

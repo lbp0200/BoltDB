@@ -144,6 +144,15 @@ func (rm *ReplicationManager) GetSlaveReplOffset() int64 {
 	return 0
 }
 
+func (rm *ReplicationManager) GetReconnectCount() int64 {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	if rm.slaveReconnector != nil {
+		return rm.slaveReconnector.GetReconnectCount()
+	}
+	return 0
+}
+
 // SetRole 设置角色
 func (rm *ReplicationManager) SetRole(role string) {
 	rm.mu.Lock()

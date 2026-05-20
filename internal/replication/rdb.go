@@ -3,9 +3,11 @@ package replication
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc64"
 	"io"
+	"math"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -246,16 +248,18 @@ func (enc *RDBEncoder) writeLength(length uint64) {
 }
 
 // GenerateRDB 生成RDB快照
+// 使用单个一致性视图事务，消除 TYPE_ 扫描与 value 读取之间的 TOCTOU。
+// PrefetchValues: false 避免全库 value 预取导致的内存压力。
 func GenerateRDB(s *store.BotreonStore) ([]byte, error) {
 	enc := NewRDBEncoder()
 
 	// 选择数据库0
 	enc.WriteDatabaseSelector(0)
 
-	// 遍历所有键
+	// 遍历所有键，在同一个 View 事务中完成全部读取
 	err := s.GetDB().View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
-		opts.PrefetchValues = true
+		opts.PrefetchValues = false // 显式读取，不预取任何值
 		iter := txn.NewIterator(opts)
 		defer iter.Close()
 
@@ -265,7 +269,6 @@ func GenerateRDB(s *store.BotreonStore) ([]byte, error) {
 			keyBytes := item.KeyCopy(nil)
 			key := string(keyBytes[len(prefix):])
 
-			// 获取键类型
 			typeVal, err := item.ValueCopy(nil)
 			if err != nil {
 				logger.Logger.Warn().Str("key", key).Err(err).Msg("获取键类型失败")
@@ -273,37 +276,12 @@ func GenerateRDB(s *store.BotreonStore) ([]byte, error) {
 			}
 			keyType := string(typeVal)
 
-			// 获取TTL（TYPE_ 键不含 TTL，需从对应值键读取）
-			ttl := int64(0)
-			var valueKey []byte
-			switch keyType {
-			case store.KeyTypeString:
-				valueKey = []byte("string:" + key)
-			case store.KeyTypeList:
-				valueKey = []byte("list:" + key + ":length")
-			case store.KeyTypeHash:
-				valueKey = []byte("hash:" + key + ":count")
-			case store.KeyTypeSet:
-				valueKey = []byte("set:" + key + ":count")
-			case store.KeyTypeSortedSet:
-				valueKey = []byte("zset:" + key + ":meta")
-			}
-			if valueKey != nil {
-				if valItem, err := txn.Get(valueKey); err == nil {
-					if expiresAt := valItem.ExpiresAt(); expiresAt > 0 {
-						expireTime := time.Unix(int64(expiresAt), 0)
-						now := time.Now()
-						if expireTime.After(now) {
-							ttl = int64(expireTime.Sub(now).Seconds())
-						}
-					}
-				}
-			}
+			ttl := readTTLFromValueTxn(txn, key, keyType)
 
-			// 根据类型获取值并写入
+			// 根据类型获取值并写入（同一 txn 内完成）
 			switch keyType {
 			case store.KeyTypeString:
-				value, err := s.Get(key)
+				value, err := readStringInTxn(txn, key)
 				if err != nil {
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取字符串值失败")
 					continue
@@ -311,7 +289,7 @@ func GenerateRDB(s *store.BotreonStore) ([]byte, error) {
 				_ = enc.WriteStringKeyValue(key, value, ttl)
 
 			case store.KeyTypeList:
-				values, err := s.LRange(key, 0, -1)
+				values, err := readListInTxn(txn, key)
 				if err != nil {
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取列表值失败")
 					continue
@@ -319,7 +297,7 @@ func GenerateRDB(s *store.BotreonStore) ([]byte, error) {
 				_ = enc.WriteListKeyValue(key, values, ttl)
 
 			case store.KeyTypeHash:
-				fields, err := s.HGetAll(key)
+				fields, err := readHashInTxn(txn, key)
 				if err != nil {
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取哈希值失败")
 					continue
@@ -327,7 +305,7 @@ func GenerateRDB(s *store.BotreonStore) ([]byte, error) {
 				_ = enc.WriteHashKeyValue(key, fields, ttl)
 
 			case store.KeyTypeSet:
-				members, err := s.SMembers(key)
+				members, err := readSetInTxn(txn, key)
 				if err != nil {
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取集合值失败")
 					continue
@@ -335,13 +313,11 @@ func GenerateRDB(s *store.BotreonStore) ([]byte, error) {
 				_ = enc.WriteSetKeyValue(key, members, ttl)
 
 			case store.KeyTypeSortedSet:
-				// SortedSet需要特殊处理
-				members, err := s.ZRange(key, 0, -1)
+				members, err := readZSetInTxn(txn, key)
 				if err != nil {
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取有序集合值失败")
 					continue
 				}
-				// 写入SortedSet（简化实现）
 				if ttl > 0 {
 					now := time.Now().Unix()
 					expireTime := now + ttl
@@ -359,11 +335,9 @@ func GenerateRDB(s *store.BotreonStore) ([]byte, error) {
 				}
 
 			default:
-				logger.Logger.Warn().Str("key", key).Str("type", keyType).Msg("未知键类型")
-				continue
+				logger.Logger.Debug().Str("key", key).Str("type", keyType).Msg("跳过不支持的RDB键类型")
 			}
 		}
-
 		return nil
 	})
 
@@ -371,8 +345,198 @@ func GenerateRDB(s *store.BotreonStore) ([]byte, error) {
 		return nil, fmt.Errorf("生成RDB失败: %w", err)
 	}
 
-	// 写入文件尾
 	enc.WriteFooter()
-
 	return enc.Bytes(), nil
+}
+
+// readTTLFromValueTxn 从事务中读取值键的 TTL（BadgerDB 的 ExpiresAt 存储在 entry 头部）
+func readTTLFromValueTxn(txn *badger.Txn, key, keyType string) int64 {
+	var valueKey []byte
+	switch keyType {
+	case store.KeyTypeString:
+		valueKey = []byte("STRING:" + key)
+	case store.KeyTypeList:
+		valueKey = []byte("LIST:" + key + ":length")
+	case store.KeyTypeHash:
+		valueKey = []byte("HASH:" + key + ":__count__")
+	case store.KeyTypeSet:
+		valueKey = []byte("SET:" + key + ":count")
+	case store.KeyTypeSortedSet:
+		valueKey = []byte("zset:" + key + ":meta")
+	}
+	if valueKey == nil {
+		return 0
+	}
+	valItem, err := txn.Get(valueKey)
+	if err != nil {
+		return 0
+	}
+	if expiresAt := valItem.ExpiresAt(); expiresAt > 0 {
+		expireTime := time.Unix(0, int64(expiresAt))
+		now := time.Now()
+		if expireTime.After(now) {
+			return int64(expireTime.Sub(now).Seconds())
+		}
+	}
+	return 0
+}
+
+// readStringInTxn 从事务中读取字符串值（解压缩后）
+func readStringInTxn(txn *badger.Txn, key string) (string, error) {
+	item, err := txn.Get([]byte("STRING:" + key))
+	if err != nil {
+		return "", err
+	}
+	raw, err := item.ValueCopy(nil)
+	if err != nil {
+		return "", err
+	}
+	decoded, err := store.DecompressData(raw)
+	if err != nil {
+		return "", err
+	}
+	return string(decoded), nil
+}
+
+// readListInTxn 从事务中读取列表的全部元素
+func readListInTxn(txn *badger.Txn, key string) ([]string, error) {
+	lengthKey := []byte("LIST:" + key + ":length")
+	startKey := []byte("LIST:" + key + ":start")
+
+	lengthItem, err := txn.Get(lengthKey)
+	if err != nil {
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	lengthBytes, err := lengthItem.ValueCopy(nil)
+	if err != nil {
+		return nil, err
+	}
+	length := int64(binary.BigEndian.Uint64(lengthBytes))
+	if length == 0 {
+		return nil, nil
+	}
+
+	startItem, err := txn.Get(startKey)
+	if err != nil {
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	startBytes, err := startItem.ValueCopy(nil)
+	if err != nil {
+		return nil, err
+	}
+	currentNodeID := string(startBytes)
+
+	result := make([]string, 0, length)
+	visited := make(map[string]bool)
+	for int64(len(result)) < length {
+		if visited[currentNodeID] {
+			break
+		}
+		visited[currentNodeID] = true
+
+		nodeKey := []byte("LIST:" + key + ":" + currentNodeID)
+		valItem, err := txn.Get(nodeKey)
+		if err != nil {
+			return nil, err
+		}
+		raw, err := valItem.ValueCopy(nil)
+		if err != nil {
+			return nil, err
+		}
+		decoded, err := store.DecompressData(raw)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, string(decoded))
+
+		// 最后一个节点可能没有 :next 键（链表非完全闭环）
+		nextKey := []byte("LIST:" + key + ":" + currentNodeID + ":next")
+		nextItem, err := txn.Get(nextKey)
+		if err != nil {
+			if errors.Is(err, badger.ErrKeyNotFound) {
+				break
+			}
+			return nil, err
+		}
+		nextBytes, err := nextItem.ValueCopy(nil)
+		if err != nil {
+			return nil, err
+		}
+		currentNodeID = string(nextBytes)
+	}
+	return result, nil
+}
+
+// readHashInTxn 从事务中读取哈希的全部字段和值
+func readHashInTxn(txn *badger.Txn, key string) (map[string][]byte, error) {
+	prefix := []byte("HASH:" + key + ":")
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = false
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	countKey := []byte("HASH:" + key + ":__count__")
+	result := make(map[string][]byte)
+	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+		k := it.Item().Key()
+		if bytes.Equal(k, countKey) {
+			continue
+		}
+		field := string(k[len(prefix):])
+		raw, err := it.Item().ValueCopy(nil)
+		if err != nil {
+			return nil, err
+		}
+		decoded, err := store.DecompressData(raw)
+		if err != nil {
+			return nil, err
+		}
+		result[field] = decoded
+	}
+	return result, nil
+}
+
+// readSetInTxn 从事务中读取集合的全部成员
+func readSetInTxn(txn *badger.Txn, key string) ([]string, error) {
+	prefix := []byte("SET:" + key + ":member:")
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = false
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	var result []string
+	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+		member := string(it.Item().Key()[len(prefix):])
+		result = append(result, member)
+	}
+	return result, nil
+}
+
+// readZSetInTxn 从事务中读取有序集合的全部成员
+func readZSetInTxn(txn *badger.Txn, key string) ([]store.ZSetMember, error) {
+	prefix := []byte("zset:" + key + ":data:")
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = true
+	opts.PrefetchSize = 100
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	var result []store.ZSetMember
+	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+		item := it.Item()
+		member := string(item.Key()[len(prefix):])
+		scoreBytes, err := item.ValueCopy(nil)
+		if err != nil {
+			return nil, err
+		}
+		score := math.Float64frombits(binary.BigEndian.Uint64(scoreBytes))
+		result = append(result, store.ZSetMember{Member: member, Score: score})
+	}
+	return result, nil
 }

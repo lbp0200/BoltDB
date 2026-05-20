@@ -1140,3 +1140,41 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 
 	return results, err
 }
+
+// StringEntry 批量写入的一条记录
+type StringEntry struct {
+	Key   string
+	Value string
+	TTL   time.Duration
+}
+
+// SetStringBatch 批量写入多个字符串键值对
+// 用于 RDB 加载等场景，减少事务数
+func (s *BotreonStore) SetStringBatch(entries []StringEntry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	if err := s.retryUpdate(func(txn *badger.Txn) error {
+		for _, e := range entries {
+			if err := txn.Set(TypeOfKeyGet(e.Key), []byte(KeyTypeString)); err != nil {
+				return err
+			}
+			strKey := s.stringKey(e.Key)
+			if err := s.setEntryWithCompression(txn, []byte(strKey), []byte(e.Value), e.TTL); err != nil {
+				return err
+			}
+		}
+		return nil
+	}, 30); err != nil {
+		return err
+	}
+
+	// 写入成功后清除缓存
+	if s.readCache != nil {
+		for _, e := range entries {
+			s.readCache.Delete(e.Key)
+		}
+	}
+	return nil
+}

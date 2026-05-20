@@ -69,6 +69,21 @@ type BotreonStore struct {
 	// Stream blocking support
 	streamBlockingMu    sync.RWMutex
 	streamBlockingChans map[string][]chan StreamReadResult // key -> channels waiting for stream data
+
+	// 主动背压
+	backpressure *writeSlot
+	bpConfig     BackpressureConfig
+	l0Cache      *l0Cache
+
+	// 重试指标
+	retryMu      sync.Mutex
+	retryMetrics struct {
+		activeRetries int64
+		totalRetries  int64
+		writesBlocked int64
+		l0Rejected    int64
+		l0Delayed     int64
+	}
 }
 
 // Check 执行存储一致性检查
@@ -312,6 +327,8 @@ func NewBotreonStoreWithCompression(path string, compressionType CompressionType
 
 	readCache := NewLRUCache(10000, 5*time.Minute)
 
+	bpConfig := DefaultBackpressureConfig()
+
 	return &BotreonStore{
 		db:                  db,
 		compressionType:     compressionType,
@@ -319,6 +336,9 @@ func NewBotreonStoreWithCompression(path string, compressionType CompressionType
 		keyLockMgr:          NewKeyLockManager(256),
 		blockingPopChans:    make(map[string][]chan BlockingResult),
 		streamBlockingChans: make(map[string][]chan StreamReadResult),
+		backpressure:        newWriteSlot(bpConfig.MaxConcurrentWrites),
+		bpConfig:            bpConfig,
+		l0Cache:             &l0Cache{},
 	}, nil
 }
 
@@ -344,6 +364,24 @@ func (s *BotreonStore) CloseWithTimeout(timeout time.Duration) error {
 		// Close is taking too long, return timeout error
 		return fmt.Errorf("close timed out after %v", timeout)
 	}
+}
+
+// SetBackpressureConfig 配置主动背压参数
+func (s *BotreonStore) SetBackpressureConfig(cfg BackpressureConfig) {
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	if cfg.MaxConcurrentWrites <= 0 {
+		cfg.MaxConcurrentWrites = defaultMaxConcurrentWrites
+	}
+	s.backpressure = newWriteSlot(cfg.MaxConcurrentWrites)
+	s.bpConfig = cfg
+}
+
+// GetBackpressureConfig 返回当前背压配置
+func (s *BotreonStore) GetBackpressureConfig() BackpressureConfig {
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	return s.bpConfig
 }
 
 // GetDB 获取BadgerDB实例（用于复制和备份）
