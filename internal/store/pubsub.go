@@ -264,8 +264,11 @@ func (psm *PubSubManager) RemoveSubscriber(subscriber *Subscriber) {
 	psm.mu.Lock()
 	defer psm.mu.Unlock()
 
-	// 标记为已关闭，阻止 Publish 向其发送消息
 	subscriber.closeMu.Lock()
+	if subscriber.closed {
+		subscriber.closeMu.Unlock()
+		return
+	}
 	subscriber.closed = true
 	subscriber.closeMu.Unlock()
 
