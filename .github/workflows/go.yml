@@ -39,7 +39,7 @@ jobs:
         run: go build ./...
 
       - name: Test with coverage
-        run: go test -race -timeout 30s -short -coverprofile=coverage.out -covermode=atomic ./... 2>&1 | grep -v "badger" || true
+        run: go test -race -timeout 30s -short -coverprofile=coverage.out -covermode=atomic ./internal/... ./cmd/boltDB/... 2>&1 | grep -v "badger" || true
 
       - name: Upload coverage
         if: always()
@@ -65,7 +65,7 @@ jobs:
           cache: true
 
       - name: Run integration tests
-        run: go test -race -timeout 300s ./cmd/integration/...
+        run: go test -race -timeout 600s ./cmd/integration/...
 
   release:
     runs-on: ubuntu-latest

@@ -177,6 +177,9 @@ func setupSoakReplication(t *testing.T) *soakReplEnv {
 }
 
 func TestSoakReplication(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping soak replication test in short mode")
+	}
 	duration := getSoakReplDuration()
 	writers := getSoakReplWriters()
 

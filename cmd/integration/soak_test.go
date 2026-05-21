@@ -90,6 +90,9 @@ func soakCheckNoLeak(t *testing.T, baseline, final int) {
 // Default concurrency is 50; override with SOAK_CLIENTS.
 // Data directory is ~/soak_boltdb_data; override with SOAK_DATA_DIR.
 func TestSoak(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping soak test in short mode")
+	}
 	duration := getSoakDuration()
 	concurrency := getSoakConcurrency()
 	dataDir := getSoakDataDir()
