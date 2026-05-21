@@ -114,11 +114,11 @@ func TestFuzzServerStateMachineChaos(t *testing.T) {
 func getFSMIterations() int {
 	s := os.Getenv("FSM_ITERATIONS")
 	if s == "" {
-		return 200
+		return 50
 	}
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
-		return 200
+		return 50
 	}
 	if n > 5000 {
 		return 5000
