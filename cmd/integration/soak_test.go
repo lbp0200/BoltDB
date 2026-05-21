@@ -148,6 +148,15 @@ func TestSoak(t *testing.T) {
 
 	// 压力监控
 	pm := NewPressureMonitor(db, replMgr)
+	if jdir := os.Getenv("SOAK_JSONL_DIR"); jdir != "" {
+		os.MkdirAll(jdir, 0755)
+		jpath := filepath.Join(jdir, fmt.Sprintf("soak-%s.jsonl", time.Now().Format("20060102-150405")))
+		if err := pm.SetJSONLPath(jpath); err != nil {
+			t.Logf("soak: failed to create JSONL %s: %v", jpath, err)
+		} else {
+			t.Logf("soak: JSONL timeline → %s", jpath)
+		}
+	}
 	soakCtx, soakCancel := context.WithTimeout(context.Background(), duration)
 	defer soakCancel()
 	pm.Start(soakCtx, 30*time.Second)
@@ -188,7 +197,8 @@ func TestSoak(t *testing.T) {
 
 	// 压力汇总 + 退化检查
 	pm.LogSummary(t)
-	pm.CheckDegradation(t, DefaultDegradationAssertion(), baseline)
+	level := pm.CheckDegradation(t, DefaultDegradationAssertion(), baseline)
+	t.Logf("soak: degradation level: %s", level)
 
 	final := runtime.NumGoroutine()
 	soakCheckNoLeak(t, baseline, final)

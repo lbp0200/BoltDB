@@ -1,0 +1,44 @@
+{
+  "name": "replication-thrash",
+  "failure_doc": "docs/failures/replication-thrash.md",
+  "description": "Repeated slave disconnects during write load — system must converge after chaos stops",
+
+  "phases": [
+    { "name": "phase1", "duration": "5s",  "description": "Initial sync" },
+    { "name": "phase2", "duration": "36s", "description": "Write load + 6 partition cycles (6s interval)" },
+    { "name": "phase3", "duration": "20s", "description": "Convergence — no partitions, verify slave catches up" }
+  ],
+
+  "expected_trajectory": {
+    "reconnects": {
+      "total_max": 12,
+      "pattern": "plateau_after_chaos"
+    },
+    "slave_lag": {
+      "final_max": 1000,
+      "convergence_time_max": "15s",
+      "pattern": "convergent"
+    },
+    "L0_score": {
+      "peak_max": 25,
+      "final_max": 10,
+      "pattern": "sawtooth"
+    },
+    "ActiveRetries": {
+      "peak_max": 80,
+      "pattern": "bounded"
+    },
+    "goroutines": {
+      "delta_max": 40,
+      "pattern": "plateau"
+    }
+  },
+
+  "invariants": [
+    "Reconnect count <= 12 after chaos stops (short partitions within backlog)",
+    "Slave offset converges within 15s of last partition",
+    "L0 recovers below 10 after load completes",
+    "ActiveRetries bounded to 80 (backpressure prevents retry storm)",
+    "Both master and slave pass DB.Check() integrity"
+  ]
+}

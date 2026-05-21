@@ -1,0 +1,41 @@
+{
+  "name": "retry-storm",
+  "failure_doc": "docs/failures/retry-storm.md",
+  "description": "High write concurrency with backpressure — system must bound ActiveRetries and recover L0",
+
+  "phases": [
+    { "name": "phase1", "writers": 20, "duration": "30s", "description": "Initial write burst to prime L0" },
+    { "name": "phase2", "writers": 20, "duration": "30s", "description": "Sustained write load with backpressure" },
+    { "name": "phase3", "writers": 0,  "duration": "20s", "description": "Drain — let L0 recover" }
+  ],
+
+  "expected_trajectory": {
+    "L0_score": {
+      "peak_max": 25,
+      "final_max": 10,
+      "recovery_time_max": "20s",
+      "pattern": "sawtooth"
+    },
+    "ActiveRetries": {
+      "peak_max": 50,
+      "final_max": 10,
+      "pattern": "bounded_spike"
+    },
+    "goroutines": {
+      "delta_max": 30,
+      "pattern": "plateau"
+    },
+    "reconnects": {
+      "total_max": 0,
+      "pattern": "none"
+    }
+  },
+
+  "invariants": [
+    "ActiveRetries <= 50 at all times",
+    "L0 score recovers below 10 within 20s of load stop",
+    "Goroutine delta <= 30 from baseline",
+    "Zero replication reconnects (no replication in this test)",
+    "DB.Check() passes with no orphan keys"
+  ]
+}

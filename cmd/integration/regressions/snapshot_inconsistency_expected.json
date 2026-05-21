@@ -1,0 +1,43 @@
+{
+  "name": "snapshot-inconsistency",
+  "failure_doc": "docs/failures/snapshot-inconsistency.md",
+  "description": "RDB consistency after generate/load cycle — all types, values, and metadata preserved",
+
+  "phases": [
+    { "name": "write", "description": "Write 125 keys across all types (string, list, hash, set, zset, TTL)" },
+    { "name": "rdb_generate", "description": "Generate RDB via GenerateRDB (single View txn)" },
+    { "name": "rdb_load", "description": "Load into fresh store via LoadRDBWithStore" },
+    { "name": "verify", "description": "Check(): no orphans, all keys readable, values match" }
+  ],
+
+  "expected_trajectory": {
+    "structural": {
+      "orphan_type_keys": 0,
+      "orphan_data_keys": 0,
+      "pattern": "clean_check"
+    },
+    "semantic": {
+      "missing_keys": 0,
+      "type_mismatches": 0,
+      "value_mismatches": 0,
+      "pattern": "perfect_match"
+    },
+    "TTLs": {
+      "preserved": true,
+      "pattern": "all_ttl_keys_have_positive_ttl"
+    },
+    "concurrent_writes": {
+      "keys_readable_after_rdb_load": "all",
+      "check_passes": true,
+      "pattern": "point_in_time_consistent"
+    }
+  },
+
+  "invariants": [
+    "store.Check() passes on loaded store (zero orphans)",
+    "All source keys present in loaded store with matching types",
+    "Values match exactly for all 125 keys across 5 data types",
+    "TTL metadata preserved for EXPIRE'd keys",
+    "RDB generated during concurrent writes produces valid, loadable snapshot"
+  ]
+}

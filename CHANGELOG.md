@@ -1,5 +1,65 @@
 # Changelog
 
+## v8.4.0 (2026-05-21) — System Convergence Governance
+
+> **系统收敛治理版本。** 从"证明系统正确"升级到"证明系统在压力下收敛"。failure 变成可重放、可比较时间序列的可执行知识。
+
+### 核心架构
+
+| 组件 | 描述 |
+|------|------|
+| **`internal/monitor/`** | 压力监控库，支持 JSONL 时间线 + 三级退化门禁（WARN/DEGRADED/FAIL） |
+| **`cmd/integration/regressions/`** | 可重放回归测试框架，每类 failure 对应独立隔离的 replay 测试 |
+| **`docs/state-machine.md`** | 完整形式化状态机文档（connection / replication / sentinel / server lifecycle） |
+| **`docs/design-constraints.md`** | 系统设计约束规范（收敛性定义、恢复时间预算、admission policy v0） |
+
+### 收敛性门禁（Degradation Gate）
+
+退化断言升级为 WARN / DEGRADED / FAIL 三级：
+
+| 级别 | 含义 | CI 行为 |
+|------|------|---------|
+| WARN | 早期信号，系统仍健康 | 日志 |
+| DEGRADED | 压力偏离健康范围 | `t.Errorf` 或日志（可配置） |
+| FAIL | 硬不变性违反 | `t.Errorf` |
+
+每项不变性检查（goroutine 增量 / ActiveRetries / L0 score / reconnect / monotonic rise）独立判定级别。
+
+### JSONL 时间线
+
+- `SOAK_JSONL_DIR` 环境变量驱动，soak 运行时自动生成 `soak-<timestamp>.jsonl`
+- 每个采样行含 16 个字段：goroutine / heap / GC / retry metrics / L0 / replication offsets / backlog / reconnects
+- 支持直接喂给 jq / gnuplot / Grafana 做时间序列分析
+- 5h soak 产生 ~600 样本点的完整系统行为历史
+
+### 可重放回归套件
+
+| 测试 | 覆盖的 failure | 类型 |
+|------|---------------|------|
+| `TestRegressionRetryStorm` | retry-storm | 局部压力 |
+| `TestRegressionReplicationThrash` | replication-thrash（短分区） | 分布式收敛 |
+| `TestRegressionReplicationThrashFullresync` | replication-thrash（长分区→FULLRESYNC） | 分布式收敛 |
+| `TestRegressionSnapshotConsistency` | snapshot-inconsistency（全类型语义正确性） | 数据正确性 |
+| `TestRegressionSnapshotConcurrentWrites` | snapshot-inconsistency（并发写入一致性） | 数据正确性 |
+
+每个测试：独立 Badger DB + 独立服务器 + 独立 PressureMonitor + `expected_metrics.json` 轨迹文档。
+
+### 复制修复
+
+- **Backlog offset ordering fix** — `CONTINUE` 模式下 slave offset 与 backlog 范围匹配修复
+- **Slave reconnector race** — 关闭时 `reconnectLoop` 不再尝试访问已关闭的 DB
+- **5h 复制 soak** — 在周期网络分区 + 持续写入下验证收敛性
+
+### 测试基础设施
+
+- `t.Parallel()` 覆盖所有测试包
+- 确定性事务冲突测试
+- 大规模边界测试（string / collection）
+- 完整 WRONGTYPE 覆盖集成测试
+- `TestSoak` 独立 soak 测试（可配置 data dir / duration / concurrency）
+- Server fuzzing 扩展（9 新 opcode + pipeline + concurrent target）
+- node-redis 兼容测试 17 个 false FAIL 修复
+
 ## v8.3.0 (2026-05-16) — Architecture Freeze
 
 > **架构冻结版本。** 系统进入"收束"阶段——停止大规模 feature 扩张，建立工程护城河，固化系统规则。

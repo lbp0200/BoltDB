@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -203,6 +204,15 @@ func TestSoakReplication(t *testing.T) {
 
 	// 压力监控（监控 master）
 	pm := NewPressureMonitor(env.masterDB, env.masterRepl)
+	if jdir := os.Getenv("SOAK_JSONL_DIR"); jdir != "" {
+		os.MkdirAll(jdir, 0755)
+		jpath := filepath.Join(jdir, fmt.Sprintf("soak-repl-%s.jsonl", time.Now().Format("20060102-150405")))
+		if err := pm.SetJSONLPath(jpath); err != nil {
+			t.Logf("soak-repl: failed to create JSONL %s: %v", jpath, err)
+		} else {
+			t.Logf("soak-repl: JSONL timeline → %s", jpath)
+		}
+	}
 	soakCtx, soakCancel := context.WithTimeout(ctx, duration)
 	defer soakCancel()
 	pm.Start(soakCtx, 30*time.Second)
@@ -259,7 +269,8 @@ func TestSoakReplication(t *testing.T) {
 
 	// 压力汇总 + 退化检查
 	pm.LogSummary(t)
-	pm.CheckDegradation(t, DefaultDegradationAssertion(), baseline)
+	level := pm.CheckDegradation(t, DefaultDegradationAssertion(), baseline)
+	t.Logf("soak-repl: degradation level: %s", level)
 
 	// Final verification: compare master and slave datasets
 	t.Log("soak-repl: comparing master/slave datasets...")

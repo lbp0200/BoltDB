@@ -7,13 +7,14 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/backup"
 	"github.com/lbp0200/BoltDB/internal/cluster"
 	"github.com/lbp0200/BoltDB/internal/logger"
+	"github.com/lbp0200/BoltDB/internal/metrics"
 	"github.com/lbp0200/BoltDB/internal/replication"
 	"github.com/lbp0200/BoltDB/internal/server"
-
 	"github.com/lbp0200/BoltDB/internal/store"
 )
 
@@ -26,6 +27,7 @@ var (
 	replicaofFlag           = flag.String("replicaof", "", "replicaof master host:port")
 	skipStartupCleanup      = flag.Bool("skip-startup-cleanup", false, "skip startup cleanup (data integrity check)")
 	clientOutputBufferLimit = flag.Int64("client-output-buffer-limit", 0, "per-client output buffer hard limit in bytes (0 = unlimited)")
+	metricsAddrFlag         = flag.String("metrics-addr", "", "metrics HTTP listen addr (e.g. :6338, empty = disabled)")
 )
 
 func main() {
@@ -84,6 +86,36 @@ func main() {
 		Ctx:               ctx,
 		OutputBufferLimit: *clientOutputBufferLimit,
 	}
+
+	// 初始化 metrics 采集
+	collector := metrics.NewCollector()
+	collector.RetryMetricsFn = func() (int64, int64, int64, int64, int64, float64) {
+		m := db.GetRetryMetrics()
+		return m.ActiveRetries, m.TotalRetries, m.WritesBlocked, m.L0Rejected, m.L0Delayed, m.LastL0Score
+	}
+	collector.MasterReplOffsetFn = replMgr.GetMasterReplOffset
+	collector.SlaveReplOffsetFn = replMgr.GetSlaveReplOffset
+	collector.ReconnectCountFn = replMgr.GetReconnectCount
+	collector.SlaveCountFn = replMgr.GetSlaveCount
+	collector.BacklogSizeFn = func() int64 { return replMgr.GetBacklog().GetSize() }
+	collector.BacklogAvailFn = func() int64 { return replMgr.GetBacklog().GetAvailableLength() }
+	collector.RoleFn = replMgr.GetRole
+	collector.ActiveClientsFn = handler.ActiveClientCount
+	collector.BlockedClientsFn = handler.BlockedClientCount
+	collector.MonitorClientsFn = handler.MonitorClientCount
+	collector.PubSubClientsFn = handler.PubSubClientCount
+	collector.TotalOutputBytesFn = handler.TotalOutputBytes
+	collector.PubSubSubsFn = pubsubMgr.GetTotalSubscriberCount
+
+	if *metricsAddrFlag != "" {
+		go func() {
+			if err := metrics.ServeMetrics(ctx, *metricsAddrFlag, collector); err != nil {
+				logger.Logger.Warn().Err(err).Msg("metrics HTTP server exited")
+			}
+		}()
+		logger.Logger.Info().Str("addr", *metricsAddrFlag).Msg("metrics endpoint enabled")
+	}
+	metrics.StartPeriodicSnapshot(ctx, collector, 60*time.Second)
 
 	// 初始化集群（如果启用了集群模式）
 	if *clusterEnabledFlag {
