@@ -200,6 +200,10 @@ func TestSoak(t *testing.T) {
 	level := pm.CheckDegradation(t, DefaultDegradationAssertion(), baseline)
 	t.Logf("soak: degradation level: %s", level)
 
+	// 健康评分
+	health := pm.HealthScore(baseline)
+	t.Log(health.String())
+
 	final := runtime.NumGoroutine()
 	soakCheckNoLeak(t, baseline, final)
 

@@ -264,6 +264,11 @@ func (pm *PressureMonitor) LogSummary(t TestingT) {
 		maxActiveRetries, totalRetries, totalRejected, totalDelayed)
 }
 
+// HealthScore 基于所有采样计算系统健康评分
+func (pm *PressureMonitor) HealthScore(baselineGoroutines int) HealthScore {
+	return ComputeHealth(pm.Samples(), baselineGoroutines)
+}
+
 // MaxHeap 返回所有采样中的峰值堆使用
 func MaxHeap(samples []PressureSample) uint64 {
 	var m uint64

@@ -272,6 +272,10 @@ func TestSoakReplication(t *testing.T) {
 	level := pm.CheckDegradation(t, DefaultDegradationAssertion(), baseline)
 	t.Logf("soak-repl: degradation level: %s", level)
 
+	// 健康评分
+	health := pm.HealthScore(baseline)
+	t.Log(health.String())
+
 	// Final verification: compare master and slave datasets
 	t.Log("soak-repl: comparing master/slave datasets...")
 	compareDatasets(t, master, slave)
