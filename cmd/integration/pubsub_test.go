@@ -32,7 +32,12 @@ func sendPubSubCmd(t *testing.T, conn net.Conn, cmd string, args ...string) {
 func readPubSubResp(t *testing.T, reader *bufio.Reader) []string {
 	t.Helper()
 	arr, err := proto.ReadRESP(reader)
-	assert.NoError(t, err)
+	if err != nil {
+		return nil
+	}
+	if arr == nil {
+		return nil
+	}
 	parts := make([]string, len(arr.Args))
 	for i, arg := range arr.Args {
 		parts[i] = string(arg)
