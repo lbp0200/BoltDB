@@ -101,13 +101,13 @@ func TestFuzzServerStateMachineChaos(t *testing.T) {
 
 	for seq := 0; seq < iterations; seq++ {
 		setupTest(t)
-		defer teardownTest(t)
 
 		if t.Failed() {
 			return
 		}
 
 		testFSMSequence(t, rng, seq)
+		teardownTest(t)
 	}
 }
 
@@ -340,12 +340,12 @@ func TestFuzzServerBlockingKill(t *testing.T) {
 
 	for seq := 0; seq < iterations; seq++ {
 		setupTest(t)
-		defer teardownTest(t)
 		if t.Failed() {
 			return
 		}
 
 		testBlockingKillSequence(t, rng, seq)
+		teardownTest(t)
 	}
 }
 
@@ -418,12 +418,12 @@ func TestFuzzServerSubscriberChaos(t *testing.T) {
 
 	for seq := 0; seq < iterations; seq++ {
 		setupTest(t)
-		defer teardownTest(t)
 		if t.Failed() {
 			return
 		}
 
 		testSubscriberChaosSequence(t, rng, seq)
+		teardownTest(t)
 	}
 }
 
@@ -549,12 +549,12 @@ func TestFuzzServerConcurrentStateChaos(t *testing.T) {
 
 	for seq := 0; seq < iterations; seq++ {
 		setupTest(t)
-		defer teardownTest(t)
 		if t.Failed() {
 			return
 		}
 
 		testConcurrentStateChaos(t, rng, seq)
+		teardownTest(t)
 	}
 }
 

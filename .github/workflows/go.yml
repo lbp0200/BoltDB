@@ -65,7 +65,7 @@ jobs:
           cache: true
 
       - name: Run integration tests
-        run: go test -race -timeout 130s ./cmd/integration/...
+        run: go test -race -timeout 300s ./cmd/integration/...
 
   release:
     runs-on: ubuntu-latest

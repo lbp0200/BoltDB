@@ -55,9 +55,13 @@ func TestRegressionReplicationThrash(t *testing.T) {
 	// Partition cycles happen every 6s for 36s (6 cycles)
 	t.Log("repl-thrash: phase 2 — write load + partition cycles (36s)")
 	errCh := make(chan error, 100)
+	loadDone := make(chan struct{})
 
 	// Background writers
-	go master.RunLoad(ctx, 4, 60*time.Second, errCh)
+	go func() {
+		master.RunLoad(ctx, 4, 60*time.Second, errCh)
+		close(loadDone)
+	}()
 
 	// Partition cycles: kill slave connection every 6 seconds
 	for i := 0; i < 6; i++ {
@@ -90,6 +94,9 @@ func TestRegressionReplicationThrash(t *testing.T) {
 	recon := slave.GetReconnectCount()
 	t.Logf("repl-thrash: post-drain — reconnects=%d master_offset=%d slave_offset=%d lag=%d",
 		recon, mOff, sOff, mOff-sOff)
+
+	// Wait for load goroutines to finish before closing errCh
+	<-loadDone
 
 	// Drain errors
 	close(errCh)
