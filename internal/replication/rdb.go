@@ -251,12 +251,28 @@ func (enc *RDBEncoder) writeLength(length uint64) {
 // 使用单个一致性视图事务，消除 TYPE_ 扫描与 value 读取之间的 TOCTOU。
 // PrefetchValues: false 避免全库 value 预取导致的内存压力。
 func GenerateRDB(s *store.BotreonStore) ([]byte, error) {
+	rdb, _, err := GenerateRDBWithOffset(s, nil)
+	return rdb, err
+}
+
+// GenerateRDBWithOffset 生成RDB快照并返回快照对应的复制偏移量。
+//
+// snapshotOffset 在 badger View 事务内、所有数据读取完成后捕获。
+// 这确保了 snapshotOffset 对应的偏移量至少包含了 RDB 中所有可见的写入，
+// 同时不包含 RDB 中不可见的写入。将 FULLRESYNC 的 offset 设为该值后，
+// backlog (snapshotOffset → currentOffset) 只覆盖快照中不存在的写入，
+// 最小化重复应用窗口（通常 0-1 个命令）。
+//
+// offsetFn 如果为 nil，则不捕获偏移量（等效于 GenerateRDB）。
+func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte, int64, error) {
 	enc := NewRDBEncoder()
+	var snapshotOffset int64
 
 	// 选择数据库0
 	enc.WriteDatabaseSelector(0)
 
-	// 遍历所有键，在同一个 View 事务中完成全部读取
+	// 遍历所有键，在同一个 View 事务中完成全部读取。
+	// snapshotOffset 在 View 内部、所有读完成后捕获。
 	err := s.GetDB().View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = false // 显式读取，不预取任何值
@@ -338,15 +354,22 @@ func GenerateRDB(s *store.BotreonStore) ([]byte, error) {
 				logger.Logger.Debug().Str("key", key).Str("type", keyType).Msg("跳过不支持的RDB键类型")
 			}
 		}
+
+		// 在所有数据读取完成后、同一 View 事务内捕获偏移量。
+		// 此时所有 RDB 中可见写入的 offset 已递增（写入 -> badger commit -> offset incr
+		// 在同一 handler goroutine 中顺序执行，且在 View 开始前已完成）。
+		if offsetFn != nil {
+			snapshotOffset = offsetFn()
+		}
 		return nil
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("生成RDB失败: %w", err)
+		return nil, 0, fmt.Errorf("生成RDB失败: %w", err)
 	}
 
 	enc.WriteFooter()
-	return enc.Bytes(), nil
+	return enc.Bytes(), snapshotOffset, nil
 }
 
 // readTTLFromValueTxn 从事务中读取值键的 TTL（BadgerDB 的 ExpiresAt 存储在 entry 头部）

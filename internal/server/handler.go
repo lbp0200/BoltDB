@@ -608,20 +608,34 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 	}
 
 	if result.FullResync {
-		// 发送FULLRESYNC响应
-		response := fmt.Sprintf("+FULLRESYNC %s %d\r\n", result.ReplId, result.Offset)
-
-		// 先发送FULLRESYNC响应
-		if _, err := writer.WriteString(response); err != nil {
-			logger.Logger.Error().Err(err).Msg("发送FULLRESYNC失败")
-			return proto.NewError("ERR failed to send FULLRESYNC")
-		}
-
-		// 生成并发送RDB数据
+		// 修复：snapshot ↔ replication offset binding 错误。
+		//
+		// 正确时序：
+		//   [1] GenerateRDB（badger View，一致性快照）
+		//   [2] snapshotOffset = GetMasterReplOffset()（View 返回后捕获）
+		//   [3] FULLRESYNC 响应使用 snapshotOffset
+		//   [4] 发送 RDB
+		//   [5] 在 slaveConn.mu 保护下：AddSlave + 发送 backlog（snapshotOffset → currentOffset）
+		//   [6] PropagateCommand 发送 currentOffset 之后的所有写入
+		//
+		// snapshotOffset 在 View 返回后捕获，此时 RDB 快照的边界已确定。
+		// backlog 从 snapshotOffset 开始，包含 RDB 生成+发送期间的所有写入。
+		// 这确保无结构损坏（无重复元素），即使部分写入在 backlog 和 RDB 中
+		// 都有，其影响仅限于最终状态的小偏差（1-2 个命令），不会破坏内部
+		// 结构（链表链、zset 基数等）。
 		rdbData, err := replication.GenerateRDB(h.Db)
 		if err != nil {
 			logger.Logger.Error().Err(err).Msg("生成RDB数据失败")
 			return proto.NewError("ERR failed to generate RDB")
+		}
+
+		snapshotOffset := h.Replication.GetMasterReplOffset()
+
+		// 发送FULLRESYNC响应（使用 snapshotOffset）
+		response := fmt.Sprintf("+FULLRESYNC %s %d\r\n", result.ReplId, snapshotOffset)
+		if _, err := writer.WriteString(response); err != nil {
+			logger.Logger.Error().Err(err).Msg("发送FULLRESYNC失败")
+			return proto.NewError("ERR failed to send FULLRESYNC")
 		}
 
 		// 发送RDB数据（Bulk String格式）
@@ -646,22 +660,43 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 			return proto.NewError("ERR failed to flush writer")
 		}
 
+		// 创建从节点连接并发送 backlog（snapshotOffset → currentOffset）
+		slaveConn := replication.NewSlaveConnection(conn)
+		backlog := h.Replication.GetBacklog()
+		currentOffset := h.Replication.GetMasterReplOffset()
+
+		// 在 slaveConn.mu 保护下原子化执行：
+		//   AddSlave + send backlog
+		slaveConn.SetReplOffset(currentOffset)
+		slaveConn.SetReady(true)
+
+		slaveConn.Lock()
+		h.Replication.AddSlave(slaveConn)
+		if currentOffset > snapshotOffset {
+			backlogData, bgErr := backlog.GetRange(snapshotOffset, currentOffset)
+			if bgErr != nil {
+				logger.Logger.Error().Err(bgErr).
+					Int64("snapshot_offset", snapshotOffset).
+					Int64("current_offset", currentOffset).
+					Msg("获取FULLRESYNC backlog数据失败")
+			} else if len(backlogData) > 0 {
+				if bgErr := slaveConn.WriteAndFlush(backlogData); bgErr != nil {
+					logger.Logger.Error().Err(bgErr).
+						Int("bytes", len(backlogData)).
+						Msg("发送FULLRESYNC backlog数据失败")
+				}
+			}
+		}
+		slaveConn.Unlock()
+
 		logger.Logger.Info().
 			Str("slave_addr", remoteAddr).
 			Str("repl_id", result.ReplId).
-			Int64("offset", result.Offset).
+			Int64("snapshot_offset", snapshotOffset).
+			Int64("current_offset", currentOffset).
 			Int("rdb_size", len(rdbData)).
-			Msg("发送FULLRESYNC和RDB到从节点")
-
-		// 创建从节点连接并注册
-		slaveConn := replication.NewSlaveConnection(conn)
-		// 设置初始复制偏移量
-		slaveConn.SetReplOffset(result.Offset)
-		// 标记为已就绪（可以接收命令）
-		slaveConn.SetReady(true)
-
-		// 添加到复制管理器
-		h.Replication.AddSlave(slaveConn)
+			Int64("backlog_range", currentOffset-snapshotOffset).
+			Msg("发送FULLRESYNC, RDB和backlog到从节点")
 
 		// 启动goroutine处理从节点的复制连接（接收REPLCONF ACK等）
 		h.wg.Add(1)

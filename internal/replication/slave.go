@@ -188,3 +188,21 @@ func (sc *SlaveConnection) GetLastAckTime() int64 {
 	defer sc.mu.RUnlock()
 	return sc.LastAckTime
 }
+
+// Lock 锁定从节点连接（防止 PropagateCommand 并发写入）
+func (sc *SlaveConnection) Lock() {
+	sc.mu.Lock()
+}
+
+// Unlock 解锁从节点连接
+func (sc *SlaveConnection) Unlock() {
+	sc.mu.Unlock()
+}
+
+// WriteAndFlush 在锁保护下直接写入并刷新数据
+func (sc *SlaveConnection) WriteAndFlush(data []byte) error {
+	if _, err := sc.Writer.Write(data); err != nil {
+		return err
+	}
+	return sc.Writer.Flush()
+}
