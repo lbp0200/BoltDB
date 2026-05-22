@@ -71,6 +71,7 @@ type TemporalAnalysis struct {
 	Recovery      RecoveryStats
 	Trajectory    string
 	SnapshotCount int
+	Basin         BasinAttractorInfo
 }
 
 func (ta TemporalAnalysis) FormatCompact() string {
@@ -85,6 +86,9 @@ func (ta TemporalAnalysis) FormatCompact() string {
 	}
 	if ta.Recovery.Observed {
 		fmt.Fprintf(&b, " recover=%.2f/s(%v)", ta.Recovery.Velocity, ta.Recovery.Duration.Round(time.Second))
+	}
+	if ta.Basin.CurrentBasin != BasinUnknown {
+		fmt.Fprintf(&b, " %s", ta.Basin.FormatCompact())
 	}
 	b.WriteString("]")
 	return b.String()
@@ -115,6 +119,9 @@ func (ta TemporalAnalysis) FormatReport() string {
 		fmt.Fprintf(&b, "  recovery: velocity=%.4f/s duration=%v damping=%.2f undershoot=%.3f\n",
 			ta.Recovery.Velocity, ta.Recovery.Duration.Round(time.Second),
 			ta.Recovery.DampingRatio, ta.Recovery.Undershoot)
+	}
+	if ta.Basin.CurrentBasin != BasinUnknown && ta.Basin.CurrentBasin != BasinHealthy {
+		b.WriteString(ta.Basin.FormatReport())
 	}
 	b.WriteString("------------------\n")
 	return b.String()

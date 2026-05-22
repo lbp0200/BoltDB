@@ -322,6 +322,11 @@ func (pm *PressureMonitor) HealthScore(baselineGoroutines int) HealthScore {
 	return h
 }
 
+// BasinAnalysis 返回吸引子/稳定性盆分析结果
+func (pm *PressureMonitor) BasinAnalysis() BasinAttractorInfo {
+	return AnalyzeBasin(pm.Samples())
+}
+
 // TemporalAnalysis 返回时间序列分析结果（需先调用 EnableTemporalAnalysis）
 func (pm *PressureMonitor) TemporalAnalysis() TemporalAnalysis {
 	pm.mu.Lock()

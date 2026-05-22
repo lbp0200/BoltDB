@@ -4898,7 +4898,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	// ==================== LOLWUT ====================
 	case "LOLWUT":
 		// LOLWUT [VERSION version] - Redis version sanity check
-		version := "redis.bolt.8.0"
+		version := "redis.bolt.8.9"
 		if len(args) > 0 && strings.ToUpper(string(args[0])) == "VERSION" && len(args) > 1 {
 			version = string(args[1])
 		}

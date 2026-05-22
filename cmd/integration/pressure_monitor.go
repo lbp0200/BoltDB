@@ -24,6 +24,11 @@ type RecoveryStats = monitor.RecoveryStats
 type TemporalAnalysis = monitor.TemporalAnalysis
 type TemporalAnalyzer = monitor.TemporalAnalyzer
 
+// Basin analysis types
+type BasinType = monitor.BasinType
+type BasinTransition = monitor.BasinTransition
+type BasinAttractorInfo = monitor.BasinAttractorInfo
+
 const (
 	TrajectoryStable           = monitor.TrajectoryStable
 	TrajectoryRecovering       = monitor.TrajectoryRecovering
@@ -31,6 +36,14 @@ const (
 	TrajectoryOscillating      = monitor.TrajectoryOscillating
 	TrajectoryStuck            = monitor.TrajectoryStuck
 	TrajectoryInsufficientData = monitor.TrajectoryInsufficientData
+)
+
+const (
+	BasinUnknown   = monitor.BasinUnknown
+	BasinHealthy   = monitor.BasinHealthy
+	BasinStressed  = monitor.BasinStressed
+	BasinDegraded  = monitor.BasinDegraded
+	BasinCollapsed = monitor.BasinCollapsed
 )
 
 const (

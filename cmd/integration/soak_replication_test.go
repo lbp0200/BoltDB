@@ -177,7 +177,9 @@ func setupSoakReplication(t *testing.T) *soakReplEnv {
 }
 
 func TestSoakReplication(t *testing.T) {
-	t.Skip("soak-repl: data divergence flaky in CI")
+	if os.Getenv("CI_NIGHTLY_SOAK") == "" {
+		t.Skip("soak-repl: data divergence flaky in CI; set CI_NIGHTLY_SOAK=1 to run")
+	}
 	if testing.Short() {
 		t.Skip("skipping soak replication test in short mode")
 	}
@@ -208,6 +210,7 @@ func TestSoakReplication(t *testing.T) {
 
 	// 压力监控（监控 master）
 	pm := NewPressureMonitor(env.masterDB, env.masterRepl)
+	pm.EnableTemporalAnalysis()
 	if jdir := os.Getenv("SOAK_JSONL_DIR"); jdir != "" {
 		os.MkdirAll(jdir, 0755)
 		jpath := filepath.Join(jdir, fmt.Sprintf("soak-repl-%s.jsonl", time.Now().Format("20060102-150405")))
@@ -279,6 +282,21 @@ func TestSoakReplication(t *testing.T) {
 	// 健康评分
 	health := pm.HealthScore(baseline)
 	t.Log(health.String())
+
+	// 时间序列分析
+	if ta := pm.TemporalAnalysis(); ta.Trajectory != TrajectoryInsufficientData {
+		t.Log(ta.FormatReport())
+	}
+
+	// 吸引子 basin 分析
+	ba := pm.BasinAnalysis()
+	t.Log(ba.FormatReport())
+
+	// 保存结构化报告
+	if rdir := os.Getenv("SOAK_REPORT_DIR"); rdir != "" {
+		saveSoakReport(rdir, "replication", pm, baseline, duration, level)
+		t.Logf("soak-repl: report saved to %s", rdir)
+	}
 
 	// Final verification: compare master and slave datasets
 	t.Log("soak-repl: comparing master/slave datasets...")

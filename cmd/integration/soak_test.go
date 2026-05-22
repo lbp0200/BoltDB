@@ -90,7 +90,9 @@ func soakCheckNoLeak(t *testing.T, baseline, final int) {
 // Default concurrency is 50; override with SOAK_CLIENTS.
 // Data directory is ~/soak_boltdb_data; override with SOAK_DATA_DIR.
 func TestSoak(t *testing.T) {
-	t.Skip("soak test: goroutine threshold flaky in CI")
+	if os.Getenv("CI_NIGHTLY_SOAK") == "" {
+		t.Skip("soak test: goroutine threshold flaky in CI; set CI_NIGHTLY_SOAK=1 to run")
+	}
 	if testing.Short() {
 		t.Skip("skipping soak test in short mode")
 	}
@@ -152,6 +154,7 @@ func TestSoak(t *testing.T) {
 
 	// 压力监控
 	pm := NewPressureMonitor(db, replMgr)
+	pm.EnableTemporalAnalysis()
 	if jdir := os.Getenv("SOAK_JSONL_DIR"); jdir != "" {
 		os.MkdirAll(jdir, 0755)
 		jpath := filepath.Join(jdir, fmt.Sprintf("soak-%s.jsonl", time.Now().Format("20060102-150405")))
@@ -207,6 +210,21 @@ func TestSoak(t *testing.T) {
 	// 健康评分
 	health := pm.HealthScore(baseline)
 	t.Log(health.String())
+
+	// 时间序列分析
+	if ta := pm.TemporalAnalysis(); ta.Trajectory != TrajectoryInsufficientData {
+		t.Log(ta.FormatReport())
+	}
+
+	// 吸引子 basin 分析
+	ba := pm.BasinAnalysis()
+	t.Log(ba.FormatReport())
+
+	// 保存结构化报告
+	if rdir := os.Getenv("SOAK_REPORT_DIR"); rdir != "" {
+		saveSoakReport(rdir, "standalone", pm, baseline, duration, level)
+		t.Logf("soak: report saved to %s", rdir)
+	}
 
 	final := runtime.NumGoroutine()
 	soakCheckNoLeak(t, baseline, final)

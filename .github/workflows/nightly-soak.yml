@@ -1,0 +1,89 @@
+name: Nightly Soak
+
+on:
+  schedule:
+    # 2 AM UTC daily
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Soak duration (e.g. 30m, 1h, 12h)'
+        default: '1h'
+        required: true
+      run-replication:
+        description: 'Run replication soak too'
+        type: boolean
+        default: true
+
+concurrency:
+  group: nightly-soak-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI_NIGHTLY_SOAK: '1'
+  SOAK_DURATION: ${{ github.event.inputs.duration || '1h' }}
+  SOAK_REPL_DURATION: ${{ github.event.inputs.duration || '1h' }}
+  SOAK_JSONL_DIR: /tmp/soak-artifacts/jsonl
+  SOAK_REPORT_DIR: /tmp/soak-artifacts/report
+
+jobs:
+  standalone:
+    name: Standalone Soak
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Run standalone soak
+        run: |
+          mkdir -p /tmp/soak-artifacts/jsonl /tmp/soak-artifacts/report
+          go test -race -timeout 90m \
+            ./cmd/integration/ -run TestSoak -v 2>&1 | tee /tmp/soak-artifacts/test-output.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: soak-standalone-${{ github.run_id }}
+          path: /tmp/soak-artifacts/
+          retention-days: 30
+
+  replication:
+    name: Replication Soak
+    if: ${{ github.event.inputs.run-replication != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Run replication soak
+        run: |
+          mkdir -p /tmp/soak-artifacts/jsonl /tmp/soak-artifacts/report
+          go test -race -timeout 90m \
+            ./cmd/integration/ -run TestSoakReplication -v 2>&1 | tee /tmp/soak-artifacts/test-output.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: soak-replication-${{ github.run_id }}
+          path: /tmp/soak-artifacts/
+          retention-days: 30
