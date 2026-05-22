@@ -299,6 +299,10 @@ func (psm *PubSubManager) Clear() {
 	// 关闭所有订阅者的消息通道并移除订阅者
 	for sub := range psm.subscribers {
 		sub.closeMu.Lock()
+		if sub.closed {
+			sub.closeMu.Unlock()
+			continue
+		}
 		sub.closed = true
 		sub.closeMu.Unlock()
 		close(sub.MessageCh)
