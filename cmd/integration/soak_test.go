@@ -224,6 +224,8 @@ func TestSoak(t *testing.T) {
 	if rdir := os.Getenv("SOAK_REPORT_DIR"); rdir != "" {
 		saveSoakReport(rdir, "standalone", pm, baseline, duration, level)
 		t.Logf("soak: report saved to %s", rdir)
+		saveEvolutionReport(rdir, "standalone")
+		t.Logf("soak: evolution report saved to %s", rdir)
 	}
 
 	final := runtime.NumGoroutine()

@@ -44,11 +44,43 @@ jobs:
       - name: Build
         run: go build ./...
 
+      - name: Restore evolution history
+        id: restore-history
+        uses: actions/cache@v4
+        with:
+          path: /tmp/soak-artifacts/report/history
+          key: soak-history-standalone-${{ github.ref_name }}
+          restore-keys: |
+            soak-history-standalone-${{ github.ref_name }}
+            soak-history-standalone-
+
       - name: Run standalone soak
         run: |
           mkdir -p /tmp/soak-artifacts/jsonl /tmp/soak-artifacts/report
           go test -race -timeout 90m \
             ./cmd/integration/ -run TestSoak -v 2>&1 | tee /tmp/soak-artifacts/test-output.txt
+
+      - name: Evolution gate check
+        run: |
+          echo "=== Evolution Analysis ==="
+          go run cmd/evolution/main.go \
+            -dir=/tmp/soak-artifacts/report \
+            -prefix=standalone \
+            2>&1 | tee /tmp/soak-artifacts/report/standalone-evolution.txt || true
+          echo "=== Evolution Gate ==="
+          if grep -q "WARN\|FAIL" /tmp/soak-artifacts/report/standalone-evolution.txt 2>/dev/null; then
+            echo "EVOLUTION GATE: degradation detected in long-term trends"
+          else
+            echo "EVOLUTION GATE: healthy"
+          fi
+
+      - name: Save evolution history
+        uses: actions/cache@v4
+        with:
+          path: /tmp/soak-artifacts/report/history
+          key: soak-history-standalone-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            soak-history-standalone-${{ github.ref_name }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -75,15 +107,74 @@ jobs:
       - name: Build
         run: go build ./...
 
+      - name: Restore evolution history
+        id: restore-repl-history
+        uses: actions/cache@v4
+        with:
+          path: /tmp/soak-artifacts/report/history
+          key: soak-history-replication-${{ github.ref_name }}
+          restore-keys: |
+            soak-history-replication-${{ github.ref_name }}
+            soak-history-replication-
+
       - name: Run replication soak
         run: |
           mkdir -p /tmp/soak-artifacts/jsonl /tmp/soak-artifacts/report
           go test -race -timeout 90m \
             ./cmd/integration/ -run TestSoakReplication -v 2>&1 | tee /tmp/soak-artifacts/test-output.txt
 
+      - name: Evolution gate check
+        run: |
+          echo "=== Evolution Analysis ==="
+          go run cmd/evolution/main.go \
+            -dir=/tmp/soak-artifacts/report \
+            -prefix=replication \
+            2>&1 | tee /tmp/soak-artifacts/report/replication-evolution.txt || true
+          echo "=== Evolution Gate ==="
+          if grep -q "WARN\|FAIL" /tmp/soak-artifacts/report/replication-evolution.txt 2>/dev/null; then
+            echo "EVOLUTION GATE: degradation detected in long-term trends"
+          else
+            echo "EVOLUTION GATE: healthy"
+          fi
+
+      - name: Save evolution history
+        uses: actions/cache@v4
+        with:
+          path: /tmp/soak-artifacts/report/history
+          key: soak-history-replication-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            soak-history-replication-${{ github.ref_name }}
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: soak-replication-${{ github.run_id }}
           path: /tmp/soak-artifacts/
+          retention-days: 30
+
+  regressions:
+    name: Regression Replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Run regression tests
+        run: |
+          go test -race -timeout 600s -v \
+            ./cmd/integration/regressions/... 2>&1 | tee /tmp/regression-output.txt
+
+      - name: Upload regression logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: regression-logs-${{ github.run_id }}
+          path: /tmp/regression-output.txt
           retention-days: 30

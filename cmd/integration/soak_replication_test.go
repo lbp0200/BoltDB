@@ -296,6 +296,8 @@ func TestSoakReplication(t *testing.T) {
 	if rdir := os.Getenv("SOAK_REPORT_DIR"); rdir != "" {
 		saveSoakReport(rdir, "replication", pm, baseline, duration, level)
 		t.Logf("soak-repl: report saved to %s", rdir)
+		saveEvolutionReport(rdir, "replication")
+		t.Logf("soak-repl: evolution report saved to %s", rdir)
 	}
 
 	// Final verification: compare master and slave datasets

@@ -92,6 +92,7 @@ func saveSoakReport(dir, name string, pm *PressureMonitor, baseline int, duratio
 	}
 
 	// JSON summary
+	var summaryJSON []byte
 	jpath := filepath.Join(dir, name+"-summary.json")
 	jf, err := os.Create(jpath)
 	if err == nil {
@@ -99,6 +100,12 @@ func saveSoakReport(dir, name string, pm *PressureMonitor, baseline int, duratio
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(summary)
 		_ = jf.Close()
+		summaryJSON, _ = json.Marshal(summary)
+	}
+
+	// Archive timestamped copy to history/ for cross-run evolution analysis
+	if len(summaryJSON) > 0 {
+		_ = monitor.SaveEvolutionHistory(filepath.Join(dir, "history"), name, summaryJSON, summary.Timestamp)
 	}
 
 	rpath := filepath.Join(dir, name+"-report.md")
@@ -139,4 +146,24 @@ func saveSoakReport(dir, name string, pm *PressureMonitor, baseline int, duratio
 	fmt.Fprintf(rf, "\n## Health Score\n\n```\n%s\n```\n", health.FormatReport())
 	fmt.Fprintf(rf, "\n## Temporal Analysis\n\n```\n%s\n```\n", temporal.FormatReport())
 	fmt.Fprintf(rf, "\n## Basin Analysis\n\n```\n%s\n```\n", basin.FormatReport())
+}
+
+// saveEvolutionReport loads history and writes evolution analysis markdown.
+//
+//nolint:unused
+func saveEvolutionReport(dir, name string) {
+	historyDir := filepath.Join(dir, "history")
+	runs, err := monitor.LoadEvolutionHistory(historyDir, name)
+	if err != nil || len(runs) < 2 {
+		return
+	}
+	report := monitor.AnalyzeEvolution(runs)
+
+	epath := filepath.Join(dir, name+"-evolution.md")
+	ef, err := os.Create(epath)
+	if err != nil {
+		return
+	}
+	defer func() { _ = ef.Close() }()
+	_, _ = ef.WriteString(report.FormatReport())
 }
