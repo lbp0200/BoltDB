@@ -39,7 +39,7 @@ jobs:
         run: go build ./...
 
       - name: Test with coverage
-        run: go test -race -timeout 30s -short -coverprofile=coverage.out -covermode=atomic ./internal/... ./cmd/boltDB/... 2>&1 | grep -v "badger" || true
+        run: go test -race -timeout 30s -short -coverprofile=coverage.out -covermode=atomic ./internal/... ./cmd/boltDB/... 2>/dev/null
 
       - name: Upload coverage
         if: always()
@@ -63,6 +63,9 @@ jobs:
         with:
           go-version: "1.25.7"
           cache: true
+
+      - name: Install redis-server for mixed-cluster tests
+        run: sudo apt-get update && sudo apt-get install -y redis-server
 
       - name: Run integration tests
         run: go test -race -timeout 600s ./cmd/integration/...
