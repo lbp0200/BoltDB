@@ -167,6 +167,11 @@ func computeRetryHealth(latest PressureSample) float64 {
 }
 
 func computeReplicationHealth(latest PressureSample) float64 {
+	// Standalone server with no slave configured: replication is not applicable.
+	if latest.ConnectedSlaves == 0 && latest.ReconnectCount == 0 {
+		return 1.0
+	}
+
 	lag := latest.MasterOffset - latest.SlaveOffset
 	if lag < 0 {
 		lag = 0

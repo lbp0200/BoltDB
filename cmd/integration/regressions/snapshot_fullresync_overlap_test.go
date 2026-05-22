@@ -171,6 +171,20 @@ func TestRegressionSnapshotFullresyncOffset(t *testing.T) {
 		}
 	})
 
+	// Convergence barrier: wait for monitor to sample after replication catches up
+	// Without this, pm.Latest() may reflect stale pre-convergence data (3s sample interval).
+	t.Log("offset-fix: convergence barrier — waiting for monitor sample...")
+	for i := 0; i < 12; i++ {
+		l := pm.Latest()
+		moff := master.GetMasterOffset()
+		lag := moff - l.SlaveOffset
+		if l.ConnectedSlaves > 0 && lag < 10000 {
+			t.Logf("offset-fix: monitor captured convergence (mo=%d so=%d lag=%d)", moff, l.SlaveOffset, lag)
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
 	pm.LogSummary(t)
 	assertion := monitor.DefaultDegradationAssertion()
 	assertion.MaxGoroutineDelta = 50
