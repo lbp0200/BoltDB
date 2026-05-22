@@ -108,17 +108,25 @@ func TestRegressionReplicationThrash(t *testing.T) {
 		}
 	}
 
-	// Convergence barrier: wait for monitor to sample after replication catches up
+	// Convergence barrier: wait for monitor to sample after replication catches up.
+	// Monitor samples every 3s — FULLRESYNC may take 4-6s, so we wait up to 10s.
 	t.Log("repl-thrash: convergence barrier — waiting for monitor sample...")
-	for i := 0; i < 12; i++ {
+	var barrierOk bool
+	for i := 0; i < 20; i++ {
 		l := pm.Latest()
 		moff := master.GetMasterOffset()
 		lag := moff - l.SlaveOffset
 		if l.ConnectedSlaves > 0 && lag < 10000 {
 			t.Logf("repl-thrash: monitor captured convergence (mo=%d so=%d lag=%d)", moff, l.SlaveOffset, lag)
+			barrierOk = true
 			break
 		}
 		time.Sleep(500 * time.Millisecond)
+	}
+	if !barrierOk {
+		l := pm.Latest()
+		t.Logf("repl-thrash: WARN — barrier timeout (mo=%d so=%d slaves=%d)",
+			master.GetMasterOffset(), l.SlaveOffset, l.ConnectedSlaves)
 	}
 
 	pm.LogSummary(t)
@@ -226,15 +234,22 @@ func TestRegressionReplicationThrashFullresync(t *testing.T) {
 
 	// Convergence barrier: wait for monitor to sample after FULLRESYNC converges
 	t.Log("repl-fullresync: convergence barrier — waiting for monitor sample...")
-	for i := 0; i < 12; i++ {
+	var barrierOk bool
+	for i := 0; i < 20; i++ {
 		l := pm.Latest()
 		moff := master.GetMasterOffset()
 		lag := moff - l.SlaveOffset
 		if l.ConnectedSlaves > 0 && lag < 10000 {
 			t.Logf("repl-fullresync: monitor captured convergence (mo=%d so=%d lag=%d)", moff, l.SlaveOffset, lag)
+			barrierOk = true
 			break
 		}
 		time.Sleep(500 * time.Millisecond)
+	}
+	if !barrierOk {
+		l := pm.Latest()
+		t.Logf("repl-fullresync: WARN — barrier timeout (mo=%d so=%d slaves=%d)",
+			master.GetMasterOffset(), l.SlaveOffset, l.ConnectedSlaves)
 	}
 
 	pm.LogSummary(t)
