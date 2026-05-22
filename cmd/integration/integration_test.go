@@ -1904,7 +1904,7 @@ func TestLOLWUT(t *testing.T) {
 	str, ok := result.(string)
 	assert.True(t, ok)
 	assert.True(t, len(str) > 0)
-	assert.Equal(t, "BoltDB redis.bolt.8.0 - A disk-persistent Redis-compatible database", str)
+	assert.Equal(t, "BoltDB redis.bolt.8.9 - A disk-persistent Redis-compatible database", str)
 
 	// LOLWUT with VERSION parameter
 	result, err = sharedClient.Do(ctx, "LOLWUT", "VERSION", "5").Result()

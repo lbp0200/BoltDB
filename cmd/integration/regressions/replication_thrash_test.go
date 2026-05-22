@@ -108,6 +108,19 @@ func TestRegressionReplicationThrash(t *testing.T) {
 		}
 	}
 
+	// Convergence barrier: wait for monitor to sample after replication catches up
+	t.Log("repl-thrash: convergence barrier — waiting for monitor sample...")
+	for i := 0; i < 12; i++ {
+		l := pm.Latest()
+		moff := master.GetMasterOffset()
+		lag := moff - l.SlaveOffset
+		if l.ConnectedSlaves > 0 && lag < 10000 {
+			t.Logf("repl-thrash: monitor captured convergence (mo=%d so=%d lag=%d)", moff, l.SlaveOffset, lag)
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
 	pm.LogSummary(t)
 
 	// Assertion: tighter thresholds for replication stability
@@ -210,6 +223,19 @@ func TestRegressionReplicationThrashFullresync(t *testing.T) {
 	recon := slave.GetReconnectCount()
 	t.Logf("repl-fullresync: post-drain — reconnects=%d mo=%d so=%d lag=%d",
 		recon, mOff, sOff, mOff-sOff)
+
+	// Convergence barrier: wait for monitor to sample after FULLRESYNC converges
+	t.Log("repl-fullresync: convergence barrier — waiting for monitor sample...")
+	for i := 0; i < 12; i++ {
+		l := pm.Latest()
+		moff := master.GetMasterOffset()
+		lag := moff - l.SlaveOffset
+		if l.ConnectedSlaves > 0 && lag < 10000 {
+			t.Logf("repl-fullresync: monitor captured convergence (mo=%d so=%d lag=%d)", moff, l.SlaveOffset, lag)
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 
 	pm.LogSummary(t)
 
