@@ -176,17 +176,21 @@ MOVED <slot> <node-address>
 
 ## 限制和注意事项
 
-1. **持久化**: 当前槽位分配信息仅存储在内存中，重启后需要重新配置
+1. **持久化**: 槽位分配已通过 BadgerDB 持久化（`cluster:config` key），重启后自动恢复
 2. **迁移**: 槽位迁移功能尚未实现
-3. **故障转移**: 自动故障转移功能尚未实现
+3. **故障转移**: 自动故障转移功能尚未实现（需选举协议）
 4. **复制**: Slave 节点复制功能尚未完全实现
+5. **Gossip**: 基础框架已实现（周期性 PING/PFAIL 检测、过期清理），但未通过 TCP 发送真实消息
+
+## 已实现
+
+- [x] 槽位分配持久化（SaveConfig/LoadConfig，slot/node 变更自动保存）
+- [x] 节点间 Gossip 基础框架（`internal/cluster/gossip.go`）
 
 ## 未来计划
 
-- [ ] 槽位分配持久化
 - [ ] 槽位迁移（MIGRATE）
 - [ ] 自动故障转移
 - [ ] 完整的 Slave 复制
-- [ ] 集群配置文件的保存和加载
-- [ ] 节点间通信协议（Gossip）
+- [ ] CLUSTER MEET 真实 TCP 握手
 

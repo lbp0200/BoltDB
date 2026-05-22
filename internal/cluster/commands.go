@@ -265,10 +265,10 @@ func (cc *ClusterCommands) handleReplicate(args []string) (string, error) {
 	masterID := args[0]
 
 	cc.cluster.mu.Lock()
-	defer cc.cluster.mu.Unlock()
 
 	master := cc.cluster.Nodes[masterID]
 	if master == nil {
+		cc.cluster.mu.Unlock()
 		return "", fmt.Errorf("ERR unknown node %s", masterID)
 	}
 
@@ -281,13 +281,17 @@ func (cc *ClusterCommands) handleReplicate(args []string) (string, error) {
 		}
 	}
 	cc.cluster.Myself.Slots = []SlotRange{}
+	cc.cluster.mu.Unlock()
 
+	_ = cc.cluster.SaveConfig()
 	return "OK", nil
 }
 
 // handleSaveConfig 处理CLUSTER SAVECONFIG命令
 func (cc *ClusterCommands) handleSaveConfig(args []string) (string, error) {
-	// 简化实现：配置已持久化在数据库中
+	if err := cc.cluster.SaveConfig(); err != nil {
+		return "", fmt.Errorf("ERR saving cluster config: %v", err)
+	}
 	return "OK", nil
 }
 

@@ -1,6 +1,8 @@
 package sentinel
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"time"
@@ -23,7 +25,8 @@ type Sentinel struct {
 	// gossip消息通道
 	gossipCh chan *GossipMessage
 
-	Metrics *Metrics
+	Metrics       *Metrics
+	ConfigManager *configManager
 }
 
 // GossipMessage 哨兵间通信消息
@@ -39,7 +42,12 @@ type GossipMessage struct {
 
 // NewSentinel 创建新的哨兵实例
 func NewSentinel(quorum int, downAfter time.Duration) *Sentinel {
-	return &Sentinel{
+	return NewSentinelWithDataDir(quorum, downAfter, "")
+}
+
+// NewSentinelWithDataDir 创建哨兵实例并指定配置持久化目录
+func NewSentinelWithDataDir(quorum int, downAfter time.Duration, dataDir string) *Sentinel {
+	s := &Sentinel{
 		masters:      make(map[string]*MasterInstance),
 		quorum:       quorum,
 		downAfter:    downAfter,
@@ -50,25 +58,35 @@ func NewSentinel(quorum int, downAfter time.Duration) *Sentinel {
 		gossipCh:     make(chan *GossipMessage, 100),
 		Metrics:      NewMetrics(),
 	}
+	if dataDir != "" {
+		s.ConfigManager = newConfigManager(s, dataDir)
+		_, _ = s.ConfigManager.Load()
+	}
+	return s
 }
 
-// generateRunID 生成运行ID
+// generateRunID 生成40字符十六进制运行ID（与 Redis 兼容）
 func generateRunID() string {
-	// 简化实现，实际应该生成40字符的十六进制字符串
-	return fmt.Sprintf("sentinel-%d", time.Now().UnixNano())
+	bytes := make([]byte, 20)
+	if _, err := rand.Read(bytes); err != nil {
+		// fallback: 不可能失败除非系统熵耗尽
+		return fmt.Sprintf("%040x", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(bytes)
 }
 
 // AddMaster 添加主节点监控
 func (s *Sentinel) AddMaster(name, addr string, quorum int) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	if _, exists := s.masters[name]; exists {
+		s.mu.Unlock()
 		return fmt.Errorf("master %s already exists", name)
 	}
 
 	master := NewMasterInstanceWithDownAfter(name, addr, quorum, s.downAfter)
 	s.masters[name] = master
+	s.mu.Unlock()
 
 	logger.Logger.Info().
 		Str("master_name", name).
@@ -76,6 +94,9 @@ func (s *Sentinel) AddMaster(name, addr string, quorum int) error {
 		Int("quorum", quorum).
 		Msg("添加主节点监控")
 
+	if s.ConfigManager != nil {
+		_ = s.ConfigManager.Save()
+	}
 	return nil
 }
 

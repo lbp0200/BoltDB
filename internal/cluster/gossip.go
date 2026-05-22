@@ -1,0 +1,176 @@
+package cluster
+
+import (
+	"context"
+	"math/rand"
+	"sync"
+	"time"
+
+	"github.com/lbp0200/BoltDB/internal/logger"
+)
+
+const (
+	pingPeriod       = 1 * time.Second
+	gossipFanout     = 3 // nodes pinged per cycle
+	failTimeout      = 5 * time.Second
+	cleanupInterval  = 10 * time.Second
+	staleNodeTimeout = 60 * time.Second
+)
+
+// Gossiper manages periodic PING/PONG exchange between cluster nodes.
+type Gossiper struct {
+	cluster *Cluster
+	ctx     context.Context
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+	started bool
+}
+
+// NewGossiper creates a new Gossiper for the given cluster.
+func NewGossiper(c *Cluster) *Gossiper {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Gossiper{
+		cluster: c,
+		ctx:     ctx,
+		cancel:  cancel,
+	}
+}
+
+// Start begins the gossip loop. Must be called after cluster is configured.
+func (g *Gossiper) Start() {
+	if g.started {
+		return
+	}
+	g.started = true
+	g.wg.Add(2)
+	go g.gossipLoop()
+	go g.cleanupLoop()
+	logger.Logger.Info().Msg("cluster gossip started")
+}
+
+// Stop terminates the gossip loop.
+func (g *Gossiper) Stop() {
+	if !g.started {
+		return
+	}
+	g.cancel()
+	g.wg.Wait()
+	g.started = false
+	logger.Logger.Info().Msg("cluster gossip stopped")
+}
+
+// gossipLoop periodically sends PINGs to random peers.
+func (g *Gossiper) gossipLoop() {
+	defer g.wg.Done()
+	ticker := time.NewTicker(pingPeriod)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-g.ctx.Done():
+			return
+		case <-ticker.C:
+			g.pingRandomPeers()
+		}
+	}
+}
+
+// cleanupLoop periodically removes stale nodes and checks failure detection.
+func (g *Gossiper) cleanupLoop() {
+	defer g.wg.Done()
+	ticker := time.NewTicker(cleanupInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-g.ctx.Done():
+			return
+		case <-ticker.C:
+			g.checkFailures()
+		}
+	}
+}
+
+// pingRandomPeers sends PINGs to a random subset of peer nodes.
+func (g *Gossiper) pingRandomPeers() {
+	g.cluster.mu.RLock()
+	peers := make([]*Node, 0, len(g.cluster.Nodes))
+	for _, node := range g.cluster.Nodes {
+		if node.ID != g.cluster.Myself.ID {
+			peers = append(peers, node)
+		}
+	}
+	g.cluster.mu.RUnlock()
+
+	if len(peers) == 0 {
+		return
+	}
+
+	// Shuffle and pick first gossipFanout
+	rand.Shuffle(len(peers), func(i, j int) {
+		peers[i], peers[j] = peers[j], peers[i]
+	})
+
+	count := gossipFanout
+	if count > len(peers) {
+		count = len(peers)
+	}
+
+	for _, peer := range peers[:count] {
+		// In a full implementation, this would open a TCP connection and
+		// send a CLUSTER message. Here we just update the ping timestamp
+		// and log the intent.
+		peer.UpdatePing()
+		logger.Logger.Debug().
+			Str("peer", peer.ID).
+			Str("addr", peer.Addr).
+			Msg("cluster gossip: PING")
+	}
+}
+
+// checkFailures marks nodes as failed if they haven't responded in time.
+func (g *Gossiper) checkFailures() {
+	now := time.Now().UnixMilli()
+
+	g.cluster.mu.Lock()
+	defer g.cluster.mu.Unlock()
+
+	for _, node := range g.cluster.Nodes {
+		if node.ID == g.cluster.Myself.ID {
+			continue
+		}
+		if node.PongRecv == 0 {
+			continue // never received pong, skip
+		}
+		elapsed := now - node.PongRecv
+		if elapsed > failTimeout.Milliseconds() {
+			if !node.IsFailed() {
+				node.Flags = append(node.Flags, "pfail")
+				logger.Logger.Warn().
+					Str("node", node.ID).
+					Str("addr", node.Addr).
+					Dur("elapsed", time.Duration(elapsed)*time.Millisecond).
+					Msg("cluster gossip: node marked PFAIL")
+			}
+		}
+	}
+
+	// Remove nodes that have been gone too long
+	for id, node := range g.cluster.Nodes {
+		if node.ID == g.cluster.Myself.ID {
+			continue
+		}
+		if node.PongRecv > 0 && now-node.PongRecv > staleNodeTimeout.Milliseconds() {
+			logger.Logger.Warn().
+				Str("node", id).
+				Str("addr", node.Addr).
+				Msg("cluster gossip: removing stale node")
+			delete(g.cluster.Nodes, id)
+			for i := uint32(0); i < SlotCount; i++ {
+				if g.cluster.Slots[i] != nil && g.cluster.Slots[i].ID == id {
+					g.cluster.Slots[i] = g.cluster.Myself
+				}
+			}
+		}
+	}
+}

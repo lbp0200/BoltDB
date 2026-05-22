@@ -17,6 +17,7 @@ type Cluster struct {
 	Store  *store.BotreonStore // 数据存储
 	Epoch  int64               // 当前配置纪元
 	mu     sync.RWMutex        // 保护集群状态的锁
+	Gossip *Gossiper           // 节点间 gossip 协议
 }
 
 // NewCluster 创建新集群
@@ -42,11 +43,22 @@ func NewCluster(store *store.BotreonStore, nodeID, addr string) (*Cluster, error
 	}
 	cluster.Nodes[nodeID] = myself
 
-	// 初始化时，当前节点负责所有槽位
-	for i := uint32(0); i < SlotCount; i++ {
-		cluster.Slots[i] = myself
+	// 从持久化配置恢复（如果存在）
+	if found, _ := cluster.LoadConfig(); found {
+		// 恢复完持久化配置后，确保当前节点始终在节点表中
+		if _, exists := cluster.Nodes[nodeID]; !exists {
+			cluster.Nodes[nodeID] = myself
+		}
+	} else {
+		// 初始化时，当前节点负责所有槽位
+		for i := uint32(0); i < SlotCount; i++ {
+			cluster.Slots[i] = myself
+		}
+		myself.AddSlotRange(0, SlotCount-1)
 	}
-	myself.AddSlotRange(0, SlotCount-1)
+
+	// 初始化 gossip
+	cluster.Gossip = NewGossiper(cluster)
 
 	return cluster, nil
 }
@@ -80,14 +92,14 @@ func (c *Cluster) GetNodeByID(nodeID string) *Node {
 // AddNode 添加节点到集群
 func (c *Cluster) AddNode(node *Node) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.Nodes[node.ID] = node
+	c.mu.Unlock()
+	_ = c.SaveConfig() // 持久化
 }
 
 // RemoveNode 从集群中移除节点
 func (c *Cluster) RemoveNode(nodeID string) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	delete(c.Nodes, nodeID)
 	// 将该节点负责的槽位重新分配给当前节点
 	for i := uint32(0); i < SlotCount; i++ {
@@ -95,42 +107,44 @@ func (c *Cluster) RemoveNode(nodeID string) {
 			c.Slots[i] = c.Myself
 		}
 	}
+	c.mu.Unlock()
+	_ = c.SaveConfig()
 }
 
 // AssignSlot 将槽位分配给指定节点
 func (c *Cluster) AssignSlot(slot uint32, nodeID string) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	if slot >= SlotCount {
+		c.mu.Unlock()
 		return fmt.Errorf("slot %d out of range", slot)
 	}
 
 	node, exists := c.Nodes[nodeID]
 	if !exists {
+		c.mu.Unlock()
 		return fmt.Errorf("node %s not found", nodeID)
 	}
 
-	// 从旧节点移除槽位（简化处理）
-	_ = c.Slots[slot]
-
 	c.Slots[slot] = node
 	node.AddSlotRange(slot, slot)
+	c.mu.Unlock()
 
-	return nil
+	return c.SaveConfig()
 }
 
 // AssignSlotRange 将槽位范围分配给指定节点
 func (c *Cluster) AssignSlotRange(start, end uint32, nodeID string) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	if start >= SlotCount || end >= SlotCount || start > end {
+		c.mu.Unlock()
 		return fmt.Errorf("invalid slot range: %d-%d", start, end)
 	}
 
 	node, exists := c.Nodes[nodeID]
 	if !exists {
+		c.mu.Unlock()
 		return fmt.Errorf("node %s not found", nodeID)
 	}
 
@@ -138,8 +152,9 @@ func (c *Cluster) AssignSlotRange(start, end uint32, nodeID string) error {
 		c.Slots[i] = node
 	}
 	node.AddSlotRange(start, end)
+	c.mu.Unlock()
 
-	return nil
+	return c.SaveConfig()
 }
 
 // GetSlotOwner 获取槽位的所有者节点

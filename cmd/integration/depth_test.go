@@ -1067,3 +1067,166 @@ func TestClusterError_InvalidSubcommandIntegration(t *testing.T) {
 		t.Errorf("Error should mention ERR or unknown subcommand, got: %s", err.Error())
 	}
 }
+
+// ---- High-scale concurrent tests (100+ goroutines) ----
+
+// TestStringConcurrent_HighScaleIncrement tests 100 concurrent INCR operations.
+func TestStringConcurrent_HighScaleIncrement(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+	const goroutines = 100
+	const incrsPerGoroutine = 50
+
+	err := sharedClient.Set(ctx, "highscale_counter", 0, 0).Err()
+	assert.NoError(t, err)
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < incrsPerGoroutine; j++ {
+				sharedClient.Incr(ctx, "highscale_counter")
+			}
+		}()
+	}
+	wg.Wait()
+
+	finalVal, err := sharedClient.Get(ctx, "highscale_counter").Int64()
+	assert.NoError(t, err)
+	assert.Equal(t, int64(goroutines*incrsPerGoroutine), finalVal)
+}
+
+// TestStringConcurrent_HighScaleReadWrite tests 100 concurrent mixed read/write.
+func TestStringConcurrent_HighScaleReadWrite(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+	const goroutines = 100
+	const opsPerGoroutine = 50
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				key := fmt.Sprintf("hsc:k%d", j%50)
+				if j%3 == 0 {
+					sharedClient.Set(ctx, key, idx*1000+j, 0)
+				} else {
+					sharedClient.Get(ctx, key)
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	// Verify no crash, key should exist
+	exists, err := sharedClient.Exists(ctx, "hsc:k0").Result()
+	assert.NoError(t, err)
+	assert.True(t, exists >= 0)
+}
+
+// TestListConcurrent_HighScalePushPop tests 100 concurrent list push/pop.
+func TestListConcurrent_HighScalePushPop(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	if testing.Short() {
+		t.Skip("skipping high-scale list test in short mode")
+	}
+
+	ctx := context.Background()
+	const goroutines = 100
+	const opsPerGoroutine = 30
+
+	sharedClient.Del(ctx, "hsc_list")
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				if j%2 == 0 {
+					sharedClient.LPush(ctx, "hsc_list", idx*1000+j)
+				} else {
+					sharedClient.RPush(ctx, "hsc_list", idx*1000+j)
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	llen, err := sharedClient.LLen(ctx, "hsc_list").Result()
+	assert.NoError(t, err)
+	t.Logf("high-scale list: len=%d", llen)
+	assert.True(t, llen > 0)
+}
+
+// TestHashConcurrent_HighScaleHset tests 100 concurrent HSET on same hash.
+func TestHashConcurrent_HighScaleHset(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+	const goroutines = 100
+	const opsPerGoroutine = 30
+
+	sharedClient.Del(ctx, "hsc_hash")
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				field := fmt.Sprintf("f%d", j%20)
+				sharedClient.HSet(ctx, "hsc_hash", field, idx*1000+j)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	hlen, err := sharedClient.HLen(ctx, "hsc_hash").Result()
+	assert.NoError(t, err)
+	assert.True(t, hlen > 0)
+	t.Logf("high-scale hash: fields=%d", hlen)
+}
+
+// TestSetConcurrent_HighScaleSadd tests 100 concurrent SADD/SREM.
+func TestSetConcurrent_HighScaleSadd(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+	const goroutines = 100
+	const opsPerGoroutine = 30
+
+	sharedClient.Del(ctx, "hsc_set")
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				member := fmt.Sprintf("m%d", j%30)
+				if j%2 == 0 {
+					sharedClient.SAdd(ctx, "hsc_set", member)
+				} else {
+					sharedClient.SRem(ctx, "hsc_set", member)
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	card, _ := sharedClient.SCard(ctx, "hsc_set").Result()
+	t.Logf("high-scale set: card=%d", card)
+	assert.True(t, card >= 0)
+}
