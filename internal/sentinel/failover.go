@@ -39,6 +39,7 @@ func (fm *FailoverManager) StartFailover(masterName string) error {
 
 	// 设置状态为故障转移中
 	master.SetState("failover")
+	fm.sentinel.Metrics.RecordFailoverStart(masterName)
 
 	logger.Logger.Info().
 		Str("master_name", masterName).
@@ -124,6 +125,7 @@ func (fm *FailoverManager) executeFailover(oldMaster *MasterInstance, newMaster 
 	time.Sleep(1 * time.Second)
 
 	// 3. 验证新主节点已提升
+	fm.sentinel.Metrics.RecordNewMaster(oldMaster.GetName())
 	role, err := GetRole(newMaster.Addr)
 	if err != nil {
 		logger.Logger.Warn().
@@ -175,6 +177,8 @@ func (fm *FailoverManager) updateConfiguration(oldMaster *MasterInstance, newMas
 	oldMaster.addr = newMaster.Addr
 	oldMaster.state = "ok"
 	oldMaster.mu.Unlock()
+
+	fm.sentinel.Metrics.RecordLeaderChange()
 
 	logger.Logger.Info().
 		Str("master_name", oldMaster.GetName()).

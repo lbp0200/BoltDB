@@ -29,6 +29,11 @@ type MasterInstance struct {
 
 // NewMasterInstance 创建新的主节点实例
 func NewMasterInstance(name, addr string, quorum int) *MasterInstance {
+	return NewMasterInstanceWithDownAfter(name, addr, quorum, 30*time.Second)
+}
+
+// NewMasterInstanceWithDownAfter 创建新的主节点实例，可指定 downAfter
+func NewMasterInstanceWithDownAfter(name, addr string, quorum int, downAfter time.Duration) *MasterInstance {
 	now := time.Now()
 	return &MasterInstance{
 		name:               name,
@@ -37,7 +42,7 @@ func NewMasterInstance(name, addr string, quorum int) *MasterInstance {
 		slaves:             make([]*SlaveInstance, 0),
 		sentinels:          make([]*SentinelInstance, 0),
 		state:              "ok",
-		downAfter:          30 * time.Second,
+		downAfter:          downAfter,
 		lastPingTime:       now,
 		lastPongTime:       now,
 		stopCh:             make(chan struct{}),
@@ -65,8 +70,10 @@ func (mi *MasterInstance) StartMonitoring(sentinel *Sentinel) {
 func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
 	conn, err := net.DialTimeout("tcp", mi.addr, 5*time.Second)
 
+	var shouldBroadcast bool
+	var shouldTriggerFailover bool
+
 	mi.mu.Lock()
-	defer mi.mu.Unlock()
 
 	if err != nil {
 		// 连接失败，检查是否超过 downAfter 未收到 pong
@@ -74,6 +81,7 @@ func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
 			mi.state = "sdown"
 			mi.sdownCount++
 			mi.lastPingTime = time.Now()
+			sentinel.Metrics.RecordSdown(mi.name)
 			logger.Logger.Warn().
 				Str("master_name", mi.name).
 				Str("master_addr", mi.addr).
@@ -81,21 +89,50 @@ func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
 				Int("quorum", mi.quorum).
 				Msg("主节点主观下线")
 
-			sentinel.BroadcastSdown(mi.name)
+			shouldBroadcast = true
+
+			if mi.sdownCount >= mi.quorum {
+				sentinel.Metrics.RecordODown(mi.name)
+				shouldTriggerFailover = true
+				logger.Logger.Info().
+					Str("master_name", mi.name).
+					Int("sdown_count", mi.sdownCount).
+					Int("quorum", mi.quorum).
+					Msg("主节点本地达到客观下线条件")
+			}
 		}
-		return
+	} else {
+		_ = conn.Close()
+
+		mi.lastPongTime = time.Now()
+
+		if mi.state == "sdown" {
+			mi.state = "ok"
+			mi.sdownCount = 0
+			logger.Logger.Info().
+				Str("master_name", mi.name).
+				Str("master_addr", mi.addr).
+				Msg("主节点恢复")
+		}
 	}
-	_ = conn.Close()
 
-	mi.lastPongTime = time.Now()
+	mi.mu.Unlock()
 
-	if mi.state == "sdown" {
-		mi.state = "ok"
-		mi.sdownCount = 0
-		logger.Logger.Info().
-			Str("master_name", mi.name).
-			Str("master_addr", mi.addr).
-			Msg("主节点恢复")
+	if shouldBroadcast {
+		sentinel.BroadcastSdown(mi.name)
+	}
+
+	if shouldTriggerFailover {
+		fm := NewFailoverManager(sentinel)
+		go func() {
+			if err := fm.AutoFailover(mi.name); err != nil {
+				sentinel.Metrics.RecordFailoverFailed(mi.name)
+				logger.Logger.Error().
+					Str("master_name", mi.name).
+					Err(err).
+					Msg("自动故障转移失败")
+			}
+		}()
 	}
 }
 

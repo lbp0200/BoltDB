@@ -439,3 +439,8 @@ func (gp *GossipProtocol) GetPeersCount() int {
 	defer gp.mu.RUnlock()
 	return len(gp.peers)
 }
+
+func (gp *GossipProtocol) AddPeer(addr, runID string) error {
+	gp.addOrUpdatePeer(addr, runID)
+	return nil
+}

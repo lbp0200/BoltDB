@@ -22,6 +22,8 @@ type Sentinel struct {
 	otherSentinels []string
 	// gossip消息通道
 	gossipCh chan *GossipMessage
+
+	Metrics *Metrics
 }
 
 // GossipMessage 哨兵间通信消息
@@ -46,6 +48,7 @@ func NewSentinel(quorum int, downAfter time.Duration) *Sentinel {
 		configEpoch:  0,
 		stopCh:       make(chan struct{}),
 		gossipCh:     make(chan *GossipMessage, 100),
+		Metrics:      NewMetrics(),
 	}
 }
 
@@ -64,7 +67,7 @@ func (s *Sentinel) AddMaster(name, addr string, quorum int) error {
 		return fmt.Errorf("master %s already exists", name)
 	}
 
-	master := NewMasterInstance(name, addr, quorum)
+	master := NewMasterInstanceWithDownAfter(name, addr, quorum, s.downAfter)
 	s.masters[name] = master
 
 	logger.Logger.Info().
@@ -245,6 +248,7 @@ func (s *Sentinel) handleSdownMessage(msg *GossipMessage) {
 
 	// 检查是否达到客观下线
 	if master.IsODown() {
+		s.Metrics.RecordODown(msg.MasterName)
 		logger.Logger.Info().
 			Str("master_name", msg.MasterName).
 			Msg("主节点已客观下线，触发故障转移")
@@ -253,6 +257,7 @@ func (s *Sentinel) handleSdownMessage(msg *GossipMessage) {
 		fm := NewFailoverManager(s)
 		go func() {
 			if err := fm.AutoFailover(msg.MasterName); err != nil {
+				s.Metrics.RecordFailoverFailed(msg.MasterName)
 				logger.Logger.Error().
 					Str("master_name", msg.MasterName).
 					Err(err).

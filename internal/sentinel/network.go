@@ -66,8 +66,8 @@ func SendSlaveOfNoOne(addr string) error {
 		}
 	}()
 
-	// 发送 SLAVEOF NO ONE
-	cmd := "*3\r\n$8\r\nSLAVEOF\r\n$2\r\nNO\r\n$3\r\nONE\r\n"
+	// 发送 SLAVEOF NO ONE (SLAVEOF = 7 字节)
+	cmd := "*3\r\n$7\r\nSLAVEOF\r\n$2\r\nNO\r\n$3\r\nONE\r\n"
 	if err := sc.SendCommand(cmd); err != nil {
 		return fmt.Errorf("send SLAVEOF NO ONE failed: %w", err)
 	}
@@ -104,8 +104,8 @@ func SendReplicaOf(slaveAddr, masterAddr string) error {
 		return fmt.Errorf("invalid master address %s: %w", masterAddr, err)
 	}
 
-	// 发送 REPLICAOF <host> <port>
-	cmd := fmt.Sprintf("*4\r\n$8\r\nREPLICAOF\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
+	// 发送 REPLICAOF <host> <port> (REPLICAOF = 9 字节)
+	cmd := fmt.Sprintf("*4\r\n$9\r\nREPLICAOF\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
 		len(masterHost), masterHost, len(masterPort), masterPort)
 
 	if err := sc.SendCommand(cmd); err != nil {
