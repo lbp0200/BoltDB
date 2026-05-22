@@ -1,5 +1,46 @@
 # Changelog
 
+## v8.12.0 (2026-05-23) — Config Persistence & Engineering Foundations
+
+> **配置持久化与工程基础版本。** Cluster 和 Sentinel 配置现在持久化到磁盘，重启后自动恢复。新增 LSM 压缩/重平衡测试覆盖、100-goroutine 高并发测试、gossip 基础框架、sentinel slave 健康追踪。run-id 格式标准化为 40-char hex。
+
+### Config Persistence
+
+| 模块 | 存储方式 | 自动保存 |
+|------|----------|----------|
+| **Cluster** | BadgerDB (`cluster:config` key) | AddNode/RemoveNode/AssignSlot/AssignSlotRange/Replicate 自动触发 |
+| **Sentinel** | JSON 文件 (`sentinel.conf.json`) | AddMaster 自动触发 |
+
+### 新文件
+
+| 文件 | 说明 |
+|------|------|
+| `internal/cluster/persistence.go` | Cluster state (de)serialization + BadgerDB read/write |
+| `internal/sentinel/persistence.go` | Sentinel state (de)serialization + file I/O |
+| `internal/cluster/gossip.go` | Gossip 基础框架（周期性 PING、PFAIL 检测、过期清理） |
+| `internal/store/compaction_test.go` | LSM 压缩/重平衡测试（4 tests） |
+
+### Cluster 增强
+
+- **配置持久化**: `SaveConfig()` / `LoadConfig()`，BadgerDB 自动存储
+- **Gossip 框架**: 每秒 ping 随机节点，5s 超时标记 PFAIL，60s 移除过期节点
+- **自动恢复**: `NewCluster()` 自动调用 `LoadConfig()` 恢复节点表 + 槽位分配
+
+### Sentinel 增强
+
+- **run-id 标准化**: `crypto/rand` 生成 20 字节 → 40-char hex（与 Redis 兼容）
+- **配置持久化**: JSON 文件持久化，`NewSentinelWithDataDir(quorum, downAfter, dataDir)`
+- **Slave 健康追踪**: `RecordHeartbeat()`、`MarkOffline()`、`RecordInfoError()`，reconnect 计数
+
+### 测试基础设施
+
+- LSM 压缩/重平衡测试（4 new）: `TestCompaction_HeavyWriteAndCompaction`、`TestCompaction_MassDeleteThenVerify`、`TestCompaction_ConcurrentReadWriteDuringCompaction`、`TestCompaction_StoreCheckAfterHeavyRW`
+- 高并发集成测试（5 new）: `TestStringConcurrent_HighScaleIncrement`、`TestStringConcurrent_HighScaleReadWrite`、`TestListConcurrent_HighScalePushPop`、`TestHashConcurrent_HighScaleHset`、`TestSetConcurrent_HighScaleSadd`（各 100 goroutines）
+
+### 杂项
+
+- `.gitignore`: `sentinel`/`evolution` 模式改为 root-only（`/sentinel`、`/evolution`），避免误匹配 `internal/sentinel/persistence.go`
+
 ## v8.8.0 (2026-05-22) — Temporal Stability Analysis
 
 > **时间稳定性分析版本。** 系统稳定性从静态标量升级为带风险包络和收敛动力学的多维状态空间。新增轨迹分析（slope/oscillation/persistence/recovery）、集群收敛门禁、哨兵指标仪表化。
