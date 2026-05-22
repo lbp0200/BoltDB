@@ -1,5 +1,49 @@
 # Changelog
 
+## v8.8.0 (2026-05-22) — Temporal Stability Analysis
+
+> **时间稳定性分析版本。** 系统稳定性从静态标量升级为带风险包络和收敛动力学的多维状态空间。新增轨迹分析（slope/oscillation/persistence/recovery）、集群收敛门禁、哨兵指标仪表化。
+
+### Temporal Analysis（新子系统）
+
+| 组件 | 描述 |
+|------|------|
+| **`Slope`** | HEALTH 一阶导数（线性回归），每维度独立斜率：正=恢复，负=恶化，零=稳定 |
+| **`Oscillation`** | 零交叉检测 + 振幅估计，≥3 次符号翻转 + ≥0.01 均值振幅 = 振荡态 |
+| **`Persistence`** | 从最新采样向前遍历，测量各维度低于 0.5 的持续时长 |
+| **`Recovery`** | 找最近低谷，计算恢复速度（score/sec）、阻尼比（2.0=过阻尼/1.0=临界/0.5=欠阻尼）、欠冲量 |
+| **`Trajectory`** | 五态分类器：stable / recovering / degrading / oscillating / stuck |
+
+集成：`pm.EnableTemporalAnalysis()` 激活 `HealthScore()` 自动记录，`pm.TemporalAnalysis()` 输出。
+
+### 多维度健康评分
+
+- **三维独立评分**：`HealthStorage`（L0/背压/波动性）、`HealthReplication`（延迟/重连）、`HealthCluster`（一致性/震荡/分裂）
+- **风险包络**：`cluster < 0.4` 时 total 上限为 `cluster + 0.3` — 集群不稳定性比存储压力更危险（扩散性破坏）
+- **收敛时间跟踪**：`ConvergenceTime` 记录从最大分歧到收敛的耗时
+- **最弱维度输出**：`FormatCompact()` → `0.96 [OK] S=0.90 R=1.00 C=1.00`
+
+### 集群收敛门禁（Degradation Gates）
+
+- **Sentinel 一致性检查** — `MinAgreedFraction` 门禁（FAIL < 目标共识率）
+- **Leader Churn 检查** — `MaxLeaderChurn` 门禁（FAIL/WARN 级）
+- **分裂脑检测** — `ClusterFragmented` 即时 FAIL
+- **维度健康检查** — `checkDimensionHealth()` 输出最弱维度，< 0.4 直接 FAIL
+
+### 哨兵指标仪表化
+
+- 新增 `Metrics` 结构体：`DetectionCount`, `ODownReached`, `FailoverStarted`, `SuccessfulFailovers`, `FailedFailovers`, `LeaderChanges`
+- `GetLeaderChanges()` / `GetSuccessfulFailovers()` / `GetDetectionCount()` 访问器
+- `FailoverStartedAt` / `FailoverCompletedAt` / `LastStableAt` 时间戳跟踪
+- `LeaderStabilizationDuration` — leader 选举后稳定耗时
+
+### 测试
+
+- `TestSplitBrainConvergence` — 收敛性跟踪器 + 三维健康验证
+- `TestSentinelRegression` — 哨兵 failover 事件序列 + 指标验证
+- `internal/monitor/temporal_test.go` — 43 项单元测试覆盖所有分析器
+- 所有 43 项新测试 + 原 11 包单元测试全绿
+
 ## v8.4.0 (2026-05-21) — System Convergence Governance
 
 > **系统收敛治理版本。** 从"证明系统正确"升级到"证明系统在压力下收敛"。failure 变成可重放、可比较时间序列的可执行知识。

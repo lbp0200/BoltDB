@@ -41,6 +41,10 @@ type DegradationAssertion struct {
 	ReconnectWarnThreshold int64
 	MonotonicWarnRatio     float64
 
+	// Cluster convergence gates (0 = not checked)
+	MaxLeaderChurn    int64
+	MinAgreedFraction float64 // minimum fraction of sentinels agreeing (0-1)
+
 	AllowDegraded bool
 }
 
@@ -58,6 +62,9 @@ func DefaultDegradationAssertion() DegradationAssertion {
 		L0DegradedThreshold:    15,
 		ReconnectWarnThreshold: 10,
 		MonotonicWarnRatio:     0.5,
+
+		MaxLeaderChurn:    5,
+		MinAgreedFraction: 1.0,
 	}
 }
 
@@ -147,8 +154,76 @@ func (pm *PressureMonitor) CheckDegradation(t TestingT, a DegradationAssertion, 
 		t.Logf("[pm]   WARN: L0 score shows mild rising trend")
 	}
 
+	// Cluster convergence gates
+	if latest.TotalSentinels > 0 {
+		agreedFraction := float64(1.0)
+		if latest.TotalSentinels > 0 {
+			agreedFraction = float64(latest.AgreedSentinels) / float64(latest.TotalSentinels)
+		}
+		t.Logf("[pm]   sentinel agreement: %d/%d (%.0f%%) leaderChurn=%d",
+			latest.AgreedSentinels, latest.TotalSentinels, agreedFraction*100, latest.LeaderChanges)
+
+		if a.MinAgreedFraction > 0 && agreedFraction < a.MinAgreedFraction {
+			level = maxLevel(level, LevelFail)
+			t.Errorf("DEGRADATION FAIL: sentinel view divergence: %d/%d agreed (min %.0f%%)",
+				latest.AgreedSentinels, latest.TotalSentinels, a.MinAgreedFraction*100)
+		} else if a.MinAgreedFraction > 0 && agreedFraction < 1.0 {
+			level = maxLevel(level, LevelWarn)
+			t.Logf("[pm]   WARN: sentinel view not fully converged: %d/%d",
+				latest.AgreedSentinels, latest.TotalSentinels)
+		}
+
+		if a.MaxLeaderChurn > 0 && latest.LeaderChanges > a.MaxLeaderChurn {
+			level = maxLevel(level, LevelFail)
+			t.Errorf("DEGRADATION FAIL: excessive leader churn: %d > %d", latest.LeaderChanges, a.MaxLeaderChurn)
+		} else if a.MaxLeaderChurn > 0 && latest.LeaderChanges > 0 {
+			t.Logf("[pm]   WARN: leader churn detected: %d", latest.LeaderChanges)
+		}
+
+		if latest.ClusterFragmented {
+			level = maxLevel(level, LevelFail)
+			t.Errorf("DEGRADATION FAIL: cluster is in fragmented state (split-brain)")
+		}
+	}
+
+	dimLevel := pm.checkDimensionHealth(t, latest, samples)
+	level = maxLevel(level, dimLevel)
+
 	t.Logf("[pm] === Degradation Result: %s ===", level)
 	return level
+}
+
+func (pm *PressureMonitor) checkDimensionHealth(t TestingT, latest PressureSample, samples []PressureSample) DegradationLevel {
+	if len(samples) == 0 {
+		return LevelOK
+	}
+	hs := ComputeHealth(samples, 0)
+	lowest := "none"
+	lowestScore := 1.0
+	if hs.HealthStorage < lowestScore {
+		lowestScore = hs.HealthStorage
+		lowest = "storage"
+	}
+	if hs.HealthReplication < lowestScore {
+		lowestScore = hs.HealthReplication
+		lowest = "replication"
+	}
+	if hs.HealthCluster < lowestScore {
+		lowestScore = hs.HealthCluster
+		lowest = "cluster"
+	}
+	t.Logf("[pm]   dimensions: S=%.2f R=%.2f C=%.2f (weakest=%s)",
+		hs.HealthStorage, hs.HealthReplication, hs.HealthCluster, lowest)
+
+	if lowestScore < 0.4 {
+		t.Errorf("DEGRADATION FAIL: %s dimension critically degraded (%.2f)", lowest, lowestScore)
+		return LevelFail
+	}
+	if lowestScore < 0.7 {
+		t.Logf("[pm]   WARN: %s dimension degraded (%.2f)", lowest, lowestScore)
+		return LevelWarn
+	}
+	return LevelOK
 }
 
 func maxLevel(a, b DegradationLevel) DegradationLevel {

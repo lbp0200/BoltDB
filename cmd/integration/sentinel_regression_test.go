@@ -149,6 +149,9 @@ func (p *partitionProxy) Isolate() {
 		}
 		return true
 	})
+	if p.listener != nil {
+		_ = p.listener.Close()
+	}
 }
 
 func (p *partitionProxy) Heal() {
@@ -166,7 +169,7 @@ func (p *partitionProxy) acceptLoop() {
 }
 
 func (p *partitionProxy) handleConn(client net.Conn) {
-	if p.stopped.Load() {
+	if p.stopped.Load() || !p.active.Load() {
 		_ = client.Close()
 		return
 	}

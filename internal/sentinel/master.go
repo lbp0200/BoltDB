@@ -68,7 +68,11 @@ func (mi *MasterInstance) StartMonitoring(sentinel *Sentinel) {
 
 // checkMaster 检查主节点状态（通过 TCP 连接探测）
 func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
-	conn, err := net.DialTimeout("tcp", mi.addr, 5*time.Second)
+	mi.mu.RLock()
+	addr := mi.addr
+	mi.mu.RUnlock()
+
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 
 	var shouldBroadcast bool
 	var shouldTriggerFailover bool

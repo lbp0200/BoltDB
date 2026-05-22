@@ -111,6 +111,30 @@ func (m *Metrics) RecordGossipRecv(msgID string) {
 	m.GossipRecvTimes[msgID] = time.Now()
 }
 
+func (m *Metrics) GetDetectionCount() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.DetectionCount
+}
+
+func (m *Metrics) GetLeaderChanges() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.LeaderChanges
+}
+
+func (m *Metrics) GetSuccessfulFailovers() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.SuccessfulFailovers
+}
+
+func (m *Metrics) GetFailedFailovers() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.FailedFailovers
+}
+
 func (m *Metrics) DetectionLatency(masterName string) time.Duration {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -15,6 +15,24 @@ type DegradationLevel = monitor.DegradationLevel
 type DegradationAssertion = monitor.DegradationAssertion
 type CheckResult = monitor.CheckResult
 
+// Temporal analysis types
+type TemporalSnapshot = monitor.TemporalSnapshot
+type SlopeStats = monitor.SlopeStats
+type OscillationStats = monitor.OscillationStats
+type PersistenceStats = monitor.PersistenceStats
+type RecoveryStats = monitor.RecoveryStats
+type TemporalAnalysis = monitor.TemporalAnalysis
+type TemporalAnalyzer = monitor.TemporalAnalyzer
+
+const (
+	TrajectoryStable           = monitor.TrajectoryStable
+	TrajectoryRecovering       = monitor.TrajectoryRecovering
+	TrajectoryDegrading        = monitor.TrajectoryDegrading
+	TrajectoryOscillating      = monitor.TrajectoryOscillating
+	TrajectoryStuck            = monitor.TrajectoryStuck
+	TrajectoryInsufficientData = monitor.TrajectoryInsufficientData
+)
+
 const (
 	LevelOK       = monitor.LevelOK
 	LevelWarn     = monitor.LevelWarn

@@ -46,6 +46,12 @@ type PressureSample struct {
 	BacklogSize     int64
 	ReconnectCount  int64
 	ConnectedSlaves int
+
+	// Cluster/sentinel health (0 / zero = not sampled)
+	TotalSentinels    int   // total sentinels in the monitored group
+	AgreedSentinels   int   // sentinels with identical master view
+	LeaderChanges     int64 // cumulative leader changes across sentinels
+	ClusterFragmented bool  // true = sentinel views disagree on master identity
 }
 
 type jsonlSample struct {
@@ -65,6 +71,10 @@ type jsonlSample struct {
 	BacklogSize     int64   `json:"bl,omitempty"`
 	ReconnectCount  int64   `json:"rc,omitempty"`
 	ConnectedSlaves int     `json:"sl,omitempty"`
+	Sentinels       int     `json:"sen,omitempty"`
+	Agreed          int     `json:"agr,omitempty"`
+	LeaderChurn     int64   `json:"lc,omitempty"`
+	Fragmented      bool    `json:"frag,omitempty"`
 }
 
 // PressureMonitor 定时采样系统压力指标，支持退化不变性断言
@@ -78,6 +88,8 @@ type PressureMonitor struct {
 
 	interval  time.Duration
 	jsonlFile *os.File
+
+	temporal *TemporalAnalyzer
 }
 
 // NewPressureMonitor 创建压力监控器
@@ -85,6 +97,15 @@ func NewPressureMonitor(s *store.BotreonStore, r *replication.ReplicationManager
 	return &PressureMonitor{
 		store: s,
 		replM: r,
+	}
+}
+
+// EnableTemporalAnalysis 启用时间序列分析，在 HealthScore() 调用时自动记录快照
+func (pm *PressureMonitor) EnableTemporalAnalysis() {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	if pm.temporal == nil {
+		pm.temporal = NewTemporalAnalyzer()
 	}
 }
 
@@ -139,6 +160,21 @@ func (pm *PressureMonitor) Latest() PressureSample {
 		return PressureSample{}
 	}
 	return pm.samples[len(pm.samples)-1]
+}
+
+// SetClusterHealth 从外部（如测试代码或哨兵监控器）设置最近采样的集群收敛状态。
+// 字段默认为零值（表示未收集），对向后兼容无影响。
+func (pm *PressureMonitor) SetClusterHealth(total, agreed int, leaderChanges int64, fragmented bool) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	if len(pm.samples) == 0 {
+		return
+	}
+	last := &pm.samples[len(pm.samples)-1]
+	last.TotalSentinels = total
+	last.AgreedSentinels = agreed
+	last.LeaderChanges = leaderChanges
+	last.ClusterFragmented = fragmented
 }
 
 // Stopped 返回监控器是否已停止
@@ -197,6 +233,10 @@ func (pm *PressureMonitor) sample() {
 			BacklogSize:     s.BacklogSize,
 			ReconnectCount:  s.ReconnectCount,
 			ConnectedSlaves: s.ConnectedSlaves,
+			Sentinels:       s.TotalSentinels,
+			Agreed:          s.AgreedSentinels,
+			LeaderChurn:     s.LeaderChanges,
+			Fragmented:      s.ClusterFragmented,
 		}
 		line, err := json.Marshal(js)
 		if err == nil {
@@ -220,6 +260,10 @@ func FormatSnapshot(s PressureSample) string {
 	if s.MasterOffset > 0 || s.SlaveOffset > 0 {
 		fmt.Fprintf(&b, " mo=%d so=%d backlog=%d recon=%d slaves=%d",
 			s.MasterOffset, s.SlaveOffset, s.BacklogSize, s.ReconnectCount, s.ConnectedSlaves)
+	}
+	if s.TotalSentinels > 0 {
+		fmt.Fprintf(&b, " sentinels=%d/%d lc=%d frag=%v",
+			s.AgreedSentinels, s.TotalSentinels, s.LeaderChanges, s.ClusterFragmented)
 	}
 	return b.String()
 }
@@ -264,9 +308,30 @@ func (pm *PressureMonitor) LogSummary(t TestingT) {
 		maxActiveRetries, totalRetries, totalRejected, totalDelayed)
 }
 
-// HealthScore 基于所有采样计算系统健康评分
+// HealthScore 基于所有采样计算系统健康评分。
+// 如果启用了 TemporalAnalyzer，自动记录该评分用于时间序列分析。
 func (pm *PressureMonitor) HealthScore(baselineGoroutines int) HealthScore {
-	return ComputeHealth(pm.Samples(), baselineGoroutines)
+	h := ComputeHealth(pm.Samples(), baselineGoroutines)
+
+	pm.mu.Lock()
+	if pm.temporal != nil {
+		pm.temporal.RecordHealth(h)
+	}
+	pm.mu.Unlock()
+
+	return h
+}
+
+// TemporalAnalysis 返回时间序列分析结果（需先调用 EnableTemporalAnalysis）
+func (pm *PressureMonitor) TemporalAnalysis() TemporalAnalysis {
+	pm.mu.Lock()
+	ta := pm.temporal
+	pm.mu.Unlock()
+
+	if ta == nil {
+		return TemporalAnalysis{Trajectory: TrajectoryInsufficientData}
+	}
+	return ta.Analyze()
 }
 
 // MaxHeap 返回所有采样中的峰值堆使用

@@ -9,8 +9,21 @@ import (
 
 // HealthScore 系统健康评分（0.0-1.0），将多维稳定性指标压缩为标量。
 // 由 PressureMonitor.HealthScore() 从采样轨迹计算得出。
+//
+// 三个独立维度：
+//
+//	HealthStorage     — L0 恢复/背压/峰值/波动性
+//	HealthReplication — 复制延迟 + 重连
+//	HealthCluster     — 一致性/Leader 震荡/分裂/收敛时间
+//
+// HEALTH_total = 0.40*storage + 0.30*replication + 0.30*cluster
+// 风险包络：cluster < 0.4 时 total 上限为 cluster + 0.3
 type HealthScore struct {
-	Overall            float64       // 综合评分
+	Overall           float64 // 综合评分（维度加权 + 风险包络）
+	HealthStorage     float64 // 存储层稳定性（0-1）
+	HealthReplication float64 // 复制层稳定性（0-1）
+	HealthCluster     float64 // 集群收敛稳定性（0-1）
+
 	GoroutineHealth    float64       // goroutine 增长健康状况
 	L0RecoveryHealth   float64       // L0 恢复状况（最终 L0）
 	L0StressHealth     float64       // L0 峰值压力
@@ -19,6 +32,8 @@ type HealthScore struct {
 	VolatilityHealth   float64       // L0 波动性（尾部变异系数）
 	RecoveryTime       time.Duration // L0 从峰值恢复到 <10 的时间
 	RecoveryTimeHealth float64       // 恢复时间健康状况
+	ClusterHealth      float64       // 集群收敛健康状况（0 = 未收集/最大分歧, 1 = 完全一致）
+	ConvergenceTime    time.Duration // 从最大分歧到收敛的耗时（0 = 未发生分歧）
 }
 
 const (
@@ -41,18 +56,31 @@ const (
 	recoveryTimeFail     = 60 * time.Second
 )
 
-var healthWeights = []struct {
+// subScoreWeights 子分数权重表（用于 String/FormatReport 显示，不参与 Overall）
+var subScoreWeights = []struct {
 	name   string
 	weight float64
 	value  func(h HealthScore) float64
 }{
-	{"goroutine", 0.20, func(h HealthScore) float64 { return h.GoroutineHealth }},
-	{"L0 recovery", 0.20, func(h HealthScore) float64 { return h.L0RecoveryHealth }},
-	{"L0 stress", 0.15, func(h HealthScore) float64 { return h.L0StressHealth }},
-	{"retry", 0.15, func(h HealthScore) float64 { return h.RetryHealth }},
-	{"replication", 0.15, func(h HealthScore) float64 { return h.ReplicationHealth }},
-	{"volatility", 0.10, func(h HealthScore) float64 { return h.VolatilityHealth }},
+	{"goroutine", 0.18, func(h HealthScore) float64 { return h.GoroutineHealth }},
+	{"L0 recovery", 0.18, func(h HealthScore) float64 { return h.L0RecoveryHealth }},
+	{"L0 stress", 0.13, func(h HealthScore) float64 { return h.L0StressHealth }},
+	{"retry", 0.13, func(h HealthScore) float64 { return h.RetryHealth }},
+	{"replication", 0.13, func(h HealthScore) float64 { return h.ReplicationHealth }},
+	{"volatility", 0.08, func(h HealthScore) float64 { return h.VolatilityHealth }},
 	{"recovery time", 0.05, func(h HealthScore) float64 { return h.RecoveryTimeHealth }},
+	{"cluster", 0.10, func(h HealthScore) float64 { return h.ClusterHealth }},
+}
+
+// dimensionWeights 三个维度的顶层权重（用于 Overall 计算）
+var dimensionWeights = []struct {
+	name   string
+	weight float64
+	value  func(h HealthScore) float64
+}{
+	{"storage", 0.40, func(h HealthScore) float64 { return h.HealthStorage }},
+	{"replication", 0.30, func(h HealthScore) float64 { return h.HealthReplication }},
+	{"cluster", 0.30, func(h HealthScore) float64 { return h.HealthCluster }},
 }
 
 // ComputeHealth 从压力采样数组计算健康评分。
@@ -72,6 +100,13 @@ func ComputeHealth(samples []PressureSample, baselineGoroutines int) HealthScore
 	h.ReplicationHealth = computeReplicationHealth(latest)
 	h.VolatilityHealth = computeVolatilityHealth(samples)
 	h.RecoveryTime, h.RecoveryTimeHealth = computeRecoveryTimeHealth(samples)
+	h.ClusterHealth = computeClusterHealth(latest, samples)
+	h.ConvergenceTime = computeConvergenceTime(samples)
+
+	// 三维独立评分
+	h.HealthStorage = computeStorageDimension(h)
+	h.HealthReplication = h.ReplicationHealth
+	h.HealthCluster = computeClusterDimension(latest, samples)
 
 	h.Overall = computeOverall(h)
 	return h
@@ -230,10 +265,73 @@ func computeRecoveryTimeHealth(samples []PressureSample) (time.Duration, float64
 	return dur, 1.0 - float64(dur-recoveryTimeHealthy)/float64(recoveryTimeFail-recoveryTimeHealthy)
 }
 
+func computeStorageDimension(h HealthScore) float64 {
+	return 0.30*h.L0RecoveryHealth +
+		0.20*h.L0StressHealth +
+		0.20*h.RetryHealth +
+		0.10*h.VolatilityHealth +
+		0.10*h.RecoveryTimeHealth +
+		0.10*h.GoroutineHealth
+}
+
+func computeClusterDimension(latest PressureSample, samples []PressureSample) float64 {
+	if latest.TotalSentinels == 0 {
+		return 1.0 // untracked = assumed healthy
+	}
+	agreement := computeClusterHealth(latest, samples)
+
+	churn := float64(latest.LeaderChanges)
+	churnHealth := 1.0
+	if churn > 10 {
+		churnHealth = 0.0
+	} else if churn > 0 {
+		churnHealth = 1.0 - churn/10.0
+	}
+
+	fragHealth := 1.0
+	if latest.ClusterFragmented {
+		fragHealth = 0.2
+	}
+
+	score := 0.50*agreement + 0.30*churnHealth + 0.20*fragHealth
+
+	convTime := computeConvergenceTime(samples)
+	if convTime > 10*time.Second {
+		penalty := float64(convTime-10*time.Second) / float64(50*time.Second)
+		if penalty > 0.15 {
+			penalty = 0.15
+		}
+		score -= penalty
+	}
+
+	if score > 1.0 {
+		return 1.0
+	}
+	if score < 0 {
+		return 0.0
+	}
+	return score
+}
+
 func computeOverall(h HealthScore) float64 {
 	var total float64
-	for _, w := range healthWeights {
+	for _, w := range dimensionWeights {
 		total += w.weight * w.value(h)
+	}
+
+	// 风险包络：当集群稳定性严重退化时，总体评分受限于集群分数
+	if h.HealthCluster < 0.4 {
+		capped := h.HealthCluster + 0.3
+		if total > capped {
+			total = capped
+		}
+	}
+
+	if total > 1.0 {
+		return 1.0
+	}
+	if total < 0 {
+		return 0.0
 	}
 	return total
 }
@@ -243,7 +341,15 @@ func (h HealthScore) String() string {
 	var b strings.Builder
 	b.WriteString("\nHEALTH SCORE REPORT\n")
 	b.WriteString("-------------------\n")
-	for _, w := range healthWeights {
+	b.WriteString("  DIMENSIONS:\n")
+	for _, w := range dimensionWeights {
+		fmt.Fprintf(&b, "    %-16s %.2f\n", w.name+":", w.value(h))
+	}
+	if h.ConvergenceTime > 0 {
+		fmt.Fprintf(&b, "    %-16s %v\n", "convergence:", h.ConvergenceTime)
+	}
+	b.WriteString("  ---\n")
+	for _, w := range subScoreWeights {
 		fmt.Fprintf(&b, "  %-16s %.2f\n", w.name+":", w.value(h))
 	}
 	if h.RecoveryTime > 0 {
@@ -273,7 +379,7 @@ func (h HealthScore) FormatReport() string {
 	var b strings.Builder
 	b.WriteString("HEALTH: ")
 	b.WriteString(h.FormatCompact())
-	for _, w := range healthWeights {
+	for _, w := range subScoreWeights {
 		fmt.Fprintf(&b, " %s=%.2f", w.name, w.value(h))
 	}
 	if h.RecoveryTime > 0 {
@@ -282,9 +388,51 @@ func (h HealthScore) FormatReport() string {
 	return b.String()
 }
 
-// FormatCompact 返回一行摘要
+// FormatCompact 返回一行摘要（含三维评分）
 func (h HealthScore) FormatCompact() string {
-	return fmt.Sprintf("%.2f [%s]", h.Overall, levelLabel(h.Level()))
+	return fmt.Sprintf("%.2f [%s] S=%.2f R=%.2f C=%.2f",
+		h.Overall, levelLabel(h.Level()),
+		h.HealthStorage, h.HealthReplication, h.HealthCluster)
+}
+
+func computeClusterHealth(latest PressureSample, samples []PressureSample) float64 {
+	if latest.TotalSentinels == 0 {
+		return 1.0 // no cluster tracking = assumed healthy
+	}
+	if latest.ClusterFragmented {
+		return 0.2
+	}
+	if latest.TotalSentinels <= 1 {
+		return 1.0
+	}
+	ratio := float64(latest.AgreedSentinels) / float64(latest.TotalSentinels)
+	if ratio >= 1.0 {
+		return 1.0
+	}
+	if ratio <= 0.5 {
+		return 0.0
+	}
+	return (ratio - 0.5) * 2.0
+}
+
+func computeConvergenceTime(samples []PressureSample) time.Duration {
+	if len(samples) < 2 {
+		return 0
+	}
+	firstFragmented := -1
+	lastFragmented := -1
+	for i, s := range samples {
+		if s.TotalSentinels > 0 && s.ClusterFragmented {
+			if firstFragmented == -1 {
+				firstFragmented = i
+			}
+			lastFragmented = i
+		}
+	}
+	if firstFragmented == -1 || lastFragmented == firstFragmented {
+		return 0
+	}
+	return samples[lastFragmented].Timestamp.Sub(samples[firstFragmented].Timestamp)
 }
 
 func levelLabel(level int) string {
