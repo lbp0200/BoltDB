@@ -41,6 +41,10 @@ type DegradationAssertion struct {
 	ReconnectWarnThreshold int64
 	MonotonicWarnRatio     float64
 
+	// Temporal semantics for goroutine delta (0 = disabled, single-spike check)
+	GoroutineDeltaFailWindows int // consecutive samples above MaxGoroutineDelta to FAIL (default 3)
+	GoroutineDeltaWarnWindows int // consecutive samples above GoroutineWarnDelta to WARN (default 2)
+
 	// Cluster convergence gates (0 = not checked)
 	MaxLeaderChurn    int64
 	MinAgreedFraction float64 // minimum fraction of sentinels agreeing (0-1)
@@ -57,11 +61,13 @@ func DefaultDegradationAssertion() DegradationAssertion {
 		L0RecoveryThreshold: 10,
 		MaxReconnectCount:   50,
 
-		GoroutineWarnDelta:     20,
-		ActiveRetriesWarn:      30,
-		L0DegradedThreshold:    15,
-		ReconnectWarnThreshold: 10,
-		MonotonicWarnRatio:     0.5,
+		GoroutineWarnDelta:        20,
+		ActiveRetriesWarn:         30,
+		L0DegradedThreshold:       15,
+		ReconnectWarnThreshold:    10,
+		MonotonicWarnRatio:        0.5,
+		GoroutineDeltaFailWindows: 3,
+		GoroutineDeltaWarnWindows: 2,
 
 		MaxLeaderChurn:    5,
 		MinAgreedFraction: 1.0,
@@ -82,14 +88,19 @@ func (pm *PressureMonitor) CheckDegradation(t TestingT, a DegradationAssertion, 
 
 	t.Log("[pm] === Degradation Invariants ===")
 
-	goDelta := latest.Goroutines - baselineGoroutines
-	t.Logf("[pm]   goroutine delta: %d (warn=%d, fail=%d)", goDelta, a.GoroutineWarnDelta, a.MaxGoroutineDelta)
-	if goDelta > a.MaxGoroutineDelta {
+	failConsec := CountConsecutiveAbove(samples, baselineGoroutines, a.MaxGoroutineDelta)
+	warnConsec := CountConsecutiveAbove(samples, baselineGoroutines, a.GoroutineWarnDelta)
+	finalDelta := latest.Goroutines - baselineGoroutines
+	t.Logf("[pm]   goroutine: final delta=%d, fail streak=%d/%d windows, warn streak=%d/%d windows",
+		finalDelta, failConsec, a.GoroutineDeltaFailWindows, warnConsec, a.GoroutineDeltaWarnWindows)
+	if a.GoroutineDeltaFailWindows > 0 && failConsec >= a.GoroutineDeltaFailWindows {
 		level = maxLevel(level, LevelFail)
-		t.Errorf("DEGRADATION FAIL: goroutine unbounded growth: delta=%d > %d", goDelta, a.MaxGoroutineDelta)
-	} else if goDelta > a.GoroutineWarnDelta {
+		t.Errorf("DEGRADATION FAIL: goroutine sustained elevation: streak=%d consecutive windows above %d",
+			failConsec, a.MaxGoroutineDelta)
+	} else if a.GoroutineDeltaWarnWindows > 0 && warnConsec >= a.GoroutineDeltaWarnWindows {
 		level = maxLevel(level, LevelWarn)
-		t.Logf("[pm]   WARN: goroutine delta elevated: %d > %d", goDelta, a.GoroutineWarnDelta)
+		t.Logf("[pm]   WARN: goroutine sustained elevation: streak=%d consecutive windows above %d",
+			warnConsec, a.GoroutineWarnDelta)
 	}
 
 	t.Logf("[pm]   active retries: final=%d (warn=%d, fail=%d)", latest.ActiveRetries, a.ActiveRetriesWarn, a.MaxActiveRetries)
@@ -231,6 +242,24 @@ func maxLevel(a, b DegradationLevel) DegradationLevel {
 		return a
 	}
 	return b
+}
+
+// CountConsecutiveAbove returns the longest consecutive run of samples
+// where goroutines exceed baseline+threshold. Implements temporal semantics
+// for behavioral degradation detection (vs single-spike threshold monitoring).
+func CountConsecutiveAbove(samples []PressureSample, baseline, threshold int) int {
+	maxStreak, cur := 0, 0
+	for _, s := range samples {
+		if s.Goroutines-baseline > threshold {
+			cur++
+			if cur > maxStreak {
+				maxStreak = cur
+			}
+		} else {
+			cur = 0
+		}
+	}
+	return maxStreak
 }
 
 func checkL0Recovery(finalL0 float64, a DegradationAssertion) DegradationLevel {

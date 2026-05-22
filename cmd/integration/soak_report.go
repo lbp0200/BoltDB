@@ -6,32 +6,36 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/lbp0200/BoltDB/internal/monitor"
 )
 
 // SoakRunSummary captures key metrics for cross-run comparison and historical tracking.
 type SoakRunSummary struct {
-	Timestamp         time.Time `json:"ts"`
-	Duration          string    `json:"duration"`
-	Samples           int       `json:"samples"`
-	HealthOverall     float64   `json:"health_overall"`
-	HealthStorage     float64   `json:"health_storage"`
-	HealthRepl        float64   `json:"health_replication"`
-	HealthCluster     float64   `json:"health_cluster"`
-	Trajectory        string    `json:"trajectory"`
-	Basin             string    `json:"basin"`
-	BasinDepth        float64   `json:"basin_depth"`
-	L0Final           float64   `json:"l0_final"`
-	L0Peak            float64   `json:"l0_peak"`
-	L0Velocity        float64   `json:"l0_velocity"`
-	L0Acceleration    float64   `json:"l0_acceleration"`
-	ActiveRetries     int64     `json:"active_retries"`
-	GoroutineDelta    int       `json:"goroutine_delta"`
-	LimitCycle        bool      `json:"limit_cycle"`
-	Converging        bool      `json:"converging"`
-	ConvergenceTarget string    `json:"convergence_target,omitempty"`
-	InDegradation     bool      `json:"in_degradation"`
-	Escapable         bool      `json:"escapable"`
-	DegradationLevel  string    `json:"degradation_level"`
+	Timestamp           time.Time `json:"ts"`
+	Duration            string    `json:"duration"`
+	Samples             int       `json:"samples"`
+	HealthOverall       float64   `json:"health_overall"`
+	HealthStorage       float64   `json:"health_storage"`
+	HealthRepl          float64   `json:"health_replication"`
+	HealthCluster       float64   `json:"health_cluster"`
+	Trajectory          string    `json:"trajectory"`
+	Basin               string    `json:"basin"`
+	BasinDepth          float64   `json:"basin_depth"`
+	L0Final             float64   `json:"l0_final"`
+	L0Peak              float64   `json:"l0_peak"`
+	L0Velocity          float64   `json:"l0_velocity"`
+	L0Acceleration      float64   `json:"l0_acceleration"`
+	ActiveRetries       int64     `json:"active_retries"`
+	GoroutineDelta      int       `json:"goroutine_delta"`
+	GoroutineFailStreak int       `json:"goroutine_fail_streak"`
+	GoroutineWarnStreak int       `json:"goroutine_warn_streak"`
+	LimitCycle          bool      `json:"limit_cycle"`
+	Converging          bool      `json:"converging"`
+	ConvergenceTarget   string    `json:"convergence_target,omitempty"`
+	InDegradation       bool      `json:"in_degradation"`
+	Escapable           bool      `json:"escapable"`
+	DegradationLevel    string    `json:"degradation_level"`
 }
 
 // saveSoakReport writes a Markdown report + JSON summary to the specified directory.
@@ -49,27 +53,30 @@ func saveSoakReport(dir, name string, pm *PressureMonitor, baseline int, duratio
 	latest := pm.Latest()
 	samples := pm.Samples()
 
+	def := DefaultDegradationAssertion()
 	summary := SoakRunSummary{
-		Timestamp:        time.Now(),
-		Duration:         duration.String(),
-		Samples:          len(samples),
-		HealthOverall:    health.Overall,
-		HealthStorage:    health.HealthStorage,
-		HealthRepl:       health.HealthReplication,
-		HealthCluster:    health.HealthCluster,
-		Trajectory:       temporal.Trajectory,
-		Basin:            basin.CurrentBasin.String(),
-		BasinDepth:       basin.Depth,
-		L0Final:          latest.LastL0Score,
-		L0Velocity:       basin.L0Velocity,
-		L0Acceleration:   basin.L0Acceleration,
-		ActiveRetries:    latest.ActiveRetries,
-		GoroutineDelta:   latest.Goroutines - baseline,
-		LimitCycle:       basin.LimitCycle,
-		Converging:       basin.Converging,
-		InDegradation:    basin.InDegradation,
-		Escapable:        basin.Escapable,
-		DegradationLevel: degLevel.String(),
+		Timestamp:           time.Now(),
+		Duration:            duration.String(),
+		Samples:             len(samples),
+		HealthOverall:       health.Overall,
+		HealthStorage:       health.HealthStorage,
+		HealthRepl:          health.HealthReplication,
+		HealthCluster:       health.HealthCluster,
+		Trajectory:          temporal.Trajectory,
+		Basin:               basin.CurrentBasin.String(),
+		BasinDepth:          basin.Depth,
+		L0Final:             latest.LastL0Score,
+		L0Velocity:          basin.L0Velocity,
+		L0Acceleration:      basin.L0Acceleration,
+		ActiveRetries:       latest.ActiveRetries,
+		GoroutineDelta:      latest.Goroutines - baseline,
+		GoroutineFailStreak: monitor.CountConsecutiveAbove(samples, baseline, def.MaxGoroutineDelta),
+		GoroutineWarnStreak: monitor.CountConsecutiveAbove(samples, baseline, def.GoroutineWarnDelta),
+		LimitCycle:          basin.LimitCycle,
+		Converging:          basin.Converging,
+		InDegradation:       basin.InDegradation,
+		Escapable:           basin.Escapable,
+		DegradationLevel:    degLevel.String(),
 	}
 
 	var peak float64
@@ -117,7 +124,9 @@ func saveSoakReport(dir, name string, pm *PressureMonitor, baseline int, duratio
 	fmt.Fprintf(rf, "| L0 Velocity | %+.4f /s |\n", summary.L0Velocity)
 	fmt.Fprintf(rf, "| L0 Acceleration | %+.4f /s² |\n", summary.L0Acceleration)
 	fmt.Fprintf(rf, "| Active Retries | %d |\n", summary.ActiveRetries)
-	fmt.Fprintf(rf, "| Goroutine Delta | %d |\n", summary.GoroutineDelta)
+	fmt.Fprintf(rf, "| Goroutine Delta (final) | %d |\n", summary.GoroutineDelta)
+	fmt.Fprintf(rf, "| Goroutine Fail Streak | %d windows |\n", summary.GoroutineFailStreak)
+	fmt.Fprintf(rf, "| Goroutine Warn Streak | %d windows |\n", summary.GoroutineWarnStreak)
 	fmt.Fprintf(rf, "| Limit Cycle | %v |\n", summary.LimitCycle)
 	fmt.Fprintf(rf, "| Converging | %v", summary.Converging)
 	if summary.Converging {
