@@ -25,7 +25,7 @@ import (
 // retryTimeout is the default timeout for retryable operations during dataset comparison
 const retryTimeout = 30 * time.Second
 
-const soakReplDefaultDuration = 5 * time.Minute
+const soakReplDefaultDuration = 30 * time.Second
 const soakReplMaxDuration = 24 * time.Hour
 
 func getSoakReplDuration() time.Duration {

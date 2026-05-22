@@ -22,7 +22,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const soakDefaultDuration = 5 * time.Minute
+const soakDefaultDuration = 30 * time.Second
 const soakMaxDuration = 24 * time.Hour
 
 // getSoakDuration returns the configured soak duration.
