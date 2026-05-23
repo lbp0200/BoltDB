@@ -1,5 +1,43 @@
 # Changelog
 
+## v8.13.0 (2026-05-24) — Evolution Gate v1 & Replication Handshake
+
+> **演化门禁与复制握手增强版本。** Evolution 分析升级为 Gate 模式——支持 recovery dynamics 追踪、趋势斜率分析、regime shift 检测，CI 门禁区分 PASS/WARN/FAIL。复制握手层新增 PING/REPLCONF GETACK/SELECT 处理，防止主节点超时断连。新增三种 regression 测试覆盖。
+
+### Evolution Gate v1
+
+- **Recovery dynamics**: `EvolutionRun` 新增 `RecoveryVelocity`、`RecoveryDurationSec`、`PersistenceDurationSec`、`OscillationDetected`
+- **趋势斜率分析**: `EvolutionReport` 新增 `HealthSlopeRecent`、`RecoveryTimeSlope`、`PersistenceSlope`、`RecoveryVelocitySlope` + 对应 trend 分类
+- **Regime shift 检测**: `RegimeShiftToWorse` 标识持续恶化
+- **CI Gate 增强**: nightly-soak 中 evolution gate 输出 `::error`/`::warning`/`PASS`，退出码 1 表示 FAIL，阻止部署
+- **Soak report**: 集成 recovery dynamics 到 Markdown 报告 + JSON summary
+
+### 复制握手增强
+
+- **PING 处理**: `readCommandLoop` 收到 PING 时回复 PONG，保持连接活跃
+- **REPLCONF GETACK 处理**: 回复 `REPLCONF ACK <offset>`，防止主节点因 ACK 超时断连
+- **SELECT 处理**: 忽略数据库选择（BoltDB 只有 DB 0），正确跟踪偏移量
+- **新增 `writeRespToMaster`**: 向主节点写入 RESP 响应的辅助函数
+
+### Sentinel Metrics 增强
+
+- 新增 `GetFailoverStarted()`、`GetODownReached()`、`GetSDownBroadcasts()`、`GetSDownReceived()` accessor
+- `sentinel_regression_test.go`: 所有直接字段访问改为 accessor 调用（`s.Metrics.DetectionCount` → `s.Metrics.GetDetectionCount()`）
+
+### 新增 Regression 测试
+
+| 测试 | 文件 | 覆盖 |
+|------|------|------|
+| Failover oscillation | `cmd/integration/failover_oscillation_test.go` | 轨迹单调性 + 无振荡 |
+| Split-brain hardening | `cmd/integration/split_brain_harden_test.go` | 愈合后 leader 稳定性 + 单调收敛 |
+| Backlog exhaustion | `cmd/integration/regressions/backlog_exhaustion_test.go` | FULLRESYNC 回退 + 数据收敛 |
+
+### 文档更新
+
+- `README.md`: SLAVEOF 支持从 ❌ 更新为 ✅，已知限制移除"不支持 SLAVEOF"
+- `docs/stability-spec.md`: 新增 3 项 regression 覆盖
+- `docs/failures/backlog-exhaustion.md`、`docs/failures/failover-oscillation.md`、`docs/failures/split-brain-convergence.md`: 新增故障分析文档
+
 ## v8.12.0 (2026-05-23) — Config Persistence & Engineering Foundations
 
 > **配置持久化与工程基础版本。** Cluster 和 Sentinel 配置现在持久化到磁盘，重启后自动恢复。新增 LSM 压缩/重平衡测试覆盖、100-goroutine 高并发测试、gossip 基础框架、sentinel slave 健康追踪。run-id 格式标准化为 40-char hex。

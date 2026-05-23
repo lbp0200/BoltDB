@@ -135,6 +135,30 @@ func (m *Metrics) GetFailedFailovers() int64 {
 	return m.FailedFailovers
 }
 
+func (m *Metrics) GetFailoverStarted() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.FailoverStarted
+}
+
+func (m *Metrics) GetODownReached() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.ODownReached
+}
+
+func (m *Metrics) GetSDownBroadcasts() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.SDownBroadcasts
+}
+
+func (m *Metrics) GetSDownReceived() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.SDownReceived
+}
+
 func (m *Metrics) DetectionLatency(masterName string) time.Duration {
 	m.mu.Lock()
 	defer m.mu.Unlock()

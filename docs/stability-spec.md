@@ -181,3 +181,6 @@ Current regression coverage:
 | Snapshot inconsistency | `regressions/snapshot_inconsistency_test.go` | `snapshot_inconsistency_expected.json` | Structural match |
 | Snapshot FULLRESYNC overlap | `regressions/snapshot_fullresync_overlap_test.go` | — | CheckDegradation + data verification |
 | Replication thrash | `regressions/replication_thrash_test.go` | `replication_thrash_expected.json` | MaxReconnectCount < 12 |
+| Failover oscillation | `integration/failover_oscillation_test.go` | — | Trajectory monotonic + no oscillation |
+| Split-brain convergence | `integration/split_brain_harden_test.go` | — | Post-heal leader stability + monotonic convergence |
+| Backlog exhaustion | `regressions/backlog_exhaustion_test.go` | — | FULLRESYNC fallback + data convergence |

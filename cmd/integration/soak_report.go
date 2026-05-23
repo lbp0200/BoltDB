@@ -36,6 +36,12 @@ type SoakRunSummary struct {
 	InDegradation       bool      `json:"in_degradation"`
 	Escapable           bool      `json:"escapable"`
 	DegradationLevel    string    `json:"degradation_level"`
+
+	// Evolution Gate v1: recovery dynamics
+	RecoveryVelocity       float64 `json:"recovery_velocity,omitempty"`
+	RecoveryDurationSec    float64 `json:"recovery_duration_sec,omitempty"`
+	PersistenceDurationSec float64 `json:"persistence_duration_sec,omitempty"`
+	OscillationDetected    bool    `json:"oscillation_detected,omitempty"`
 }
 
 // saveSoakReport writes a Markdown report + JSON summary to the specified directory.
@@ -77,6 +83,16 @@ func saveSoakReport(dir, name string, pm *PressureMonitor, baseline int, duratio
 		InDegradation:       basin.InDegradation,
 		Escapable:           basin.Escapable,
 		DegradationLevel:    degLevel.String(),
+
+		// Evolution Gate v1: recovery dynamics
+		RecoveryVelocity:    temporal.Recovery.Velocity,
+		OscillationDetected: temporal.Oscillation.Oscillating,
+	}
+	if temporal.Recovery.Observed {
+		summary.RecoveryDurationSec = temporal.Recovery.Duration.Seconds()
+	}
+	if temporal.Persistence.AnyDegraded {
+		summary.PersistenceDurationSec = temporal.Persistence.WorstDuration.Seconds()
 	}
 
 	var peak float64
@@ -142,6 +158,14 @@ func saveSoakReport(dir, name string, pm *PressureMonitor, baseline int, duratio
 	fmt.Fprintf(rf, " |\n")
 	fmt.Fprintf(rf, "| In Degradation | %v |\n", summary.InDegradation)
 	fmt.Fprintf(rf, "| Escapable | %v |\n", summary.Escapable)
+	fmt.Fprintf(rf, "| Oscillation Detected | %v |\n", summary.OscillationDetected)
+	fmt.Fprintf(rf, "| Recovery Velocity | %.4f/s |\n", summary.RecoveryVelocity)
+	if summary.RecoveryDurationSec > 0 {
+		fmt.Fprintf(rf, "| Recovery Duration | %.0fs |\n", summary.RecoveryDurationSec)
+	}
+	if summary.PersistenceDurationSec > 0 {
+		fmt.Fprintf(rf, "| Persistence Duration | %.0fs |\n", summary.PersistenceDurationSec)
+	}
 
 	fmt.Fprintf(rf, "\n## Health Score\n\n```\n%s\n```\n", health.FormatReport())
 	fmt.Fprintf(rf, "\n## Temporal Analysis\n\n```\n%s\n```\n", temporal.FormatReport())

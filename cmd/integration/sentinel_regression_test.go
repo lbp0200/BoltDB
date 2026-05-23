@@ -247,18 +247,18 @@ func TestSentinelFailoverConvergence(t *testing.T) {
 	t.Logf("Detection latency:       %v  (master death -> ODown)", detectLat)
 	t.Logf("Election duration:       %v  (ODown -> failover start)", electionDur)
 	t.Logf("Recovery duration:       %v  (failover start -> new master)", recoverDur)
-	t.Logf("Leader changes recorded: %d", s.Metrics.LeaderChanges)
-	t.Logf("Detection count:         %d", s.Metrics.DetectionCount)
-	t.Logf("SDown broadcasts:        %d", s.Metrics.SDownBroadcasts)
-	t.Logf("Failover attempts:       %d", s.Metrics.FailoverStarted)
-	t.Logf("Successful failovers:    %d", s.Metrics.SuccessfulFailovers)
+	t.Logf("Leader changes recorded: %d", s.Metrics.GetLeaderChanges())
+	t.Logf("Detection count:         %d", s.Metrics.GetDetectionCount())
+	t.Logf("SDown broadcasts:        %d", s.Metrics.GetSDownBroadcasts())
+	t.Logf("Failover attempts:       %d", s.Metrics.GetFailoverStarted())
+	t.Logf("Successful failovers:    %d", s.Metrics.GetSuccessfulFailovers())
 
 	mAfter := s.GetMaster("mymaster")
 	if mAfter.GetAddr() != promotee.Addr {
 		t.Fatalf("failover did not update addr: got %q want %q (master was %q)",
 			mAfter.GetAddr(), promotee.Addr, master.Addr)
 	}
-	if s.Metrics.SuccessfulFailovers == 0 {
+	if s.Metrics.GetSuccessfulFailovers() == 0 {
 		t.Fatal("failover not recorded in metrics")
 	}
 	if detectLat <= 0 {
@@ -267,7 +267,7 @@ func TestSentinelFailoverConvergence(t *testing.T) {
 	if detectLat >= 15*time.Second {
 		t.Fatalf("detection too slow: %v", detectLat)
 	}
-	if s.Metrics.LeaderChanges == 0 {
+	if s.Metrics.GetLeaderChanges() == 0 {
 		t.Fatal("no leader change recorded")
 	}
 
@@ -482,18 +482,18 @@ func TestSentinelSplitBrainRegression(t *testing.T) {
 	t.Logf("Partition detection: sentinel A saw %s, sentinel B saw %s", stateA, stateBState)
 
 	t.Logf("=== Split-Brain Metrics ===")
-	t.Logf("Metrics - S1 detection count:  %d", sA.Metrics.DetectionCount)
-	t.Logf("Metrics - S1 ODown reached:    %d", sA.Metrics.ODownReached)
-	t.Logf("Metrics - S1 failover started: %d", sA.Metrics.FailoverStarted)
-	t.Logf("Metrics - S1 failover success: %d", sA.Metrics.SuccessfulFailovers)
-	t.Logf("Metrics - S2 detection count:  %d", sB.Metrics.DetectionCount)
-	t.Logf("Metrics - S2 ODown reached:    %d", sB.Metrics.ODownReached)
-	t.Logf("Metrics - S2 failover started: %d", sB.Metrics.FailoverStarted)
+	t.Logf("Metrics - S1 detection count:  %d", sA.Metrics.GetDetectionCount())
+	t.Logf("Metrics - S1 ODown reached:    %d", sA.Metrics.GetODownReached())
+	t.Logf("Metrics - S1 failover started: %d", sA.Metrics.GetFailoverStarted())
+	t.Logf("Metrics - S1 failover success: %d", sA.Metrics.GetSuccessfulFailovers())
+	t.Logf("Metrics - S2 detection count:  %d", sB.Metrics.GetDetectionCount())
+	t.Logf("Metrics - S2 ODown reached:    %d", sB.Metrics.GetODownReached())
+	t.Logf("Metrics - S2 failover started: %d", sB.Metrics.GetFailoverStarted())
 
 	// Isolated sentinel should have detected the partition
-	assert.True(t, sA.Metrics.DetectionCount > 0)
+	assert.True(t, sA.Metrics.GetDetectionCount() > 0)
 	// Healthy sentinel should not have detected anything
-	assert.Equal(t, int64(0), sB.Metrics.DetectionCount)
+	assert.Equal(t, int64(0), sB.Metrics.GetDetectionCount())
 
 	t.Log("PASS: Sentinel A detected partition, B stayed healthy")
 }
@@ -520,8 +520,8 @@ func TestSentinelFalsePositiveDetection(t *testing.T) {
 	if state != "ok" {
 		t.Fatalf("master should stay 'ok' when healthy (state=%s)", state)
 	}
-	if s.Metrics.DetectionCount != 0 {
+	if s.Metrics.GetDetectionCount() != 0 {
 		t.Fatalf("detected false positive sdown: %d detections for healthy master",
-			s.Metrics.DetectionCount)
+			s.Metrics.GetDetectionCount())
 	}
 }

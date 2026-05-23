@@ -62,16 +62,19 @@ jobs:
 
       - name: Evolution gate check
         run: |
-          echo "=== Evolution Analysis ==="
+          echo "=== Evolution Gate ==="
           go run cmd/evolution/main.go \
             -dir=/tmp/soak-artifacts/report \
             -prefix=standalone \
-            2>&1 | tee /tmp/soak-artifacts/report/standalone-evolution.txt || true
-          echo "=== Evolution Gate ==="
-          if grep -q "WARN\|FAIL" /tmp/soak-artifacts/report/standalone-evolution.txt 2>/dev/null; then
-            echo "EVOLUTION GATE: degradation detected in long-term trends"
+            > /tmp/soak-artifacts/report/standalone-evolution.txt 2>&1 || gate_exit=$?
+          cat /tmp/soak-artifacts/report/standalone-evolution.txt
+          if [ "${gate_exit:-0}" -eq 1 ]; then
+            echo "::error::EVOLUTION GATE: FAIL - system degradation detected in long-term trends"
+            exit 1
+          elif grep -q "Status: WARN" /tmp/soak-artifacts/report/standalone-evolution.txt 2>/dev/null; then
+            echo "::warning::EVOLUTION GATE: WARN - degradation signals detected"
           else
-            echo "EVOLUTION GATE: healthy"
+            echo "EVOLUTION GATE: PASS - system is healthy"
           fi
 
       - name: Save evolution history
@@ -125,16 +128,19 @@ jobs:
 
       - name: Evolution gate check
         run: |
-          echo "=== Evolution Analysis ==="
+          echo "=== Evolution Gate ==="
           go run cmd/evolution/main.go \
             -dir=/tmp/soak-artifacts/report \
             -prefix=replication \
-            2>&1 | tee /tmp/soak-artifacts/report/replication-evolution.txt || true
-          echo "=== Evolution Gate ==="
-          if grep -q "WARN\|FAIL" /tmp/soak-artifacts/report/replication-evolution.txt 2>/dev/null; then
-            echo "EVOLUTION GATE: degradation detected in long-term trends"
+            > /tmp/soak-artifacts/report/replication-evolution.txt 2>&1 || gate_exit=$?
+          cat /tmp/soak-artifacts/report/replication-evolution.txt
+          if [ "${gate_exit:-0}" -eq 1 ]; then
+            echo "::error::EVOLUTION GATE: FAIL - system degradation detected in long-term trends"
+            exit 1
+          elif grep -q "Status: WARN" /tmp/soak-artifacts/report/replication-evolution.txt 2>/dev/null; then
+            echo "::warning::EVOLUTION GATE: WARN - degradation signals detected"
           else
-            echo "EVOLUTION GATE: healthy"
+            echo "EVOLUTION GATE: PASS - system is healthy"
           fi
 
       - name: Save evolution history

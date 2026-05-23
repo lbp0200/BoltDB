@@ -34,6 +34,12 @@ type EvolutionRun struct {
 	InDegradation    bool      `json:"in_degradation"`
 	Escapable        bool      `json:"escapable"`
 	DegradationLevel string    `json:"degradation_level"`
+
+	// Recovery dynamics (from temporal analysis)
+	RecoveryVelocity       float64 `json:"recovery_velocity,omitempty"`
+	RecoveryDurationSec    float64 `json:"recovery_duration_sec,omitempty"`
+	PersistenceDurationSec float64 `json:"persistence_duration_sec,omitempty"`
+	OscillationDetected    bool    `json:"oscillation_detected,omitempty"`
 }
 
 // EvolutionReport 跨 run 演化趋势分析
@@ -63,6 +69,19 @@ type EvolutionReport struct {
 	Warnings               []string
 
 	Level DegradationLevel
+
+	// Evolution Gate v1 fields
+	HealthSlopeRecent     float64 // slope over last 3 runs
+	RecoveryTimeSlope     float64 // trend in recovery duration (positive = slower recovery)
+	PersistenceSlope      float64 // trend in persistence duration (positive = longer degradation)
+	RecoveryVelocitySlope float64 // trend in recovery speed (negative = slowing)
+
+	PersistenceTrend      string
+	RecoveryTimeTrend     string
+	RecoveryVelocityTrend string
+
+	RegimeShiftToWorse bool
+	GateReasons        []string
 }
 
 const (
@@ -118,6 +137,9 @@ func AnalyzeEvolution(runs []EvolutionRun) EvolutionReport {
 		r.ClusterTrend = trendStable
 		r.BasinDepthTrend = trendStable
 		r.OscillationTrend = trendStable
+		r.PersistenceTrend = trendStable
+		r.RecoveryTimeTrend = trendStable
+		r.RecoveryVelocityTrend = trendStable
 		return r
 	}
 
@@ -139,41 +161,60 @@ func AnalyzeEvolution(runs []EvolutionRun) EvolutionReport {
 
 	for _, t := range trends {
 		*t.slope = linearSlope(t.values)
-		if t.result == nil {
-			continue
-		}
-		if math.Abs(*t.slope) >= 0.005 {
-			if *t.slope > 0 {
-				// For health metrics, positive = improving
-				// For basin depth, positive = deepening (bad)
-				// L0 peak, positive = worsening (bad)
-				if t.name == "health_overall" || t.name == "health_storage" || t.name == "health_replication" || t.name == "health_cluster" {
-					*t.result = trendImproving
-				} else {
-					*t.result = trendDegrading
-				}
-			} else {
-				if t.name == "health_overall" || t.name == "health_storage" || t.name == "health_replication" || t.name == "health_cluster" {
-					*t.result = trendDegrading
-				} else {
-					*t.result = trendImproving
-				}
-			}
-		} else {
-			*t.result = trendStable
-		}
 	}
+
+	fixTrendDirection(&r.HealthTrend, r.HealthSlope, true)
+	fixTrendDirection(&r.StorageTrend, r.StorageSlope, true)
+	fixTrendDirection(&r.ReplicationTrend, r.ReplicationSlope, true)
+	fixTrendDirection(&r.ClusterTrend, r.ClusterSlope, true)
+	fixTrendDirection(&r.BasinDepthTrend, r.BasinDepthSlope, false)
 
 	r.OscillationTrend = detectOscillationTrend(runs)
 
 	r.RegimeShiftDetected, r.RegimeShiftDescription = detectRegimeShift(runs)
+	r.RegimeShiftToWorse = detectRegimeShiftToWorse(runs)
 
 	r.EscalatingDegradation = detectEscalation(runs)
 
+	// Evolution Gate v1: recent health slope (last 3 runs)
+	r.HealthSlopeRecent = computeRecentSlope(runs, func(v EvolutionRun) float64 { return v.HealthOverall })
+
+	// Recovery and persistence trends across runs
+	r.RecoveryTimeSlope = computeSparseSlope(runs, func(v EvolutionRun) float64 { return v.RecoveryDurationSec })
+	r.PersistenceSlope = computeSparseSlope(runs, func(v EvolutionRun) float64 { return v.PersistenceDurationSec })
+	r.RecoveryVelocitySlope = computeSparseSlope(runs, func(v EvolutionRun) float64 { return v.RecoveryVelocity })
+
+	r.PersistenceTrend = classifyDirection(r.PersistenceSlope, false)
+	r.RecoveryTimeTrend = classifyDirection(r.RecoveryTimeSlope, false)
+	r.RecoveryVelocityTrend = classifyDirection(r.RecoveryVelocitySlope, true)
+
 	r.Warnings = buildWarnings(runs, r)
-	r.Level = computeEvolutionLevel(r)
+	r.Level, r.GateReasons = computeEvolutionLevel(r)
 
 	return r
+}
+
+// fixTrendDirection corrects the slope-to-trend mapping.
+// For health metrics: positive slope = improving
+// For non-health metrics (basin depth, L0, persistence, recovery time): positive slope = degrading
+func fixTrendDirection(trend *string, slope float64, isHealth bool) {
+	if math.Abs(slope) < 0.005 {
+		*trend = trendStable
+		return
+	}
+	if isHealth {
+		if slope > 0 {
+			*trend = trendImproving
+		} else {
+			*trend = trendDegrading
+		}
+	} else {
+		if slope > 0 {
+			*trend = trendDegrading
+		} else {
+			*trend = trendImproving
+		}
+	}
 }
 
 func extractFloat(runs []EvolutionRun, fn func(EvolutionRun) float64) []float64 {
@@ -182,6 +223,81 @@ func extractFloat(runs []EvolutionRun, fn func(EvolutionRun) float64) []float64 
 		out[i] = fn(r)
 	}
 	return out
+}
+
+var basinOrder = map[string]int{
+	"healthy":   0,
+	"stressed":  1,
+	"degraded":  2,
+	"collapsed": 3,
+}
+
+// computeRecentSlope computes linear slope over last k runs (min 2, max k=3).
+func computeRecentSlope(runs []EvolutionRun, fn func(EvolutionRun) float64) float64 {
+	n := len(runs)
+	if n < 2 {
+		return 0
+	}
+	k := 3
+	if n < k {
+		k = n
+	}
+	recent := runs[n-k:]
+	vals := make([]float64, k)
+	for i, r := range recent {
+		vals[i] = fn(r)
+	}
+	return linearSlope(vals)
+}
+
+// computeSparseSlope computes slope across non-zero values only.
+// If fewer than 2 non-zero values, returns 0.
+func computeSparseSlope(runs []EvolutionRun, fn func(EvolutionRun) float64) float64 {
+	var vals []float64
+	for _, r := range runs {
+		v := fn(r)
+		if v > 0 {
+			vals = append(vals, v)
+		}
+	}
+	if len(vals) < 2 {
+		return 0
+	}
+	return linearSlope(vals)
+}
+
+// classifyDirection maps a slope to a trend string.
+// isHealth: true = positive slope is improving.
+func classifyDirection(slope float64, isHealth bool) string {
+	if math.Abs(slope) < 0.005 {
+		return trendStable
+	}
+	if isHealth {
+		if slope > 0 {
+			return trendImproving
+		}
+		return trendDegrading
+	}
+	if slope > 0 {
+		return trendDegrading
+	}
+	return trendImproving
+}
+
+// detectRegimeShiftToWorse checks if basin transitions are to worse states.
+func detectRegimeShiftToWorse(runs []EvolutionRun) bool {
+	if len(runs) < 3 {
+		return false
+	}
+	for i := 1; i < len(runs)-1; i++ {
+		prevOrder, prevOk := basinOrder[runs[i-1].Basin]
+		curOrder, curOk := basinOrder[runs[i].Basin]
+		nextOrder, nextOk := basinOrder[runs[i+1].Basin]
+		if prevOk && curOk && nextOk && curOrder > prevOrder && curOrder == nextOrder {
+			return true
+		}
+	}
+	return false
 }
 
 func detectOscillationTrend(runs []EvolutionRun) string {
@@ -268,26 +384,40 @@ func buildWarnings(runs []EvolutionRun, r EvolutionReport) []string {
 
 // computeEvolutionLevel converts evolution signals to a DegradationLevel gate.
 // Used by CI to gate on long-term degradation trends.
-func computeEvolutionLevel(r EvolutionReport) DegradationLevel {
+// Returns (level, reasons).
+func computeEvolutionLevel(r EvolutionReport) (DegradationLevel, []string) {
 	if r.RunCount < 3 {
-		return LevelOK
+		return LevelOK, nil
 	}
 
-	// Regime shift: basin type permanently changed → FAIL
-	if r.RegimeShiftDetected {
-		if strings.Contains(r.RegimeShiftDescription, "stressed") ||
-			strings.Contains(r.RegimeShiftDescription, "degraded") ||
-			strings.Contains(r.RegimeShiftDescription, "collapsed") {
-			return LevelFail
-		}
+	var reasons []string
+
+	// === FAIL CONDITIONS ===
+
+	// 1. Health slope recently < -0.02 (sustained degradation in recent runs)
+	if r.RunCount >= 3 && r.HealthSlopeRecent < -0.02 {
+		reasons = append(reasons, fmt.Sprintf(
+			"health slope in last 3 runs: %.4f (threshold: -0.02)", r.HealthSlopeRecent))
 	}
 
-	// Escalating degradation: more than half of recent runs degraded → FAIL
-	if r.EscalatingDegradation {
-		return LevelFail
+	// 2. Regime shift to worse basin (stressed/degraded/collapsed)
+	if r.RegimeShiftToWorse {
+		reasons = append(reasons, "regime shift to worse basin state (sustained)")
 	}
 
-	// Health dropping for 3+ consecutive runs → WARN
+	// 3. Sustained oscillation pattern across runs
+	if r.OscillationTrend == trendDegrading {
+		reasons = append(reasons, "sustained oscillation pattern detected across runs")
+	}
+
+	// FAIL if any FAIL condition triggered
+	if len(reasons) > 0 {
+		return LevelFail, reasons
+	}
+
+	// === WARN CONDITIONS ===
+
+	// 4. Health dropping for 3+ consecutive runs
 	if len(r.Runs) >= 4 {
 		last3 := r.Runs[len(r.Runs)-3:]
 		allDropping := true
@@ -298,16 +428,37 @@ func computeEvolutionLevel(r EvolutionReport) DegradationLevel {
 			}
 		}
 		if allDropping {
-			return LevelWarn
+			reasons = append(reasons, "health dropped for 3 consecutive runs")
 		}
 	}
 
-	// Storage slope degrading continuously → WARN
+	// 5. Storage + health both degrading
 	if r.StorageTrend == trendDegrading && r.HealthTrend == trendDegrading {
-		return LevelWarn
+		reasons = append(reasons, "storage and overall health both degrading")
 	}
 
-	return LevelOK
+	// 6. Degradation persistence increasing across runs
+	if r.PersistenceTrend == trendDegrading {
+		reasons = append(reasons, fmt.Sprintf(
+			"degradation persistence increasing (slope=%.4f)", r.PersistenceSlope))
+	}
+
+	// 7. Recovery time increasing (recovery getting slower)
+	if r.RecoveryTimeTrend == trendDegrading {
+		reasons = append(reasons, fmt.Sprintf(
+			"recovery time increasing (slope=%.4f)", r.RecoveryTimeSlope))
+	}
+
+	// 8. Escalating degradation (existing check)
+	if r.EscalatingDegradation {
+		reasons = append(reasons, "degradation escalating across runs")
+	}
+
+	if len(reasons) > 0 {
+		return LevelWarn, reasons
+	}
+
+	return LevelOK, nil
 }
 
 // FormatReport 输出演化趋势 Markdown 报告
@@ -343,6 +494,35 @@ func (r EvolutionReport) FormatReport() string {
 	fmt.Fprintf(&b, "| Oscillation | — | %s |\n", r.OscillationTrend)
 	b.WriteString("\n")
 
+	// === Evolution Gate section ===
+	b.WriteString("## Evolution Gate\n\n")
+	fmt.Fprintf(&b, "**Status**: %s\n\n", r.Level)
+	if len(r.GateReasons) > 0 {
+		b.WriteString("**Reasons**:\n")
+		for _, reason := range r.GateReasons {
+			fmt.Fprintf(&b, "- %s\n", reason)
+		}
+		b.WriteString("\n")
+	} else {
+		b.WriteString("No degradation signals detected.\n\n")
+	}
+
+	// Gate-specific metrics
+	if r.RunCount >= 3 {
+		b.WriteString("**Gate Metrics**:\n")
+		fmt.Fprintf(&b, "- Health slope (recent 3 runs): %+.4f\n", r.HealthSlopeRecent)
+	}
+	if r.RecoveryTimeSlope != 0 {
+		fmt.Fprintf(&b, "- Recovery time slope: %+.4f\n", r.RecoveryTimeSlope)
+	}
+	if r.PersistenceSlope != 0 {
+		fmt.Fprintf(&b, "- Persistence slope: %+.4f\n", r.PersistenceSlope)
+	}
+	if r.RecoveryVelocitySlope != 0 {
+		fmt.Fprintf(&b, "- Recovery velocity slope: %+.4f\n", r.RecoveryVelocitySlope)
+	}
+	b.WriteString("\n")
+
 	if len(r.Warnings) > 0 {
 		b.WriteString("## Warnings\n\n")
 		for _, w := range r.Warnings {
@@ -352,12 +532,14 @@ func (r EvolutionReport) FormatReport() string {
 	}
 
 	b.WriteString("## Run History\n\n")
-	b.WriteString("| # | Date | Health | Storage | Repl | Cluster | Basin | Depth | L0 Peak | Osc | Deg?\n")
-	b.WriteString("|---|------|--------|---------|------|---------|-------|-------|---------|-----|------|\n")
+	b.WriteString("| # | Date | Health | Storage | Repl | Cluster | Basin | Depth | L0 Peak | Osc | Deg? | Recov(s) | Persist(s) |\n")
+	b.WriteString("|---|------|--------|---------|------|---------|-------|-------|---------|-----|------|----------|------------|\n")
 	for i, run := range r.Runs {
 		osc := ""
-		if run.LimitCycle {
+		if run.OscillationDetected {
 			osc = "OSC"
+		} else if run.LimitCycle {
+			osc = "CYC"
 		}
 		deg := ""
 		if run.InDegradation {
@@ -365,7 +547,15 @@ func (r EvolutionReport) FormatReport() string {
 		} else if run.DegradationLevel == "FAIL" {
 			deg = "FAIL"
 		}
-		fmt.Fprintf(&b, "| %d | %s | %.2f | %.2f | %.2f | %.2f | %s | %.2f | %.1f | %s | %s |\n",
+		recStr := "-"
+		if run.RecoveryDurationSec > 0 {
+			recStr = fmt.Sprintf("%.0f", run.RecoveryDurationSec)
+		}
+		persStr := "-"
+		if run.PersistenceDurationSec > 0 {
+			persStr = fmt.Sprintf("%.0f", run.PersistenceDurationSec)
+		}
+		fmt.Fprintf(&b, "| %d | %s | %.2f | %.2f | %.2f | %.2f | %s | %.2f | %.1f | %s | %s | %s | %s |\n",
 			i+1,
 			run.Timestamp.Format("01-02"),
 			run.HealthOverall,
@@ -377,6 +567,8 @@ func (r EvolutionReport) FormatReport() string {
 			run.L0Peak,
 			osc,
 			deg,
+			recStr,
+			persStr,
 		)
 	}
 	b.WriteString("\n")

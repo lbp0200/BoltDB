@@ -309,15 +309,48 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 			return fmt.Errorf("read command from master failed: %w", err)
 		}
 
+		cmd := strings.ToUpper(string(req.Args[0]))
+
+		// 处理 PING — 响应 PONG，保持连接活跃
+		if cmd == "PING" {
+			if err := sr.writeRespToMaster(mc, []byte("+PONG\r\n")); err != nil {
+				return fmt.Errorf("write PONG to master failed: %w", err)
+			}
+			cmdBytes := serializeCommand(req.Args)
+			sr.lastOffset.Add(int64(len(cmdBytes)))
+			continue
+		}
+
+		// 处理 REPLCONF GETACK — 响应 REPLCONF ACK <offset>，防止主节点超时断连
+		if cmd == "REPLCONF" && len(req.Args) >= 3 &&
+			strings.ToUpper(string(req.Args[1])) == "GETACK" {
+			offset := sr.lastOffset.Load()
+			ackResp := fmt.Sprintf("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$%d\r\n%d\r\n",
+				len(strconv.FormatInt(offset, 10)), offset)
+			if err := sr.writeRespToMaster(mc, []byte(ackResp)); err != nil {
+				return fmt.Errorf("write REPLCONF ACK to master failed: %w", err)
+			}
+			cmdBytes := serializeCommand(req.Args)
+			sr.lastOffset.Add(int64(len(cmdBytes)))
+			continue
+		}
+
+		// 处理 SELECT — 忽略数据库选择（BoltDB 只有 DB 0），仅跟踪偏移
+		if cmd == "SELECT" {
+			cmdBytes := serializeCommand(req.Args)
+			sr.lastOffset.Add(int64(len(cmdBytes)))
+			continue
+		}
+
 		if err := executeReplicatedCommand(sr.store, req.Args); err != nil {
 			if isTransientReplicationError(err) {
 				logger.Logger.Warn().Err(err).
-					Str("cmd", string(req.Args[0])).
+					Str("cmd", cmd).
 					Msg("复制命令暂时失败，跳过")
 				continue
 			}
 			logger.Logger.Error().Err(err).
-				Str("cmd", string(req.Args[0])).
+				Str("cmd", cmd).
 				Msg("执行复制命令失败，重新同步")
 			return fmt.Errorf("execute replicated command failed: %w", err)
 		}
@@ -325,6 +358,16 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 		cmdBytes := serializeCommand(req.Args)
 		sr.lastOffset.Add(int64(len(cmdBytes)))
 	}
+}
+
+// writeRespToMaster 向主节点写入响应数据
+func (sr *SlaveReconnector) writeRespToMaster(mc *MasterConnection, data []byte) error {
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+	if _, err := mc.Writer.Write(data); err != nil {
+		return err
+	}
+	return mc.Writer.Flush()
 }
 
 func dialMaster(addr string) (*MasterConnection, error) {

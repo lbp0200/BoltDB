@@ -522,7 +522,7 @@ BoltDB can be monitored by external Redis Sentinel:
 | Scenario | Status | Notes |
 |----------|--------|-------|
 | **BoltDB → Redis** | ✅ | Data sync works (SET, INCR, LPUSH, ZADD, HSET) |
-| **Redis → BoltDB** | ❌ | Not supported (BoltDB lacks SLAVEOF command) |
+| **Redis → BoltDB** | ✅ **New** | Supported via `SLAVEOF` / `REPLICAOF` command or `--replicaof` flag |
 | **Role Switching** | ✅ | SLAVEOF NO ONE / SLAVEOF work instantly |
 | **Data Isolation** | ✅ | Both instances maintain independent data |
 | **故障恢复** | ✅ | Redis SLAVEOF switch takes effect immediately |
@@ -544,7 +544,7 @@ redis-cli -p 6379 GET "test"  # Returns "hello"
 ### Known Limitations | 已知限制
 
 1. **RDB Format Incompatibility**: BoltDB and Redis use different RDB formats and cannot exchange RDB snapshot files directly
-2. **BoltDB SLAVEOF**: BoltDB does not implement the SLAVEOF command, so it cannot act as a replica of Redis
+2. ~~BoltDB SLAVEOF~~: ✅ **Fixed** — BoltDB now supports the `SLAVEOF`/`REPLICAOF` command, enabling it to act as a replica of a Redis master. Use `SLAVEOF <host> <port>` or start with `--replicaof host:port`.
 3. **No Lua Scripting (EVAL/SCRIPT)**: BoltDB intentionally does not implement Lua scripting (`EVAL`/`SCRIPT` commands). This is a conscious design decision to avoid the security risks (sandbox escape), maintenance burden, and complexity of embedding a Lua runtime. BoltDB is a disk-persistent KV store, not a full Redis replacement — clients should implement script logic on their end.
 
 ---
