@@ -86,11 +86,20 @@ func main() {
 	historyDir := flag.String("dir", "", "path to history directory (e.g. /tmp/soak-data/report/history)")
 	prefix := flag.String("prefix", "standalone", "history file prefix (standalone, replication)")
 	jsonOut := flag.Bool("json", false, "output machine-readable JSON instead of human-readable report")
+	driftOut := flag.Bool("drift", false, "output drift report JSON (last run vs trailing window average)")
+	anomalyOut := flag.Bool("anomaly", false, "output anomaly detection report (markdown)")
+	anomalyJSON := flag.Bool("anomaly-json", false, "output anomaly detection report (JSON)")
+	repoDir := flag.String("repo", "", "git repo root for commit correlation (default: auto-detect from CWD)")
 	flag.Parse()
 
 	if *historyDir == "" {
-		fmt.Fprintln(os.Stderr, "usage: evolution -dir=<history-dir> [-prefix=<name>] [-json]")
+		fmt.Fprintln(os.Stderr, "usage: evolution -dir=<history-dir> [-prefix=<name>] [-json] [-drift] [-anomaly] [-anomaly-json]")
 		os.Exit(2)
+	}
+
+	if *repoDir == "" {
+		cwd, _ := os.Getwd()
+		*repoDir = cwd
 	}
 
 	// If -dir points to the report dir itself, append /history
@@ -130,12 +139,30 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Anomaly detection (independent of evolution analysis)
+	if *anomalyOut || *anomalyJSON {
+		ar := monitor.DetectAnomalies(runs, *prefix, *repoDir)
+		if *anomalyJSON {
+			_ = json.NewEncoder(os.Stdout).Encode(ar)
+		}
+		if *anomalyOut {
+			fmt.Println(ar.FormatAnomalyReport())
+		}
+		return
+	}
+
 	report := monitor.AnalyzeEvolution(runs)
 
 	exitCode := 0
 	switch report.Level {
 	case monitor.LevelFail:
 		exitCode = 1
+	}
+
+	if *driftOut {
+		drift := report.ComputeDrift(3)
+		_ = json.NewEncoder(os.Stdout).Encode(drift)
+		return
 	}
 
 	if *jsonOut {

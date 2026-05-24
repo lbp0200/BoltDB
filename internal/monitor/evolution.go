@@ -43,6 +43,26 @@ type EvolutionRun struct {
 	OscillationDetected    bool    `json:"oscillation_detected,omitempty"`
 }
 
+// DriftMetric 单次 drift 比较结果
+type DriftMetric struct {
+	Name      string  `json:"name"`
+	LastValue float64 `json:"last_value"`
+	AvgValue  float64 `json:"avg_value"`
+	Delta     float64 `json:"delta"`
+	Signal    string  `json:"signal"` // improving, stable, degrading, WARN
+}
+
+// DriftReport 最新 run 与历史基线对比
+type DriftReport struct {
+	RunCount       int           `json:"run_count"`
+	WindowSize     int           `json:"window_size"`
+	Metrics        []DriftMetric `json:"metrics"`
+	BasinDrift     string        `json:"basin_drift,omitempty"`     // 盆地方向
+	BasinWorsening bool          `json:"basin_worsening,omitempty"` // basin 是否持续恶化
+	Escalation     bool          `json:"escalation_detected,omitempty"`
+	RegimeShift    bool          `json:"regime_shift_detected,omitempty"`
+}
+
 // EvolutionReport 跨 run 演化趋势分析
 type EvolutionReport struct {
 	AnalysisTime time.Time
@@ -663,7 +683,125 @@ func (r EvolutionReport) FormatReport() string {
 	}
 	b.WriteString("\n")
 
+	// === Drift Analysis section ===
+	if r.RunCount >= 3 {
+		drift := r.ComputeDrift(3)
+		b.WriteString("## Drift Analysis\n\n")
+		b.WriteString("Compares the **most recent run** against the **trailing 3-run average** (excl. latest).\n\n")
+		b.WriteString("| Metric | Last Run | Avg (prev 3) | Delta | Signal |\n")
+		b.WriteString("|--------|----------|-------------|-------|--------|\n")
+		for _, m := range drift.Metrics {
+			sig := m.Signal
+			if sig == "WARN" {
+				sig = "⚠️ " + sig
+			}
+			fmt.Fprintf(&b, "| %s | %.3f | %.3f | %+.3f | %s |\n", m.Name, m.LastValue, m.AvgValue, m.Delta, sig)
+		}
+		if drift.BasinDrift != "" {
+			basinSig := ""
+			if drift.BasinWorsening {
+				basinSig = " ⚠️ worsening"
+			}
+			fmt.Fprintf(&b, "| Basin Trajectory | %s | | |%s |\n", drift.BasinDrift, basinSig)
+		}
+		if drift.Escalation {
+			fmt.Fprintf(&b, "| Escalation | detected | | | ⚠️ WARN |\n")
+		}
+		if drift.RegimeShift {
+			fmt.Fprintf(&b, "| Regime Shift | detected | | | ⚠️ WARN |\n")
+		}
+		b.WriteString("\n")
+	}
+
 	return b.String()
+}
+
+// ComputeDrift 计算最新 run vs 历史窗口平均的 drift
+func (r EvolutionReport) ComputeDrift(windowSize int) DriftReport {
+	drift := DriftReport{
+		RunCount:   r.RunCount,
+		WindowSize: windowSize,
+	}
+	if r.RunCount < 2 {
+		return drift
+	}
+
+	n := r.RunCount
+	last := r.Runs[n-1]
+	windowSize = min(windowSize, n-1)
+	window := r.Runs[n-1-windowSize : n-1]
+
+	avg := func(fn func(EvolutionRun) float64) float64 {
+		var s float64
+		for _, run := range window {
+			s += fn(run)
+		}
+		return s / float64(len(window))
+	}
+	avgHealth := avg(func(v EvolutionRun) float64 { return v.HealthOverall })
+	avgStorage := avg(func(v EvolutionRun) float64 { return v.HealthStorage })
+	avgRepl := avg(func(v EvolutionRun) float64 { return v.HealthRepl })
+	avgCluster := avg(func(v EvolutionRun) float64 { return v.HealthCluster })
+	avgBasinDepth := avg(func(v EvolutionRun) float64 { return v.BasinDepth })
+	avgL0Peak := avg(func(v EvolutionRun) float64 { return v.L0Peak })
+
+	signal := func(delta float64, higherIsBetter bool) string {
+		if higherIsBetter {
+			if delta > 0.02 {
+				return "improving"
+			}
+			if delta < -0.02 {
+				return "WARN"
+			}
+		} else {
+			if delta < -0.02 {
+				return "improving"
+			}
+			if delta > 0.02 {
+				return "WARN"
+			}
+		}
+		return "stable"
+	}
+
+	drift.Metrics = []DriftMetric{
+		{"Health (Overall)", last.HealthOverall, avgHealth, last.HealthOverall - avgHealth, signal(last.HealthOverall-avgHealth, true)},
+		{"Health (Storage)", last.HealthStorage, avgStorage, last.HealthStorage - avgStorage, signal(last.HealthStorage-avgStorage, true)},
+		{"Health (Repl)", last.HealthRepl, avgRepl, last.HealthRepl - avgRepl, signal(last.HealthRepl-avgRepl, true)},
+		{"Health (Cluster)", last.HealthCluster, avgCluster, last.HealthCluster - avgCluster, signal(last.HealthCluster-avgCluster, true)},
+		{"Basin Depth", last.BasinDepth, avgBasinDepth, last.BasinDepth - avgBasinDepth, signal(last.BasinDepth-avgBasinDepth, false)},
+		{"L0 Peak", last.L0Peak, avgL0Peak, last.L0Peak - avgL0Peak, signal(last.L0Peak-avgL0Peak, false)},
+	}
+
+	// Basin drift: check if basin order is worsening
+	basinOrder := map[string]int{"healthy": 0, "stressed": 1, "degraded": 2, "collapsed": 3}
+	lastBasinOrder, lastOk := basinOrder[last.Basin]
+	if lastOk && len(window) > 0 {
+		var prevOrder int
+		prevOk := false
+		for _, w := range window {
+			if o, ok := basinOrder[w.Basin]; ok {
+				prevOrder = o
+				prevOk = true
+				break
+			}
+		}
+		if prevOk {
+			if lastBasinOrder > prevOrder {
+				drift.BasinDrift = fmt.Sprintf("%s → %s ⚠️", window[0].Basin, last.Basin)
+				drift.BasinWorsening = true
+			} else if lastBasinOrder < prevOrder {
+				drift.BasinDrift = fmt.Sprintf("%s → %s ✓", window[0].Basin, last.Basin)
+			} else {
+				drift.BasinDrift = fmt.Sprintf("%s (stable)", last.Basin)
+			}
+		}
+	}
+
+	drift.Escalation = r.EscalatingDegradation
+	drift.RegimeShift = r.RegimeShiftDetected
+
+	return drift
 }
 
 func writeTrendRow(b *strings.Builder, label string, slope float64, direction string) {
