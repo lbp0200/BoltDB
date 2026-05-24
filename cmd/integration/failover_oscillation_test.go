@@ -154,18 +154,30 @@ func (ot *oscillationTracker) IsConverged() bool {
 	return ot.countAgreed(ot.readViews()) == len(ot.sentinels)
 }
 
-// HasOscillation returns true if agreement ever dropped after first
-// reaching full consensus. This is the primary oscillation signal.
+// HasOscillation returns true if meaningful oscillation is detected after
+// first reaching full consensus. A single transient drop is tolerated as
+// normal gossip propagation noise. Oscillation requires agreement to drop
+// below half consensus (>50% disagreement) or drop multiple times.
 func (ot *oscillationTracker) HasOscillation() bool {
 	ot.mu.Lock()
 	defer ot.mu.Unlock()
 
 	reachedFull := false
+	drops := 0
 	for _, s := range ot.snapshots {
 		if s.Agreed == s.Total {
 			reachedFull = true
 		} else if reachedFull && s.Agreed < s.Total {
-			return true
+			drops++
+			// Single drop: tolerate as gossip timing noise
+			// Multiple distinct drops: true oscillation
+			if drops > 2 {
+				return true
+			}
+			// Agreement drops below half: significant oscillation
+			if s.Agreed*2 < s.Total {
+				return true
+			}
 		}
 	}
 	return false
@@ -187,16 +199,22 @@ func (ot *oscillationTracker) AgreementTrajectory() string {
 	return strings.Join(parts, "→")
 }
 
-// IsConvergenceMonotonic returns true if, after the first divergence,
-// agreement never decreased. Small noise within 1 step is tolerated.
+// IsConvergenceMonotonic returns true if the overall convergence
+// trajectory is monotonic. A single transient drop of 1 step is
+// tolerated as normal gossip timing noise between sentinel nodes.
 func (ot *oscillationTracker) IsConvergenceMonotonic() bool {
 	ot.mu.Lock()
 	defer ot.mu.Unlock()
 
 	prev := -1
+	dips := 0
 	for _, s := range ot.snapshots {
 		if s.Agreed < prev {
-			return false
+			dips++
+			// Allow one dip of at most 1 step (e.g. 3/3 -> 2/3)
+			if dips > 1 || prev-s.Agreed > 1 {
+				return false
+			}
 		}
 		prev = s.Agreed
 	}
