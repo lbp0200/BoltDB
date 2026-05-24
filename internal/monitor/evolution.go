@@ -31,6 +31,7 @@ type EvolutionRun struct {
 	GoroutineDelta   int       `json:"goroutine_delta"`
 	LimitCycle       bool      `json:"limit_cycle"`
 	Converging       bool      `json:"converging"`
+	ConvergenceProb  float64   `json:"convergence_prob,omitempty"`
 	InDegradation    bool      `json:"in_degradation"`
 	Escapable        bool      `json:"escapable"`
 	DegradationLevel string    `json:"degradation_level"`
@@ -82,6 +83,10 @@ type EvolutionReport struct {
 
 	RegimeShiftToWorse bool
 	GateReasons        []string
+
+	// False positive suppression via convergence prediction
+	AvgConvergenceProb      float64
+	SuppressedByConvergence bool
 }
 
 const (
@@ -190,6 +195,7 @@ func AnalyzeEvolution(runs []EvolutionRun) EvolutionReport {
 
 	r.Warnings = buildWarnings(runs, r)
 	r.Level, r.GateReasons = computeEvolutionLevel(r)
+	r = applyConvergenceSuppression(r)
 
 	return r
 }
@@ -432,9 +438,23 @@ func computeEvolutionLevel(r EvolutionReport) (DegradationLevel, []string) {
 		}
 	}
 
-	// 5. Storage + health both degrading
-	if r.StorageTrend == trendDegrading && r.HealthTrend == trendDegrading {
-		reasons = append(reasons, "storage and overall health both degrading")
+	// 5. Multi-dimension trend clustering: 2+ system dimensions degrading concurrently
+	dimDegrading := 0
+	var dimParts []string
+	if r.StorageTrend == trendDegrading {
+		dimDegrading++
+		dimParts = append(dimParts, "storage")
+	}
+	if r.ReplicationTrend == trendDegrading {
+		dimDegrading++
+		dimParts = append(dimParts, "replication")
+	}
+	if r.ClusterTrend == trendDegrading {
+		dimDegrading++
+		dimParts = append(dimParts, "cluster")
+	}
+	if dimDegrading >= 2 {
+		reasons = append(reasons, fmt.Sprintf("%d system dimensions degrading: %s", dimDegrading, strings.Join(dimParts, ", ")))
 	}
 
 	// 6. Degradation persistence increasing across runs
@@ -459,6 +479,65 @@ func computeEvolutionLevel(r EvolutionReport) (DegradationLevel, []string) {
 	}
 
 	return LevelOK, nil
+}
+
+// applyConvergenceSuppression performs post-gate false positive suppression.
+//
+// Suppression Categories (Stability Envelope Contract):
+//
+//	ALWAYS FAIL (never suppressed):
+//	  - regime shift to worse basin      (structural regime change)
+//	  - escalating degradation           (persistent structural degradation)
+//
+//	CAN SUPPRESS (if convergence predicted):
+//	  - health slope trending negative   (transient trend noise)
+//	  - sustained oscillation            (oscillation noise)
+//
+// Rationale: structural changes (regime shift, escalating degradation) indicate
+// a permanent system state change. Convergence prediction is unreliable here
+// because the system has already converged to a worse attractor. Only transient
+// signals (noise, oscillation) can be safely suppressed when the system shows
+// strong convergence probability.
+func applyConvergenceSuppression(r EvolutionReport) EvolutionReport {
+	if r.Level != LevelFail || len(r.Runs) == 0 {
+		return r
+	}
+
+	// NEVER suppress structural regime shift — this is a permanent basin change
+	if r.RegimeShiftToWorse {
+		return r
+	}
+
+	// NEVER suppress escalating degradation — persistent structural degradation
+	if r.EscalatingDegradation {
+		return r
+	}
+
+	n := len(r.Runs)
+	k := 3
+	if n < k {
+		k = n
+	}
+
+	var sumProb float64
+	convergingCount := 0
+	for i := n - k; i < n; i++ {
+		sumProb += r.Runs[i].ConvergenceProb
+		if r.Runs[i].Converging && r.Runs[i].ConvergenceProb > 0.6 {
+			convergingCount++
+		}
+	}
+	r.AvgConvergenceProb = sumProb / float64(k)
+
+	// Suppress transient FAIL if 2+ of recent runs show strong convergence signal
+	if convergingCount >= 2 && r.AvgConvergenceProb > 0.7 {
+		r.Level = LevelWarn
+		r.SuppressedByConvergence = true
+		r.GateReasons = append(r.GateReasons,
+			fmt.Sprintf("fail suppressed: transient, system converging (prob=%.2f)", r.AvgConvergenceProb))
+	}
+
+	return r
 }
 
 // FormatReport 输出演化趋势 Markdown 报告
@@ -497,6 +576,9 @@ func (r EvolutionReport) FormatReport() string {
 	// === Evolution Gate section ===
 	b.WriteString("## Evolution Gate\n\n")
 	fmt.Fprintf(&b, "**Status**: %s\n\n", r.Level)
+	if r.SuppressedByConvergence {
+		fmt.Fprintf(&b, "**False Positive Suppression**: active (avg convergence prob=%.2f)\n\n", r.AvgConvergenceProb)
+	}
 	if len(r.GateReasons) > 0 {
 		b.WriteString("**Reasons**:\n")
 		for _, reason := range r.GateReasons {
@@ -521,6 +603,9 @@ func (r EvolutionReport) FormatReport() string {
 	if r.RecoveryVelocitySlope != 0 {
 		fmt.Fprintf(&b, "- Recovery velocity slope: %+.4f\n", r.RecoveryVelocitySlope)
 	}
+	if r.AvgConvergenceProb > 0 {
+		fmt.Fprintf(&b, "- Avg convergence probability: %.2f\n", r.AvgConvergenceProb)
+	}
 	b.WriteString("\n")
 
 	if len(r.Warnings) > 0 {
@@ -532,8 +617,8 @@ func (r EvolutionReport) FormatReport() string {
 	}
 
 	b.WriteString("## Run History\n\n")
-	b.WriteString("| # | Date | Health | Storage | Repl | Cluster | Basin | Depth | L0 Peak | Osc | Deg? | Recov(s) | Persist(s) |\n")
-	b.WriteString("|---|------|--------|---------|------|---------|-------|-------|---------|-----|------|----------|------------|\n")
+	b.WriteString("| # | Date | Health | Storage | Repl | Cluster | Basin | Depth | L0 Peak | Osc | Deg? | Conv | Recov(s) | Persist(s) |\n")
+	b.WriteString("|---|------|--------|---------|------|---------|-------|-------|---------|-----|------|------|----------|------------|\n")
 	for i, run := range r.Runs {
 		osc := ""
 		if run.OscillationDetected {
@@ -555,7 +640,11 @@ func (r EvolutionReport) FormatReport() string {
 		if run.PersistenceDurationSec > 0 {
 			persStr = fmt.Sprintf("%.0f", run.PersistenceDurationSec)
 		}
-		fmt.Fprintf(&b, "| %d | %s | %.2f | %.2f | %.2f | %.2f | %s | %.2f | %.1f | %s | %s | %s | %s |\n",
+		convStr := "-"
+		if run.Converging && run.ConvergenceProb > 0 {
+			convStr = fmt.Sprintf("%.0f%%", run.ConvergenceProb*100)
+		}
+		fmt.Fprintf(&b, "| %d | %s | %.2f | %.2f | %.2f | %.2f | %s | %.2f | %.1f | %s | %s | %s | %s | %s |\n",
 			i+1,
 			run.Timestamp.Format("01-02"),
 			run.HealthOverall,
@@ -567,6 +656,7 @@ func (r EvolutionReport) FormatReport() string {
 			run.L0Peak,
 			osc,
 			deg,
+			convStr,
 			recStr,
 			persStr,
 		)

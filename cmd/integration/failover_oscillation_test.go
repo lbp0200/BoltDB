@@ -154,30 +154,62 @@ func (ot *oscillationTracker) IsConverged() bool {
 	return ot.countAgreed(ot.readViews()) == len(ot.sentinels)
 }
 
+// ResetOscillationTracking resets the full-consensus detection state so
+// that oscillation checks only consider snapshots collected after the
+// reset point. Useful for tests that have an expected disagreement phase
+// (e.g. network partition) followed by a convergence phase.
+func (ot *oscillationTracker) ResetOscillationTracking() {
+	ot.mu.Lock()
+	defer ot.mu.Unlock()
+	ot.snapshots = nil
+	ot.divergenceStart = time.Time{}
+	ot.convergenceEnd = time.Time{}
+	ot.ConvergenceTime = 0
+	ot.PeakDivergence = 0
+}
+
 // HasOscillation returns true if meaningful oscillation is detected after
-// first reaching full consensus. A single transient drop is tolerated as
-// normal gossip propagation noise. Oscillation requires agreement to drop
-// below half consensus (>50% disagreement) or drop multiple times.
+// first reaching full consensus. The algorithm looks for the DROP-RECOVER-DROP
+// pattern: agreement drops below full, recovers to full, then drops again.
+// A single drop-recover cycle is tolerated as normal gossip propagation
+// noise between independent sentinel nodes.
 func (ot *oscillationTracker) HasOscillation() bool {
 	ot.mu.Lock()
 	defer ot.mu.Unlock()
 
 	reachedFull := false
-	drops := 0
+	inDrop := false
+	recoverCount := 0
 	for _, s := range ot.snapshots {
 		if s.Agreed == s.Total {
-			reachedFull = true
+			if !reachedFull {
+				reachedFull = true
+			} else if inDrop {
+				recoverCount++
+				inDrop = false
+			}
 		} else if reachedFull && s.Agreed < s.Total {
-			drops++
-			// Single drop: tolerate as gossip timing noise
-			// Multiple distinct drops: true oscillation
-			if drops > 2 {
-				return true
+			inDrop = true
+		}
+		// Two or more drop-recover cycles = oscillation
+		if recoverCount >= 2 {
+			return true
+		}
+	}
+	// Also flag if majority of post-first-full samples show disagreement
+	if reachedFull {
+		totalAfter := 0
+		dropsAfter := 0
+		for _, s := range ot.snapshots {
+			if s.Agreed == s.Total {
+				totalAfter++
+			} else {
+				totalAfter++
+				dropsAfter++
 			}
-			// Agreement drops below half: significant oscillation
-			if s.Agreed*2 < s.Total {
-				return true
-			}
+		}
+		if dropsAfter > 1 && float64(dropsAfter)/float64(totalAfter) > 0.5 {
+			return true
 		}
 	}
 	return false

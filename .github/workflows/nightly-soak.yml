@@ -66,13 +66,16 @@ jobs:
           go run cmd/evolution/main.go \
             -dir=/tmp/soak-artifacts/report \
             -prefix=standalone \
-            > /tmp/soak-artifacts/report/standalone-evolution.txt 2>&1 || gate_exit=$?
-          cat /tmp/soak-artifacts/report/standalone-evolution.txt
-          if [ "${gate_exit:-0}" -eq 1 ]; then
+            -json > /tmp/soak-artifacts/report/standalone-evolution.json 2>&1 || true
+          cat /tmp/soak-artifacts/report/standalone-evolution.json
+          LEVEL=$(jq -r '.level' /tmp/soak-artifacts/report/standalone-evolution.json)
+          if [ "$LEVEL" = "FAIL" ]; then
             echo "::error::EVOLUTION GATE: FAIL - system degradation detected in long-term trends"
+            jq -r '.reasons[]' /tmp/soak-artifacts/report/standalone-evolution.json | while IFS= read -r r; do echo "::error::$r"; done
             exit 1
-          elif grep -q "Status: WARN" /tmp/soak-artifacts/report/standalone-evolution.txt 2>/dev/null; then
+          elif [ "$LEVEL" = "WARN" ]; then
             echo "::warning::EVOLUTION GATE: WARN - degradation signals detected"
+            jq -r '.reasons[]' /tmp/soak-artifacts/report/standalone-evolution.json | while IFS= read -r r; do echo "::warning::$r"; done
           else
             echo "EVOLUTION GATE: PASS - system is healthy"
           fi
@@ -132,13 +135,16 @@ jobs:
           go run cmd/evolution/main.go \
             -dir=/tmp/soak-artifacts/report \
             -prefix=replication \
-            > /tmp/soak-artifacts/report/replication-evolution.txt 2>&1 || gate_exit=$?
-          cat /tmp/soak-artifacts/report/replication-evolution.txt
-          if [ "${gate_exit:-0}" -eq 1 ]; then
+            -json > /tmp/soak-artifacts/report/replication-evolution.json 2>&1 || true
+          cat /tmp/soak-artifacts/report/replication-evolution.json
+          LEVEL=$(jq -r '.level' /tmp/soak-artifacts/report/replication-evolution.json)
+          if [ "$LEVEL" = "FAIL" ]; then
             echo "::error::EVOLUTION GATE: FAIL - system degradation detected in long-term trends"
+            jq -r '.reasons[]' /tmp/soak-artifacts/report/replication-evolution.json | while IFS= read -r r; do echo "::error::$r"; done
             exit 1
-          elif grep -q "Status: WARN" /tmp/soak-artifacts/report/replication-evolution.txt 2>/dev/null; then
+          elif [ "$LEVEL" = "WARN" ]; then
             echo "::warning::EVOLUTION GATE: WARN - degradation signals detected"
+            jq -r '.reasons[]' /tmp/soak-artifacts/report/replication-evolution.json | while IFS= read -r r; do echo "::warning::$r"; done
           else
             echo "EVOLUTION GATE: PASS - system is healthy"
           fi

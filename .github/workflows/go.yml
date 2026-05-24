@@ -70,6 +70,57 @@ jobs:
       - name: Run integration tests
         run: go test -race -timeout 600s ./cmd/integration/...
 
+      - name: Restore evolution history
+        uses: actions/cache@v4
+        with:
+          path: /tmp/soak-artifacts/report/history
+          key: soak-history-evolution-${{ github.ref_name }}
+          restore-keys: |
+            soak-history-evolution-${{ github.ref_name }}
+            soak-history-evolution-main
+
+      - name: Run soak for evolution gate
+        if: always()
+        timeout-minutes: 10
+        env:
+          CI_NIGHTLY_SOAK: '1'
+          SOAK_DURATION: 5m
+          SOAK_REPORT_DIR: /tmp/soak-artifacts/report
+          SOAK_DATA_DIR: /tmp/soak_boltdb_data
+        run: |
+          mkdir -p /tmp/soak-artifacts/report/history /tmp/soak-artifacts/jsonl
+          go test -race -timeout 10m -v \
+            ./cmd/integration/ -run TestSoak 2>&1 | tee /tmp/soak-artifacts/soak-output.txt || true
+
+      - name: Evolution gate check
+        if: always()
+        run: |
+          go run cmd/evolution/main.go \
+            -dir=/tmp/soak-artifacts/report \
+            -prefix=standalone \
+            -json > /tmp/soak-artifacts/gate-result.json
+          cat /tmp/soak-artifacts/gate-result.json
+          LEVEL=$(jq -r '.level' /tmp/soak-artifacts/gate-result.json)
+          if [ "$LEVEL" = "FAIL" ]; then
+            echo "::error::EVOLUTION GATE: FAIL - system degradation detected"
+            jq -r '.reasons[]' /tmp/soak-artifacts/gate-result.json | while IFS= read -r r; do echo "::error::$r"; done
+            exit 1
+          elif [ "$LEVEL" = "WARN" ]; then
+            echo "::warning::EVOLUTION GATE: WARN - degradation signals detected"
+            jq -r '.reasons[]' /tmp/soak-artifacts/gate-result.json | while IFS= read -r r; do echo "::warning::$r"; done
+          else
+            echo "EVOLUTION GATE: PASS"
+          fi
+
+      - name: Save evolution history
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: /tmp/soak-artifacts/report/history
+          key: soak-history-evolution-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            soak-history-evolution-${{ github.ref_name }}
+
   release:
     runs-on: ubuntu-latest
     needs: [test, test-integration]

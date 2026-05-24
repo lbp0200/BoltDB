@@ -1,5 +1,22 @@
 # Changelog
 
+## v8.14.0 (2026-05-24) — Convergence-Aware Suppression & Evolution Gate v1.1
+
+> **假阳性抑制与多维度趋势聚类版本。** Evolution Gate 升级 v1.1——新增收敛概率追踪与假阳性抑制机制，仅在系统显示强收敛证据时将瞬时 FAIL 降级为 WARN。多维度趋势聚类检测 2+ 子系统（存储/复制/集群）同时恶化。Evolution CLI 新增 `-json` 机器可读输出。实证校准验证全链路数据流闭合：`BasinAnalysis → ConvergenceProb → JSON → LoadHistory → Suppression`。
+
+### Evolution Gate v1.1
+
+- **收敛概率追踪**: `EvolutionRun`/`SoakRunSummary` 新增 `ConvergenceProb`——`predictConvergence()` 输出系统到达目标 basin 的概率（0.0~1.0）。写入 JSON 固化，evolution CLI 报告 `Conv` 列。
+- **假阳性抑制 (`applyConvergenceSuppression`)**: 仅对瞬时信号（健康斜率、振荡）生效。结构变化永不抑制——`RegimeShiftToWorse` 和 `EscalatingDegradation` 为宪法红线，任何概率下均不降级。
+- **多维度趋势聚类**: 替代原"storage + health"二元检查。检测 2+ 维度（存储/复制/集群）同时恶化时触发 FAIL，提供更精确的退化覆盖面。
+- **Evolution CLI `-json` 输出**: `GateResult` 结构体包含全部门控指标 + 趋势 + 警告，支持 CI 机器解析。
+- **报告增强**: Markdown 报告新增抑制状态、平均收敛概率、Gate 版本号；Run History 表格新增 `Conv` 列。
+- **3 轮实证校准**: 确认全链路数据流闭合、健康门控 PASS、抑制无误触发。
+
+### 回归测试
+
+- **`internal/monitor/evolution_test.go`**: 9 个测试用例覆盖全部抑制场景——抑制（2 场景）、不抑制（4 场景）、跳过/空数据（3 场景）。边界条件包括：混合信号中结构性退化主导、收敛证据不足、仅 1 次 run。
+
 ## v8.13.1 (2026-05-24) — Fix: Master Replication Health + Flaky Tests
 
 > **修复：主节点复制健康评分与两项预存 flaky test。** `computeReplicationHealth` 对主节点算出 `SlaveOffset=0` 导致 lag=MasterOffset（数百万），健康分误判为 0.30。`TestRegressionFailoverOscillation` 的振荡检测与单调性检查对 3-sentinel 环境的 gossip 瞬态噪声过于敏感。

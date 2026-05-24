@@ -32,6 +32,7 @@ type SoakRunSummary struct {
 	GoroutineWarnStreak int       `json:"goroutine_warn_streak"`
 	LimitCycle          bool      `json:"limit_cycle"`
 	Converging          bool      `json:"converging"`
+	ConvergenceProb     float64   `json:"convergence_prob,omitempty"`
 	ConvergenceTarget   string    `json:"convergence_target,omitempty"`
 	InDegradation       bool      `json:"in_degradation"`
 	Escapable           bool      `json:"escapable"`
@@ -80,6 +81,7 @@ func saveSoakReport(dir, name string, pm *PressureMonitor, baseline int, duratio
 		GoroutineWarnStreak: monitor.CountConsecutiveAbove(samples, baseline, def.GoroutineWarnDelta),
 		LimitCycle:          basin.LimitCycle,
 		Converging:          basin.Converging,
+		ConvergenceProb:     basin.ConvergenceProb,
 		InDegradation:       basin.InDegradation,
 		Escapable:           basin.Escapable,
 		DegradationLevel:    degLevel.String(),
@@ -153,7 +155,7 @@ func saveSoakReport(dir, name string, pm *PressureMonitor, baseline int, duratio
 	fmt.Fprintf(rf, "| Limit Cycle | %v |\n", summary.LimitCycle)
 	fmt.Fprintf(rf, "| Converging | %v", summary.Converging)
 	if summary.Converging {
-		fmt.Fprintf(rf, " → %s", summary.ConvergenceTarget)
+		fmt.Fprintf(rf, " → %s (prob=%.2f)", summary.ConvergenceTarget, summary.ConvergenceProb)
 	}
 	fmt.Fprintf(rf, " |\n")
 	fmt.Fprintf(rf, "| In Degradation | %v |\n", summary.InDegradation)
