@@ -164,6 +164,55 @@ jobs:
           path: /tmp/soak-artifacts/
           retention-days: 30
 
+  stress:
+    name: Stress & Flaky Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Run failover oscillation flake (issue #2)
+        run: |
+          echo "::warning::TestRegressionFailoverOscillation is known-flaky (issue #2)"
+          go test -race -timeout 120s -v \
+            -run 'TestRegressionFailoverOscillation' \
+            ./cmd/integration/... 2>&1 | tee /tmp/stress-output.txt || true
+
+      - name: Run concurrent fuzz stress tests
+        run: |
+          echo "::warning::FuzzServerConcurrent may fail due to shared server orphan data"
+          go test -race -timeout 120s -v \
+            -run 'FuzzServerConcurrent/seed' \
+            ./cmd/integration/... 2>&1 | tee -a /tmp/stress-output.txt || true
+
+      - name: Run state machine chaos fuzz
+        run: |
+          go test -race -timeout 120s -v \
+            -run 'TestFuzzServerStateMachineChaos' \
+            ./cmd/integration/... 2>&1 | tee -a /tmp/stress-output.txt || true
+
+      - name: Run goroutine leak stress tests
+        run: |
+          go test -race -timeout 120s -v \
+            -run 'TestGoroutineLeak' \
+            ./cmd/integration/... 2>&1 | tee -a /tmp/stress-output.txt || true
+
+      - name: Upload stress test logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stress-logs-${{ github.run_id }}
+          path: /tmp/stress-output.txt
+          retention-days: 30
+
   regressions:
     name: Regression Replay
     runs-on: ubuntu-latest
