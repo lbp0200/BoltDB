@@ -1,5 +1,14 @@
 # Changelog
 
+## v8.13.1 (2026-05-24) — Fix: Master Replication Health + Regression Barrier
+
+> **修复：主节点复制健康评分与 regression 屏障超时。** `computeReplicationHealth` 对主节点算出 `SlaveOffset=0` 导致 lag=MasterOffset（数百万），健康分误判为 0.30。修复后主节点跳过 lag 计算，仅用重连计数。`TestRegressionSnapshotFullresyncOffset` 屏障改为使用从节点真实 offset 而非 `pm.Latest().SlaveOffset`。
+
+### 修复
+
+- **health.go: `computeReplicationHealth` 主角色处理** — 主节点 `GetSlaveReplOffset()` 始终返回 0（`slaveReconnector` 为空）。`MasterOffset - SlaveOffset = MasterOffset` 无意义。新增逻辑：`ConnectedSlaves > 0 && SlaveOffset == 0` 时跳过 lag 计算，仅以重连计数评分。
+- **`snapshot_fullresync_overlap_test.go` 屏障** — 从 `pm.Latest().SlaveOffset`（恒为 0）改为 `slave.GetSlaveOffset()`（从节点真实 offset），使 `lag < 10000` 条件可满足。
+
 ## v8.13.0 (2026-05-24) — Evolution Gate v1 & Replication Handshake
 
 > **演化门禁与复制握手增强版本。** Evolution 分析升级为 Gate 模式——支持 recovery dynamics 追踪、趋势斜率分析、regime shift 检测，CI 门禁区分 PASS/WARN/FAIL。复制握手层新增 PING/REPLCONF GETACK/SELECT 处理，防止主节点超时断连。新增三种 regression 测试覆盖。

@@ -173,14 +173,17 @@ func TestRegressionSnapshotFullresyncOffset(t *testing.T) {
 
 	// Convergence barrier: wait for monitor to sample after replication catches up.
 	// Without this, pm.Latest() may reflect stale pre-convergence data (3s sample interval).
+	// NOTE: pm.Latest().SlaveOffset is always 0 on the master server (GetSlaveReplOffset
+	// reads from slaveReconnector which is nil for a master). Use slave's offset directly.
 	t.Log("offset-fix: convergence barrier — waiting for monitor sample...")
 	var barrierOk bool
 	for i := 0; i < 20; i++ {
 		l := pm.Latest()
 		moff := master.GetMasterOffset()
-		lag := moff - l.SlaveOffset
+		sOff := slave.GetSlaveOffset()
+		lag := moff - sOff
 		if l.ConnectedSlaves > 0 && lag < 10000 {
-			t.Logf("offset-fix: monitor captured convergence (mo=%d so=%d lag=%d)", moff, l.SlaveOffset, lag)
+			t.Logf("offset-fix: monitor captured convergence (mo=%d so=%d lag=%d)", moff, sOff, lag)
 			barrierOk = true
 			break
 		}
@@ -188,8 +191,9 @@ func TestRegressionSnapshotFullresyncOffset(t *testing.T) {
 	}
 	if !barrierOk {
 		l := pm.Latest()
+		sOff := slave.GetSlaveOffset()
 		t.Logf("offset-fix: WARN — barrier timeout (mo=%d so=%d slaves=%d)",
-			master.GetMasterOffset(), l.SlaveOffset, l.ConnectedSlaves)
+			master.GetMasterOffset(), sOff, l.ConnectedSlaves)
 	}
 
 	pm.LogSummary(t)

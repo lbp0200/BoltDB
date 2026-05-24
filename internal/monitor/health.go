@@ -172,6 +172,27 @@ func computeReplicationHealth(latest PressureSample) float64 {
 		return 1.0
 	}
 
+	// When this server is a master (has connected slaves but is not a slave of
+	// anyone), GetSlaveReplOffset() always returns 0 — there's no slave
+	// reconnector. MasterOffset - SlaveOffset is meaningless (equals MasterOffset).
+	// Only base health on reconnect count.
+	if latest.ConnectedSlaves > 0 && latest.SlaveOffset == 0 {
+		replScore := 1.0
+		reconnects := float64(latest.ReconnectCount)
+		if reconnects > float64(reconnectHealthy) {
+			penalty := (reconnects - float64(reconnectHealthy)) / reconnectPenaltyStep
+			if penalty > reconnectPenaltyMax {
+				penalty = reconnectPenaltyMax
+			}
+			replScore -= penalty
+		}
+		if replScore < 0 {
+			return 0.0
+		}
+		return replScore
+	}
+
+	// This server is a slave: check replication lag against its master.
 	lag := latest.MasterOffset - latest.SlaveOffset
 	if lag < 0 {
 		lag = 0
