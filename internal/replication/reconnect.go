@@ -311,13 +311,15 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 
 		cmd := strings.ToUpper(string(req.Args[0]))
 
-		// 处理 PING — 响应 PONG，保持连接活跃
+		// 处理 PING — 响应 PONG，保持连接活跃。
+		// 注意：masterReplOffset 不包含 PING/REPLCONF/SELECT 字节，
+		// 因此 slave 的 lastOffset 也不能计入它们，否则 slave offset
+		// 会 drift 超过 master offset，导致 PSYNC 偏移量校验失败、
+		// 反复 FULLRESYNC 和数据丢失。
 		if cmd == "PING" {
 			if err := sr.writeRespToMaster(mc, []byte("+PONG\r\n")); err != nil {
 				return fmt.Errorf("write PONG to master failed: %w", err)
 			}
-			cmdBytes := serializeCommand(req.Args)
-			sr.lastOffset.Add(int64(len(cmdBytes)))
 			continue
 		}
 
@@ -330,15 +332,11 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 			if err := sr.writeRespToMaster(mc, []byte(ackResp)); err != nil {
 				return fmt.Errorf("write REPLCONF ACK to master failed: %w", err)
 			}
-			cmdBytes := serializeCommand(req.Args)
-			sr.lastOffset.Add(int64(len(cmdBytes)))
 			continue
 		}
 
-		// 处理 SELECT — 忽略数据库选择（BoltDB 只有 DB 0），仅跟踪偏移
+		// 处理 SELECT — 忽略数据库选择，不推进 offset（master 不追踪 SELECT）
 		if cmd == "SELECT" {
-			cmdBytes := serializeCommand(req.Args)
-			sr.lastOffset.Add(int64(len(cmdBytes)))
 			continue
 		}
 

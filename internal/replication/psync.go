@@ -93,8 +93,8 @@ func SendBacklogData(slave *SlaveConnection, backlog *ReplicationBacklog, startO
 		return nil
 	}
 
-	slave.mu.Lock()
-	defer slave.mu.Unlock()
+	slave.writeMu.Lock()
+	defer slave.writeMu.Unlock()
 
 	if _, err := slave.Writer.Write(data); err != nil {
 		return fmt.Errorf("write backlog data failed: %w", err)

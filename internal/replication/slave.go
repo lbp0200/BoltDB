@@ -24,6 +24,7 @@ type SlaveConnection struct {
 	LastAckTime   int64 // 最后一次ACK时间
 	mu            sync.RWMutex
 	closeOnce     sync.Once
+	writeMu       sync.Mutex // 写锁：SendCommand/SendBacklogData 互斥，与 Close 不冲突
 }
 
 // NewSlaveConnection 创建新的从节点连接
@@ -85,9 +86,10 @@ func (sc *SlaveConnection) UpdateReplAck(offset int64) {
 }
 
 // SendCommand 发送命令到从节点
+// 使用 writeMu 而非 sc.mu，避免与 Close() 的锁链死锁。
 func (sc *SlaveConnection) SendCommand(cmdBytes []byte, offset int64) error {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
+	sc.writeMu.Lock()
+	defer sc.writeMu.Unlock()
 
 	if !sc.Ready {
 		return fmt.Errorf("slave not ready")
@@ -111,8 +113,8 @@ func (sc *SlaveConnection) SendCommand(cmdBytes []byte, offset int64) error {
 
 // SendRDB 发送RDB数据到从节点（RESP协议格式）
 func (sc *SlaveConnection) SendRDB(rdbData []byte) error {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
+	sc.writeMu.Lock()
+	defer sc.writeMu.Unlock()
 
 	// 发送RDB数据长度（使用RESP Bulk String格式）
 	header := fmt.Sprintf("$%d\r\n", len(rdbData))
@@ -145,8 +147,8 @@ func (sc *SlaveConnection) SendRDB(rdbData []byte) error {
 
 // SendResponse 发送响应
 func (sc *SlaveConnection) SendResponse(resp proto.RESP) error {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
+	sc.writeMu.Lock()
+	defer sc.writeMu.Unlock()
 
 	if err := proto.WriteRESP(sc.Writer, resp); err != nil {
 		return fmt.Errorf("write response failed: %w", err)
@@ -168,16 +170,22 @@ func (sc *SlaveConnection) ReadCommand() (*proto.Array, error) {
 	return proto.ReadRESP(reader)
 }
 
-// Close 关闭连接
+// Close 关闭连接。
+// 先关闭底层 TCP 连接（unblock 正在 writeMu 下执行 I/O 的 goroutine），
+// 再获取 writeMu 确保所有写操作已完成。
+// 这种顺序（close → drain writeMu）与 handlePSyncWithRDB / SendBacklogData
+// 中先持有 writeMu 再做 I/O 的顺序不冲突，彻底消除死锁。
 func (sc *SlaveConnection) Close() error {
 	var err error
 	sc.closeOnce.Do(func() {
-		sc.mu.Lock()
-		defer sc.mu.Unlock()
-
+		// 步骤 1：先关闭连接，unblock 任何正在进行的 I/O
 		if sc.Conn != nil {
 			err = sc.Conn.Close()
 		}
+		// 步骤 2：等待所有写 goroutine 退出（它们会在 I/O 失败后释放 writeMu）
+		sc.writeMu.Lock()
+		//nolint:staticcheck
+		sc.writeMu.Unlock()
 	})
 	return err
 }
@@ -191,16 +199,18 @@ func (sc *SlaveConnection) GetLastAckTime() int64 {
 
 // Lock 锁定从节点连接（防止 PropagateCommand 并发写入）
 func (sc *SlaveConnection) Lock() {
-	sc.mu.Lock()
+	sc.writeMu.Lock()
 }
 
 // Unlock 解锁从节点连接
 func (sc *SlaveConnection) Unlock() {
-	sc.mu.Unlock()
+	sc.writeMu.Unlock()
 }
 
-// WriteAndFlush 在锁保护下直接写入并刷新数据
+// WriteAndFlush 在 writeMu 保护下直接写入并刷新数据
 func (sc *SlaveConnection) WriteAndFlush(data []byte) error {
+	sc.writeMu.Lock()
+	defer sc.writeMu.Unlock()
 	if _, err := sc.Writer.Write(data); err != nil {
 		return err
 	}

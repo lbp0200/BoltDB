@@ -668,31 +668,28 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 		// 创建从节点连接并发送 backlog（snapshotOffset → currentOffset）
 		slaveConn := replication.NewSlaveConnection(conn)
 		backlog := h.Replication.GetBacklog()
-		currentOffset := h.Replication.GetMasterReplOffset()
 
-		// 在 slaveConn.mu 保护下原子化执行：
-		//   AddSlave + send backlog
-		slaveConn.SetReplOffset(currentOffset)
 		slaveConn.SetReady(true)
 
+		// 在 slaveConn.mu 下原子化执行 AddSlave + 捕获 currentOffset。
+		// 必须在 AddSlave 之后捕获 currentOffset，否则 PropagateCommand
+		// 在捕获到 AddSlave 之间写入的数据会永久丢失。
+		// I/O（SendBacklogData）在 Unlock 之后执行，避免锁住 sc.mu
+		// 导致 CLIENT KILL → Close() 死锁。
 		slaveConn.Lock()
 		h.Replication.AddSlave(slaveConn)
+		currentOffset := h.Replication.GetMasterReplOffset()
+		slaveConn.SetReplOffset(currentOffset)
+		slaveConn.Unlock()
+
 		if currentOffset > snapshotOffset {
-			backlogData, bgErr := backlog.GetRange(snapshotOffset, currentOffset)
-			if bgErr != nil {
-				logger.Logger.Error().Err(bgErr).
+			if err := replication.SendBacklogData(slaveConn, backlog, snapshotOffset, currentOffset); err != nil {
+				logger.Logger.Error().Err(err).
 					Int64("snapshot_offset", snapshotOffset).
 					Int64("current_offset", currentOffset).
-					Msg("获取FULLRESYNC backlog数据失败")
-			} else if len(backlogData) > 0 {
-				if bgErr := slaveConn.WriteAndFlush(backlogData); bgErr != nil {
-					logger.Logger.Error().Err(bgErr).
-						Int("bytes", len(backlogData)).
-						Msg("发送FULLRESYNC backlog数据失败")
-				}
+					Msg("发送FULLRESYNC backlog数据失败")
 			}
 		}
-		slaveConn.Unlock()
 
 		logger.Logger.Info().
 			Str("slave_addr", remoteAddr).
@@ -721,14 +718,16 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 			return proto.NewError("ERR failed to flush CONTINUE")
 		}
 
-		// 创建从节点连接（暂不注册，防止 AddSlave 后 PropagateCommand 抢写）
+		// 创建从节点连接
 		slaveConn := replication.NewSlaveConnection(conn)
 		slaveConn.SetReplOffset(result.Offset)
 
-		// 先发送backlog数据（从请求offset到当前offset），再注册
-		// 顺序很重要：必须先发送 backlog，再 AddSlave，
-		// 否则 PropagateCommand 可能抢在 backlog 之前写命令到 slave，造成乱序
 		backlog := h.Replication.GetBacklog()
+
+		// 先发送 backlog（[result.Offset, currentOffset)）再注册 slave。
+		// 此时 slave 不在 ReplicationManager.slaves 中，PropagateCommand
+		// 不会向其写入，因此无锁竞争。SendBacklogData 内部持有 sc.mu
+		// 做 I/O，完成后立即释放。
 		currentOffset := h.Replication.GetMasterReplOffset()
 		if err := replication.SendBacklogData(slaveConn, backlog, result.Offset, currentOffset); err != nil {
 			logger.Logger.Error().Err(err).
@@ -740,6 +739,16 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 
 		slaveConn.SetReady(true)
 		h.Replication.AddSlave(slaveConn)
+
+		// 填充竞态缺口：currentOffset 捕获到 AddSlave 之间可能有多条
+		// PropagateCommand 写入。这些写入的 offset >= currentOffset，
+		// 不在已发送的 backlog 中。缺口通常为空或极窄（1-2 条命令）。
+		afterOffset := h.Replication.GetMasterReplOffset()
+		if afterOffset > currentOffset {
+			if err := replication.SendBacklogData(slaveConn, backlog, currentOffset, afterOffset); err != nil {
+				logger.Logger.Debug().Err(err).Msg("发送CONTINUE缺口backlog数据失败")
+			}
+		}
 
 		logger.Logger.Info().
 			Str("slave_addr", remoteAddr).

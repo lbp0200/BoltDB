@@ -102,11 +102,18 @@ func (rm *ReplicationManager) AddSlave(slave *SlaveConnection) {
 }
 
 // RemoveSlave 移除从节点连接
+// 注意：Close() 在释放 rm.mu 后调用，避免与 handlePSyncWithRDB 中
+// slaveConn.Lock() + I/O 的锁链死锁（CLIENT KILL → RemoveSlave →
+// Close → sc.mu 被 handlePSyncWithRDB 持有）。
 func (rm *ReplicationManager) RemoveSlave(slaveID string) {
 	rm.mu.Lock()
-	defer rm.mu.Unlock()
-	if slave, exists := rm.slaves[slaveID]; exists {
+	slave, exists := rm.slaves[slaveID]
+	if exists {
 		delete(rm.slaves, slaveID)
+	}
+	rm.mu.Unlock()
+
+	if exists {
 		if err := slave.Close(); err != nil {
 			logger.Logger.Debug().Err(err).Str("slave_id", slaveID).Msg("failed to close slave connection")
 		}

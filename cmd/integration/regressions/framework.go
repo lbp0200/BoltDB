@@ -113,8 +113,12 @@ func startRegressionWithDB(t *testing.T, db *store.BotreonStore, backupDir strin
 
 	cleanup := func() {
 		replMgr.Stop()
-		_ = client.Close()
 		_ = listener.Close()
+		// Shutdown 等待所有 handler goroutine 退出（wg.Wait），
+		// 确保没有 handleConnection/handleSlaveReplicationConnection
+		// 在 db.Close() 之后还访问存储。
+		h.Shutdown()
+		_ = client.Close()
 		pubsubMgr.Clear()
 		// 注意：不关闭 db——由调用方负责
 	}
