@@ -257,11 +257,16 @@ func GenerateRDB(s *store.BotreonStore) ([]byte, error) {
 
 // GenerateRDBWithOffset 生成RDB快照并返回快照对应的复制偏移量。
 //
-// snapshotOffset 在 badger View 事务内、所有数据读取完成后捕获。
-// 这确保了 snapshotOffset 对应的偏移量至少包含了 RDB 中所有可见的写入，
-// 同时不包含 RDB 中不可见的写入。将 FULLRESYNC 的 offset 设为该值后，
-// backlog (snapshotOffset → currentOffset) 只覆盖快照中不存在的写入，
-// 最小化重复应用窗口（通常 0-1 个命令）。
+// snapshotOffset 在 badger View 事务内、所有数据读取完成后捕获（通过 offsetFn）。
+// 注意：这是 View 内的一个时间点，不一定是 MVCC 快照的实际边界。
+//
+// 正确的 FULLRESYNC 用法：调用者在调用 GenerateRDB 之前应单独捕获
+// GetMasterReplOffset()。这是安全的，因为所有写入的序关系是：
+//
+//	store.Set() (badger commit) → PropagateCommand() (offset 递增)
+//
+// 因此任何 offset < preViewSnapshotOffset 的写入在 badger View 开启前
+// 已提交，一定在 MVCC 快照中可见。backlog 从 preViewSnapshotOffset 开始。
 //
 // offsetFn 如果为 nil，则不捕获偏移量（等效于 GenerateRDB）。
 func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte, int64, error) {

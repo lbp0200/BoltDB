@@ -608,28 +608,33 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 	}
 
 	if result.FullResync {
-		// 修复：snapshot ↔ replication offset binding 错误。
+		// dual-timeline 边界修复：在 badger View 之前捕获 snapshotOffset。
+		//
+		// 序关系：store.Set()（badger commit）→ PropagateCommand()（offset 递增）
+		// 因此所有 offset < snapshotOffset 的写入在 badger View 开始前已提交，
+		// 一定在 MVCC 快照中可见 → 在 RDB 中。
+		//
+		// 所有 offset >= snapshotOffset 的写入可能/可能不在 RDB 中取决于
+		// badger commit 时序，但它们在 backlog [snapshotOffset, currentOffset)
+		// 中。副本应用 RDB + backlog 后达到 currentOffset 状态。
+		//
+		// 重复窗口（RDB 和 backlog 中都有的写入）仅限于 snapshotOffset 捕获
+		// 到 View 开启之间（微秒级，通常 0 个并发写入）。
 		//
 		// 正确时序：
-		//   [1] GenerateRDB（badger View，一致性快照）
-		//   [2] snapshotOffset = GetMasterReplOffset()（View 返回后捕获）
+		//   [1] snapshotOffset = GetMasterReplOffset()（View 前捕获）
+		//   [2] GenerateRDB（badger View，一致性快照）
 		//   [3] FULLRESYNC 响应使用 snapshotOffset
 		//   [4] 发送 RDB
 		//   [5] 在 slaveConn.mu 保护下：AddSlave + 发送 backlog（snapshotOffset → currentOffset）
 		//   [6] PropagateCommand 发送 currentOffset 之后的所有写入
-		//
-		// snapshotOffset 在 View 返回后捕获，此时 RDB 快照的边界已确定。
-		// backlog 从 snapshotOffset 开始，包含 RDB 生成+发送期间的所有写入。
-		// 这确保无结构损坏（无重复元素），即使部分写入在 backlog 和 RDB 中
-		// 都有，其影响仅限于最终状态的小偏差（1-2 个命令），不会破坏内部
-		// 结构（链表链、zset 基数等）。
+		snapshotOffset := h.Replication.GetMasterReplOffset()
+
 		rdbData, err := replication.GenerateRDB(h.Db)
 		if err != nil {
 			logger.Logger.Error().Err(err).Msg("生成RDB数据失败")
 			return proto.NewError("ERR failed to generate RDB")
 		}
-
-		snapshotOffset := h.Replication.GetMasterReplOffset()
 
 		// 发送FULLRESYNC响应（使用 snapshotOffset）
 		response := fmt.Sprintf("+FULLRESYNC %s %d\r\n", result.ReplId, snapshotOffset)

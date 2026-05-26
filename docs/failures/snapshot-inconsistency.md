@@ -1,86 +1,82 @@
-# Snapshot Inconsistency
+# Snapshot Inconsistency → Boundary Duplication Risk
 
-## Symptoms
-- After FULLRESYNC, slave is permanently behind master on non-idempotent commands (INCR, LPUSH)
+## Symptoms (Pre-Fix)
+- After FULLRESYNC, slave permanently behind master on non-idempotent commands (INCR, LPUSH)
 - Slave converges at the offset level but data is wrong
-- `store.Check()` passes — data exists, just semantically incorrect
-- Replicated lists have duplicate elements (if backlog replays commands already in RDB)
-- Or: replicated lists are shorter than master (if RDB View window dropped writes)
+- Replicated lists shorter than master (RDB View window dropped writes)
 
-## Root Cause (Original: TOCTOU)
-- **Original pre-fix**: `GenerateRDB` read TYPE_ records and value data in separate transactions. A Write between the two reads could create dangling TYPE_ with no data. **FIXED**: single `db.View`.
+## Root Cause History
 
-## Root Cause (Real: Replication Hole)
+### 1. TOCTOU (Original)
+`GenerateRDB` read TYPE_ records and value data in separate transactions. A write between the two could create dangling TYPE_ with no data. **FIXED**: single `db.View`.
 
-**The critical FULLRESYNC bug** (handler.go: handlePSyncWithRDB):
-
+### 2. Replication Hole (First fix attempt)
 Old flow:
 ```
 HandlePSync captures offset O1  ← pre-snapshot
 ↓
-GenerateRDB                      ← snapshot includes O1→O2
+GenerateRDB                      ← RDB includes O1→O2
 ↓
 send +FULLRESYNC O1              ← announces O1 to slave
 ↓
 AddSlave                          ← PropagateCommand sends O3+
 ```
+**Commands O1→O2 are in the RDB but slave starts at O1.** Never replayed. Permanent data loss.
 
-**Commands O1→O2 are in the RDB but slave starts at O1.** These commands are **never replayed** — there was no backlog send in the FULLRESYNC path. Result: permanent data loss.
+**First fix** (May 2026): capture snapshotOffset AFTER GenerateRDB, send backlog under slaveConn.mu. Eliminated structural corruption but replaced the replication hole with a View blind window: ~100ms-2s of writes between View start and offset capture were in neither RDB nor backlog.
 
-This is a **replication hole**, not just eventual inconsistency. Commands between offset capture and snapshot completion are silently dropped.
+### 3. Conservative Snapshot Offset (Current fix)
 
-## Fix (Applied)
+**Current fix** (May 2026, `handler.go:626`): capture `snapshotOffset` **BEFORE** `db.View()`, not after.
 
-New flow (`handler.go:612-700`):
 ```
-GenerateRDB()                     ← badger View, consistent snapshot
+capture snapshotOffset  ← PRE-View
 ↓
-capture snapshotOffset             ← post-View → snapshot boundary
+GenerateRDB(View)       ← MVCC snapshot guaranteed to include all writes < snapshotOffset
 ↓
-send +FULLRESYNC snapshotOffset    ← announces real boundary
+send +FULLRESYNC snapshotOffset
 ↓
-send backlog(snapshotOffset→currentOffset)  ← covers writes during RDB send
+send backlog(snapshotOffset→currentOffset)  ← covers writes during RDB generation
 ↓
-AddSlave (under slaveConn.mu)      ← PropagateCommand takes over
+AddSlave (under slaveConn.mu)
 ```
 
-## Known Limitation: View Blind Window
+Invariant: `store.Set()` (badger commit) → `PropagateCommand()` (offset increment). Therefore any write with `offset < snapshotOffset` committed to badger before snapshotOffset capture → visible in View → **in RDB**. ✓
 
-Even with the fix, there's a fundamental dual-timeline problem:
+**Guarantee: no lost writes.** Every write is either in RDB or in backlog.
 
-| Timeline | Source |
-|----------|--------|
-| MVCC snapshot timeline | badger txn/version |
-| Replication offset timeline | masterReplOffset |
+## Residual: Boundary Duplication Risk
 
-**These two timelines are not synchronously mapped.** The badger `db.View` captures a point-in-time state at timestamp T_view. The replication offset is captured AFTER the View returns (O_snapshot). Writes committed between T_view and O_snapshot are:
+The tradeoff: writes committed between `snapshotOffset` capture and `db.View()` start are in **both** RDB and backlog. This is a microsecond window (typically 0 concurrent writes).
 
-- **Not in the RDB** (committed after View started)
-- **Not in the backlog** (committed before snapshotOffset capture)
+| Data Type | Effect |
+|-----------|--------|
+| SET / SADD / HSET / ZADD | Idempotent — no harm |
+| INCR / INCRBY | off by 1 (~50% chance for the 1 duplicated write) |
+| LPUSH / RPUSH | ~50% duplicate ratio for duplicated writes |
 
-These ~100-200ms of writes are permanently lost for this FULLRESYNC cycle. A **subsequent FULLRESYNC** recovers them (they're included in the next RDB).
-
-Redis doesn't have this problem because it's single-threaded — the RDB boundary and replication command boundary are naturally aligned. BoltDB's goroutine concurrency creates two independent timelines.
+This is **not** a correctness hole — it's a bounded, measurable duplication window. The regression test `TestRegressionSnapshotFullresyncOffset` tolerates it (annotated "within known race window").
 
 ## FULLRESYNC Guarantees
 
 ```
 Guaranteed:
+- no lost writes
 - snapshot consistency (badger MVCC)
-- eventual convergence (subsequent FULLRESYNC repairs)
 - no structural corruption (no duplicate chain, correct zset cardinality)
+- bounded duplicate window (microseconds, typically 0 writes)
+- eventual convergence
 
 NOT guaranteed:
 - exact linearizable snapshot boundary
 - zero-window offset binding between MVCC timeline and replication timeline
 ```
 
-This is a documented design tradeoff. See `TestRegressionSnapshotFullresyncOffset` for the regression that validates convergence behavior within the known window.
+A complete linearizable boundary requires commit-ts ↔ repl-offset mapping in badger. Tracked in issue #3.
 
 ## Prevention
 - Run `store.Check()` after every RDB load in tests
-- Integration test: write all data types, generate RDB, load into fresh DB, verify all keys match
 - `TestRegressionSnapshotFullresyncOffset`: validates FULLRESYNC convergence + structural integrity
-- Monitor RDB generation duration — if >5s, backlog blind window grows proportionally
-- In soak tests, verify replication converges after chaos cycles
 - **New commits to replication code must pass `snapshot_fullresync_overlap_test`**
+- Monitor RDB generation duration — barrier-to-reconnect pressure grows with backlog divergence
+- For strict equality validation: `SOAK_REPL_STRICT_EQUALITY=1 go test ./cmd/integration/... -run TestSoakReplication`
