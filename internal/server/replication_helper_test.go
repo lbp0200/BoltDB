@@ -73,7 +73,7 @@ func TestIsWriteCommand(t *testing.T) {
 		// Set commands
 		{"SADD", true},
 		{"SREM", true},
-		{"SPOP", true},
+		{"SPOP", false}, // canonicalized to SREM internally
 		{"SMOVE", true},
 		{"SINTERSTORE", true},
 		{"SUNIONSTORE", true},

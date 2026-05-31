@@ -71,40 +71,39 @@ func (s *BotreonStore) listLength(key string) (uint64, error) {
 	return length, errView
 }
 
-func (s *BotreonStore) listGetMeta(keyRedis string) (length uint64, start, end string, err error) {
-	err = s.db.View(func(txn *badger.Txn) error {
-		// 获取长度
-		lengthItem, errGet := txn.Get([]byte(s.listKey(keyRedis, "length")))
-		if errGet != nil {
-			if errors.Is(errGet, badger.ErrKeyNotFound) {
-				length = 0
-				start = ""
-				end = ""
-				return nil // 列表不存在，返回默认值
-			}
-			return errGet
+func (s *BotreonStore) listGetMetaTxn(txn *badger.Txn, keyRedis string) (length uint64, start, end string, err error) {
+	// 获取长度
+	lengthItem, errGet := txn.Get([]byte(s.listKey(keyRedis, "length")))
+	if errGet != nil {
+		if errors.Is(errGet, badger.ErrKeyNotFound) {
+			length = 0
+			start = ""
+			end = ""
+			return // 列表不存在，返回默认值
 		}
-		lengthVal, errValueCopy := lengthItem.ValueCopy(nil)
-		if errValueCopy != nil {
-			return errValueCopy
-		}
-		length = helper.BytesToUint64(lengthVal)
+		err = errGet
+		return
+	}
+	lengthVal, errValueCopy := lengthItem.ValueCopy(nil)
+	if errValueCopy != nil {
+		err = errValueCopy
+		return
+	}
+	length = helper.BytesToUint64(lengthVal)
 
-		// 获取起始节点
-		startItem, errStart := txn.Get([]byte(s.listKey(keyRedis, "start")))
-		if errStart == nil {
-			startVal, _ := startItem.ValueCopy(nil)
-			start = string(startVal)
-		}
+	// 获取起始节点
+	startItem, errStart := txn.Get([]byte(s.listKey(keyRedis, "start")))
+	if errStart == nil {
+		startVal, _ := startItem.ValueCopy(nil)
+		start = string(startVal)
+	}
 
-		// 获取结束节点
-		endItem, errEnd := txn.Get([]byte(s.listKey(keyRedis, "end")))
-		if errEnd == nil {
-			endVal, _ := endItem.ValueCopy(nil)
-			end = string(endVal)
-		}
-		return nil
-	})
+	// 获取结束节点
+	endItem, errEnd := txn.Get([]byte(s.listKey(keyRedis, "end")))
+	if errEnd == nil {
+		endVal, _ := endItem.ValueCopy(nil)
+		end = string(endVal)
+	}
 	return
 }
 
@@ -170,7 +169,7 @@ func (s *BotreonStore) LPush(key string, values ...string) (int, error) {
 		if err := txn.Set(TypeOfKeyGet(key), []byte(KeyTypeList)); err != nil {
 			return err
 		}
-		length, start, end, _ := s.listGetMeta(key)
+		length, start, end, _ := s.listGetMetaTxn(txn, key)
 		for _, value := range values {
 			// 创建新节点
 			nodeID, err := s.createNode(txn, key, []byte(value))
@@ -217,8 +216,10 @@ func (s *BotreonStore) RPop(key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	err = s.retryUpdate(func(txn *badger.Txn) error {
-		length, start, end, err := s.listGetMeta(key)
+		length, start, end, err := s.listGetMetaTxn(txn, key)
 		if err != nil {
 			// 如果列表不存在，返回空字符串
 			if length == 0 {
@@ -283,7 +284,7 @@ func (s *BotreonStore) LLen(key string) (uint64, error) {
 
 // getNodeByIndex 根据索引获取节点ID和值
 func (s *BotreonStore) getNodeByIndex(txn *badger.Txn, key string, index int64) (string, string, error) {
-	length, start, _, err := s.listGetMeta(key)
+	length, start, _, err := s.listGetMetaTxn(txn, key)
 	if err != nil {
 		return "", "", err
 	}
@@ -327,7 +328,7 @@ func (s *BotreonStore) getNodeByIndex(txn *badger.Txn, key string, index int64) 
 		}
 	} else {
 		// 从尾部开始
-		_, _, end, _ := s.listGetMeta(key)
+		_, _, end, _ := s.listGetMetaTxn(txn, key)
 		currentNodeID = end
 		// #nosec G115 - length is bounded by practical list size limits
 		currentIndex = int64(length) - 1
@@ -382,7 +383,7 @@ func (s *BotreonStore) RPush(key string, values ...string) (int, error) {
 		if err := txn.Set(TypeOfKeyGet(key), []byte(KeyTypeList)); err != nil {
 			return err
 		}
-		length, start, end, _ := s.listGetMeta(key)
+		length, start, end, _ := s.listGetMetaTxn(txn, key)
 		for _, value := range values {
 			// 创建新节点
 			nodeID, err := s.createNode(txn, key, []byte(value))
@@ -430,8 +431,10 @@ func (s *BotreonStore) LPop(key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	err = s.retryUpdate(func(txn *badger.Txn) error {
-		length, start, end, err := s.listGetMeta(key)
+		length, start, end, err := s.listGetMetaTxn(txn, key)
 		if err != nil {
 			if length == 0 {
 				return nil
@@ -511,7 +514,7 @@ func (s *BotreonStore) LRange(key string, start, stop int64) ([]string, error) {
 		if err := checkKeyType(txn, key, KeyTypeList); err != nil {
 			return err
 		}
-		length, startID, _, err := s.listGetMeta(key)
+		length, startID, _, err := s.listGetMetaTxn(txn, key)
 		if err != nil {
 			return nil // 列表不存在，返回空列表
 		}
@@ -618,7 +621,7 @@ func (s *BotreonStore) LPos(key string, element string, rank, count, maxlen int6
 	var results []int64
 
 	err := s.db.View(func(txn *badger.Txn) error {
-		length, _, _, err := s.listGetMeta(key)
+		length, _, _, err := s.listGetMetaTxn(txn, key)
 		if err != nil {
 			return nil // 列表不存在，返回空
 		}
@@ -677,8 +680,10 @@ func (s *BotreonStore) LPos(key string, element string, rank, count, maxlen int6
 
 // LTRIM 实现 Redis LTRIM 命令
 func (s *BotreonStore) LTrim(key string, start, stop int64) error {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	return s.retryUpdate(func(txn *badger.Txn) error {
-		length, startID, _, err := s.listGetMeta(key)
+		length, startID, _, err := s.listGetMetaTxn(txn, key)
 		if err != nil {
 			return nil // 列表不存在，无需操作
 		}
@@ -800,7 +805,7 @@ func (s *BotreonStore) deleteNode(txn *badger.Txn, key, nodeID string) {
 
 // deleteList 删除整个列表
 func (s *BotreonStore) deleteList(txn *badger.Txn, key string) error {
-	_, start, _, _ := s.listGetMeta(key)
+	_, start, _, _ := s.listGetMetaTxn(txn, key)
 	if start != "" {
 		currentNodeID := start
 		visited := make(map[string]bool)
@@ -823,14 +828,17 @@ func (s *BotreonStore) deleteList(txn *badger.Txn, key string) error {
 	_ = txn.Delete([]byte(s.listKey(key, "length")))
 	_ = txn.Delete([]byte(s.listKey(key, "start")))
 	_ = txn.Delete([]byte(s.listKey(key, "end")))
+	_ = txn.Delete(TypeOfKeyGet(key))
 	return nil
 }
 
 // LINSERT 实现 Redis LINSERT 命令
 func (s *BotreonStore) LInsert(key string, where string, pivot, value string) (int, error) {
 	var newLength int
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	err := s.retryUpdate(func(txn *badger.Txn) error {
-		length, start, _, err := s.listGetMeta(key)
+		length, start, _, err := s.listGetMetaTxn(txn, key)
 		if err != nil || length == 0 {
 			return nil // 列表不存在或为空
 		}
@@ -887,7 +895,7 @@ func (s *BotreonStore) LInsert(key string, where string, pivot, value string) (i
 				prevNodeID = string(prevVal)
 			} else if errors.Is(err, badger.ErrKeyNotFound) {
 				// 如果prev不存在，说明pivot是第一个节点，prevNodeID应该是end（循环链表）
-				_, _, end, _ := s.listGetMeta(key)
+				_, _, end, _ := s.listGetMetaTxn(txn, key)
 				prevNodeID = end
 			} else {
 				return err
@@ -902,7 +910,7 @@ func (s *BotreonStore) LInsert(key string, where string, pivot, value string) (i
 			}
 
 			// 如果插入在头部，更新start
-			_, _, end, _ := s.listGetMeta(key)
+			_, _, end, _ := s.listGetMetaTxn(txn, key)
 			newStart := start
 			newEnd := end
 			if pivotNodeID == start {
@@ -930,7 +938,7 @@ func (s *BotreonStore) LInsert(key string, where string, pivot, value string) (i
 			}
 
 			// 如果插入在尾部，更新end
-			_, _, end, err := s.listGetMeta(key)
+			_, _, end, err := s.listGetMetaTxn(txn, key)
 			if err != nil {
 				return err
 			}
@@ -952,8 +960,10 @@ func (s *BotreonStore) LInsert(key string, where string, pivot, value string) (i
 // LREM 实现 Redis LREM 命令
 func (s *BotreonStore) LRem(key string, count int64, value string) (int, error) {
 	removed := 0
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	err := s.retryUpdate(func(txn *badger.Txn) error {
-		length, start, _, err := s.listGetMeta(key)
+		length, start, _, err := s.listGetMetaTxn(txn, key)
 		if err != nil || length == 0 {
 			return nil
 		}
@@ -997,7 +1007,7 @@ func (s *BotreonStore) LRem(key string, count int64, value string) (int, error) 
 
 		// 如果count < 0，从尾部开始
 		if count < 0 {
-			_, _, end, _ := s.listGetMeta(key)
+			_, _, end, _ := s.listGetMetaTxn(txn, key)
 			currentNodeID = end
 			visitedCount = 0
 			visitedNodes = make(map[string]bool)
@@ -1035,7 +1045,7 @@ func (s *BotreonStore) LRem(key string, count int64, value string) (int, error) 
 		}
 
 		// 获取当前start和end
-		_, currentStart, currentEnd, _ := s.listGetMeta(key)
+		_, currentStart, currentEnd, _ := s.listGetMetaTxn(txn, key)
 
 		// 删除节点
 		for _, nodeID := range nodesToRemove {
@@ -1091,7 +1101,7 @@ func (s *BotreonStore) RPopLPush(source, destination string) (string, error) {
 	var value string
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// 从源列表弹出
-		sourceLength, sourceStart, sourceEnd, err := s.listGetMeta(source)
+		sourceLength, sourceStart, sourceEnd, err := s.listGetMetaTxn(txn, source)
 		if err != nil || sourceLength == 0 {
 			return nil // 源列表不存在或为空
 		}
@@ -1149,7 +1159,7 @@ func (s *BotreonStore) RPopLPush(source, destination string) (string, error) {
 		if err := txn.Set(TypeOfKeyGet(destination), []byte(KeyTypeList)); err != nil {
 			return err
 		}
-		destLength, destStart, destEnd, _ := s.listGetMeta(destination)
+		destLength, destStart, destEnd, _ := s.listGetMetaTxn(txn, destination)
 
 		// 创建新节点
 		newNodeID, err := s.createNode(txn, destination, []byte(value))

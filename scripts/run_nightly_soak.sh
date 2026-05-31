@@ -83,6 +83,7 @@ print_banner() {
     log "  Report:   ${SOAK_REPORT_DIR}"
     log "========================================"
     log ""
+    log "  Short Strict Replication Soak: SOAK_REPL_SHORT_DURATION"
     log "  Build: git rev-parse HEAD"
     git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null | tee -a "$OUTPUT_LOG"
     log ""
@@ -103,10 +104,14 @@ overall_exit=0
 # Step 2: Standalone soak
 run_go_test "TestSoak" "$SOAK_DURATION" "" || overall_exit=1
 
-# Step 3: Replication soak
+# Step 3: Replication short strict soak (lifecycle/deterministic replay)
+SHORT_STRICT_TIMEOUT="15m"
+run_go_test "TestSoakReplicationShortStrict" "$SHORT_STRICT_TIMEOUT" "" || overall_exit=1
+
+# Step 4: Replication long non-strict soak (L0/retry/goroutine/basin/evolution)
 run_go_test "TestSoakReplication" "$SOAK_REPL_DURATION" "" || overall_exit=1
 
-# Step 4: Failover oscillation (optional, continue-on-error)
+# Step 5: Failover oscillation (optional, continue-on-error)
 if [ -n "${INCLUDE_FAILOVER:-}" ]; then
     log ""
     log "=== FAILOVER OSCILLATION JOB (continue-on-error) ==="
@@ -124,7 +129,7 @@ if [ -n "${INCLUDE_FAILOVER:-}" ]; then
     fi
 fi
 
-# Step 5: Evolution analysis (cross-run trend)
+# Step 6: Evolution analysis (cross-run trend)
 if [ -z "$SKIP_EVOLUTION" ]; then
     log ""
     log "=== EVOLUTION ANALYSIS ==="
@@ -137,7 +142,7 @@ if [ -z "$SKIP_EVOLUTION" ]; then
     done
 fi
 
-# Step 5b: Anomaly detection (commit-correlated signals)
+# Step 6b: Anomaly detection (commit-correlated signals)
 if [ -z "$SKIP_EVOLUTION" ]; then
     log ""
     log "=== ANOMALY DETECTION ==="
@@ -181,7 +186,7 @@ for a in r.get('anomalies',[]):
     done
 fi
 
-# Step 6: Generate trajectory plot (if JSONL files exist)
+# Step 7: Generate trajectory plot (if JSONL files exist)
 JSONL_FILES=("$SOAK_JSONL_DIR"/*.jsonl)
 if [ ${#JSONL_FILES[@]} -gt 0 ] && [ -f "$SCRIPT_DIR/plot_trajectory.py" ]; then
     log ""
@@ -195,7 +200,7 @@ if [ ${#JSONL_FILES[@]} -gt 0 ] && [ -f "$SCRIPT_DIR/plot_trajectory.py" ]; then
     fi
 fi
 
-# Step 7: Summary report
+# Step 8: Summary report
 log ""
 log "=== SUMMARY ==="
 SUMMARY_FILE="${SOAK_REPORT_DIR}/nightly-${TIMESTAMP}-summary.md"

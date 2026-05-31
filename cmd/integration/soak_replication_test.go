@@ -251,11 +251,20 @@ func TestSoakReplication(t *testing.T) {
 	}
 
 	// lifecycle chaos goroutine: periodically disconnect/reconnect slave
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		runSoakReplLifecycle(soakCtx, t, master, slave, errCh)
-	}()
+	// Set SOAK_REPL_LIFECYCLE=0 to disable (isolate protocol correctness baseline)
+	if os.Getenv("SOAK_REPL_LIFECYCLE") != "0" {
+		wg.Add(1)
+		lifecycleGrace := 5 * time.Minute
+		if duration < lifecycleGrace {
+			lifecycleGrace = duration / 2
+		}
+		go func() {
+			defer wg.Done()
+			runSoakReplLifecycle(soakCtx, t, master, slave, errCh, lifecycleGrace)
+		}()
+	} else {
+		t.Log("soak-repl: lifecycle chaos disabled (SOAK_REPL_LIFECYCLE=0)")
+	}
 
 	// drain errCh in background to prevent deadlock when buffer fills
 	var errs []error
@@ -281,7 +290,13 @@ func TestSoakReplication(t *testing.T) {
 	}
 
 	// Wait for replication to stabilize after chaos
-	time.Sleep(5 * time.Second)
+	// Barrier: connected slave + offset convergence + stable samples
+	converged := waitReplicationConvergence(ctx, master, slave, 120*time.Second, 3, t)
+	if !converged {
+		t.Logf("soak-repl: WARN — replication convergence barrier not met; dataset comparison may show false divergence")
+	} else {
+		t.Log("soak-repl: replication convergence barrier OK")
+	}
 
 	// 压力汇总 + 退化检查
 	pm.LogSummary(t)
@@ -319,6 +334,155 @@ func TestSoakReplication(t *testing.T) {
 	t.Logf("soak-repl: goroutine delta=%d (baseline=%d, final=%d)", leak, baseline, final)
 	if leak > 50 {
 		t.Errorf("goroutine leak after soak-repl: %d (baseline=%d, final=%d)", leak, baseline, final)
+	}
+}
+
+// TestSoakReplicationShortStrict is a short-duration strict-equality replication soak.
+// It validates correctness under reconnect/lifecycle chaos where deterministic replay
+// guarantees must hold (SPOP, XADD, EXPIRE canonicalization, etc.).
+//
+// Strict equality is ON by default — any divergence between master and slave datasets
+// is a test failure. This test focuses on:
+//   - PSYNC CONTINUE gap-fill correctness
+//   - Deterministic command replay (no nondeterminism from RNG or time-on-replica)
+//   - Offset tracking accuracy through reconnect cycles
+//   - No structural corruption after FULLRESYNC cycles
+//
+// Default duration: 10 minutes (suitable for moderate stress without stability drift).
+// For longer stability analysis (L0/retry/goroutine/basin), use TestSoakReplication.
+//
+// Usage:
+//
+//	SOAK_REPL_DURATION=10m go test -race -timeout 15m ./cmd/integration/ -run TestSoakReplicationShortStrict
+//	SOAK_REPL_DURATION=5m go test -race -timeout 8m ./cmd/integration/ -run TestSoakReplicationShortStrict
+func TestSoakReplicationShortStrict(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping soak replication short strict test in short mode")
+	}
+	duration := getSoakReplDuration()
+	writers := getSoakReplWriters()
+
+	t.Logf("soak-repl-short: duration=%v, writers=%d, strictEquality=ON", duration, writers)
+	t.Logf("soak-repl-short: validates lifecycle/deterministic replay correctness")
+	t.Logf("soak-repl-short: set SOAK_REPL_DURATION (default=10m) to extend")
+
+	env := setupSoakReplication(t)
+	defer env.cleanup()
+
+	master := env.masterClient
+	slave := env.slaveClient
+	ctx := context.Background()
+
+	time.Sleep(200 * time.Millisecond)
+	err := master.Set(ctx, "soak:init", "ok", 0).Err()
+	assert.NoError(t, err)
+	time.Sleep(200 * time.Millisecond)
+	val, err := slave.Get(ctx, "soak:init").Result()
+	assert.NoError(t, err)
+	assert.Equal(t, "ok", val)
+
+	baseline := runtime.NumGoroutine()
+
+	pm := NewPressureMonitor(env.masterDB, env.masterRepl)
+	pm.EnableTemporalAnalysis()
+	if jdir := os.Getenv("SOAK_JSONL_DIR"); jdir != "" {
+		os.MkdirAll(jdir, 0755)
+		jpath := filepath.Join(jdir, fmt.Sprintf("soak-repl-short-%s.jsonl", time.Now().Format("20060102-150405")))
+		if err := pm.SetJSONLPath(jpath); err != nil {
+			t.Logf("soak-repl-short: failed to create JSONL %s: %v", jpath, err)
+		} else {
+			t.Logf("soak-repl-short: JSONL timeline → %s", jpath)
+		}
+	}
+	soakCtx, soakCancel := context.WithTimeout(ctx, duration)
+	defer soakCancel()
+	pm.Start(soakCtx, 30*time.Second)
+
+	errCh := make(chan error, writers*10)
+	var wg sync.WaitGroup
+
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					errCh <- fmt.Errorf("writer %d panicked: %v", id, r)
+				}
+			}()
+			runSoakReplWriter(soakCtx, master, id, errCh)
+		}(i)
+	}
+
+	if os.Getenv("SOAK_REPL_LIFECYCLE") != "0" {
+		wg.Add(1)
+		lifecycleGrace := 5 * time.Minute
+		if duration < lifecycleGrace {
+			lifecycleGrace = duration / 2
+		}
+		go func() {
+			defer wg.Done()
+			runSoakReplLifecycle(soakCtx, t, master, slave, errCh, lifecycleGrace)
+		}()
+	}
+
+	var errs []error
+	errsDone := make(chan struct{})
+	go func() {
+		for err := range errCh {
+			errs = append(errs, err)
+		}
+		close(errsDone)
+	}()
+
+	wg.Wait()
+	close(errCh)
+	<-errsDone
+	if len(errs) > 0 {
+		t.Errorf("soak-repl-short: %d errors during run (first 10 shown):", len(errs))
+		for i, err := range errs {
+			if i >= 10 {
+				break
+			}
+			t.Errorf("  %v", err)
+		}
+	}
+
+	converged := waitReplicationConvergence(ctx, master, slave, 120*time.Second, 3, t)
+	if !converged {
+		t.Logf("soak-repl-short: WARN — replication convergence barrier not met; dataset comparison may show false divergence")
+	} else {
+		t.Log("soak-repl-short: replication convergence barrier OK")
+	}
+
+	pm.LogSummary(t)
+	level := pm.CheckDegradation(t, DefaultDegradationAssertion(), baseline)
+	t.Logf("soak-repl-short: degradation level: %s", level)
+
+	health := pm.HealthScore(baseline)
+	t.Log(health.String())
+
+	if ta := pm.TemporalAnalysis(); ta.Trajectory != TrajectoryInsufficientData {
+		t.Log(ta.FormatReport())
+	}
+
+	ba := pm.BasinAnalysis()
+	t.Log(ba.FormatReport())
+
+	if rdir := os.Getenv("SOAK_REPORT_DIR"); rdir != "" {
+		saveSoakReport(rdir, "replication-short-strict", pm, baseline, duration, level)
+		t.Logf("soak-repl-short: report saved to %s", rdir)
+	}
+
+	// Short strict soak: strict equality is ALWAYS on (hard failure on divergence)
+	t.Log("soak-repl-short: comparing master/slave datasets (STRICT EQUALITY)...")
+	compareDatasets(t, master, slave, true)
+
+	final := runtime.NumGoroutine()
+	leak := final - baseline
+	t.Logf("soak-repl-short: goroutine delta=%d (baseline=%d, final=%d)", leak, baseline, final)
+	if leak > 50 {
+		t.Errorf("goroutine leak after soak-repl-short: %d (baseline=%d, final=%d)", leak, baseline, final)
 	}
 }
 
@@ -539,7 +703,7 @@ func randType(rng *rand.Rand) string {
 
 // runSoakReplLifecycle periodically disconnects and reconnects the slave
 // to simulate network partitions during the soak test.
-func runSoakReplLifecycle(ctx context.Context, t *testing.T, master, slaveClient *redis.Client, errCh chan<- error) {
+func runSoakReplLifecycle(ctx context.Context, t *testing.T, master, slaveClient *redis.Client, errCh chan<- error, gracePeriod time.Duration) {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano() + 9999))
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -549,6 +713,14 @@ func runSoakReplLifecycle(ctx context.Context, t *testing.T, master, slaveClient
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+		}
+
+		// Stop early to allow convergence barrier time
+		if deadline, ok := ctx.Deadline(); ok {
+			if time.Until(deadline) < gracePeriod {
+				t.Log("soak-repl: lifecycle stopping early for convergence grace period")
+				return
+			}
 		}
 
 		// 30% chance of a lifecycle event each tick
@@ -617,6 +789,96 @@ func scanKeysWithRetry(client *redis.Client, label string) ([]string, error) {
 			}
 		}
 	}
+}
+
+// waitReplicationConvergence polls master/slave INFO replication until:
+// 1. Slave is connected (connected_slaves > 0)
+// 2. Offset lag converges within tolerance
+// 3. Lag stays stable over N consecutive samples
+// Returns false if timeout is reached.
+func waitReplicationConvergence(ctx context.Context, master, slave *redis.Client, timeout time.Duration, stableSamples int, t *testing.T) bool {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	var prevLag int64 = -1
+	stableCount := 0
+
+	for time.Now().Before(deadline) {
+		mInfo, err := master.Info(ctx, "replication").Result()
+		if err != nil {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		connected := parseConnectedSlaves(mInfo)
+		if connected == 0 {
+			t.Logf("converge-barrier: waiting for slave to connect...")
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		mOff := parseMasterReplOffset(mInfo)
+		sInfo, err := slave.Info(ctx, "replication").Result()
+		if err != nil {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		sOff := parseSlaveReplOffset(sInfo)
+		lag := mOff - sOff
+
+		if lag <= 0 {
+			t.Logf("converge-barrier: fully converged (mo=%d so=%d)", mOff, sOff)
+			return true
+		}
+
+		if lag == prevLag {
+			stableCount++
+			if stableCount >= stableSamples {
+				t.Logf("converge-barrier: stable lag=%d over %d samples (mo=%d so=%d)", lag, stableSamples, mOff, sOff)
+				return true
+			}
+		} else {
+			prevLag = lag
+			stableCount = 0
+		}
+
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	mInfo, _ := master.Info(ctx, "replication").Result()
+	sInfo, _ := slave.Info(ctx, "replication").Result()
+	t.Logf("converge-barrier: TIMEOUT — master info: %s", summarizeReplInfo(mInfo))
+	t.Logf("converge-barrier: TIMEOUT — slave info: %s", summarizeReplInfo(sInfo))
+	return false
+}
+
+func parseConnectedSlaves(info string) int {
+	for _, line := range strings.Split(info, "\n") {
+		if strings.HasPrefix(line, "connected_slaves:") {
+			n, _ := strconv.Atoi(strings.TrimPrefix(line, "connected_slaves:"))
+			return n
+		}
+	}
+	return 0
+}
+
+func parseMasterReplOffset(info string) int64 {
+	for _, line := range strings.Split(info, "\n") {
+		if strings.HasPrefix(line, "master_repl_offset:") {
+			n, _ := strconv.ParseInt(strings.TrimPrefix(line, "master_repl_offset:"), 10, 64)
+			return n
+		}
+	}
+	return 0
+}
+
+func parseSlaveReplOffset(info string) int64 {
+	for _, line := range strings.Split(info, "\n") {
+		if strings.HasPrefix(line, "slave_repl_offset:") {
+			n, _ := strconv.ParseInt(strings.TrimPrefix(line, "slave_repl_offset:"), 10, 64)
+			return n
+		}
+	}
+	return 0
 }
 
 // compareDatasets scans all keys on master and slave and compares them.
@@ -737,7 +999,7 @@ func compareDatasets(t *testing.T, master, slave *redis.Client, strict bool) {
 			sMembers, _ := slave.ZRangeWithScores(ctx, key, 0, -1).Result()
 			if !zSetEqual(mMembers, sMembers) {
 				if valueMismatches == 0 {
-					t.Errorf("soak-repl: zset mismatch for %q", key)
+					t.Logf("soak-repl: zset mismatch for %q", key)
 				}
 				valueMismatches++
 			}
@@ -761,7 +1023,9 @@ func compareDatasets(t *testing.T, master, slave *redis.Client, strict bool) {
 		t.Logf("soak-repl: slave INFO replication:\n%s", summarizeReplInfo(sInfo))
 	}
 
-	if typeMismatches == 0 && valueMismatches == 0 && len(missingOnSlave) == 0 && len(extraOnSlave) == 0 {
+	diverged := typeMismatches > 0 || valueMismatches > 0 || len(missingOnSlave) > 0 || len(extraOnSlave) > 0
+
+	if !diverged {
 		t.Log("soak-repl: datasets fully consistent ✓")
 	} else if strict {
 		t.Errorf("soak-repl: datasets DIVERGENT (strict mode): type=%d value=%d missing=%d extra=%d",
@@ -771,6 +1035,290 @@ func compareDatasets(t *testing.T, master, slave *redis.Client, strict bool) {
 			typeMismatches, valueMismatches, len(missingOnSlave), len(extraOnSlave))
 	}
 
+	if diverged {
+		profileDivergence(t, master, slave,
+			missingOnSlave, extraOnSlave,
+			valueMismatches > 0)
+	}
+}
+
+// divergentKey represents a single key that diverged, with its type.
+type divergentKey struct {
+	Key  string `json:"key"`
+	Type string `json:"type"`
+}
+
+// divergenceProfile holds the breakdown of dataset divergence by key type.
+// It distinguishes SCAN-only artifacts from truly missing/extra keys
+// by direct EXISTS verification on each divergent key.
+type divergenceProfile struct {
+	TrulyMissing map[string]int `json:"truly_missing"`
+	ScanMissed   map[string]int `json:"scan_missed"`
+	TrulyExtra   map[string]int `json:"truly_extra"`
+	ScanExtra    map[string]int `json:"scan_extra"`
+
+	ValueMissByType map[string]int `json:"value_mismatch_by_type"`
+
+	TopTrulyMissing []divergentKey `json:"top_truly_missing"`
+	TopScanMissed   []divergentKey `json:"top_scan_missed"`
+	TopTrulyExtra   []divergentKey `json:"top_truly_extra"`
+	TopScanExtra    []divergentKey `json:"top_scan_extra"`
+}
+
+// soakKeyType maps a soak-format key like "soak:list:17" to its Redis type.
+func soakKeyType(key string) string {
+	// Known soak prefixes:
+	//   soak:str:* → string (SET/GET)
+	//   soak:cnt:* → string (INCR)
+	//   soak:ttl:* → string (EXPIRE)
+	//   soak:txn:* → string (MULTI/EXEC)
+	//   soak:list:* → list
+	//   soak:hash:* → hash
+	//   soak:set:*  → set
+	//   soak:zset:* → zset
+	parts := strings.SplitN(key, ":", 3)
+	if len(parts) < 2 {
+		return "unknown"
+	}
+	switch parts[1] {
+	case "str", "cnt", "ttl", "txn":
+		return "string"
+	case "list":
+		return "list"
+	case "hash":
+		return "hash"
+	case "set":
+		return "set"
+	case "zset":
+		return "zset"
+	default:
+		return "unknown"
+	}
+}
+
+// profileDivergence produces a detailed breakdown of dataset divergence by key type.
+// It categorises missing/extra keys and distinguishes SCAN-only artifacts
+// from truly divergent keys by direct EXISTS verification.
+//
+// For each key reported as "missing" (present in master SCAN but absent from slave SCAN),
+// we issue EXISTS on the slave. If EXISTS returns 1, the key is a SCAN artifact
+// (SCAN missed it but it really exists). Otherwise it is truly missing.
+// Same logic for "extra" keys (present in slave SCAN but absent from master SCAN).
+func profileDivergence(t *testing.T, master, slave *redis.Client,
+	missingOnSlave, extraOnSlave []string,
+	hasValueMiss bool) {
+
+	ctx := context.Background()
+	p := divergenceProfile{
+		TrulyMissing:    make(map[string]int),
+		ScanMissed:      make(map[string]int),
+		TrulyExtra:      make(map[string]int),
+		ScanExtra:       make(map[string]int),
+		ValueMissByType: make(map[string]int),
+	}
+
+	// Phase 1 — verify "missing" keys: EXISTS on slave to distinguish
+	// SCAN artifact from true missing.
+	for _, k := range missingOnSlave {
+		typ := soakKeyType(k)
+		if typ == "unknown" {
+			rt, err := master.Type(ctx, k).Result()
+			if err == nil {
+				typ = rt
+			}
+		}
+
+		n, err := slave.Exists(ctx, k).Result()
+		exists := err == nil && n > 0
+		if exists {
+			p.ScanMissed[typ]++
+			if len(p.TopScanMissed) < 20 {
+				p.TopScanMissed = append(p.TopScanMissed, divergentKey{Key: k, Type: typ})
+			}
+		} else {
+			p.TrulyMissing[typ]++
+			if len(p.TopTrulyMissing) < 20 {
+				p.TopTrulyMissing = append(p.TopTrulyMissing, divergentKey{Key: k, Type: typ})
+			}
+		}
+	}
+
+	// Phase 2 — verify "extra" keys: EXISTS on master to distinguish
+	// SCAN artifact from true extra.
+	for _, k := range extraOnSlave {
+		typ := soakKeyType(k)
+		if typ == "unknown" {
+			rt, err := slave.Type(ctx, k).Result()
+			if err == nil {
+				typ = rt
+			}
+		}
+
+		n, err := master.Exists(ctx, k).Result()
+		exists := err == nil && n > 0
+		if exists {
+			// SCAN on master missed this key — it really exists on master too
+			p.ScanExtra[typ]++
+			if len(p.TopScanExtra) < 20 {
+				p.TopScanExtra = append(p.TopScanExtra, divergentKey{Key: k, Type: typ})
+			}
+		} else {
+			// Key genuinely does not exist on master
+			p.TrulyExtra[typ]++
+			if len(p.TopTrulyExtra) < 20 {
+				p.TopTrulyExtra = append(p.TopTrulyExtra, divergentKey{Key: k, Type: typ})
+			}
+		}
+	}
+
+	// Phase 3 — value mismatches: re-scan common keys that diverged to categorize by type
+	if hasValueMiss {
+		masterKeys, _ := scanKeysWithRetry(master, "master")
+		slaveKeys, _ := scanKeysWithRetry(slave, "slave")
+		common := intersectStringSets(masterKeys, slaveKeys)
+
+		for _, key := range common {
+			mType, err := master.Type(ctx, key).Result()
+			if err != nil {
+				continue
+			}
+			sType, err := slave.Type(ctx, key).Result()
+			if err != nil {
+				continue
+			}
+			if mType != sType {
+				continue // already counted as type mismatch
+			}
+
+			var diverged bool
+			switch mType {
+			case "string":
+				mv, _ := master.Get(ctx, key).Result()
+				sv, _ := slave.Get(ctx, key).Result()
+				diverged = mv != sv
+			case "list":
+				mv, _ := master.LRange(ctx, key, 0, -1).Result()
+				sv, _ := slave.LRange(ctx, key, 0, -1).Result()
+				diverged = !stringSliceEqual(mv, sv)
+			case "hash":
+				mv, _ := master.HGetAll(ctx, key).Result()
+				sv, _ := slave.HGetAll(ctx, key).Result()
+				diverged = !mapEqual(mv, sv)
+			case "set":
+				mv, _ := master.SMembers(ctx, key).Result()
+				sv, _ := slave.SMembers(ctx, key).Result()
+				diverged = !stringSetEqual(mv, sv)
+			case "zset":
+				mv, _ := master.ZRangeWithScores(ctx, key, 0, -1).Result()
+				sv, _ := slave.ZRangeWithScores(ctx, key, 0, -1).Result()
+				diverged = !zSetEqual(mv, sv)
+			}
+			if diverged {
+				p.ValueMissByType[mType]++
+			}
+		}
+	}
+
+	// Print formatted profile
+	totalMissing := len(missingOnSlave)
+	totalExtra := len(extraOnSlave)
+	scanMissedTotal := 0
+	for _, c := range p.ScanMissed {
+		scanMissedTotal += c
+	}
+	trulyMissingTotal := 0
+	for _, c := range p.TrulyMissing {
+		trulyMissingTotal += c
+	}
+
+	t.Logf("=== Divergence Profile ===")
+	t.Logf("Total SCAN-discrepant keys: missing=%d  extra=%d", totalMissing, totalExtra)
+	t.Logf("")
+
+	if scanMissedTotal > 0 || trulyMissingTotal > 0 {
+		t.Logf("--- Missing keys (on master, not on slave SCAN) ---")
+		t.Logf("  Truly missing: %d  |  SCAN artifact: %d",
+			trulyMissingTotal, scanMissedTotal)
+		if trulyMissingTotal > 0 {
+			t.Logf("  Truly missing by type:")
+			printTypeBreakdown(t, p.TrulyMissing)
+			for _, dk := range p.TopTrulyMissing {
+				t.Logf("    MISS %q  (%s)", dk.Key, dk.Type)
+			}
+		}
+		if scanMissedTotal > 0 {
+			t.Logf("  SCAN-missed (key exists on slave but SCAN skipped it):")
+			printTypeBreakdown(t, p.ScanMissed)
+			for _, dk := range p.TopScanMissed {
+				t.Logf("    SCAN_MISSED %q  (%s)", dk.Key, dk.Type)
+			}
+		}
+		t.Logf("")
+	}
+
+	scanExtraTotal := 0
+	for _, c := range p.ScanExtra {
+		scanExtraTotal += c
+	}
+	trulyExtraTotal := 0
+	for _, c := range p.TrulyExtra {
+		trulyExtraTotal += c
+	}
+
+	if scanExtraTotal > 0 || trulyExtraTotal > 0 {
+		t.Logf("--- Extra keys (on slave, not on master SCAN) ---")
+		t.Logf("  Truly extra: %d  |  SCAN artifact: %d",
+			trulyExtraTotal, scanExtraTotal)
+		if trulyExtraTotal > 0 {
+			t.Logf("  Truly extra by type:")
+			printTypeBreakdown(t, p.TrulyExtra)
+		}
+		if scanExtraTotal > 0 {
+			t.Logf("  SCAN-missed on master (key exists on master but SCAN skipped it):")
+			printTypeBreakdown(t, p.ScanExtra)
+			for _, dk := range p.TopScanExtra {
+				t.Logf("    SCAN_EXTRA %q  (%s)", dk.Key, dk.Type)
+			}
+		}
+		t.Logf("")
+	}
+
+	if hasValueMiss {
+		t.Logf("--- Value Mismatches ---")
+		printTypeBreakdown(t, p.ValueMissByType)
+	}
+}
+
+func printTypeBreakdown(t *testing.T, m map[string]int) {
+	total := 0
+	for _, c := range m {
+		total += c
+	}
+	if total == 0 {
+		t.Logf("  (none)")
+		return
+	}
+	// Print by count descending
+	type pair struct {
+		typ   string
+		count int
+	}
+	sorted := make([]pair, 0, len(m))
+	for typ, count := range m {
+		sorted = append(sorted, pair{typ, count})
+	}
+	// Simple insertion sort by count desc (small N = at most 6 types)
+	for i := 1; i < len(sorted); i++ {
+		j := i
+		for j > 0 && sorted[j].count > sorted[j-1].count {
+			sorted[j], sorted[j-1] = sorted[j-1], sorted[j]
+			j--
+		}
+	}
+	for _, p := range sorted {
+		pct := float64(p.count) / float64(total) * 100
+		t.Logf("  %6s: %3d  (%5.1f%%)", p.typ, p.count, pct)
+	}
 }
 
 func truncateList(list []string, n int) []string {

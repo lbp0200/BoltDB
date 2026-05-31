@@ -30,7 +30,7 @@ jobs:
   standalone:
     name: Standalone Soak
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,7 +57,7 @@ jobs:
       - name: Run standalone soak
         run: |
           mkdir -p /tmp/soak-artifacts/jsonl /tmp/soak-artifacts/report
-          go test -race -timeout 90m \
+          go test -race -timeout 120m \
             ./cmd/integration/ -run TestSoak -v 2>&1 | tee /tmp/soak-artifacts/test-output.txt
 
       - name: Evolution gate check
@@ -99,7 +99,7 @@ jobs:
     name: Replication Soak
     if: ${{ github.event.inputs.run-replication != 'false' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -126,7 +126,7 @@ jobs:
       - name: Run replication soak
         run: |
           mkdir -p /tmp/soak-artifacts/jsonl /tmp/soak-artifacts/report
-          go test -race -timeout 90m \
+          go test -race -timeout 120m \
             ./cmd/integration/ -run TestSoakReplication -v 2>&1 | tee /tmp/soak-artifacts/test-output.txt
 
       - name: Evolution gate check

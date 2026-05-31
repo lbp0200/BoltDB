@@ -525,9 +525,27 @@ func (h *Handler) processRequest(req *proto.Array, reader *bufio.Reader, remoteA
 	}
 
 	// 如果是主节点且是写命令，传播到从节点
+	// 非确定性命令在传播前规范化
+	propagateArgs := req.Args
+	switch cmd {
+	case "EXPIRE":
+		if len(args) >= 3 {
+			if seconds, err := strconv.Atoi(string(args[2])); err == nil {
+				absoluteMS := time.Now().UnixNano()/int64(time.Millisecond) + int64(seconds)*1000
+				propagateArgs = [][]byte{[]byte("PEXPIREAT"), args[1], []byte(strconv.FormatInt(absoluteMS, 10))}
+			}
+		}
+	case "PEXPIRE":
+		if len(args) >= 3 {
+			if ms, err := strconv.ParseInt(string(args[2]), 10, 64); err == nil {
+				absoluteMS := time.Now().UnixNano()/int64(time.Millisecond) + ms
+				propagateArgs = [][]byte{[]byte("PEXPIREAT"), args[1], []byte(strconv.FormatInt(absoluteMS, 10))}
+			}
+		}
+	}
 	if h.Replication != nil && h.Replication.IsMaster() && isWriteCommand(cmd) {
 		if cmd != "REPLICAOF" && cmd != "PSYNC" && cmd != "REPLCONF" {
-			h.Replication.PropagateCommand(req.Args)
+			h.Replication.PropagateCommand(propagateArgs)
 		}
 	}
 
@@ -3393,9 +3411,40 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR wrong number of arguments for 'SPOP' command")
 		}
 		key := string(args[0])
+
+		if len(args) >= 2 {
+			count, err := strconv.Atoi(string(args[1]))
+			if err != nil {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			members, err := h.Db.SPopN(key, count)
+			if err != nil || len(members) == 0 {
+				return proto.NewBulkString(nil)
+			}
+			h.markDirtyKeys(state, key)
+			if h.Replication != nil && h.Replication.IsMaster() {
+				propArgs := make([][]byte, 2, 2+len(members))
+				propArgs[0] = []byte("SREM")
+				propArgs[1] = args[0]
+				for _, m := range members {
+					propArgs = append(propArgs, []byte(m))
+				}
+				h.Replication.PropagateCommand(propArgs)
+			}
+			results := make([][]byte, len(members))
+			for i, m := range members {
+				results[i] = []byte(m)
+			}
+			return &proto.Array{Args: results}
+		}
+
 		member, err := h.Db.SPop(key)
 		if err != nil || member == "" {
 			return proto.NewBulkString(nil)
+		}
+		h.markDirtyKeys(state, key)
+		if h.Replication != nil && h.Replication.IsMaster() {
+			h.Replication.PropagateCommand([][]byte{[]byte("SREM"), args[0], []byte(member)})
 		}
 		return proto.NewBulkString([]byte(member))
 
@@ -5850,6 +5899,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 
 		// ID or field name
+		idPos := i
 		id = string(args[i])
 		if id == "*" || (len(id) > 0 && id[0] == '-') {
 			// It's the ID (* or an option), skip it
@@ -5876,6 +5926,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		if h.Replication != nil && h.Replication.IsMaster() && id == "*" {
+			args[idPos] = []byte(resultID)
 		}
 		return proto.NewBulkString([]byte(resultID))
 
