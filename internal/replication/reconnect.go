@@ -129,8 +129,9 @@ func (sr *SlaveReconnector) reconnectLoop() {
 
 		sr.state.Store(int32(SlaveDisconnected))
 
-		if !sr.connectedSince.IsZero() && time.Since(sr.connectedSince) >= sr.config.ResetAfter {
+		if !sr.connectedSince.IsZero() {
 			retries = 0
+			sr.connectedSince = time.Time{}
 		}
 
 		select {

@@ -228,7 +228,7 @@ func (rm *ReplicationManager) PropagateCommand(cmd [][]byte) {
 					Str("slave_id", slave.ID).
 					Err(err).
 					Msg("传播命令到从节点失败")
-				// 连接可能已断开，稍后会清理
+				// handleSlaveReplicationConnection 会在断连时清理
 			}
 		}
 	}

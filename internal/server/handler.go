@@ -1457,18 +1457,26 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 					}
 				case "NORMAL":
 					h.connsMu.RLock()
-					var targets []*connState
+					var targets []struct {
+						state *connState
+						conn  net.Conn
+					}
 					for s, m := range h.conns {
-						targets = append(targets, s)
-						_ = m
+						targets = append(targets, struct {
+							state *connState
+							conn  net.Conn
+						}{s, m.conn})
 					}
 					h.connsMu.RUnlock()
-					for _, s := range targets {
-						s.mu.Lock()
-						if s.cancel != nil {
-							s.cancel()
+					for _, t := range targets {
+						t.state.mu.Lock()
+						if t.state.cancel != nil {
+							t.state.cancel()
 						}
-						s.mu.Unlock()
+						t.state.mu.Unlock()
+						if t.conn != nil {
+							_ = t.conn.Close()
+						}
 					}
 					killed = len(targets)
 				default:

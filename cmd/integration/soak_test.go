@@ -228,14 +228,15 @@ func TestSoak(t *testing.T) {
 		t.Logf("soak: evolution report saved to %s", rdir)
 	}
 
-	final := runtime.NumGoroutine()
-	soakCheckNoLeak(t, baseline, final)
-
 	listener.Close()
+	h.Shutdown()
 	client.Close()
 	pubsubMgr.Clear()
 	db.Close()
 	os.RemoveAll(dataDir)
+
+	final := runtime.NumGoroutine()
+	soakCheckNoLeak(t, baseline, final)
 }
 
 func runSoakClient(ctx context.Context, addr string, id int, errCh chan<- error) {
