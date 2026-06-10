@@ -529,17 +529,17 @@ func (h *Handler) processRequest(req *proto.Array, reader *bufio.Reader, remoteA
 	propagateArgs := req.Args
 	switch cmd {
 	case "EXPIRE":
-		if len(args) >= 3 {
-			if seconds, err := strconv.Atoi(string(args[2])); err == nil {
+		if len(args) >= 2 {
+			if seconds, err := strconv.Atoi(string(args[1])); err == nil {
 				absoluteMS := time.Now().UnixNano()/int64(time.Millisecond) + int64(seconds)*1000
-				propagateArgs = [][]byte{[]byte("PEXPIREAT"), args[1], []byte(strconv.FormatInt(absoluteMS, 10))}
+				propagateArgs = [][]byte{[]byte("PEXPIREAT"), args[0], []byte(strconv.FormatInt(absoluteMS, 10))}
 			}
 		}
 	case "PEXPIRE":
-		if len(args) >= 3 {
-			if ms, err := strconv.ParseInt(string(args[2]), 10, 64); err == nil {
+		if len(args) >= 2 {
+			if ms, err := strconv.ParseInt(string(args[1]), 10, 64); err == nil {
 				absoluteMS := time.Now().UnixNano()/int64(time.Millisecond) + ms
-				propagateArgs = [][]byte{[]byte("PEXPIREAT"), args[1], []byte(strconv.FormatInt(absoluteMS, 10))}
+				propagateArgs = [][]byte{[]byte("PEXPIREAT"), args[0], []byte(strconv.FormatInt(absoluteMS, 10))}
 			}
 		}
 	}
@@ -1331,6 +1331,13 @@ func (h *Handler) clientListRESP() proto.RESP {
 	return proto.NewBulkString([]byte(strings.Join(lines, "\n")))
 }
 
+func wrapStoreError(err error) proto.RESP {
+	if errors.Is(err, store.ErrWrongType) {
+		return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+	}
+	return proto.NewError(fmt.Sprintf("ERR %v", err))
+}
+
 func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, remoteAddr string) proto.RESP {
 	if state == nil {
 		panic("nil connState in executeCommand")
@@ -1356,7 +1363,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		return proto.NewSimpleString("PONG")
 
 	case "COMMAND":
-		return &proto.Array{Args: [][]byte{}}
+		return handleCommand(args)
 
 	case "QUIT":
 		state.cancel()
@@ -1585,7 +1592,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		h.markDirtyKeys(state, key)
 		if err := h.Db.Set(key, value); err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.OK
 
@@ -1695,7 +1702,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		h.markDirtyKeys(state, key)
 		if err := h.Db.SetEX(key, value, seconds); err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.OK
 
@@ -1710,7 +1717,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		h.markDirtyKeys(state, key)
 		if err := h.Db.PSETEX(key, value, milliseconds); err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.OK
 
@@ -1722,7 +1729,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		success, err := h.Db.SetNX(key, value)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(boolToInt(success)))
 
@@ -1734,7 +1741,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		oldValue, err := h.Db.GetSet(key, value)
 		if err != nil {
-			return proto.NewBulkString(nil)
+			return wrapStoreError(err)
 		}
 		return proto.NewBulkString([]byte(oldValue))
 
@@ -1752,7 +1759,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		values, err := h.Db.MGet(keys...)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		results := make([][]byte, len(values))
 		for i, v := range values {
@@ -1819,7 +1826,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		value, err := h.Db.INCR(key)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(value)
 
@@ -1839,7 +1846,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		value, err := h.Db.INCRBY(key, increment)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(value)
 
@@ -1855,7 +1862,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		value, err := h.Db.DECR(key)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(value)
 
@@ -1875,7 +1882,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		value, err := h.Db.DECRBY(key, decrement)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(value)
 
@@ -1895,7 +1902,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		value, err := h.Db.INCRBYFLOAT(key, increment)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewBulkString([]byte(fmt.Sprintf("%.10g", value)))
 
@@ -1911,7 +1918,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		length, err := h.Db.APPEND(key, value)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		// #nosec G115 - length is bounded by practical data size limits
 		return proto.NewInteger(int64(length))
@@ -2664,6 +2671,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		count, err := h.Db.LPush(key, values...)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		// #nosec G115 - count is bounded by practical data size limits
@@ -2681,6 +2691,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		count, err := h.Db.RPush(key, values...)
 		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		// #nosec G115 - count is bounded by practical data size limits
@@ -2790,7 +2803,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		h.markDirtyKeys(state, key)
 		if err := h.Db.LSet(key, index, value); err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.OK
 
@@ -2806,7 +2819,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		h.markDirtyKeys(state, key)
 		if err := h.Db.LTrim(key, start, stop); err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.OK
 
@@ -2822,7 +2835,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		count, err := h.Db.LInsert(key, where, pivot, value)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		// #nosec G115 - count is bounded by practical data size limits
 		return proto.NewInteger(int64(count))
@@ -2860,7 +2873,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 		positions, err := h.Db.LPos(key, element, rank, count, maxlen)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 
 		if len(positions) == 0 {
@@ -2891,7 +2904,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		removed, err := h.Db.LRem(key, count, value)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(removed))
 
@@ -2924,7 +2937,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, source, destination)
 		value, err := h.Db.LMove(source, destination, sourceDirection, destinationDirection)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		if value == "" {
 			return proto.NewBulkString(nil)
@@ -2946,7 +2959,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, source, destination)
 		value, err := h.Db.BLMoveBlocking(state.ctx, source, destination, sourceDirection, destinationDirection, timeout)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		if value == "" {
 			return proto.NewBulkString(nil)
@@ -2965,7 +2978,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		count, err := h.Db.LPUSHX(key, values...)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		// #nosec G115 - count is bounded by practical data size limits
 		return proto.NewInteger(int64(count))
@@ -2982,7 +2995,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		count, err := h.Db.RPUSHX(key, values...)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		// #nosec G115 - count is bounded by practical data size limits
 		return proto.NewInteger(int64(count))
@@ -3000,7 +3013,13 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR timeout is not an integer or out of range")
 		}
 		key, value, err := h.Db.BLPOPBlocking(state.ctx, keys, timeout)
-		if err != nil || key == "" {
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NilArray{}
+		}
+		if key == "" {
 			return proto.NilArray{}
 		}
 		return &proto.Array{Args: [][]byte{[]byte(key), []byte(value)}}
@@ -3018,7 +3037,13 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR timeout is not an integer or out of range")
 		}
 		key, value, err := h.Db.BRPOPBlocking(state.ctx, keys, timeout)
-		if err != nil || key == "" {
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NilArray{}
+		}
+		if key == "" {
 			return proto.NilArray{}
 		}
 		return &proto.Array{Args: [][]byte{[]byte(key), []byte(value)}}
@@ -3195,7 +3220,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			}
 			field, value := string(args[i]), string(args[i+1])
 			if err := h.Db.HSet(key, field, value); err != nil {
-				return proto.NewError(fmt.Sprintf("ERR %v", err))
+				return wrapStoreError(err)
 			}
 		}
 		return proto.OK
@@ -3211,7 +3236,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		values, err := h.Db.HMGet(key, fields...)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		results := make([][]byte, len(values))
 		for i, v := range values {
@@ -3231,7 +3256,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		success, err := h.Db.HSetNX(key, field, value)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(boolToInt(success)))
 
@@ -3247,7 +3272,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		value, err := h.Db.HIncrBy(key, field, increment)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(value)
 
@@ -3263,7 +3288,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		value, err := h.Db.HIncrByFloat(key, field, increment)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewBulkString([]byte(fmt.Sprintf("%.10g", value)))
 
@@ -3310,7 +3335,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		fields, values, err := h.Db.HRandField(key, count, withValues)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		// 构建响应
 		if withValues {
@@ -3342,7 +3367,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		count, err := h.Db.SAdd(key, members...)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		// #nosec G115 - count is bounded by practical data size limits
 		return proto.NewInteger(int64(count))
@@ -3736,7 +3761,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		h.markDirtyKeys(state, key)
 		if err := h.Db.ZAdd(key, members); err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(len(members)))
 
@@ -3779,7 +3804,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		count, err := h.Db.ZRemRangeByRank(key, start, stop)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(count)
 
@@ -3799,7 +3824,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		count, err := h.Db.ZRemRangeByScore(key, min, max, minExclusive, maxExclusive)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(count)
 
@@ -3819,7 +3844,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		members, err := h.Db.ZPopMax(key, count)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		// 返回 member 和 score 的交替数组
 		result := make([][]byte, 0, len(members)*2)
@@ -3844,7 +3869,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		members, err := h.Db.ZPopMin(key, count)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		// 返回 member 和 score 的交替数组
 		result := make([][]byte, 0, len(members)*2)
@@ -3865,7 +3890,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR timeout is not an integer or out of range")
 		}
-		key, member, err := h.Db.BZPopMax(keys, timeout)
+		key, member, err := h.Db.BZPopMaxBlocking(state.ctx, keys, timeout)
 		if err != nil {
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -3889,7 +3914,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR timeout is not an integer or out of range")
 		}
-		key, member, err := h.Db.BZPopMin(keys, timeout)
+		key, member, err := h.Db.BZPopMinBlocking(state.ctx, keys, timeout)
 		if err != nil {
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -3993,7 +4018,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		scores, err := h.Db.ZMScore(key, members...)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		results := make([][]byte, len(scores))
 		for i, s := range scores {
@@ -4104,7 +4129,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		members, err := h.Db.ZRangeByScore(zsetName, minScore, maxScore, offset, count, minExclusive, maxExclusive)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		if len(members) == 0 {
 			return &proto.Array{Args: [][]byte{}}
@@ -4154,7 +4179,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		members, err := h.Db.ZRevRangeByScore(zsetName, maxScore, minScore, offset, count, minExclusive, maxExclusive)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		if len(members) == 0 {
 			return &proto.Array{Args: [][]byte{}}
@@ -4194,6 +4219,63 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewBulkString([]byte(strconv.FormatFloat(newScore, 'f', -1, 64)))
+
+	case "HRANDMEMBER":
+		if len(args) < 1 {
+			return proto.NewError("ERR wrong number of arguments for 'HRANDMEMBER' command")
+		}
+		key := string(args[0])
+		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+			return resp
+		}
+		count := 0
+		withValues := false
+		if len(args) >= 2 {
+			c, err := strconv.Atoi(string(args[1]))
+			if err != nil {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			count = c
+		}
+		for i := 2; i < len(args); i++ {
+			if strings.EqualFold(string(args[i]), "WITHVALUES") {
+				withValues = true
+			}
+		}
+		entries, err := h.Db.HRandMember(key, count)
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		if len(entries) == 0 {
+			if count == 0 {
+				return proto.NewBulkString(nil)
+			}
+			return &proto.Array{Args: [][]byte{}}
+		}
+		if count == 0 && !withValues {
+			return proto.NewBulkString([]byte(entries[0].Field))
+		}
+		if count == 0 && withValues {
+			return &proto.Array{Args: [][]byte{
+				[]byte(entries[0].Field),
+				entries[0].Value,
+			}}
+		}
+		if withValues {
+			result := make([][]byte, 0, len(entries)*2)
+			for _, e := range entries {
+				result = append(result, []byte(e.Field), e.Value)
+			}
+			return &proto.Array{Args: result}
+		}
+		result := make([][]byte, len(entries))
+		for i, e := range entries {
+			result[i] = []byte(e.Field)
+		}
+		return &proto.Array{Args: result}
 
 	case "ZRANDMEMBER":
 		if len(args) < 1 {
@@ -4253,10 +4335,50 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		return &proto.Array{Args: result}
 
 	case "ZMPOP":
-		if len(args) < 2 {
+		if len(args) < 3 {
 			return proto.NewError("ERR wrong number of arguments for 'ZMPOP' command")
 		}
-		return proto.NewError("ERR command 'ZMPOP' not implemented")
+		numKeys, kErr := strconv.Atoi(string(args[0]))
+		if kErr != nil || numKeys < 1 || 1+numKeys+1 > len(args) {
+			return proto.NewError("ERR syntax error")
+		}
+		keys := make([]string, numKeys)
+		for i := 0; i < numKeys; i++ {
+			keys[i] = string(args[1+i])
+		}
+		modifier := strings.ToUpper(string(args[1+numKeys]))
+		if modifier != "MIN" && modifier != "MAX" {
+			return proto.NewError("ERR syntax error")
+		}
+		count := 1
+		if len(args) >= 3+numKeys {
+			if strings.ToUpper(string(args[2+numKeys])) == "COUNT" {
+				if len(args) < 4+numKeys {
+					return proto.NewError("ERR syntax error")
+				}
+				c, cErr := strconv.Atoi(string(args[3+numKeys]))
+				if cErr != nil || c < 1 {
+					return proto.NewError("ERR value is not an integer or out of range")
+				}
+				count = c
+			}
+		}
+		key, members, err := h.Db.ZMPop(keys, modifier, count)
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		if key == "" || len(members) == 0 {
+			return proto.NilArray{}
+		}
+		result := make([][]byte, 0, 1+len(members)*2)
+		result = append(result, []byte(key))
+		for _, m := range members {
+			result = append(result, []byte(m.Member), []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)))
+		}
+		return &proto.Array{Args: result}
 
 	case "ZUNIONSTORE":
 		if len(args) < 3 {
@@ -4308,7 +4430,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, destination)
 		count, err := h.Db.ZUnionStore(destination, keys, weights, aggregate)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(count)
 
@@ -4362,7 +4484,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, destination)
 		count, err := h.Db.ZInterStore(destination, keys, weights, aggregate)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(count)
 
@@ -4385,7 +4507,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, destination)
 		count, err := h.Db.ZDiffStore(destination, keys)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(count)
 
@@ -4443,7 +4565,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		max := string(args[2])
 		count, err := h.Db.ZLexCount(zSetName, min, max)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(count)
 
@@ -4477,7 +4599,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		members, err := h.Db.ZRangeByLex(zSetName, min, max, offset, count)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		result := make([][]byte, len(members))
 		for i, m := range members {
@@ -4515,7 +4637,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		members, err := h.Db.ZRevRangeByLex(zSetName, max, min, offset, count)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		result := make([][]byte, len(members))
 		for i, m := range members {
@@ -4534,7 +4656,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, zSetName)
 		removed, err := h.Db.ZRemRangeByLex(zSetName, min, max)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(removed)
 
@@ -5090,7 +5212,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if byLex {
 			lexMembers, lexErr := h.Db.ZRangeByLex(srcKey, min, max, int(limitOffset), int(limitCount))
 			if lexErr != nil {
-				return proto.NewError(fmt.Sprintf("ERR %v", lexErr))
+				return wrapStoreError(lexErr)
 			}
 			// Convert []string to []ZSetMember (score=0 for all)
 			members = make([]store.ZSetMember, len(lexMembers))
@@ -5100,7 +5222,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		} else if byScore {
 			members, err = h.Db.ZRangeByScore(srcKey, minScore, maxScore, int(limitOffset), int(limitCount), false, false)
 			if err != nil {
-				return proto.NewError(fmt.Sprintf("ERR %v", err))
+				return wrapStoreError(err)
 			}
 		} else {
 			// Default: treat min/max as ranks (integers)
@@ -5118,7 +5240,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			}
 			ptrMembers, rangeErr := h.Db.ZRange(srcKey, start, stop)
 			if rangeErr != nil {
-				return proto.NewError(fmt.Sprintf("ERR %v", rangeErr))
+				return wrapStoreError(rangeErr)
 			}
 			// Apply LIMIT for rank-based range
 			if limitCount >= 0 && int64(len(ptrMembers)) > limitOffset {
@@ -5150,7 +5272,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if len(members) > 0 {
 			err = h.Db.ZAdd(dstKey, members)
 			if err != nil {
-				return proto.NewError(fmt.Sprintf("ERR %v", err))
+				return wrapStoreError(err)
 			}
 		}
 
@@ -5754,7 +5876,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 		results, err := h.Db.GeoSearch(key, centerLon, centerLat, radius, unit, count, withDist, withHash, withCoord)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 
 		// Format results
@@ -5866,7 +5988,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 		stored, err := h.Db.GeoSearchStore(dstKey, srcKey, centerLon, centerLat, radius, unit, count, storeDist)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(stored)
 
@@ -6194,7 +6316,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		acknowledged, err := h.Db.XAck(key, group, ids...)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(acknowledged)
 
@@ -7274,7 +7396,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			i++
 		}
 		if err := h.Db.TSCreate(key, opts); err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.OK
 
@@ -7540,7 +7662,7 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 	case "SET":
 		key, value := string(args[0]), string(args[1])
 		if err := h.Db.Set(key, value); err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.OK
 	case "GET":
@@ -7550,7 +7672,7 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 			if errors.Is(err, store.ErrKeyNotFound) {
 				return proto.NewBulkString(nil)
 			}
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewBulkString([]byte(value))
 	case "DEL":
@@ -7564,14 +7686,14 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		key := string(args[0])
 		val, err := h.Db.INCR(key)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(val)
 	case "DECR":
 		key := string(args[0])
 		val, err := h.Db.DECR(key)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(val)
 	case "INCRBY":
@@ -7587,7 +7709,7 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		delta, _ := strconv.ParseInt(string(args[1]), 10, 64)
 		val, err := h.Db.DECRBY(key, delta)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(val)
 	case "APPEND":

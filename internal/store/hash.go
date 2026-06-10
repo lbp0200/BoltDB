@@ -920,3 +920,93 @@ func (s *BotreonStore) HScan(key string, cursor uint64, pattern string, count in
 	}
 	return result, nil
 }
+
+// HRandMemberResult represents a field-value pair from HRANDMEMBER
+type HRandMemberResult struct {
+	Field string
+	Value []byte
+}
+
+// HRandMember 实现 Redis HRANDMEMBER 命令
+// If count > 0: returns up to count distinct field-value pairs (no repeats).
+// If count < 0: returns -count field-value pairs, allowing repeats.
+// If count == 0: returns 1 random field-value pair.
+func (s *BotreonStore) HRandMember(key string, count int) ([]HRandMemberResult, error) {
+	var result []HRandMemberResult
+	prefix := fmt.Sprintf("%s:%s:", KeyTypeHash, key)
+
+	typeKey := TypeOfKeyGet(key)
+	var typeErr error
+	_ = s.db.View(func(txn *badger.Txn) error {
+		typeItem, err := txn.Get(typeKey)
+		if err == nil {
+			typeVal, err := typeItem.ValueCopy(nil)
+			if err != nil {
+				typeErr = err
+				return err
+			}
+			keyType := string(typeVal)
+			if keyType != "" && keyType != KeyTypeHash {
+				typeErr = ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			typeErr = err
+		}
+		return nil
+	})
+	if typeErr != nil {
+		return nil, typeErr
+	}
+
+	err := s.db.View(func(txn *badger.Txn) error {
+		prefixBytes := []byte(prefix)
+		var allEntries []HRandMemberResult
+
+		iter := txn.NewIterator(badger.DefaultIteratorOptions)
+		defer iter.Close()
+
+		for iter.Seek(prefixBytes); iter.Valid(); iter.Next() {
+			k := iter.Item().Key()
+			kStr := string(k)
+			if !strings.HasPrefix(kStr, prefix) {
+				break
+			}
+			_, field := splitHashKey(k)
+			if field == "__count__" {
+				continue
+			}
+			item := iter.Item()
+			val, vErr := s.getValueWithDecompression(item)
+			if vErr != nil {
+				return vErr
+			}
+			allEntries = append(allEntries, HRandMemberResult{Field: field, Value: val})
+		}
+
+		if len(allEntries) == 0 {
+			return nil
+		}
+
+		if count == 0 {
+			idx := randomIntn(len(allEntries))
+			result = append(result, allEntries[idx])
+		} else if count < 0 {
+			n := -count
+			for i := 0; i < n; i++ {
+				idx := randomIntn(len(allEntries))
+				result = append(result, allEntries[idx])
+			}
+		} else {
+			n := count
+			if n > len(allEntries) {
+				n = len(allEntries)
+			}
+			randomShuffle(len(allEntries), func(i, j int) {
+				allEntries[i], allEntries[j] = allEntries[j], allEntries[i]
+			})
+			result = allEntries[:n]
+		}
+		return nil
+	})
+	return result, err
+}

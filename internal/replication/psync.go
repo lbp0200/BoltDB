@@ -241,6 +241,59 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			return err
 		}
 
+	case "GETDEL":
+		if len(args) >= 2 {
+			key := string(args[1])
+			_, gErr := s.Get(key)
+			if gErr != nil {
+				return nil
+			}
+			_, dErr := s.Del(key)
+			return dErr
+		}
+
+	case "GETEX":
+		if len(args) >= 2 {
+			key := string(args[1])
+			if len(args) >= 4 {
+				switch strings.ToUpper(string(args[2])) {
+				case "EX":
+					if seconds, pErr := strconv.Atoi(string(args[3])); pErr == nil {
+						_, gErr := s.Get(key)
+						if gErr != nil {
+							return nil
+						}
+						_, eErr := s.Expire(key, seconds)
+						return eErr
+					}
+					return nil
+				case "PX":
+					if millis, pErr := strconv.Atoi(string(args[3])); pErr == nil {
+						_, gErr := s.Get(key)
+						if gErr != nil {
+							return nil
+						}
+						_, eErr := s.PExpire(key, int64(millis))
+						return eErr
+					}
+					return nil
+				}
+			}
+			if len(args) >= 3 && strings.ToUpper(string(args[2])) == "PERSIST" {
+				_, gErr := s.Get(key)
+				if gErr != nil {
+					return nil
+				}
+				_, pErr := s.Persist(key)
+				return pErr
+			}
+			// No option: just a GET
+			_, gErr := s.Get(key)
+			if gErr != nil {
+				return nil
+			}
+		}
+
 	case "DEL":
 		if len(args) >= 2 {
 			for i := 1; i < len(args); i++ {
@@ -695,6 +748,30 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			return err
 		}
 
+	case "ZMPOP":
+		if len(args) >= 4 {
+			numKeys, kErr := strconv.Atoi(string(args[1]))
+			if kErr != nil || numKeys < 1 || 2+numKeys > len(args) {
+				return nil
+			}
+			keys := make([]string, numKeys)
+			for i := 0; i < numKeys; i++ {
+				keys[i] = string(args[2+i])
+			}
+			modifier := strings.ToUpper(string(args[2+numKeys]))
+			if modifier != "MIN" && modifier != "MAX" {
+				return nil
+			}
+			count := 1
+			if len(args) >= 4+numKeys && strings.ToUpper(string(args[3+numKeys])) == "COUNT" {
+				if c, cErr := strconv.Atoi(string(args[4+numKeys])); cErr == nil && c > 0 {
+					count = c
+				}
+			}
+			_, _, err := s.ZMPop(keys, modifier, count)
+			return err
+		}
+
 	case "ZREMRANGEBYRANK":
 		if len(args) >= 4 {
 			key := string(args[1])
@@ -796,6 +873,144 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			return err
 		}
 
+	case "SETBIT":
+		if len(args) >= 4 {
+			key := string(args[1])
+			offset, oErr := strconv.Atoi(string(args[2]))
+			bit, bErr := strconv.Atoi(string(args[3]))
+			if oErr == nil && bErr == nil {
+				_, err := s.SetBit(key, offset, bit)
+				return err
+			}
+			return nil
+		}
+
+	case "BITOP":
+		if len(args) >= 4 {
+			op := strings.ToUpper(string(args[1]))
+			destKey := string(args[2])
+			keys := make([]string, len(args)-3)
+			for i := 3; i < len(args); i++ {
+				keys[i-3] = string(args[i])
+			}
+			_, err := s.BitOp(op, destKey, keys...)
+			return err
+		}
+
+	case "BITFIELD":
+		if len(args) >= 3 {
+			key := string(args[1])
+			operations := make([]string, 0, len(args)-2)
+			for i := 2; i < len(args); i++ {
+				operations = append(operations, string(args[i]))
+			}
+			_, err := s.BitField(key, operations)
+			return err
+		}
+
+	case "ZUNIONSTORE":
+		if len(args) >= 4 {
+			destination := string(args[1])
+			numKeys, nErr := strconv.Atoi(string(args[2]))
+			if nErr != nil || numKeys < 1 || 3+numKeys > len(args) {
+				return nil
+			}
+			keys := make([]string, numKeys)
+			for i := 0; i < numKeys; i++ {
+				keys[i] = string(args[3+i])
+			}
+			weights := []float64{}
+			aggregate := "SUM"
+			idx := 3 + numKeys
+			for idx < len(args) {
+				opt := strings.ToUpper(string(args[idx]))
+				switch opt {
+				case "WEIGHTS":
+					if idx+numKeys >= len(args) {
+						return nil
+					}
+					weights = make([]float64, numKeys)
+					for j := 0; j < numKeys; j++ {
+						w, wErr := strconv.ParseFloat(string(args[idx+1+j]), 64)
+						if wErr != nil {
+							return nil
+						}
+						weights[j] = w
+					}
+					idx += 1 + numKeys
+				case "AGGREGATE":
+					if idx+1 >= len(args) {
+						return nil
+					}
+					aggregate = strings.ToUpper(string(args[idx+1]))
+					idx += 2
+				default:
+					idx++
+				}
+			}
+			_, err := s.ZUnionStore(destination, keys, weights, aggregate)
+			return err
+		}
+
+	case "ZINTERSTORE":
+		if len(args) >= 4 {
+			destination := string(args[1])
+			numKeys, nErr := strconv.Atoi(string(args[2]))
+			if nErr != nil || numKeys < 1 || 3+numKeys > len(args) {
+				return nil
+			}
+			keys := make([]string, numKeys)
+			for i := 0; i < numKeys; i++ {
+				keys[i] = string(args[3+i])
+			}
+			weights := []float64{}
+			aggregate := "SUM"
+			idx := 3 + numKeys
+			for idx < len(args) {
+				opt := strings.ToUpper(string(args[idx]))
+				switch opt {
+				case "WEIGHTS":
+					if idx+numKeys >= len(args) {
+						return nil
+					}
+					weights = make([]float64, numKeys)
+					for j := 0; j < numKeys; j++ {
+						w, wErr := strconv.ParseFloat(string(args[idx+1+j]), 64)
+						if wErr != nil {
+							return nil
+						}
+						weights[j] = w
+					}
+					idx += 1 + numKeys
+				case "AGGREGATE":
+					if idx+1 >= len(args) {
+						return nil
+					}
+					aggregate = strings.ToUpper(string(args[idx+1]))
+					idx += 2
+				default:
+					idx++
+				}
+			}
+			_, err := s.ZInterStore(destination, keys, weights, aggregate)
+			return err
+		}
+
+	case "ZDIFFSTORE":
+		if len(args) >= 4 {
+			destination := string(args[1])
+			numKeys, nErr := strconv.Atoi(string(args[2]))
+			if nErr != nil || numKeys < 1 || 3+numKeys > len(args) {
+				return nil
+			}
+			keys := make([]string, numKeys)
+			for i := 0; i < numKeys; i++ {
+				keys[i] = string(args[3+i])
+			}
+			_, err := s.ZDiffStore(destination, keys)
+			return err
+		}
+
 	case "XACK":
 		if len(args) >= 4 {
 			key := string(args[1])
@@ -860,6 +1075,250 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			default:
 				logger.Logger.Debug().Str("sub", sub).Msg("收到未处理的 XGROUP 子命令")
 			}
+		}
+
+	case "ZRANGESTORE":
+		if len(args) >= 5 {
+			dstKey := string(args[1])
+			srcKey := string(args[2])
+			min := string(args[3])
+			max := string(args[4])
+			byScore := false
+			byLex := false
+			rev := false
+			var limitOffset, limitCount int64 = 0, -1
+			i := 5
+			for i < len(args) {
+				opt := strings.ToUpper(string(args[i]))
+				switch opt {
+				case "BYSCORE":
+					byScore = true
+					i++
+				case "BYLEX":
+					byLex = true
+					i++
+				case "REV":
+					rev = true
+					i++
+				case "LIMIT":
+					if i+2 >= len(args) {
+						return nil
+					}
+					limitOffset, _ = strconv.ParseInt(string(args[i+1]), 10, 64)
+					limitCount, _ = strconv.ParseInt(string(args[i+2]), 10, 64)
+					i += 3
+				default:
+					i++
+				}
+			}
+			var members []store.ZSetMember
+			if byLex {
+				lexMembers, lErr := s.ZRangeByLex(srcKey, min, max, int(limitOffset), int(limitCount))
+				if lErr != nil {
+					return lErr
+				}
+				members = make([]store.ZSetMember, len(lexMembers))
+				for i, m := range lexMembers {
+					members[i] = store.ZSetMember{Member: m, Score: 0}
+				}
+			} else if byScore {
+				minScore, _ := strconv.ParseFloat(min, 64)
+				maxScore, _ := strconv.ParseFloat(max, 64)
+				members, _ = s.ZRangeByScore(srcKey, minScore, maxScore, int(limitOffset), int(limitCount), false, false)
+			} else {
+				start, _ := strconv.ParseInt(min, 10, 64)
+				stop, _ := strconv.ParseInt(max, 10, 64)
+				if rev {
+					start, stop = stop, start
+				}
+				ptrMembers, rErr := s.ZRange(srcKey, start, stop)
+				if rErr != nil {
+					return rErr
+				}
+				if limitCount >= 0 && int64(len(ptrMembers)) > limitOffset {
+					if limitCount == 0 || limitOffset+int64(limitCount) > int64(len(ptrMembers)) {
+						ptrMembers = ptrMembers[limitOffset:]
+					} else {
+						ptrMembers = ptrMembers[limitOffset : limitOffset+int64(limitCount)]
+					}
+				}
+				members = make([]store.ZSetMember, len(ptrMembers))
+				for i, m := range ptrMembers {
+					members[i] = store.ZSetMember{Member: m.Member, Score: m.Score}
+				}
+			}
+			if rev && (byScore || byLex) {
+				for i, j := 0, len(members)-1; i < j; i, j = i+1, j-1 {
+					members[i], members[j] = members[j], members[i]
+				}
+			}
+			_, _ = s.Del(dstKey)
+			if len(members) > 0 {
+				return s.ZAdd(dstKey, members)
+			}
+			return nil
+		}
+
+	case "COPY":
+		if len(args) >= 3 {
+			srcKey := string(args[1])
+			dstKey := string(args[2])
+			replace := false
+			i := 3
+			for i < len(args) {
+				opt := strings.ToUpper(string(args[i]))
+				switch opt {
+				case "REPLACE":
+					replace = true
+					i++
+				case "DB":
+					i += 2
+				default:
+					i++
+				}
+			}
+			srcType, tErr := s.Type(srcKey)
+			if tErr != nil || srcType == "none" {
+				return nil
+			}
+			dstExists, _ := s.Exists(dstKey)
+			if dstExists && !replace {
+				return nil
+			}
+			switch srcType {
+			case "string":
+				val, gErr := s.Get(srcKey)
+				if gErr != nil {
+					return gErr
+				}
+				return s.Set(dstKey, val)
+			case "list":
+				length, lErr := s.LLen(srcKey)
+				if lErr != nil {
+					return lErr
+				}
+				if length == 0 {
+					_, _ = s.Del(dstKey)
+					return nil
+				}
+				items, lrErr := s.LRange(srcKey, 0, int64(length))
+				if lrErr != nil {
+					return lrErr
+				}
+				if len(items) == 0 {
+					return nil
+				}
+				_, _ = s.Del(dstKey)
+				_, rErr := s.RPush(dstKey, items...)
+				return rErr
+			case "hash":
+				data, hErr := s.HGetAll(srcKey)
+				if hErr != nil {
+					return hErr
+				}
+				if len(data) == 0 {
+					return nil
+				}
+				_, _ = s.Del(dstKey)
+				fv := make(map[string]interface{}, len(data))
+				for k, v := range data {
+					fv[k] = string(v)
+				}
+				return s.HMSet(dstKey, fv)
+			case "set":
+				members, mErr := s.SMembers(srcKey)
+				if mErr != nil {
+					return mErr
+				}
+				if len(members) == 0 {
+					return nil
+				}
+				_, _ = s.Del(dstKey)
+				_, addErr := s.SAdd(dstKey, members...)
+				return addErr
+			case "zset":
+				zMembers, zErr := s.ZRange(srcKey, 0, -1)
+				if zErr != nil {
+					return zErr
+				}
+				if len(zMembers) == 0 {
+					return nil
+				}
+				_, _ = s.Del(dstKey)
+				zAdd := make([]store.ZSetMember, len(zMembers))
+				for i, m := range zMembers {
+					zAdd[i] = store.ZSetMember{Score: m.Score, Member: m.Member}
+				}
+				return s.ZAdd(dstKey, zAdd)
+			}
+			return nil
+		}
+
+	case "GEOSEARCHSTORE":
+		if len(args) >= 6 {
+			dstKey := string(args[1])
+			srcKey := string(args[2])
+			var centerLon, centerLat float64
+			var radius float64
+			var unit string
+			var count int
+			var storeDist bool
+			i := 3
+			if i < len(args) && strings.ToUpper(string(args[i])) == "FROMMEMBER" {
+				if i+1 >= len(args) {
+					return nil
+				}
+				member := string(args[i+1])
+				positions, gpErr := s.GeoPos(srcKey, member)
+				if gpErr != nil || len(positions) == 0 || (positions[0][0] == 0 && positions[0][1] == 0) {
+					return nil
+				}
+				centerLon = positions[0][1]
+				centerLat = positions[0][0]
+				i += 2
+			} else if i < len(args) && strings.ToUpper(string(args[i])) == "FROMLONLAT" {
+				if i+2 >= len(args) {
+					return nil
+				}
+				centerLon, _ = strconv.ParseFloat(string(args[i+1]), 64)
+				centerLat, _ = strconv.ParseFloat(string(args[i+2]), 64)
+				i += 3
+			} else {
+				return nil
+			}
+			if i >= len(args) {
+				return nil
+			}
+			if strings.ToUpper(string(args[i])) == "BYRADIUS" {
+				if i+2 >= len(args) {
+					return nil
+				}
+				radius, _ = strconv.ParseFloat(string(args[i+1]), 64)
+				unit = string(args[i+2])
+				i += 3
+			} else {
+				return nil
+			}
+			for i < len(args) {
+				opt := strings.ToUpper(string(args[i]))
+				switch opt {
+				case "ASC", "DESC":
+					i++
+				case "COUNT":
+					if i+1 >= len(args) {
+						return nil
+					}
+					count, _ = strconv.Atoi(string(args[i+1]))
+					i += 2
+				case "STOREDIST":
+					storeDist = true
+					i++
+				default:
+					i++
+				}
+			}
+			_, gsErr := s.GeoSearchStore(dstKey, srcKey, centerLon, centerLat, radius, unit, count, storeDist)
+			return gsErr
 		}
 
 	default:

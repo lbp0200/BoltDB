@@ -66,6 +66,10 @@ type BotreonStore struct {
 	blockingMu       sync.RWMutex
 	blockingPopChans map[string][]chan BlockingResult // key -> channels waiting for data
 
+	// Blocking sorted set pop support
+	blockingZPopMu    sync.Mutex
+	blockingZPopChans map[string][]chan string // key -> channels waiting for sorted set pop (channel receives key name)
+
 	// Stream blocking support
 	streamBlockingMu    sync.RWMutex
 	streamBlockingChans map[string][]chan StreamReadResult // key -> channels waiting for stream data
@@ -335,6 +339,7 @@ func NewBotreonStoreWithCompression(path string, compressionType CompressionType
 		readCache:           readCache,
 		keyLockMgr:          NewKeyLockManager(256),
 		blockingPopChans:    make(map[string][]chan BlockingResult),
+		blockingZPopChans:   make(map[string][]chan string),
 		streamBlockingChans: make(map[string][]chan StreamReadResult),
 		backpressure:        newWriteSlot(bpConfig.MaxConcurrentWrites),
 		bpConfig:            bpConfig,

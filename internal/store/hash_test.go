@@ -603,3 +603,52 @@ func TestHSetWrongType(t *testing.T) {
 	assert.Error(t, err)
 	assert.Equal(t, ErrWrongType, err)
 }
+
+func TestHRandMember(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	store.HSet("h", "f1", "v1")
+	store.HSet("h", "f2", "v2")
+	store.HSet("h", "f3", "v3")
+
+	t.Run("single random field", func(t *testing.T) {
+		results, err := store.HRandMember("h", 0)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(results))
+		assert.True(t, results[0].Field == "f1" || results[0].Field == "f2" || results[0].Field == "f3")
+		assert.True(t, string(results[0].Value) == "v1" || string(results[0].Value) == "v2" || string(results[0].Value) == "v3")
+	})
+
+	t.Run("multiple distinct fields", func(t *testing.T) {
+		results, err := store.HRandMember("h", 2)
+		assert.NoError(t, err)
+		assert.Equal(t, 2, len(results))
+		assert.NotEqual(t, results[0].Field, results[1].Field)
+	})
+
+	t.Run("with repeats (negative count)", func(t *testing.T) {
+		results, err := store.HRandMember("h", -5)
+		assert.NoError(t, err)
+		assert.Equal(t, 5, len(results))
+	})
+
+	t.Run("count larger than total fields", func(t *testing.T) {
+		results, err := store.HRandMember("h", 10)
+		assert.NoError(t, err)
+		assert.Equal(t, 3, len(results))
+	})
+
+	t.Run("empty hash", func(t *testing.T) {
+		results, err := store.HRandMember("empty", 0)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, len(results))
+	})
+
+	t.Run("wrong type", func(t *testing.T) {
+		store.Set("str", "value")
+		_, err := store.HRandMember("str", 0)
+		assert.Error(t, err)
+		assert.Equal(t, ErrWrongType, err)
+	})
+}

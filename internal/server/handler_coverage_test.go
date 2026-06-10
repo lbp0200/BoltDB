@@ -1242,20 +1242,32 @@ func TestExecuteCommand_ZMPOP_Coverage(t *testing.T) {
 	// Add sorted set
 	handler.executeCommand(state, "ZADD", [][]byte{[]byte("zset1"), []byte("1"), []byte("one"), []byte("2"), []byte("two")}, "127.0.0.1:12345")
 
-	// ZMPOP may not be fully implemented
+	// Test ZMPOP MIN
 	resp := handler.executeCommand(state, "ZMPOP", [][]byte{[]byte("1"), []byte("zset1"), []byte("MIN")}, "127.0.0.1:12345")
-	if err, ok := resp.(*proto.Error); ok {
-		// Command not implemented - that's acceptable for coverage test
-		assert.True(t, strings.Contains(string(*err), "unknown command") || strings.Contains(string(*err), "ERR"))
-		return
-	}
-
-	// If implemented, verify successful response structure
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	if ok && len(arr.Args) >= 2 {
+	if ok && len(arr.Args) >= 3 {
 		assert.Equal(t, "zset1", string(arr.Args[0]))
+		assert.Equal(t, "one", string(arr.Args[1]))
 	}
+
+	// Test ZMPOP MAX with COUNT
+	handler.executeCommand(state, "ZADD", [][]byte{[]byte("zset2"), []byte("1"), []byte("a"), []byte("2"), []byte("b"), []byte("3"), []byte("c")}, "127.0.0.1:12345")
+	resp2 := handler.executeCommand(state, "ZMPOP", [][]byte{[]byte("1"), []byte("zset2"), []byte("MAX"), []byte("COUNT"), []byte("2")}, "127.0.0.1:12345")
+	arr2, ok2 := resp2.(*proto.Array)
+	assert.True(t, ok2)
+	if ok2 && len(arr2.Args) >= 5 {
+		assert.Equal(t, "zset2", string(arr2.Args[0]))
+		assert.Equal(t, "c", string(arr2.Args[1]))
+		assert.Equal(t, "b", string(arr2.Args[3]))
+	}
+
+	// Test ZMPOP on empty set -> nil array
+	handler.executeCommand(state, "ZADD", [][]byte{[]byte("empty_zset"), []byte("1"), []byte("x")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "ZMPOP", [][]byte{[]byte("1"), []byte("empty_zset"), []byte("MAX")}, "127.0.0.1:12345")
+	resp3 := handler.executeCommand(state, "ZMPOP", [][]byte{[]byte("1"), []byte("empty_zset"), []byte("MAX")}, "127.0.0.1:12345")
+	_, ok3 := resp3.(proto.NilArray)
+	assert.True(t, ok3)
 }
 
 // TestExecuteCommand_LMPOP tests LMPOP command
@@ -1330,16 +1342,20 @@ func TestExecuteCommand_HRANDMEMBER_Coverage(t *testing.T) {
 	handler.executeCommand(state, "HSET", [][]byte{[]byte("myhash"), []byte("field1"), []byte("value1"), []byte("field2"), []byte("value2")}, "127.0.0.1:12345")
 
 	resp := handler.executeCommand(state, "HRANDMEMBER", [][]byte{[]byte("myhash")}, "127.0.0.1:12345")
-	// Handle unknown command case
-	if errResp, ok := resp.(*proto.Error); ok {
-		// Command not implemented - this is acceptable for coverage tests
-		assert.True(t, strings.Contains(string(*errResp), "unknown command") || strings.Contains(string(*errResp), "ERR"))
-		return
-	}
-	// If implemented, verify response
-	if bs, ok := resp.(*proto.BulkString); ok {
+	// Verify response is a bulk string (single random field)
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	if ok {
 		val := string(*bs)
-		assert.True(t, val == "value1" || val == "value2")
+		assert.True(t, val == "field1" || val == "field2")
+	}
+
+	// Test WITHVALUES
+	resp2 := handler.executeCommand(state, "HRANDMEMBER", [][]byte{[]byte("myhash"), []byte("1"), []byte("WITHVALUES")}, "127.0.0.1:12345")
+	arr, ok := resp2.(*proto.Array)
+	assert.True(t, ok)
+	if ok {
+		assert.Equal(t, 2, len(arr.Args))
 	}
 }
 

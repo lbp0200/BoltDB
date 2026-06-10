@@ -100,6 +100,22 @@ Window: 2026-06-01 ~ 2026-06-09
 - **Sentinel 模块**
   - [ ] Sentinel 自身集群互联（gossip 多 sentinel 通信，已有基础框架）
 
+## Replication Gap Fix (GETDEL/GETEX)
+
+**Date:** 2026-06-10
+
+Fixed `GETDEL` and `GETEX` not being propagated during replication — both are mutating commands (GETDEL deletes, GETEX modifies TTL) but were absent from `isWriteCommand`, causing silent data divergence.
+
+- `GETDEL` → added `isWriteCommand` + `executeReplicatedCommand` case (Get + Del)
+- `GETEX` → added `isWriteCommand` + `executeReplicatedCommand` case (Get + Expire/PExpire/Persist)
+- 5 new test functions
+
+## Protocol Fix (LPUSH/RPUSH WRONGTYPE)
+
+**Date:** 2026-06-10
+
+`LPUSH`/`RPUSH` wrapped `ErrWrongType` in `"ERR %v"` instead of returning the correct `"WRONGTYPE Operation against a key holding the wrong kind of value"` response, breaking Redis protocol compatibility. Added explicit `errors.Is(err, store.ErrWrongType)` check before the generic error path.
+
 ## 复制功能缺口（已知数据丢失）
 
 以下命令已通过 `isWriteCommand` → `handler.go:528-531` 传播到复制流，但在 `executeReplicatedCommand`（`internal/replication/psync.go:158`）中没有对应 case，被静默跳过。
@@ -111,11 +127,44 @@ Window: 2026-06-01 ~ 2026-06-09
 | MSETNX | ✅ | 已有实现（与 MSET 共用 case） |
 | XACK, XCLAIM, XGROUP\* | ✅ | 2026-06-10 已修复 |
 | PFADD, PFMERGE | ✅ | 2026-06-10 已修复 |
-| SETBIT, BITOP, BITFIELD | P2 | 位图操作，store 层未实现 |
-| COPY | P2 | 键复制，store 层未实现 |
-| ZUNIONSTORE, ZINTERSTORE, ZDIFFSTORE | P2 | *STORE 聚合，参数解析复杂 |
-| ZRANGESTORE, GEOSEARCHSTORE | P2 | 范围 *STORE，参数解析复杂 |
+| SETBIT, BITOP, BITFIELD | ✅ | 2026-06-10 已修复：executeReplicatedCommand 添加 case |
+| COPY | ✅ | 2026-06-10 已修复：executeReplicatedCommand 添加 case（含所有类型）|
+| ZUNIONSTORE, ZINTERSTORE, ZDIFFSTORE | ✅ | 2026-06-10 已修复：executeReplicatedCommand 添加 case（含 WEIGHTS/AGGREGATE）|
+| ZRANGESTORE, GEOSEARCHSTORE | ✅ | 2026-06-10 已修复：executeReplicatedCommand 添加 case |
 | JSON.*, TS.* | P3 | 模块命令，store 层未实现 |
+
+## ZMPOP Implementation
+
+**Date:** 2026-06-10
+
+Implemented `ZMPOP` — the only remaining production "not implemented" stub. Redis 7.0+ multi-key sorted set pop.
+
+| Layer | Details |
+|-------|---------|
+| Store | `ZMPop(keys, modifier, count)` — iterates keys, returns first non-empty using ZPopMax/ZPopMin |
+| Handler | Full arg parsing: `numkeys`, `keys`, `MIN\|MAX`, `COUNT count` — returns array with key + members+scores |
+| Replication | `isWriteCommand` + `executeReplicatedCommand` case with full arg parsing |
+| Coverage | Updated `TestExecuteCommand_ZMPOP_Coverage` — removed "not implemented" fallback, tests MIN/MAX/COUNT/nil |
+
+## P2 Replication Gap Fix
+
+**Date:** 2026-06-10
+
+Fixed 9 P2 commands silently skipped by `executeReplicatedCommand`, causing data loss during replication:
+
+| Command | Implementation |
+|---------|---------------|
+| SETBIT | Direct store call (`s.SetBit`) |
+| BITOP | Direct store call (`s.BitOp`) |
+| BITFIELD | Direct store call (`s.BitField`) |
+| COPY | Type-aware copy via store primitives (string/list/hash/set/zset) with REPLACE support |
+| ZUNIONSTORE | Full arg parsing (numKeys/keys/weights/aggregate) → `s.ZUnionStore` |
+| ZINTERSTORE | Full arg parsing (numKeys/keys/weights/aggregate) → `s.ZInterStore` |
+| ZDIFFSTORE | numKeys/keys parsing → `s.ZDiffStore` |
+| ZRANGESTORE | Full arg parsing (BYSCORE/BYLEX/REV/LIMIT) → store primitives |
+| GEOSEARCHSTORE | Full arg parsing (FROMMEMBER/FROMLONLAT/BYRADIUS/COUNT/STOREDIST) → `s.GeoSearchStore` |
+
+Tests: 29 new test functions in `replication_coverage_test.go` covering normal ops, edge cases, invalid args.
 
 ## 近期已完成的工作
 
@@ -142,6 +191,14 @@ Window: 2026-06-01 ~ 2026-06-09
 | XACK/XCLAIM/XGROUP replication fix | `psync.go` — Stream 消费者组 replica 实现 | Jun 2026 |
 | PFADD/PFMERGE replication fix | `psync.go` — HyperLogLog replica 实现 | Jun 2026 |
 | P1.3 Replication Correctness Documentation | AGENTS.md (452→308行) → `docs/replication/` 五份独立文档 | Jun 2026 |
+| P2 Replication gap fix (9 commands) | SETBIT/BITOP/BITFIELD/COPY/ZUNIONSTORE/ZINTERSTORE/ZDIFFSTORE/ZRANGESTORE/GEOSEARCHSTORE + 29 tests | Jun 2026 |
+| GETDEL/GETEX replication fix | `isWriteCommand` + `executeReplicatedCommand` + 5 tests | Jun 2026 |
+| LPUSH/RPUSH WRONGTYPE fix | `handler.go` — add ErrWrongType check before ERR wrapper | Jun 2026 |
+| HRANDMEMBER implementation | store + handler + coverage test — random hash field selection | Jun 2026 |
+| ZMPOP implementation | store (`ZMPop`) + handler + replication + coverage test — multi-key sorted set pop | Jun 2026 |
+| BZPOPMAX/BZPOPMIN blocking fix | replaced non-blocking stubs with real `BZPopMaxBlocking`/`BZPopMinBlocking` using channel-based wait + `registerAndRecheckZ` + `ZAdd` notification | Jun 2026 |
+| COMMAND implementation | `internal/server/command_info.go` — 223 commands with metadata, subcommands: `COMMAND`, `COMMAND COUNT`, `COMMAND INFO <cmd...>` | Jun 2026 |
+| WRONGTYPE error handling fix | added `wrapStoreError` helper + fixed ~40 locations where ErrWrongType was wrapped as `"ERR %v"` instead of proper `"WRONGTYPE ..."` | Jun 2026 |
 
 ## 已知架构边界（不会做，需文档化）
 

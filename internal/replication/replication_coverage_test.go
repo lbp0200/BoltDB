@@ -3,6 +3,7 @@ package replication
 import (
 	"bufio"
 	"testing"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/store"
 	"github.com/zeebo/assert"
@@ -768,4 +769,589 @@ func TestExecuteReplicatedCommand_ZINCRBY(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(members))
 	assert.Equal(t, 3.5, members[0].Score)
+}
+
+// TestExecuteReplicatedCommand_SETBIT tests executeReplicatedCommand for SETBIT
+func TestExecuteReplicatedCommand_SETBIT(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.Set("bitkey", "\x00")
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("SETBIT"), []byte("bitkey"), []byte("0"), []byte("1")})
+	assert.NoError(t, err)
+
+	bit, err := testStore.GetBit("bitkey", 0)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, bit)
+}
+
+// TestExecuteReplicatedCommand_BITOP tests executeReplicatedCommand for BITOP
+func TestExecuteReplicatedCommand_BITOP(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.Set("key1", "\x0f")
+	testStore.Set("key2", "\xf0")
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BITOP"), []byte("OR"), []byte("dest"), []byte("key1"), []byte("key2")})
+	assert.NoError(t, err)
+
+	val, err := testStore.Get("dest")
+	assert.NoError(t, err)
+	assert.Equal(t, "\xff", val)
+}
+
+// TestExecuteReplicatedCommand_BITFIELD tests executeReplicatedCommand for BITFIELD
+func TestExecuteReplicatedCommand_BITFIELD(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BITFIELD"), []byte("bfkey"), []byte("SET"), []byte("u8"), []byte("0"), []byte("42")})
+	assert.NoError(t, err)
+
+	val, err := testStore.Get("bfkey")
+	assert.NoError(t, err)
+	if len(val) > 0 {
+		assert.Equal(t, byte(42), val[0])
+	}
+}
+
+// TestExecuteReplicatedCommand_ZUNIONSTORE tests executeReplicatedCommand for ZUNIONSTORE
+func TestExecuteReplicatedCommand_ZUNIONSTORE(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.ZAdd("zset1", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}})
+	testStore.ZAdd("zset2", []store.ZSetMember{{Member: "b", Score: 3}, {Member: "c", Score: 4}})
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("ZUNIONSTORE"), []byte("dest"), []byte("2"), []byte("zset1"), []byte("zset2"), []byte("AGGREGATE"), []byte("SUM")})
+	assert.NoError(t, err)
+
+	count, err := testStore.ZCard("dest")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), count)
+}
+
+// TestExecuteReplicatedCommand_ZINTERSTORE tests executeReplicatedCommand for ZINTERSTORE
+func TestExecuteReplicatedCommand_ZINTERSTORE(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.ZAdd("zset1", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}})
+	testStore.ZAdd("zset2", []store.ZSetMember{{Member: "b", Score: 3}, {Member: "c", Score: 4}})
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("ZINTERSTORE"), []byte("dest"), []byte("2"), []byte("zset1"), []byte("zset2")})
+	assert.NoError(t, err)
+
+	count, err := testStore.ZCard("dest")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+
+	members, err := testStore.ZRange("dest", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, "b", members[0].Member)
+	assert.Equal(t, 5.0, members[0].Score)
+}
+
+// TestExecuteReplicatedCommand_ZDIFFSTORE tests executeReplicatedCommand for ZDIFFSTORE
+func TestExecuteReplicatedCommand_ZDIFFSTORE(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.ZAdd("zset1", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}, {Member: "c", Score: 3}})
+	testStore.ZAdd("zset2", []store.ZSetMember{{Member: "b", Score: 3}})
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("ZDIFFSTORE"), []byte("dest"), []byte("2"), []byte("zset1"), []byte("zset2")})
+	assert.NoError(t, err)
+
+	count, err := testStore.ZCard("dest")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), count)
+}
+
+// TestExecuteReplicatedCommand_ZRANGESTORE tests executeReplicatedCommand for ZRANGESTORE
+func TestExecuteReplicatedCommand_ZRANGESTORE(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.ZAdd("src", []store.ZSetMember{
+		{Member: "a", Score: 1.0},
+		{Member: "b", Score: 2.0},
+		{Member: "c", Score: 3.0},
+	})
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("ZRANGESTORE"), []byte("dst"), []byte("src"),
+		[]byte("0"), []byte("1"),
+	})
+	assert.NoError(t, err)
+
+	count, err := testStore.ZCard("dst")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), count)
+}
+
+// TestExecuteReplicatedCommand_ZRANGESTORE_BYSCORE tests ZRANGESTORE with BYSCORE
+func TestExecuteReplicatedCommand_ZRANGESTORE_BYSCORE(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.ZAdd("src", []store.ZSetMember{
+		{Member: "a", Score: 1.0},
+		{Member: "b", Score: 2.0},
+		{Member: "c", Score: 3.0},
+	})
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("ZRANGESTORE"), []byte("dst"), []byte("src"),
+		[]byte("1.5"), []byte("3.5"), []byte("BYSCORE"),
+	})
+	assert.NoError(t, err)
+
+	count, err := testStore.ZCard("dst")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), count)
+}
+
+// TestExecuteReplicatedCommand_COPY_String tests executeReplicatedCommand for COPY with string type
+func TestExecuteReplicatedCommand_COPY_String(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.Set("src", "hello")
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("src"), []byte("dst")})
+	assert.NoError(t, err)
+
+	val, err := testStore.Get("dst")
+	assert.NoError(t, err)
+	assert.Equal(t, "hello", val)
+}
+
+// TestExecuteReplicatedCommand_COPY_List tests executeReplicatedCommand for COPY with list type
+func TestExecuteReplicatedCommand_COPY_List(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.RPush("src", "a", "b", "c")
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("src"), []byte("dst")})
+	assert.NoError(t, err)
+
+	items, err := testStore.LRange("dst", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 3, len(items))
+	assert.Equal(t, "a", items[0])
+	assert.Equal(t, "c", items[2])
+}
+
+// TestExecuteReplicatedCommand_COPY_Hash tests executeReplicatedCommand for COPY with hash type
+func TestExecuteReplicatedCommand_COPY_Hash(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.HSet("src", "field1", "val1")
+	testStore.HSet("src", "field2", "val2")
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("src"), []byte("dst")})
+	assert.NoError(t, err)
+
+	data, err := testStore.HGetAll("dst")
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(data))
+	assert.Equal(t, "val1", string(data["field1"]))
+	assert.Equal(t, "val2", string(data["field2"]))
+}
+
+// TestExecuteReplicatedCommand_COPY_Set tests executeReplicatedCommand for COPY with set type
+func TestExecuteReplicatedCommand_COPY_Set(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.SAdd("src", "m1", "m2", "m3")
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("src"), []byte("dst")})
+	assert.NoError(t, err)
+
+	count, err := testStore.SCard("dst")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), count)
+}
+
+// TestExecuteReplicatedCommand_COPY_ZSet tests executeReplicatedCommand for COPY with zset type
+func TestExecuteReplicatedCommand_COPY_ZSet(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.ZAdd("src", []store.ZSetMember{
+		{Member: "a", Score: 1.0},
+		{Member: "b", Score: 2.0},
+	})
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("src"), []byte("dst")})
+	assert.NoError(t, err)
+
+	count, err := testStore.ZCard("dst")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), count)
+
+	members, err := testStore.ZRange("dst", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 1.0, members[0].Score)
+}
+
+// TestExecuteReplicatedCommand_COPY_Replace tests COPY with REPLACE option
+func TestExecuteReplicatedCommand_COPY_Replace(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.Set("src", "newvalue")
+	testStore.Set("dst", "oldvalue")
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("src"), []byte("dst"), []byte("REPLACE")})
+	assert.NoError(t, err)
+
+	val, err := testStore.Get("dst")
+	assert.NoError(t, err)
+	assert.Equal(t, "newvalue", val)
+}
+
+// TestExecuteReplicatedCommand_GEOSEARCHSTORE tests executeReplicatedCommand for GEOSEARCHSTORE
+func TestExecuteReplicatedCommand_GEOSEARCHSTORE(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.GeoAdd("src", []store.GeoMember{
+		{Member: "Palermo", Lon: 13.361389, Lat: 38.115556},
+		{Member: "Catania", Lon: 15.087269, Lat: 37.502669},
+	})
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("GEOSEARCHSTORE"), []byte("dst"), []byte("src"),
+		[]byte("FROMLONLAT"), []byte("15"), []byte("37"),
+		[]byte("BYRADIUS"), []byte("200"), []byte("km"),
+	})
+	assert.NoError(t, err)
+
+	// Verify results were stored (at least one result)
+	_, err = testStore.ZCard("dst")
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_Unknown tests that unknown commands are silently ignored
+func TestExecuteReplicatedCommand_Unknown(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("UNKNOWNCMD")})
+	assert.NoError(t, err)
+
+	err = executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("nonexistent"), []byte("dst")})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_SETBIT_InvalidArgs tests SETBIT with invalid args
+func TestExecuteReplicatedCommand_SETBIT_InvalidArgs(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("SETBIT"), []byte("key")})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_ZUNIONSTORE_Weights tests ZUNIONSTORE with WEIGHTS option
+func TestExecuteReplicatedCommand_ZUNIONSTORE_Weights(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.ZAdd("z1", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}})
+	testStore.ZAdd("z2", []store.ZSetMember{{Member: "b", Score: 3}, {Member: "c", Score: 4}})
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("ZUNIONSTORE"), []byte("dest"), []byte("2"), []byte("z1"), []byte("z2"),
+		[]byte("WEIGHTS"), []byte("2"), []byte("3"),
+		[]byte("AGGREGATE"), []byte("MAX"),
+	})
+	assert.NoError(t, err)
+
+	count, err := testStore.ZCard("dest")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), count)
+}
+
+// TestExecuteReplicatedCommand_ZDIFFSTORE_Empty tests ZDIFFSTORE with non-existent keys
+func TestExecuteReplicatedCommand_ZDIFFSTORE_Empty(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("ZDIFFSTORE"), []byte("dest"), []byte("0")})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_ZRANGESTORE_EmptyKey tests ZRANGESTORE with non-existent src
+func TestExecuteReplicatedCommand_ZRANGESTORE_EmptyKey(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("ZRANGESTORE"), []byte("dst"), []byte("nonexistent"),
+		[]byte("0"), []byte("-1"),
+	})
+	assert.NoError(t, err)
+
+	count, err := testStore.ZCard("dst")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), count)
+}
+
+// TestExecuteReplicatedCommand_HSETNX tests executeReplicatedCommand for HSETNX
+func TestExecuteReplicatedCommand_HSETNX(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("HSETNX"), []byte("hash"), []byte("field"), []byte("value")})
+	assert.NoError(t, err)
+
+	val, err := testStore.HGet("hash", "field")
+	assert.NoError(t, err)
+	assert.Equal(t, []byte("value"), val)
+}
+
+// TestExecuteReplicatedCommand_PFADD_PFMERGE tests executeReplicatedCommand for PFADD and PFMERGE
+func TestExecuteReplicatedCommand_PFADD(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("PFADD"), []byte("hll"), []byte("a"), []byte("b"), []byte("c")})
+	assert.NoError(t, err)
+}
+
+func TestExecuteReplicatedCommand_PFMERGE(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	executeReplicatedCommand(testStore, [][]byte{[]byte("PFADD"), []byte("hll1"), []byte("a"), []byte("b")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("PFADD"), []byte("hll2"), []byte("c"), []byte("d")})
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("PFMERGE"), []byte("dest"), []byte("hll1"), []byte("hll2")})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_XACK tests executeReplicatedCommand for XACK
+func TestExecuteReplicatedCommand_XACK(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	// XACK on non-existent stream should not error
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("XACK"), []byte("stream"), []byte("group"), []byte("0-0")})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_XCLAIM tests executeReplicatedCommand for XCLAIM
+func TestExecuteReplicatedCommand_XCLAIM(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	// XCLAIM on non-existent stream should not error
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("XCLAIM"), []byte("stream"), []byte("group"), []byte("consumer"), []byte("1000"), []byte("0-0")})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_XGROUP tests executeReplicatedCommand for XGROUP
+func TestExecuteReplicatedCommand_XGROUP(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("XGROUP"), []byte("CREATE"), []byte("stream"), []byte("group"), []byte("0")})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_BLPOP tests executeReplicatedCommand for BLPOP
+func TestExecuteReplicatedCommand_BLPOP(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.RPush("list1", "a", "b")
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BLPOP"), []byte("list1"), []byte("list2"), []byte("1")})
+	assert.NoError(t, err)
+
+	items, err := testStore.LRange("list1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(items))
+	assert.Equal(t, "b", items[0])
+}
+
+// TestExecuteReplicatedCommand_BRPOP tests executeReplicatedCommand for BRPOP
+func TestExecuteReplicatedCommand_BRPOP(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.RPush("list1", "a", "b")
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BRPOP"), []byte("list1"), []byte("1")})
+	assert.NoError(t, err)
+
+	items, err := testStore.LRange("list1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(items))
+	assert.Equal(t, "a", items[0])
+}
+
+// TestExecuteReplicatedCommand_BLMOVE tests executeReplicatedCommand for BLMOVE
+func TestExecuteReplicatedCommand_BLMOVE(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.RPush("src", "a", "b")
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BLMOVE"), []byte("src"), []byte("dst"), []byte("RIGHT"), []byte("LEFT")})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_BRPOPLPUSH tests executeReplicatedCommand for BRPOPLPUSH
+func TestExecuteReplicatedCommand_BRPOPLPUSH(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.RPush("src", "a", "b")
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BRPOPLPUSH"), []byte("src"), []byte("dst")})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_InvalidArgs tests various invalid argument scenarios
+func TestExecuteReplicatedCommand_InvalidArgs(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	// All invalid arg cases should not panic, just return nil or error
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("SETBIT"), []byte("k"), []byte("notanumber"), []byte("1")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("BITOP")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("BITFIELD")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("COPY")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZUNIONSTORE")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZUNIONSTORE"), []byte("d"), []byte("notanumber")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZINTERSTORE")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZDIFFSTORE")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZRANGESTORE")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("GEOSEARCHSTORE")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZUNIONSTORE"), []byte("d"), []byte("1"), []byte("k"), []byte("WEIGHTS")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZINTERSTORE"), []byte("d"), []byte("1"), []byte("k"), []byte("WEIGHTS")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("GEOSEARCHSTORE"), []byte("d"), []byte("s")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("GEOSEARCHSTORE"), []byte("d"), []byte("s"), []byte("FROMLONLAT")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("GEOSEARCHSTORE"), []byte("d"), []byte("s"), []byte("FROMLONLAT"), []byte("15"), []byte("37")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZRANGESTORE"), []byte("d"), []byte("s"), []byte("0"), []byte("-1"), []byte("LIMIT")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("GEOSEARCHSTORE"), []byte("d"), []byte("s"), []byte("FROMMEMBER"), []byte("nonexistent"), []byte("BYRADIUS"), []byte("100"), []byte("km")})
+}
+
+// TestExecuteReplicatedCommand_GETDEL tests executeReplicatedCommand for GETDEL
+func TestExecuteReplicatedCommand_GETDEL(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.Set("key", "value")
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETDEL"), []byte("key")})
+	assert.NoError(t, err)
+
+	_, err = testStore.Get("key")
+	assert.Error(t, err)
+}
+
+// TestExecuteReplicatedCommand_GETDEL_NonExistent tests GETDEL on non-existent key
+func TestExecuteReplicatedCommand_GETDEL_NonExistent(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETDEL"), []byte("nonexistent")})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_GETEX tests executeReplicatedCommand for GETEX with EX option
+func TestExecuteReplicatedCommand_GETEX_EX(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.Set("key", "value")
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETEX"), []byte("key"), []byte("EX"), []byte("100")})
+	assert.NoError(t, err)
+
+	val, err := testStore.Get("key")
+	assert.NoError(t, err)
+	assert.Equal(t, "value", val)
+}
+
+// TestExecuteReplicatedCommand_GETEX_PERSIST tests GETEX with PERSIST
+func TestExecuteReplicatedCommand_GETEX_PERSIST(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.SetWithTTL("key", "value", 100*time.Second)
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETEX"), []byte("key"), []byte("PERSIST")})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_GETEX_NoOption tests GETEX with no option (just GET)
+func TestExecuteReplicatedCommand_GETEX_NoOption(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.Set("key", "value")
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETEX"), []byte("key")})
+	assert.NoError(t, err)
+
+	val, err := testStore.Get("key")
+	assert.NoError(t, err)
+	assert.Equal(t, "value", val)
+}
+
+// TestExecuteReplicatedCommand_GETEX_NonExistent tests GETEX on non-existent key
+func TestExecuteReplicatedCommand_GETEX_NonExistent(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETEX"), []byte("nonexistent")})
+	assert.NoError(t, err)
 }

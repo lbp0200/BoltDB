@@ -2,9 +2,11 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"math"
+	"time"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/lbp0200/BoltDB/internal/logger"
@@ -122,7 +124,8 @@ func (s *BotreonStore) ZAdd(zSetName string, members []ZSetMember) error {
 	if len(members) == 0 {
 		return nil
 	}
-	return s.retryUpdate(func(txn *badger.Txn) error {
+	var addedNewMember bool
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		badgerTypeKey := TypeOfKeyGet(zSetName)
 
 		// Check if key already exists with a different type
@@ -236,15 +239,18 @@ func (s *BotreonStore) ZAdd(zSetName string, members []ZSetMember) error {
 			}
 		}
 
-		// 成功路径不记录日志，避免性能影响
-		// 只在 DEBUG 级别记录详细信息
+		addedNewMember = newMembers > 0
 		logger.Logger.Debug().
 			Int("members_count", len(members)).
 			Str("zset_name", zSetName).
 			Int64("card", meta.Card).
 			Msg("ZAdd: Successfully added members")
 		return nil
-	}, 20) // 最多重试 20 次（优化：减少重试次数，大部分冲突在前几次重试就能解决）
+	}, 20)
+	if err == nil && addedNewMember {
+		s.notifyBlockingZPop(zSetName)
+	}
+	return err
 }
 
 // ZRangeByScore 获取分数范围内的成员
@@ -1008,6 +1014,51 @@ func (s *BotreonStore) ZPopMin(zSetName string, count int) ([]ZSetMember, error)
 	return results, nil
 }
 
+// ZMPop 实现 Redis ZMPOP 命令，从多个有序集合中弹出元素
+// keys: 要操作的键列表
+// modifier: "MIN" 或 "MAX"
+// count: 要弹出的元素数量
+// 返回第一个非空键的键名和被弹出的成员列表
+func (s *BotreonStore) ZMPop(keys []string, modifier string, count int) (string, []ZSetMember, error) {
+	for _, key := range keys {
+		typeKey := TypeOfKeyGet(key)
+		var typeErr error
+		_ = s.db.View(func(txn *badger.Txn) error {
+			typeItem, err := txn.Get(typeKey)
+			if err == nil {
+				typeVal, err := typeItem.ValueCopy(nil)
+				if err != nil {
+					typeErr = err
+					return err
+				}
+				keyType := string(typeVal)
+				if keyType != "" && keyType != KeyTypeSortedSet {
+					typeErr = ErrWrongType
+				}
+			}
+			return nil
+		})
+		if typeErr != nil {
+			return "", nil, typeErr
+		}
+
+		var members []ZSetMember
+		var err error
+		if modifier == "MAX" {
+			members, err = s.ZPopMax(key, count)
+		} else {
+			members, err = s.ZPopMin(key, count)
+		}
+		if err != nil {
+			return "", nil, err
+		}
+		if len(members) > 0 {
+			return key, members, nil
+		}
+	}
+	return "", nil, nil
+}
+
 // ZUnionStore 实现 Redis ZUNIONSTORE 命令，计算并集并存储到目标集合
 func (s *BotreonStore) ZUnionStore(destination string, keys []string, weights []float64, aggregate string) (int64, error) {
 	// 先收集所有成员的分数（考虑权重和聚合方式）
@@ -1434,8 +1485,84 @@ func (s *BotreonStore) ZMScore(zSetName string, members ...string) ([]float64, e
 	return scores, nil
 }
 
-// BZPopMax 实现 Redis BZPOPMAX 命令，阻塞式弹出分数最高的成员（简化版本：非阻塞）
-func (s *BotreonStore) BZPopMax(keys []string, timeout int) (string, *ZSetMember, error) {
+// unregisterBlockingZPop removes a specific channel from all keys' wait lists
+func (s *BotreonStore) unregisterBlockingZPop(ch chan string, keys []string) {
+	s.blockingZPopMu.Lock()
+	defer s.blockingZPopMu.Unlock()
+
+	for _, key := range keys {
+		chans := s.blockingZPopChans[key]
+		for j, c := range chans {
+			if c == ch {
+				s.blockingZPopChans[key] = append(chans[:j], chans[j+1:]...)
+				break
+			}
+		}
+		if len(s.blockingZPopChans[key]) == 0 {
+			delete(s.blockingZPopChans, key)
+		}
+	}
+}
+
+// notifyBlockingZPop notifies one waiting channel for a sorted set key
+func (s *BotreonStore) notifyBlockingZPop(key string) {
+	s.blockingZPopMu.Lock()
+	defer s.blockingZPopMu.Unlock()
+
+	chans, exists := s.blockingZPopChans[key]
+	if !exists || len(chans) == 0 {
+		return
+	}
+
+	select {
+	case chans[0] <- key:
+		s.blockingZPopChans[key] = chans[1:]
+	default:
+	}
+}
+
+// registerAndRecheckZMax registers a channel for keys and re-checks with ZPopMax after registration
+func (s *BotreonStore) registerAndRecheckZMax(keys []string, ch chan string) (string, *ZSetMember, bool) {
+	s.blockingZPopMu.Lock()
+	for _, key := range keys {
+		s.blockingZPopChans[key] = append(s.blockingZPopChans[key], ch)
+	}
+	s.blockingZPopMu.Unlock()
+
+	for _, key := range keys {
+		members, err := s.ZPopMax(key, 1)
+		if err == nil && len(members) > 0 {
+			s.unregisterBlockingZPop(ch, keys)
+			return key, &members[0], true
+		}
+	}
+	return "", nil, false
+}
+
+// registerAndRecheckZMin registers a channel for keys and re-checks with ZPopMin after registration
+func (s *BotreonStore) registerAndRecheckZMin(keys []string, ch chan string) (string, *ZSetMember, bool) {
+	s.blockingZPopMu.Lock()
+	for _, key := range keys {
+		s.blockingZPopChans[key] = append(s.blockingZPopChans[key], ch)
+	}
+	s.blockingZPopMu.Unlock()
+
+	for _, key := range keys {
+		members, err := s.ZPopMin(key, 1)
+		if err == nil && len(members) > 0 {
+			s.unregisterBlockingZPop(ch, keys)
+			return key, &members[0], true
+		}
+	}
+	return "", nil, false
+}
+
+// BZPopMaxBlocking 实现 Redis BZPOPMAX 命令，阻塞式弹出分数最高的成员
+func (s *BotreonStore) BZPopMaxBlocking(ctx context.Context, keys []string, timeout int) (string, *ZSetMember, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	for _, key := range keys {
 		members, err := s.ZPopMax(key, 1)
 		if err != nil {
@@ -1445,11 +1572,43 @@ func (s *BotreonStore) BZPopMax(keys []string, timeout int) (string, *ZSetMember
 			return key, &members[0], nil
 		}
 	}
-	return "", nil, nil
+
+	if timeout == 0 {
+		return "", nil, nil
+	}
+
+	resultCh := make(chan string, 1)
+	var timeoutCh <-chan time.Time
+	if timeout > 0 {
+		timeoutCh = time.After(time.Duration(timeout) * time.Second)
+	}
+
+	if key, member, ok := s.registerAndRecheckZMax(keys, resultCh); ok {
+		return key, member, nil
+	}
+
+	select {
+	case key := <-resultCh:
+		members, err := s.ZPopMax(key, 1)
+		if err != nil || len(members) == 0 {
+			return "", nil, nil
+		}
+		return key, &members[0], nil
+	case <-timeoutCh:
+		s.unregisterBlockingZPop(resultCh, keys)
+		return "", nil, nil
+	case <-ctx.Done():
+		s.unregisterBlockingZPop(resultCh, keys)
+		return "", nil, nil
+	}
 }
 
-// BZPopMin 实现 Redis BZPOPMIN 命令，阻塞式弹出分数最低的成员（简化版本：非阻塞）
-func (s *BotreonStore) BZPopMin(keys []string, timeout int) (string, *ZSetMember, error) {
+// BZPopMinBlocking 实现 Redis BZPOPMIN 命令，阻塞式弹出分数最低的成员
+func (s *BotreonStore) BZPopMinBlocking(ctx context.Context, keys []string, timeout int) (string, *ZSetMember, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	for _, key := range keys {
 		members, err := s.ZPopMin(key, 1)
 		if err != nil {
@@ -1459,7 +1618,57 @@ func (s *BotreonStore) BZPopMin(keys []string, timeout int) (string, *ZSetMember
 			return key, &members[0], nil
 		}
 	}
-	return "", nil, nil
+
+	if timeout == 0 {
+		return "", nil, nil
+	}
+
+	resultCh := make(chan string, 1)
+	var timeoutCh <-chan time.Time
+	if timeout > 0 {
+		timeoutCh = time.After(time.Duration(timeout) * time.Second)
+	}
+
+	if key, member, ok := s.registerAndRecheckZMin(keys, resultCh); ok {
+		return key, member, nil
+	}
+
+	select {
+	case key := <-resultCh:
+		members, err := s.ZPopMin(key, 1)
+		if err != nil || len(members) == 0 {
+			return "", nil, nil
+		}
+		return key, &members[0], nil
+	case <-timeoutCh:
+		s.unregisterBlockingZPop(resultCh, keys)
+		return "", nil, nil
+	case <-ctx.Done():
+		s.unregisterBlockingZPop(resultCh, keys)
+		return "", nil, nil
+	}
+}
+
+// BZPopMax keeps backward compatibility — uses BZPopMaxBlocking with background context
+func (s *BotreonStore) BZPopMax(keys []string, timeout int) (string, *ZSetMember, error) {
+	ctx := context.Background()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+		defer cancel()
+	}
+	return s.BZPopMaxBlocking(ctx, keys, timeout)
+}
+
+// BZPopMin keeps backward compatibility — uses BZPopMinBlocking with background context
+func (s *BotreonStore) BZPopMin(keys []string, timeout int) (string, *ZSetMember, error) {
+	ctx := context.Background()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+		defer cancel()
+	}
+	return s.BZPopMinBlocking(ctx, keys, timeout)
 }
 
 // ZScanResult 定义 ZSCAN 命令的返回结果
