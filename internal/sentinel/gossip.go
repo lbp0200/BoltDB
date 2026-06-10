@@ -280,6 +280,13 @@ func (gp *GossipProtocol) handleSdown(conn net.Conn, parts []string) {
 
 		// 检查是否达到客观下线
 		if master.IsODown() {
+			if !master.CanFailover() {
+				logger.Logger.Warn().
+					Str("master_name", masterName).
+					Msg("故障转移冷却中，跳过触发")
+				return
+			}
+			master.RecordFailover()
 			fm := NewFailoverManager(gp.sentinel)
 			go func() {
 				if err := fm.AutoFailover(masterName); err != nil {

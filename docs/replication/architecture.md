@@ -1,0 +1,123 @@
+# Replication Architecture
+
+## Overview
+
+BoltDB implements Redis-compatible master-replica replication using the PSYNC protocol.
+A BoltDB instance can act as a replica of a Redis master (or another BoltDB master) via
+`SLAVEOF` / `REPLICAOF`.
+
+## Dual-Timeline Architecture
+
+Unlike single-threaded Redis, BoltDB has two independent timelines:
+
+| Timeline | Mechanism | Granularity |
+|----------|-----------|-------------|
+| MVCC snapshot | BadgerDB transaction version | Per-write commit timestamp |
+| Replication offset | `masterReplOffset` counter | Per-propagated command byte count |
+
+This duality is the source of both flexibility and complexity.
+The write ordering invariant that connects them is:
+
+```
+store.Set() (badger commit) → PropagateCommand() (offset increment)
+```
+
+Any write that committed to BadgerDB before `GetMasterReplOffset()` was called is
+guaranteed visible in the MVCC snapshot. Writes that committed after are covered
+by the backlog.
+
+## Handshake Sequence
+
+When a BoltDB replica connects to a master:
+
+```
+PING                          → PONG
+REPLCONF listening-port <p>   → OK
+REPLCONF capa eof             → OK
+REPLCONF capa psync2          → OK
+PSYNC <replid> <offset>       → FULLRESYNC | CONTINUE
+```
+
+### PSYNC CONTINUE
+
+If the master has the slave's replication ID and the slave's offset is still in
+the backlog, a CONTINUE response is sent. The master then streams backlog data
+from the slave's offset to current.
+
+**Gap-fill mechanism:** `AddSlave` is performed after `SendBacklogData`. Any
+commands that arrived between the offset capture and the slave registration
+are gap-filled: `[capturedOffset, postAddOffset)` is replayed after the slave
+is registered in the propagation snapshot.
+
+### PSYNC FULLRESYNC
+
+If the slave's offset is no longer in the backlog (or the replication ID changed),
+a FULLRESYNC is triggered:
+
+```
++FULLRESYNC <replid> <snapshotOffset>
+<RDB binary data>
+<backlog from snapshotOffset to currentOffset>
+```
+
+**snapshotOffset** is captured BEFORE `db.View()`, not after. This eliminates
+the lost-write window that was present in earlier versions (see
+[failure-modes.md](failure-modes.md)).
+
+## Backlog
+
+The backlog is a fixed-size ring buffer of replicated commands. Default size:
+1 MB. When the buffer wraps, the oldest entries are evicted. If a slave's offset
+falls outside the current backlog range, a FULLRESYNC is forced.
+
+Key interactions:
+- Backlog overflow under heavy write load during slave disconnection → FULLRESYNC
+- FULLRESYNC storms under sustained write + reconnect cycling (see [failure-modes.md](failure-modes.md))
+
+## Slave Offset Tracking
+
+The slave maintains `lastOffset` tracking the last byte offset acknowledged from
+the master. This must match `masterReplOffset` byte-for-byte for PSYNC to work.
+
+**Commands NOT counted in offset (by either master or slave):**
+- PING
+- REPLCONF GETACK
+- SELECT
+
+These are excluded because `PropagateCommand` (master) only counts data-changing
+commands. If the slave counted them while the master did not, the slave's offset
+would drift ahead, forcing spurious FULLRESYNCs.
+
+After a FULLRESYNC, the slave's `lastOffset` is reset from the offset in the
+`+FULLRESYNC` response.
+
+## RDB Snapshot (GenerateRDB)
+
+RDB generation for FULLRESYNC follows these invariants:
+
+- All reads happen in a single `db.View` transaction → consistent point-in-time snapshot
+- `PrefetchValues: false` on the TYPE_ iterator → no prefetch memory pressure
+- Value keys and list/hash/set/zset data are read with explicit `txn.Get()` /
+  sub-iterators from the same transaction
+- TOCTOU eliminated: TYPE_ record and corresponding value data are never read
+  in separate transactions
+- List last node may lack `:next` key; `readListInTxn` handles `ErrKeyNotFound`
+  gracefully (break iteration)
+
+## Shutdown Lifecycle
+
+Shutdown contract involving replication (enforced by `Handler.Shutdown()` + `main.go`):
+
+```
+close listener → ServeTCP returns
+→ replMgr.Stop()       (close slave TCP connections → unblock reads)
+→ cancel()             (cancel root context → all goroutines see Done)
+→ handler.Shutdown()   (close all client TCP conns + WaitGroup.Wait)
+→ db.Close()           (deferred — guaranteed: 0 goroutines accessing DB)
+```
+
+- `handleSlaveReplicationConnection` is tracked in `Handler.wg`; its TCP connection
+  is closed by `replMgr.Stop()`
+- `reconnectLoop` is tracked in `SlaveReconnector.wg`; `replMgr.Stop()` closes
+  `stopCh` + master connection
+- NO goroutine should call any DB method after `handler.Shutdown()` returns

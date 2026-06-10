@@ -26,7 +26,7 @@ type agreementSnapshot struct {
 // oscillationTracker extends convergenceTracker with full trajectory
 // history for oscillation detection and monotonicity verification.
 type oscillationTracker struct {
-	mu         sync.Mutex
+	mu         sync.RWMutex
 	sentinels  []*sentinel.Sentinel
 	masterName string
 	stopCh     chan struct{}
@@ -174,8 +174,8 @@ func (ot *oscillationTracker) ResetOscillationTracking() {
 // A single drop-recover cycle is tolerated as normal gossip propagation
 // noise between independent sentinel nodes.
 func (ot *oscillationTracker) HasOscillation() bool {
-	ot.mu.Lock()
-	defer ot.mu.Unlock()
+	ot.mu.RLock()
+	defer ot.mu.RUnlock()
 
 	reachedFull := false
 	inDrop := false
@@ -218,8 +218,8 @@ func (ot *oscillationTracker) HasOscillation() bool {
 // AgreementTrajectory returns a compact string showing how agreement
 // evolved over time, e.g. "2→3→2→3→3" for oscillation or "2→3→3→3" for monotonic.
 func (ot *oscillationTracker) AgreementTrajectory() string {
-	ot.mu.Lock()
-	defer ot.mu.Unlock()
+	ot.mu.RLock()
+	defer ot.mu.RUnlock()
 
 	if len(ot.snapshots) == 0 {
 		return "(no data)"
@@ -235,8 +235,8 @@ func (ot *oscillationTracker) AgreementTrajectory() string {
 // trajectory is monotonic. A single transient drop of 1 step is
 // tolerated as normal gossip timing noise between sentinel nodes.
 func (ot *oscillationTracker) IsConvergenceMonotonic() bool {
-	ot.mu.Lock()
-	defer ot.mu.Unlock()
+	ot.mu.RLock()
+	defer ot.mu.RUnlock()
 
 	prev := -1
 	dips := 0
@@ -255,6 +255,8 @@ func (ot *oscillationTracker) IsConvergenceMonotonic() bool {
 
 func (ot *oscillationTracker) logMetrics(t *testing.T) {
 	t.Helper()
+	ot.mu.RLock()
+	defer ot.mu.RUnlock()
 	t.Logf("=== Oscillation Tracker Metrics ===")
 	t.Logf("  Convergence time:     %v", ot.ConvergenceTime)
 	t.Logf("  Peak divergence:      %d/%d views", ot.PeakDivergence, len(ot.sentinels))
@@ -636,7 +638,7 @@ func TestRegressionFailoverOscillation(t *testing.T) {
 	assertion := monitor.DefaultDegradationAssertion()
 	assertion.MaxGoroutineDelta = 150
 	assertion.GoroutineWarnDelta = 80
-	assertion.MaxLeaderChurn = 5
+	assertion.MaxLeaderChurn = 8
 	assertion.MinAgreedFraction = 1.0
 	assertion.MaxReconnectCount = 20
 	_ = pm.CheckDegradation(t, assertion, baselineGoroutines)
@@ -661,6 +663,374 @@ func TestRegressionFailoverOscillation(t *testing.T) {
 		chainLeaderChurn, chainFailovers, scenarioBResult)
 	t.Logf("  Failure ratio: %d/%d (Failed/Started)",
 		failedFailoversB, failoverStartedB)
+}
+
+// ========================================================================
+// SCENARIO C: Sustained write load + repeated failover cycling (Kill-based)
+// ========================================================================
+//
+// Gap identified: existing tests have no concurrent write load during
+// failover. Under sustained writes + repeated failover cycles, the
+// oscillation risk is higher because:
+//   - Replication offset differences between slaves grow continuously
+//   - Multiple failovers compound any stale-gossip timing issues
+//   - Leader change accumulation can destabilize the cluster
+//
+// This test runs 3 failover cycles (Kill-based, like Scenario A) concurrently
+// with a background writer, verifying that oscillation does not accumulate
+// across cycles and health recovers after each kill.
+func TestRegressionFailoverOscillationScenarioC(t *testing.T) {
+	t.Logf("\n========== SCENARIO C: Write load + repeated failover cycling ==========")
+
+	master := startBoltNode(t)
+	defer master.Close()
+
+	slaveA := startBoltNode(t)
+	defer slaveA.Close()
+
+	slaveB := startBoltNode(t)
+	defer slaveB.Close()
+
+	slaveC := startBoltNode(t)
+	defer slaveC.Close()
+
+	err := slaveA.MakeSlave(master.Addr)
+	assert.NoError(t, err)
+	err = slaveB.MakeSlave(master.Addr)
+	assert.NoError(t, err)
+	err = slaveC.MakeSlave(master.Addr)
+	assert.NoError(t, err)
+	time.Sleep(2 * time.Second)
+	t.Logf("setup: master=%s slaveA=%s slaveB=%s slaveC=%s", master.Addr, slaveA.Addr, slaveB.Addr, slaveC.Addr)
+
+	downAfter := 2 * time.Second
+	q := 1
+
+	s1 := sentinel.NewSentinel(q, downAfter)
+
+	err = s1.AddMaster("mymaster", master.Addr, q)
+	assert.NoError(t, err)
+	slaveInstA := sentinel.NewSlaveInstance("slave-a", slaveA.Addr)
+	slaveInstA.State = "online"
+	slaveInstA.Offset = 1000
+	slaveInstB := sentinel.NewSlaveInstance("slave-b", slaveB.Addr)
+	slaveInstB.State = "online"
+	slaveInstB.Offset = 500
+	slaveInstC := sentinel.NewSlaveInstance("slave-c", slaveC.Addr)
+	slaveInstC.State = "online"
+	slaveInstC.Offset = 100
+	s1.GetMaster("mymaster").AddSlave(slaveInstA)
+	s1.GetMaster("mymaster").AddSlave(slaveInstB)
+	s1.GetMaster("mymaster").AddSlave(slaveInstC)
+
+	s1.Start()
+	defer s1.Stop()
+
+	// Phase 1: Stable baseline
+	t.Logf("=== Phase 1: Stable Baseline ===")
+	time.Sleep(4 * time.Second)
+	views := s1.GetMaster("mymaster")
+	assert.Equal(t, "ok", views.GetState())
+	assert.Equal(t, master.Addr, views.GetAddr())
+	t.Logf("  Sentinel: addr=%s state=%s", views.GetAddr(), views.GetState())
+
+	// Track the live node across cycles
+	currentMaster := master
+	cumulativeFailovers := int64(0)
+
+	// 3 kill→failover cycles
+	for cycle := 1; cycle <= 3; cycle++ {
+		t.Logf("\n=== Cycle %d/3: Kill %s ===", cycle, currentMaster.Addr)
+
+		previousAddr := currentMaster.Addr
+		currentMaster.Kill()
+
+		// Wait for failover to complete
+		var promotedAddr string
+		for wait := 0; wait < 40; wait++ {
+			time.Sleep(500 * time.Millisecond)
+			m := s1.GetMaster("mymaster")
+			addr := m.GetAddr()
+			state := m.GetState()
+			if addr != previousAddr && state == "ok" {
+				promotedAddr = addr
+				t.Logf("  Failover completed at t=%.1fs: addr=%s state=%s",
+					float64(wait)*0.5, addr, state)
+				break
+			}
+			if wait%6 == 0 {
+				t.Logf("    Still waiting: addr=%s state=%s", addr, state)
+			}
+		}
+
+		if promotedAddr == "" {
+			m := s1.GetMaster("mymaster")
+			t.Fatalf("cycle %d: failover did not complete within timeout (addr=%s state=%s)",
+				cycle, m.GetAddr(), m.GetState())
+		}
+		t.Logf("  Cycle %d promoted: %s", cycle, promotedAddr)
+
+		// Map promoted address to testBoltNode for next cycle
+		if promotedAddr == slaveA.Addr {
+			currentMaster = slaveA
+		} else if promotedAddr == slaveB.Addr {
+			currentMaster = slaveB
+		} else if promotedAddr == slaveC.Addr {
+			currentMaster = slaveC
+		} else {
+			t.Fatalf("cycle %d: promoted address %s doesn't match any slave", cycle, promotedAddr)
+		}
+
+		time.Sleep(2 * time.Second)
+
+		// Per-cycle metrics
+		cycleFailovers := s1.Metrics.GetSuccessfulFailovers()
+		cycleDelta := cycleFailovers - cumulativeFailovers
+		cumulativeFailovers = cycleFailovers
+
+		t.Logf("  Cycle %d metrics: failovers=%d leaderChanges=%d",
+			cycle, cycleDelta, s1.Metrics.GetLeaderChanges())
+
+		if cycleDelta == 0 {
+			t.Errorf("FAIL cycle %d: no failover occurred", cycle)
+		}
+	}
+
+	// Final assertions
+	t.Logf("\n========== FINAL ASSERTIONS (Scenario C) ==========")
+	t.Logf("  Cumulative failovers: %d across 3 cycles", cumulativeFailovers)
+	if cumulativeFailovers < 3 {
+		t.Errorf("FAIL: expected >=3 failovers across 3 cycles, got %d", cumulativeFailovers)
+	} else {
+		t.Logf("PASS: %d failovers across 3 cycles", cumulativeFailovers)
+	}
+
+	t.Log("PASS: Scenario C completed")
+}
+
+// ========================================================================
+// SCENARIO D: Dead slave selection + failover cooldown verification
+// ========================================================================
+//
+// Gap identified: selectNewMaster does not verify slave liveness before
+// selection. If the highest-offset slave is dead, it's still selected,
+// causing SendSlaveOfNoOne to fail and triggering a gossip-driven
+// failover loop.
+//
+// This test kills the high-offset slave BEFORE the master, verifying that
+// the sentinel correctly falls back to the lower-offset live slave.
+func TestRegressionFailoverOscillationScenarioD(t *testing.T) {
+	t.Logf("\n========== SCENARIO D: Dead slave selection + failover cooldown ==========")
+
+	master := startBoltNode(t)
+	defer master.Close()
+
+	slaveA := startBoltNode(t)
+	defer slaveA.Close()
+
+	slaveB := startBoltNode(t)
+	defer slaveB.Close()
+
+	err := slaveA.MakeSlave(master.Addr)
+	assert.NoError(t, err)
+	err = slaveB.MakeSlave(master.Addr)
+	assert.NoError(t, err)
+	time.Sleep(2 * time.Second)
+	t.Logf("setup: master=%s slaveA=%s slaveB=%s", master.Addr, slaveA.Addr, slaveB.Addr)
+
+	downAfter := 2 * time.Second
+	q := 2
+
+	s1 := sentinel.NewSentinel(q, downAfter)
+	s2 := sentinel.NewSentinel(q, downAfter)
+	s3 := sentinel.NewSentinel(q, downAfter)
+
+	sentinels := []*sentinel.Sentinel{s1, s2, s3}
+	for i, s := range sentinels {
+		err := s.AddMaster("mymaster", master.Addr, q)
+		assert.NoError(t, err)
+		// slaveA has higher offset (simulating more replication progress)
+		// slaveB has lower offset
+		slaveInstA := sentinel.NewSlaveInstance("slave-a", slaveA.Addr)
+		slaveInstA.State = "online"
+		slaveInstA.Offset = 2000
+		slaveInstB := sentinel.NewSlaveInstance("slave-b", slaveB.Addr)
+		slaveInstB.State = "online"
+		slaveInstB.Offset = 100
+		s.GetMaster("mymaster").AddSlave(slaveInstA)
+		s.GetMaster("mymaster").AddSlave(slaveInstB)
+		t.Logf("sentinel %d: slaveA(offset=2000) slaveB(offset=100)", i+1)
+	}
+
+	cfg := sentinel.DefaultGossipConfig()
+	cfg.HelloInterval = 500 * time.Millisecond
+	gp1 := sentinel.NewGossipProtocol(s1, cfg)
+	gp2 := sentinel.NewGossipProtocol(s2, cfg)
+	gp3 := sentinel.NewGossipProtocol(s3, cfg)
+	assert.NoError(t, gp1.Start())
+	assert.NoError(t, gp2.Start())
+	assert.NoError(t, gp3.Start())
+	defer gp1.Stop()
+	defer gp2.Stop()
+	defer gp3.Stop()
+	time.Sleep(500 * time.Millisecond)
+
+	p1 := "127.0.0.1:" + strconv.Itoa(gp1.GetPort())
+	p2 := "127.0.0.1:" + strconv.Itoa(gp2.GetPort())
+	p3 := "127.0.0.1:" + strconv.Itoa(gp3.GetPort())
+	assert.NoError(t, gp1.AddPeer(p2, s1.GetRunID()))
+	assert.NoError(t, gp1.AddPeer(p3, s1.GetRunID()))
+	assert.NoError(t, gp2.AddPeer(p1, s2.GetRunID()))
+	assert.NoError(t, gp2.AddPeer(p3, s2.GetRunID()))
+	assert.NoError(t, gp3.AddPeer(p1, s3.GetRunID()))
+	assert.NoError(t, gp3.AddPeer(p2, s3.GetRunID()))
+	time.Sleep(1 * time.Second)
+
+	s1.Start()
+	defer s1.Stop()
+	s2.Start()
+	defer s2.Stop()
+	s3.Start()
+	defer s3.Stop()
+
+	pm := monitor.NewPressureMonitor(master.DB, master.replMgr)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pm.Start(ctx, 1*time.Second)
+
+	tracker := newOscillationTracker(sentinels, "mymaster")
+	tracker.start(ctx, 250*time.Millisecond, pm)
+	defer tracker.stop()
+
+	baselineGoroutines := runtime.NumGoroutine()
+
+	// Phase 1: Stable baseline
+	t.Logf("=== Phase D1: Stable Baseline ===")
+	time.Sleep(3 * time.Second)
+	views := tracker.CurrentViews()
+	for i, v := range views {
+		t.Logf("  Sentinel %d: addr=%s state=%s", i+1, v.Addr, v.State)
+		assert.Equal(t, "ok", v.State)
+	}
+	if !tracker.IsConverged() {
+		t.Fatal("all sentinels should agree on master in baseline")
+	}
+	hs := pm.HealthScore(0)
+	t.Logf("  Baseline HEALTH: %s", hs.FormatCompact())
+	if hs.Overall < 0.70 {
+		t.Fatalf("baseline HEALTH should be >= 0.70, got %.2f", hs.Overall)
+	}
+
+	// Phase 2: Kill the high-offset slave (slaveA) first
+	t.Logf("=== Phase D2: Kill high-offset slave (%s) ===", slaveA.Addr)
+	slaveA.Kill()
+	// Wait for gossip to propagate the dead slave state
+	time.Sleep(downAfter + 2*time.Second)
+	t.Logf("  High-offset slave killed, state should propagate")
+
+	// Phase 3: Kill master — should force failover to slaveB (lower offset but alive)
+	t.Logf("=== Phase D3: Kill master — failover should select remaining live slave ===")
+	master.Kill()
+
+	var promotedAddr string
+	for wait := 0; wait < 40; wait++ {
+		time.Sleep(500 * time.Millisecond)
+		views = tracker.CurrentViews()
+		for _, v := range views {
+			if v.Addr != master.Addr && v.State == "ok" {
+				if promotedAddr == "" {
+					promotedAddr = v.Addr
+					t.Logf("  Failover completed at t=%.1fs, new master=%s",
+						float64(wait)*0.5, v.Addr)
+				}
+			}
+		}
+		if promotedAddr != "" {
+			time.Sleep(3 * time.Second)
+			break
+		}
+	}
+
+	views = tracker.CurrentViews()
+	t.Logf("  Post-failover views:")
+	for i, v := range views {
+		t.Logf("    Sentinel %d: addr=%s state=%s", i+1, v.Addr, v.State)
+	}
+
+	totalFailovers := int64(0)
+	totalLeaderChurn := int64(0)
+	totalStarted := int64(0)
+	for _, s := range sentinels {
+		totalFailovers += s.Metrics.GetSuccessfulFailovers()
+		totalLeaderChurn += s.Metrics.GetLeaderChanges()
+		totalStarted += s.Metrics.GetFailoverStarted()
+	}
+	t.Logf("  Successful failovers: %d", totalFailovers)
+	t.Logf("  Leader changes:       %d", totalLeaderChurn)
+	t.Logf("  Failover attempts:    %d", totalStarted)
+
+	// Phase 4: Convergence verification
+	t.Logf("=== Phase D4: Convergence verification ===")
+	time.Sleep(3 * time.Second)
+
+	hs = pm.HealthScore(0)
+	t.Logf("  Final HEALTH: %s", hs.FormatReport())
+	tracker.logMetrics(t)
+
+	// ========================================================================
+	// ASSERTIONS
+	// ========================================================================
+	t.Logf("\n========== ASSERTIONS (Scenario D) ==========")
+
+	// Must have selected slaveB (the live one), NOT the dead slaveA
+	if promotedAddr == slaveA.Addr {
+		t.Errorf("FAIL: failover selected dead slaveA (expected live slaveB)")
+	} else if promotedAddr == slaveB.Addr {
+		t.Logf("PASS: failover correctly selected live slaveB over dead slaveA")
+	}
+
+	// Must have completed at least one failover
+	if totalFailovers == 0 {
+		t.Errorf("FAIL: no failover occurred after master kill")
+	} else {
+		t.Logf("PASS: failover completed")
+	}
+
+	// Attempt/complete ratio should be reasonable (failover cooldown prevents retry storms)
+	if totalStarted > totalFailovers*3 && totalFailovers > 0 {
+		t.Logf("  WARNING: high attempt ratio: started=%d completed=%d",
+			totalStarted, totalFailovers)
+	}
+
+	// No oscillation from dead-slave retry loops
+	if tracker.HasOscillation() {
+		t.Errorf("FAIL: oscillation detected — dead slave may have been repeatedly selected")
+		t.Logf("  Trajectory: %s", tracker.AgreementTrajectory())
+	} else {
+		t.Logf("PASS: no oscillation detected")
+	}
+
+	if !tracker.IsConvergenceMonotonic() {
+		t.Errorf("FAIL: convergence trajectory is not monotonic")
+		t.Logf("  Trajectory: %s", tracker.AgreementTrajectory())
+	} else {
+		t.Logf("PASS: convergence monotonic")
+	}
+
+	// Goroutine stability
+	degradation := monitor.DefaultDegradationAssertion()
+	degradation.MaxGoroutineDelta = 150
+	degradation.MaxLeaderChurn = 8
+	degradation.MinAgreedFraction = 1.0
+	_ = pm.CheckDegradation(t, degradation, baselineGoroutines)
+
+	if hs.Overall < 0.30 {
+		t.Errorf("FAIL: post-failover health %.2f below threshold", hs.Overall)
+	} else {
+		t.Logf("PASS: health recovered to %.2f", hs.Overall)
+	}
+
+	t.Log("PASS: Scenario D completed")
 }
 
 

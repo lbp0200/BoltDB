@@ -322,3 +322,29 @@ func TestMasterInstance_checkMaster_AlreadySdown(t *testing.T) {
 	// State should be ok
 	assert.Equal(t, "ok", master.GetState())
 }
+
+// TestMasterInstance_CanFailover_Initial tests CanFailover returns true when no failover has occurred
+func TestMasterInstance_CanFailover_Initial(t *testing.T) {
+	t.Parallel()
+	master := NewMasterInstance("test", "127.0.0.1:6379", 1)
+	assert.True(t, master.CanFailover())
+}
+
+// TestMasterInstance_CanFailover_AfterRecord tests CanFailover returns false immediately after RecordFailover
+func TestMasterInstance_CanFailover_AfterRecord(t *testing.T) {
+	t.Parallel()
+	master := NewMasterInstance("test", "127.0.0.1:6379", 1)
+	master.RecordFailover()
+	assert.False(t, master.CanFailover())
+}
+
+// TestMasterInstance_CanFailover_AfterCooldown tests CanFailover returns true after cooldown expires
+func TestMasterInstance_CanFailover_AfterCooldown(t *testing.T) {
+	t.Parallel()
+	master := NewMasterInstance("test", "127.0.0.1:6379", 1)
+	master.RecordFailover()
+	master.mu.Lock()
+	master.lastFailoverTime = time.Now().Add(-10 * time.Second)
+	master.mu.Unlock()
+	assert.True(t, master.CanFailover())
+}

@@ -1,6 +1,7 @@
 package sentinel
 
 import (
+	"net"
 	"testing"
 
 	"github.com/zeebo/assert"
@@ -169,17 +170,24 @@ func TestFailoverManager_StartFailover_AlreadyInProgress(t *testing.T) {
 // TestFailoverManager_selectNewMaster tests selectNewMaster with slaves
 func TestFailoverManager_selectNewMaster(t *testing.T) {
 	t.Parallel()
+
+	// Start a TCP listener so selectNewMaster's liveness check passes
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.NoError(t, err)
+	defer ln.Close()
+	slaveAddr := ln.Addr().String()
+
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
 	// Add a master
-	err := sentinel.AddMaster("test-master", "127.0.0.1:6379", 2)
+	err = sentinel.AddMaster("test-master", "127.0.0.1:6379", 2)
 	assert.NoError(t, err)
 
 	master := sentinel.GetMaster("test-master")
 
 	// Add a slave
-	slave := NewSlaveInstance("slave1", "127.0.0.1:6380")
+	slave := NewSlaveInstance("slave1", slaveAddr)
 	slave.State = "online"
 	slave.Offset = 100
 	master.AddSlave(slave)
@@ -294,17 +302,24 @@ func TestFailoverManager_UpdateConfiguration_Coverage(t *testing.T) {
 // TestFailoverManager_UpdateConfiguration_WithSlave tests updateConfiguration with a valid slave
 func TestFailoverManager_UpdateConfiguration_WithSlave(t *testing.T) {
 	t.Parallel()
+
+	// Start a TCP listener so selectNewMaster's liveness check passes
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.NoError(t, err)
+	defer ln.Close()
+	slaveAddr := ln.Addr().String()
+
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
 	// Add a master
-	err := sentinel.AddMaster("test-master", "127.0.0.1:6379", 1)
+	err = sentinel.AddMaster("test-master", "127.0.0.1:6379", 1)
 	assert.NoError(t, err)
 
 	master := sentinel.GetMaster("test-master")
 
 	// Add an online slave with offset
-	slave := NewSlaveInstance("slave1", "127.0.0.1:6380")
+	slave := NewSlaveInstance("slave1", slaveAddr)
 	slave.State = "online"
 	slave.Offset = 100
 	master.AddSlave(slave)

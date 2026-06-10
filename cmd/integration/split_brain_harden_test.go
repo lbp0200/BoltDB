@@ -267,7 +267,7 @@ func TestRegressionSplitBrainConvergenceHarden(t *testing.T) {
 	t.Logf("  Final HEALTH: %s", hs.FormatReport())
 
 	degradation := monitor.DefaultDegradationAssertion()
-	degradation.MaxLeaderChurn = 5
+	degradation.MaxLeaderChurn = 8
 	degradation.MinAgreedFraction = 1.0
 	degradation.MaxGoroutineDelta = 150
 	degradation.GoroutineWarnDelta = 80

@@ -25,6 +25,9 @@ type MasterInstance struct {
 	sdownCount int
 	// 已知哨兵数量
 	knownSentinelCount int
+	// 故障转移冷却
+	lastFailoverTime time.Time
+	failoverCooldown time.Duration
 }
 
 // NewMasterInstance 创建新的主节点实例
@@ -48,6 +51,7 @@ func NewMasterInstanceWithDownAfter(name, addr string, quorum int, downAfter tim
 		stopCh:             make(chan struct{}),
 		sdownCount:         0,
 		knownSentinelCount: 1,
+		failoverCooldown:   5 * time.Second,
 	}
 }
 
@@ -127,8 +131,24 @@ func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
 	}
 
 	if shouldTriggerFailover {
+		if !mi.CanFailover() {
+			logger.Logger.Warn().
+				Str("master_name", mi.name).
+				Msg("故障转移冷却中，跳过触发")
+			return
+		}
+		mi.RecordFailover()
 		fm := NewFailoverManager(sentinel)
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Logger.Error().
+						Str("master_name", mi.name).
+						Interface("panic", r).
+						Msg("自动故障转移 PANIC")
+					sentinel.Metrics.RecordFailoverFailed(mi.name)
+				}
+			}()
 			if err := fm.AutoFailover(mi.name); err != nil {
 				sentinel.Metrics.RecordFailoverFailed(mi.name)
 				logger.Logger.Error().
@@ -266,6 +286,23 @@ func (mi *MasterInstance) SetODown() {
 // Stop 停止监控
 func (mi *MasterInstance) Stop() {
 	close(mi.stopCh)
+}
+
+// CanFailover 检查是否允许触发故障转移（冷却期内不允许）
+func (mi *MasterInstance) CanFailover() bool {
+	mi.mu.RLock()
+	defer mi.mu.RUnlock()
+	if mi.lastFailoverTime.IsZero() {
+		return true
+	}
+	return time.Since(mi.lastFailoverTime) >= mi.failoverCooldown
+}
+
+// RecordFailover 记录故障转移时间
+func (mi *MasterInstance) RecordFailover() {
+	mi.mu.Lock()
+	defer mi.mu.Unlock()
+	mi.lastFailoverTime = time.Now()
 }
 
 // GetSentinelCount 获取已知哨兵数量

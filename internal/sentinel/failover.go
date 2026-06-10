@@ -2,6 +2,7 @@ package sentinel
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -83,25 +84,48 @@ func (fm *FailoverManager) selectNewMaster(oldMaster *MasterInstance) *SlaveInst
 		return nil
 	}
 
-	// 选择优先级最高且数据最新的从节点
-	var bestSlave *SlaveInstance
-	bestScore := int64(-1)
-
+	// 按偏移量排序候选从节点
+	type candidate struct {
+		slave *SlaveInstance
+		score int64
+	}
+	var candidates []candidate
 	for _, slave := range slaves {
 		if slave.State != "online" {
 			continue
 		}
+		candidates = append(candidates, candidate{slave: slave, score: slave.Offset})
+	}
 
-		// 简单评分：复制偏移量（越大越好，表示数据更新）
-		// 实际应该从节点上报偏移量，这里使用已知的Offset
-		score := slave.Offset
-		if score > bestScore {
-			bestScore = score
-			bestSlave = slave
+	// 按偏移量降序排列
+	for i := 0; i < len(candidates); i++ {
+		for j := i + 1; j < len(candidates); j++ {
+			if candidates[j].score > candidates[i].score {
+				candidates[i], candidates[j] = candidates[j], candidates[i]
+			}
 		}
 	}
 
-	return bestSlave
+	// 遍历候选集，尝试存活探测，返回第一个可达的
+	for _, c := range candidates {
+		conn, err := net.DialTimeout("tcp", c.slave.Addr, 3*time.Second)
+		if err != nil {
+			logger.Logger.Warn().
+				Str("slave_addr", c.slave.Addr).
+				Int64("offset", c.slave.Offset).
+				Err(err).
+				Msg("候选从节点不可达，跳过")
+			continue
+		}
+		_ = conn.Close()
+		logger.Logger.Info().
+			Str("slave_addr", c.slave.Addr).
+			Int64("offset", c.slave.Offset).
+			Msg("选中从节点作为新主节点")
+		return c.slave
+	}
+
+	return nil
 }
 
 // executeFailover 执行故障转移

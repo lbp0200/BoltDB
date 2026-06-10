@@ -274,6 +274,14 @@ func (s *Sentinel) handleSdownMessage(msg *GossipMessage) {
 			Str("master_name", msg.MasterName).
 			Msg("主节点已客观下线，触发故障转移")
 
+		if !master.CanFailover() {
+			logger.Logger.Warn().
+				Str("master_name", msg.MasterName).
+				Msg("故障转移冷却中，跳过触发")
+			return
+		}
+		master.RecordFailover()
+
 		// 触发故障转移
 		fm := NewFailoverManager(s)
 		go func() {

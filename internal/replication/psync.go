@@ -375,6 +375,35 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			return err
 		}
 
+	// BLPOP/BRPOP in replication are non-blocking equivalents.
+	// Master already resolved the blocking pop; replica just pops from
+	// the first key that has elements, mirroring the master's key order.
+	case "BLPOP":
+		if len(args) >= 3 {
+			for i := 1; i < len(args)-1; i++ {
+				key := string(args[i])
+				if val, err := s.LPop(key); err == nil && val != "" {
+					return nil
+				} else if err != nil {
+					return fmt.Errorf("BLPOP %s: %w", key, err)
+				}
+			}
+			return nil
+		}
+
+	case "BRPOP":
+		if len(args) >= 3 {
+			for i := 1; i < len(args)-1; i++ {
+				key := string(args[i])
+				if val, err := s.RPop(key); err == nil && val != "" {
+					return nil
+				} else if err != nil {
+					return fmt.Errorf("BRPOP %s: %w", key, err)
+				}
+			}
+			return nil
+		}
+
 	case "LPUSHX":
 		if len(args) >= 3 {
 			key := string(args[1])
@@ -415,7 +444,21 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			return err
 		}
 
+	case "BRPOPLPUSH":
+		if len(args) >= 3 {
+			source := string(args[1])
+			dest := string(args[2])
+			_, err := s.RPopLPush(source, dest)
+			return err
+		}
+
 	case "LMOVE":
+		if len(args) >= 5 {
+			_, err := s.LMove(string(args[1]), string(args[2]), string(args[3]), string(args[4]))
+			return err
+		}
+
+	case "BLMOVE":
 		if len(args) >= 5 {
 			_, err := s.LMove(string(args[1]), string(args[2]), string(args[3]), string(args[4]))
 			return err
@@ -577,6 +620,15 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			return err
 		}
 
+	case "HSETNX":
+		if len(args) >= 4 {
+			key := string(args[1])
+			field := string(args[2])
+			value := string(args[3])
+			_, err := s.HSetNX(key, field, value)
+			return err
+		}
+
 	case "ZADD":
 		if len(args) >= 4 {
 			key := string(args[1])
@@ -720,6 +772,94 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			}
 			_, err := s.XTrim(key, maxLen, minID)
 			return err
+		}
+
+	case "PFADD":
+		if len(args) >= 2 {
+			key := string(args[1])
+			elements := make([]string, 0, len(args)-2)
+			for i := 2; i < len(args); i++ {
+				elements = append(elements, string(args[i]))
+			}
+			_, err := s.PFAdd(key, elements...)
+			return err
+		}
+
+	case "PFMERGE":
+		if len(args) >= 3 {
+			destKey := string(args[1])
+			sourceKeys := make([]string, 0, len(args)-2)
+			for i := 2; i < len(args); i++ {
+				sourceKeys = append(sourceKeys, string(args[i]))
+			}
+			err := s.PFMerge(destKey, sourceKeys...)
+			return err
+		}
+
+	case "XACK":
+		if len(args) >= 4 {
+			key := string(args[1])
+			group := string(args[2])
+			ids := make([]string, 0, len(args)-3)
+			for i := 3; i < len(args); i++ {
+				ids = append(ids, string(args[i]))
+			}
+			_, err := s.XAck(key, group, ids...)
+			return err
+		}
+
+	case "XCLAIM":
+		if len(args) >= 6 {
+			key := string(args[1])
+			group := string(args[2])
+			consumer := string(args[3])
+			minIdleTime, _ := strconv.ParseInt(string(args[4]), 10, 64)
+			ids := make([]string, 0, len(args)-5)
+			for i := 5; i < len(args); i++ {
+				ids = append(ids, string(args[i]))
+			}
+			_, err := s.XClaim(key, group, consumer, minIdleTime, ids...)
+			return err
+		}
+
+	case "XGROUP":
+		if len(args) >= 2 {
+			sub := strings.ToUpper(string(args[1]))
+			switch sub {
+			case "CREATE":
+				if len(args) >= 5 {
+					key := string(args[2])
+					group := string(args[3])
+					startID := string(args[4])
+					err := s.XGroupCreate(key, group, startID)
+					return err
+				}
+			case "DESTROY":
+				if len(args) >= 4 {
+					key := string(args[2])
+					group := string(args[3])
+					err := s.XGroupDestroy(key, group)
+					return err
+				}
+			case "SETID":
+				if len(args) >= 5 {
+					key := string(args[2])
+					group := string(args[3])
+					id := string(args[4])
+					err := s.XGroupSetID(key, group, id)
+					return err
+				}
+			case "DELCONSUMER":
+				if len(args) >= 5 {
+					key := string(args[2])
+					group := string(args[3])
+					consumer := string(args[4])
+					_, err := s.XGroupDelConsumer(key, group, consumer)
+					return err
+				}
+			default:
+				logger.Logger.Debug().Str("sub", sub).Msg("收到未处理的 XGROUP 子命令")
+			}
 		}
 
 	default:

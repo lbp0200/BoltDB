@@ -47,6 +47,9 @@ func (sc *SentinelConnection) SendCommand(cmd string) error {
 
 // ReadResponse 读取响应
 func (sc *SentinelConnection) ReadResponse() (string, error) {
+	if err := sc.conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		logger.Logger.Debug().Err(err).Msg("Failed to set read deadline")
+	}
 	line, err := sc.reader.ReadString('\n')
 	if err != nil {
 		return "", err
