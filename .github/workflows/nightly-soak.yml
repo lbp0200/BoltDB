@@ -179,13 +179,6 @@ jobs:
           go-version: '1.25'
           cache: true
 
-      - name: Run failover oscillation flake (issue #2)
-        run: |
-          echo "::warning::TestRegressionFailoverOscillation is known-flaky (issue #2)"
-          go test -race -timeout 120s -v \
-            -run 'TestRegressionFailoverOscillation' \
-            ./cmd/integration/... 2>&1 | tee /tmp/stress-output.txt || true
-
       - name: Run concurrent fuzz stress tests
         run: |
           echo "::warning::FuzzServerConcurrent may fail due to shared server orphan data"

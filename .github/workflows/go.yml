@@ -70,17 +70,8 @@ jobs:
       - name: Run stable integration tests (PR hard gate)
         run: |
           go test -race -timeout 600s \
-            -skip 'TestRegressionFailoverOscillation|TestSoak$|TestSoakReplication$|FuzzServerConcurrent' \
+            -skip 'TestSoak$|TestSoakReplication$|FuzzServerConcurrent' \
             ./cmd/integration/...
-
-      - name: Run known-flaky tests (non-blocking, issue #2)
-        if: always()
-        continue-on-error: true
-        run: |
-          echo "=== Known-flaky (issue #2: TestRegressionFailoverOscillation) ==="
-          go test -race -timeout 120s -v \
-            -run 'TestRegressionFailoverOscillation' \
-            ./cmd/integration/... 2>&1 || true
 
       - name: Restore evolution history
         uses: actions/cache@v4
