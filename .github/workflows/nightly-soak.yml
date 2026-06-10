@@ -181,7 +181,7 @@ jobs:
 
       - name: Run concurrent fuzz stress tests
         run: |
-          echo "::warning::FuzzServerConcurrent may fail due to shared server orphan data"
+          echo "::notice::FuzzServerConcurrent uses shared server (goroutine check removed)"
           go test -race -timeout 120s -v \
             -run 'FuzzServerConcurrent/seed' \
             ./cmd/integration/... 2>&1 | tee -a /tmp/stress-output.txt || true
