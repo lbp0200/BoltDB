@@ -1,5 +1,19 @@
 # BoltDB 待办列表
 
+## 项目阶段
+
+```text
+Phase 1: 功能实现（Redis 兼容、复制、Sentinel、PubSub、RDB...）      ✅
+Phase 2: 正确性危机（L0、PSYNC、FULLRESYNC、goroutine、shutdown...） ✅
+Phase 3: 观测与收敛（health、basin、evolution、nightly、docs...）    ✅ closed at eedd2a1
+Phase 4: 技术债收敛（当前阶段）
+```
+
+**当前重点：**
+- 观察 nightly 数据，维持 correctness envelope
+- 继续隔离/缩减 known flaky
+- 避免把已经收敛的系统重新搞复杂
+
 ## P0：Longitudinal Observation & Stability Verification
 
 **Status:** COMPLETE / FROZEN
@@ -23,76 +37,58 @@ Window: 2026-06-01 ~ 2026-06-09
 
 ## P1：Technical Debt Reduction
 
+**Status:** Active — Phase 3 (Observation & Convergence) closed.
+
 ### P1.1 Failover Oscillation (#2)
 
-**目标：**
-
-- 消灭 known flaky
-- Sentinel failover 收敛性验证
-- Nightly failover trajectory 稳定
-
-**跟踪：**
+**Status:** COMPLETE (committed in `eedd2a1`)
 
 - [x] 识别 oscillation test 未覆盖的边界条件（连续掉线 + 大量写入）
 - [x] 新增 Scenario C/D
 - [x] sentinel: `selectNewMaster` 添加 TCP 存活探活（跳过死 slave，不标记 offline）
 - [x] sentinel: 添加 failover cooldown（5s 冷却，防止 gossip 重触发风暴）
 - [x] sentinel: `SendReplicaOf` 添加读超时（防止阻塞 failover goroutine）
-- [x] 测试验证：Scenario A/B + Harden + C + D 全部通过（lint clean）
+- [x] 修复 oscillationTracker data race（RWMutex）
+- [x] 测试验证：Scenario A/B + Harden + C + D 全部通过（3/3 race clean）
 
 ---
 
 ### P1.2 Duplicate Window Architecture
 
-**目标：**
+**Status:** DEFERRED — not a bug, an architectural tradeoff.
 
-- 记录当前 envelope
-- 评估 commit-seq ↔ repl-offset 映射方案
-- 不承诺立即实现
+| 条件 | 状态 |
+|------|------|
+| 已发现 | ✅ |
+| 已测量 | ✅ INCR ≤ 2, LPUSH ≤ 70% |
+| 已回归 | ✅ TestRegressionDuplicateWindowMeasurement |
+| 已文档化 | ✅ failure-modes.md, verification.md |
+| 已隔离 | ✅ 三阶 soak 将其与稳定性分析分离 |
+| 已影响生产 | ❌ |
 
-**跟踪：**
-
-- [ ] 设计 commit-seq ↔ repl-offset 映射方案
-- [ ] 评估波及面（写路径、Badger MVCC、backlog、PSYNC、RDB 生成）
-- [ ] 决策：做 vs 保持当前 bounded window + 文档化
+当前 bounded duplicate window (µs) 是可接受的设计选择。除非 strict equality
+需求升级或 divergence 持续扩大，否则不需要 commit-seq ↔ repl-offset 映射。
 
 ---
 
 ### P1.3 Replication Correctness Documentation
 
-**目标：**
+**Status:** COMPLETE (committed in `eedd2a1`)
 
-- 收敛 AGENTS.md 中的 replication 内容
-- 收敛 `docs/failures/`
-- 收敛 correctness envelope 为独立文档
-
-**跟踪：**
-
-- [x] 提取 AGENTS.md 中所有 replication 内容至 `docs/replication/`
-  - `architecture.md` — PSYNC, backlog, FULLRESYNC, offset, RDB snapshot, shutdown lifecycle
-  - `correctness.md` — correctness envelope, deterministic replay, canonicalization, command gap list
-  - `failure-modes.md` — TOCTOU, offset ordering, write-deadline, backlog exhaustion, offset drift, duplicate window
-  - `verification.md` — three-tier soak, regression, degradation invariants, nightly pipeline
-  - `historical-fixes.md` — commit history: 24e19c2, 6299525, 8b05096, c2dd4c7, df46325
-- [x] AGENTS.md 从 452 行精简至 308 行，保留 cross-reference
+- [x] AGENTS.md (452→308行) → `docs/replication/` 五份独立文档
+- [x] architecture.md / correctness.md / failure-modes.md / verification.md / historical-fixes.md
 - [x] 交叉验证与代码行为一致
-- [x] 补充已知数据丢失命令的规范（BLPOP 等在 `correctness.md` 中文档化，多数已在 2026-06-10 实现）
-- [ ] Review signoff
 
 ---
 
 ### P1.4 Sentinel Regression Coverage
 
-**目标：**
+**Status:** COMPLETE (committed in `eedd2a1`, merged with P1.1)
 
-- 补齐剩余边界条件
-- 减少 taxonomy 中的 known-flaky
-
-**跟踪：**
-
-- [ ] 审计现有 sentinel 测试覆盖
-- [ ] 补齐关键路径：sentinel 起停、master 失联判定、replica 选举、quorum 边界
-- [ ] 纳入 nightly（可选，与 failover oscillation 联动）
+- [x] CanFailover/RecordFailover 单元测试（3 个新测试函数）
+- [x] selectNewMaster TCP liveness 测试修复（使用真实 listener）
+- [x] Scenario C/D 集成测试
+- [x] 与 P1.1 同一次提交落地
 
 ---
 
