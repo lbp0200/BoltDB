@@ -1667,7 +1667,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			} else if opt == "PERSIST" {
 				h.markDirtyKeys(state, gexKey)
 				if _, err := h.Db.Persist(gexKey); err != nil {
-					return proto.NewError(fmt.Sprintf("ERR %v", err))
+					return wrapStoreError(err)
 				}
 			} else {
 				return proto.NewError("ERR syntax error")
@@ -1788,7 +1788,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return resp
 		}
 		if err := h.Db.MSet(pairs...); err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.OK
 
@@ -1810,7 +1810,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		success, err := h.Db.MSetNX(pairs...)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(boolToInt(success)))
 
@@ -1958,7 +1958,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		newBit, err := h.Db.SetBit(key, int(offset), int(bit))
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(newBit))
 
@@ -1973,7 +1973,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		bit, err := h.Db.GetBit(key, int(offset))
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(bit))
 
@@ -1999,7 +1999,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		count, err := h.Db.BitCount(key, start, end)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(count))
 
@@ -2025,7 +2025,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, destKey)
 		length, err := h.Db.BitOp(operation, destKey, sourceKeys...)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(length))
 
@@ -2041,7 +2041,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		results, err := h.Db.BitField(key, operations)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		// Single operation returns integer, multiple operations return array
 		if len(results) == 1 {
@@ -2090,7 +2090,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		pos, err := h.Db.BitPos(key, bit, start, end)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(pos))
 
@@ -2102,7 +2102,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		key := string(args[0])
 		length, err := h.Db.BitLen(key)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(length))
 
@@ -2134,7 +2134,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		length, err := h.Db.SetRange(key, offset, value)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		// #nosec G115 - length is bounded by practical data size limits
 		return proto.NewInteger(int64(length))
@@ -2203,7 +2203,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		changed, err := h.Db.PFAdd(key, elements...)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(changed)
 
@@ -2221,7 +2221,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		count, err := h.Db.PFCount(keys...)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(count)
 
@@ -2241,7 +2241,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, destKey)
 		err := h.Db.PFMerge(destKey, sourceKeys...)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.OK
 
@@ -2256,7 +2256,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		info, err := h.Db.PFInfo(key)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		// 返回数组格式: [key1, value1, key2, value2, ...]
 		result := make([][]byte, 0, len(info)*2)
@@ -2331,7 +2331,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				serializedData := string(args[2])
 				err := h.Db.Restore(key, []byte(serializedData), ttl, replace)
 				if err != nil {
-					return proto.NewError(fmt.Sprintf("ERR %v", err))
+					return wrapStoreError(err)
 				}
 				return proto.OK
 			}
@@ -2346,7 +2346,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		err := h.Db.Restore(key, []byte(serializedData), ttl, replace)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.OK
 
@@ -2361,7 +2361,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		case "REFCOUNT":
 			refcount, err := h.Db.ObjectRefCount(key)
 			if err != nil {
-				return proto.NewError(fmt.Sprintf("ERR %v", err))
+				return wrapStoreError(err)
 			}
 			if refcount == 0 {
 				return proto.NewBulkString(nil)
@@ -2370,7 +2370,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		case "ENCODING":
 			encoding, err := h.Db.ObjectEncoding(key)
 			if err != nil {
-				return proto.NewError(fmt.Sprintf("ERR %v", err))
+				return wrapStoreError(err)
 			}
 			if encoding == "" {
 				return proto.NewBulkString(nil)
@@ -2379,7 +2379,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		case "IDLETIME":
 			idletime, err := h.Db.ObjectIdleTime(key)
 			if err != nil {
-				return proto.NewError(fmt.Sprintf("ERR %v", err))
+				return wrapStoreError(err)
 			}
 			return proto.NewInteger(idletime)
 		case "FREQ":
@@ -2401,7 +2401,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		success, err := h.Db.Expire(key, seconds)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(boolToInt(success)))
 
@@ -2417,7 +2417,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		success, err := h.Db.ExpireAt(key, timestamp)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(boolToInt(success)))
 
@@ -2433,7 +2433,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		success, err := h.Db.PExpire(key, milliseconds)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(boolToInt(success)))
 
@@ -2449,7 +2449,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		success, err := h.Db.PExpireAt(key, timestamp)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(boolToInt(success)))
 
@@ -2483,7 +2483,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		success, err := h.Db.Persist(key)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(boolToInt(success)))
 
@@ -2494,7 +2494,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		key, newKey := string(args[0]), string(args[1])
 		h.markDirtyKeys(state, key, newKey)
 		if err := h.Db.Rename(key, newKey); err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.OK
 
@@ -2506,7 +2506,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key, newKey)
 		success, err := h.Db.RenameNX(key, newKey)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(boolToInt(success)))
 
@@ -2546,7 +2546,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		// 获取源键类型
 		srcType, err := h.Db.Type(srcKey)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		if srcType == "none" {
 			return proto.NewInteger(0) // 源键不存在
@@ -2615,7 +2615,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		pattern := string(args[0])
 		keys, err := h.Db.Keys(pattern)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		results := make([][]byte, len(keys))
 		for i, k := range keys {
@@ -2646,7 +2646,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		result, err := h.Db.Scan(cursor, pattern, count)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		// 返回嵌套数组格式: [cursor, [key1, key2, ...]]
 		return proto.NewScanResponse(result.Cursor, result.Keys)
@@ -3513,7 +3513,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		source, destination, member := string(args[0]), string(args[1]), string(args[2])
 		success, err := h.Db.SMove(source, destination, member)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(boolToInt(success)))
 
@@ -3583,7 +3583,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, destination)
 		count, err := h.Db.SInterStore(destination, keys...)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		// #nosec G115 - count is bounded by practical data size limits
 		return proto.NewInteger(int64(count))
@@ -3599,7 +3599,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		results, err := h.Db.SMIsMember(key, members...)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		elems := make([]proto.RESP, len(results))
 		for i, v := range results {
@@ -3621,7 +3621,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		count, err := h.Db.SInterCard(sinterKeys...)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(count)
 
@@ -3637,7 +3637,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, destination)
 		count, err := h.Db.SUnionStore(destination, keys...)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		// #nosec G115 - count is bounded by practical data size limits
 		return proto.NewInteger(int64(count))
@@ -3654,7 +3654,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, destination)
 		count, err := h.Db.SDiffStore(destination, keys...)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		// #nosec G115 - count is bounded by practical data size limits
 		return proto.NewInteger(int64(count))
@@ -3689,7 +3689,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		result, err := h.Db.SScan(key, cursor, pattern, count)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		// 返回格式: [cursor, [member1, member2, ...]]
 		response := make([][]byte, 0, 2+len(result.Members))
@@ -3967,7 +3967,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if errors.Is(err, store.ErrKeyNotFound) || errors.Is(err, store.ErrMemberNotFound) {
 				return proto.NewBulkString(nil)
 			}
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(rank)
 
@@ -3981,7 +3981,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if errors.Is(err, store.ErrKeyNotFound) || errors.Is(err, store.ErrMemberNotFound) {
 				return proto.NewBulkString(nil)
 			}
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(rank)
 
@@ -4003,7 +4003,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if errors.Is(err, store.ErrKeyNotFound) {
 				return proto.NewInteger(0)
 			}
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(count)
 
@@ -4050,7 +4050,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if errors.Is(err, store.ErrKeyNotFound) {
 				return &proto.Array{Args: [][]byte{}}
 			}
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		if withScores {
 			results := make([][]byte, 0, len(members)*2)
@@ -4089,7 +4089,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if errors.Is(err, store.ErrKeyNotFound) {
 				return &proto.Array{Args: [][]byte{}}
 			}
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		if withScores {
 			results := make([][]byte, 0, len(members)*2)
@@ -4216,7 +4216,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		h.markDirtyKeys(state, key)
 		newScore, err := h.Db.ZIncrBy(key, member, delta)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewBulkString([]byte(strconv.FormatFloat(newScore, 'f', -1, 64)))
 
@@ -4690,7 +4690,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		result, err := h.Db.ZScan(zSetName, cursor, pattern, count)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		// 返回格式: [cursor, [member1, score1, member2, score2, ...]]
 		membersArray := make([][]byte, len(result.Members)*2)
@@ -4950,14 +4950,14 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	case "DBSIZE":
 		keys, err := h.Db.Keys("*")
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(int64(len(keys)))
 
 	case "TIME":
 		sec, usec, err := h.Db.Time()
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return &proto.Array{Args: [][]byte{
 			[]byte(fmt.Sprintf("%d", sec)),
@@ -4967,14 +4967,14 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	case "FLUSHDB":
 		err := h.Db.FlushDB()
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.OK
 
 	case "FLUSHALL":
 		err := h.Db.FlushDB()
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.OK
 
@@ -5050,7 +5050,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				if errors.Is(err, store.ErrKeyNotFound) {
 					return proto.NewBulkString(nil)
 				}
-				return proto.NewError(fmt.Sprintf("ERR %v", err))
+				return wrapStoreError(err)
 			}
 			return proto.NewInteger(size)
 		case "DOCTOR":

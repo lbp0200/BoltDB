@@ -226,13 +226,22 @@ Tests: 29 new test functions in `replication_coverage_test.go` covering normal o
 
 ### P1.6 WRONGTYPE 错误包装不完整
 
-约 35 个命令使用 `fmt.Sprintf("ERR %v", err)` 包装 `store.ErrWrongType`，应返回 `"WRONGTYPE Operation against a key holding the wrong kind of value"`。write 命令优先级更高：
+**Status:** COMPLETE (committed in `2d0af2a`)
 
-**写命令（高优先级，20+ 个）：**
-`MSET`, `MSETNX`, `SETBIT`, `BITOP`, `BITFIELD`, `SETRANGE`, `PFADD`, `PFMERGE`, `RESTORE`, `EXPIRE`, `EXPIREAT`, `PEXPIRE`, `PEXPIREAT`, `PERSIST`, `RENAME`, `RENAMENX`, `SMOVE`, `ZINCRBY`, `SINTERSTORE`, `SUNIONSTORE`, `SDIFFSTORE`
+约 35 个命令使用 `fmt.Sprintf("ERR %v", err)` 包装 `store.ErrWrongType`，应返回 `"WRONGTYPE Operation against a key holding the wrong kind of value"`。
 
-**读命令（中优先级，15 个）：**
-`GETBIT`, `BITCOUNT`, `BITPOS`, `BITLEN`, `PFCOUNT`, `PFINFO`, `OBJECT REFCOUNT`, `OBJECT ENCODING`, `OBJECT IDLETIME`, `KEYS`, `SMISMEMBER`, `SINTERCARD`, `ZRANK`, `ZREVRANK`, `ZCOUNT`, `ZRANGE`, `ZREVRANGE`
+修复内容：
+- 使用 Python 脚本自动扫描 `executeCommand` 中所有 `h.Db.*` 返回的 `fmt.Sprintf("ERR %v", err)` 并替换为 `wrapStoreError(err)`
+- 排除已有 WRONGTYPE 检查的 fallback 路径、非 store 错误路径
+- 共修复 49 处，覆盖所有写命令和读命令
+
+**已修复的命令（写命令，高优先级）：**
+`MSET`, `MSETNX`, `SETBIT`, `BITOP`, `BITFIELD`, `SETRANGE`, `PFADD`, `PFMERGE`, `RESTORE`, `EXPIRE`, `EXPIREAT`, `PEXPIRE`, `PEXPIREAT`, `PERSIST`, `RENAME`, `RENAMENX`, `SMOVE`, `ZINCRBY`, `SINTERSTORE`, `SUNIONSTORE`, `SDIFFSTORE`, `FLUSHDB`, `FLUSHALL`
+
+**已修复的命令（读命令，中优先级）：**
+`GETBIT`, `BITCOUNT`, `BITPOS`, `BITLEN`, `PFCOUNT`, `PFINFO`, `OBJECT REFCOUNT`, `OBJECT ENCODING`, `OBJECT IDLETIME`, `KEYS`, `SMISMEMBER`, `SINTERCARD`, `ZRANK`, `ZREVRANK`, `ZCOUNT`, `MEMORY USAGE`, `SCAN`, `SSCAN`, `ZSCAN`, `DBSIZE`, `TIME`
+
+注意：对于已有完整错误路径（WRONGTYPE → ErrKeyNotFound → ERR fallback）的命令保持原样，只替换了未做区分直接返回 `"ERR %v"` 的错误路径。
 
 ## 已知架构边界（不会做，需文档化）
 
