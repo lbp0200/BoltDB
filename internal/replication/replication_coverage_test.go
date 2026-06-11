@@ -2,6 +2,7 @@ package replication
 
 import (
 	"bufio"
+	"strconv"
 	"testing"
 	"time"
 
@@ -1796,4 +1797,50 @@ func TestExecuteReplicatedCommand_SORT_STORE_String(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(vals))
 	assert.Equal(t, "42", vals[0])
+}
+
+// TestExecuteReplicatedCommand_RESTORE_OldFormat tests RESTORE in old format (key + serialized + REPLACE)
+func TestExecuteReplicatedCommand_RESTORE_OldFormat(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.Set("mykey", "hello")
+	dumpData, err := testStore.Dump("mykey")
+	assert.NoError(t, err)
+
+	// Old format: RESTORE key serializedData REPLACE (no TTL)
+	err = executeReplicatedCommand(testStore, [][]byte{
+		[]byte("RESTORE"), []byte("newkey"), dumpData, []byte("REPLACE"),
+	})
+	assert.NoError(t, err)
+
+	val, err := testStore.Get("newkey")
+	assert.NoError(t, err)
+	assert.Equal(t, "hello", val)
+}
+
+// TestExecuteReplicatedCommand_RESTORE_ABSTTL tests RESTORE with ABSTTL option
+func TestExecuteReplicatedCommand_RESTORE_ABSTTL(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.Set("mykey", "world")
+	dumpData, err := testStore.Dump("mykey")
+	assert.NoError(t, err)
+
+	// ABSTTL with future timestamp (now + 10s in ms)
+	futureTS := time.Now().UnixMilli() + 10000
+	ttlStr := strconv.FormatInt(futureTS, 10)
+
+	err = executeReplicatedCommand(testStore, [][]byte{
+		[]byte("RESTORE"), []byte("newkey"), []byte(ttlStr), dumpData,
+		[]byte("REPLACE"), []byte("ABSTTL"),
+	})
+	assert.NoError(t, err)
+
+	val, err := testStore.Get("newkey")
+	assert.NoError(t, err)
+	assert.Equal(t, "world", val)
 }

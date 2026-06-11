@@ -1456,21 +1456,47 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 	// ========== P1.5: 修复复制数据丢失 ==========
 
 	case "RESTORE":
-		if len(args) >= 4 {
+		if len(args) >= 3 {
 			key := string(args[1])
-			ttlMS, parseErr := strconv.ParseInt(string(args[2]), 10, 64)
-			if parseErr != nil {
-				return nil
-			}
-			serializedData := string(args[3])
 			replace := false
-			for i := 4; i < len(args); i++ {
-				upper := strings.ToUpper(string(args[i]))
-				if upper == "REPLACE" {
+
+			// 尝试新格式：RESTORE key ttl serializedData [REPLACE] [ABSTTL]
+			if len(args) >= 4 {
+				ttlMS, parseErr := strconv.ParseInt(string(args[2]), 10, 64)
+				if parseErr == nil {
+					serializedData := string(args[3])
+					absttl := false
+					for i := 4; i < len(args); i++ {
+						upper := strings.ToUpper(string(args[i]))
+						switch upper {
+						case "REPLACE":
+							replace = true
+						case "ABSTTL":
+							absttl = true
+						}
+					}
+					var ttl time.Duration
+					if absttl {
+						now := time.Now().UnixMilli()
+						if ttlMS > now {
+							ttl = time.Duration(ttlMS-now) * time.Millisecond
+						}
+					} else {
+						ttl = time.Duration(ttlMS) * time.Millisecond
+					}
+					err := s.Restore(key, []byte(serializedData), ttl, replace)
+					return err
+				}
+			}
+
+			// 旧格式：RESTORE key serializedData [REPLACE]
+			serializedData := string(args[2])
+			for i := 3; i < len(args); i++ {
+				if strings.ToUpper(string(args[i])) == "REPLACE" {
 					replace = true
 				}
 			}
-			err := s.Restore(key, []byte(serializedData), time.Duration(ttlMS)*time.Millisecond, replace)
+			err := s.Restore(key, []byte(serializedData), 0, replace)
 			return err
 		}
 
