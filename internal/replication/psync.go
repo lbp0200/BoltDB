@@ -457,6 +457,32 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			return nil
 		}
 
+	case "BZPOPMAX":
+		if len(args) >= 2 {
+			for i := 1; i < len(args)-1; i++ {
+				key := string(args[i])
+				if members, err := s.ZPopMax(key, 1); err == nil && len(members) > 0 {
+					return nil
+				} else if err != nil {
+					return fmt.Errorf("BZPOPMAX %s: %w", key, err)
+				}
+			}
+			return nil
+		}
+
+	case "BZPOPMIN":
+		if len(args) >= 2 {
+			for i := 1; i < len(args)-1; i++ {
+				key := string(args[i])
+				if members, err := s.ZPopMin(key, 1); err == nil && len(members) > 0 {
+					return nil
+				} else if err != nil {
+					return fmt.Errorf("BZPOPMIN %s: %w", key, err)
+				}
+			}
+			return nil
+		}
+
 	case "LPUSHX":
 		if len(args) >= 3 {
 			key := string(args[1])

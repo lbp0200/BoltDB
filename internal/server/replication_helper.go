@@ -44,6 +44,9 @@ func isWriteCommand(cmd string) bool {
 		"FLUSHALL":   true,
 		"XAUTOCLAIM": true,
 		"SORT":       true,
+		// 2026-06-11: BZPOPMAX/BZPOPMIN 修复 — 阻塞式排序集合弹出未复制
+		"BZPOPMAX": true,
+		"BZPOPMIN": true,
 	}
 	return writeCommands[cmd]
 }

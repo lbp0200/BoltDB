@@ -1211,6 +1211,40 @@ func TestExecuteReplicatedCommand_BLPOP(t *testing.T) {
 	assert.Equal(t, "b", items[0])
 }
 
+// TestExecuteReplicatedCommand_BZPOPMAX tests executeReplicatedCommand for BZPOPMAX
+func TestExecuteReplicatedCommand_BZPOPMAX(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.ZAdd("zset1", []store.ZSetMember{{Score: 1, Member: "a"}, {Score: 2, Member: "b"}})
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BZPOPMAX"), []byte("zset1"), []byte("zset2"), []byte("1")})
+	assert.NoError(t, err)
+
+	// Verify element was popped
+	members, _ := testStore.ZRange("zset1", 0, -1)
+	assert.Equal(t, 1, len(members))
+	assert.Equal(t, "a", members[0].Member)
+}
+
+// TestExecuteReplicatedCommand_BZPOPMIN tests executeReplicatedCommand for BZPOPMIN
+func TestExecuteReplicatedCommand_BZPOPMIN(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.ZAdd("zset1", []store.ZSetMember{{Score: 1, Member: "a"}, {Score: 2, Member: "b"}})
+
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BZPOPMIN"), []byte("zset1"), []byte("1")})
+	assert.NoError(t, err)
+
+	// Verify element was popped
+	members, _ := testStore.ZRange("zset1", 0, -1)
+	assert.Equal(t, 1, len(members))
+	assert.Equal(t, "b", members[0].Member)
+}
+
 // TestExecuteReplicatedCommand_BRPOP tests executeReplicatedCommand for BRPOP
 func TestExecuteReplicatedCommand_BRPOP(t *testing.T) {
 	t.Parallel()
