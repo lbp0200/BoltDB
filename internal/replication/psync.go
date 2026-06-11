@@ -1453,6 +1453,225 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			return tsErr
 		}
 
+	// ========== P1.5: 修复复制数据丢失 ==========
+
+	case "RESTORE":
+		if len(args) >= 4 {
+			key := string(args[1])
+			ttlMS, parseErr := strconv.ParseInt(string(args[2]), 10, 64)
+			if parseErr != nil {
+				return nil
+			}
+			serializedData := string(args[3])
+			replace := false
+			for i := 4; i < len(args); i++ {
+				upper := strings.ToUpper(string(args[i]))
+				if upper == "REPLACE" {
+					replace = true
+				}
+			}
+			err := s.Restore(key, []byte(serializedData), time.Duration(ttlMS)*time.Millisecond, replace)
+			return err
+		}
+
+	case "FLUSHDB", "FLUSHALL":
+		err := s.FlushDB()
+		s.ClearCaches()
+		return err
+
+	case "XAUTOCLAIM":
+		if len(args) >= 7 {
+			key := string(args[1])
+			group := string(args[2])
+			consumer := string(args[3])
+			minIdleTime, _ := strconv.ParseInt(string(args[4]), 10, 64)
+			start := string(args[5])
+			opts := store.XAutoClaimOptions{Count: 100, JustID: false}
+			for i := 6; i < len(args); i++ {
+				opt := strings.ToUpper(string(args[i]))
+				switch opt {
+				case "COUNT":
+					if i+1 < len(args) {
+						count, parseErr := strconv.ParseInt(string(args[i+1]), 10, 64)
+						if parseErr == nil {
+							opts.Count = count
+						}
+						i++
+					}
+				case "JUSTID":
+					opts.JustID = true
+				}
+			}
+			_, err := s.XAutoClaim(key, group, consumer, minIdleTime, start, opts)
+			return err
+		}
+
+	case "SORT":
+		if len(args) < 2 {
+			return nil
+		}
+		key := string(args[1])
+		// 解析 SORT 选项
+		var offset, count int64 = 0, -1
+		var asc = true
+		var alpha bool
+		var destKey string
+		var byPattern string
+		i := 2
+		for i < len(args) {
+			opt := strings.ToUpper(string(args[i]))
+			switch opt {
+			case "BY":
+				if i+1 < len(args) {
+					byPattern = string(args[i+1])
+					i += 2
+				} else {
+					i++
+				}
+			case "LIMIT":
+				if i+2 < len(args) {
+					offset, _ = strconv.ParseInt(string(args[i+1]), 10, 64)
+					count, _ = strconv.ParseInt(string(args[i+2]), 10, 64)
+					i += 3
+				} else {
+					i++
+				}
+			case "ASC":
+				asc = true
+				i++
+			case "DESC":
+				asc = false
+				i++
+			case "ALPHA":
+				alpha = true
+				i++
+			case "STORE":
+				if i+1 < len(args) {
+					destKey = string(args[i+1])
+					i += 2
+				} else {
+					i++
+				}
+			default:
+				i++
+			}
+		}
+
+		// 只处理带 STORE 选项的 SORT（否则是只读操作）
+		if destKey == "" {
+			return nil
+		}
+
+		// 获取源数据
+		keyType, _ := s.Type(key)
+		var values []string
+		var scores []float64
+
+		switch keyType {
+		case "list":
+			listValues, err := s.LRange(key, 0, -1)
+			if err == nil {
+				values = listValues
+			} else {
+				values = []string{}
+			}
+		case "set":
+			setValues, err := s.SMembers(key)
+			if err == nil {
+				values = setValues
+			} else {
+				values = []string{}
+			}
+		case "string":
+			val, _ := s.Get(key)
+			values = []string{val}
+		case "zset":
+			members, _ := s.ZRange(key, 0, -1)
+			for _, m := range members {
+				values = append(values, m.Member)
+				scores = append(scores, m.Score)
+			}
+		default:
+			return nil
+		}
+
+		// 应用 BY pattern
+		if byPattern != "" && len(values) > 0 {
+			weights := make([]float64, len(values))
+			for idx, val := range values {
+				targetKey := strings.Replace(byPattern, "*", val, 1)
+				weightVal, _ := s.Get(targetKey)
+				if weightVal != "" {
+					if f, parseErr := strconv.ParseFloat(weightVal, 64); parseErr == nil {
+						weights[idx] = f
+					} else {
+						weights[idx] = float64(idx)
+					}
+				} else {
+					weights[idx] = float64(idx)
+				}
+			}
+			scores = weights
+			alpha = false
+		}
+
+		// 数值排序
+		if len(scores) == 0 && !alpha && len(values) > 0 {
+			scores = make([]float64, len(values))
+			for idx, v := range values {
+				if f, parseErr := strconv.ParseFloat(v, 64); parseErr == nil {
+					scores[idx] = f
+				} else {
+					scores[idx] = 0
+				}
+			}
+		}
+
+		// 简单排序
+		n := len(values)
+		for i := 0; i < n-1; i++ {
+			for j := 0; j < n-i-1; j++ {
+				swap := false
+				if alpha {
+					if asc {
+						swap = values[j] > values[j+1]
+					} else {
+						swap = values[j] < values[j+1]
+					}
+				} else {
+					if asc {
+						swap = scores[j] > scores[j+1]
+					} else {
+						swap = scores[j] < scores[j+1]
+					}
+				}
+				if swap {
+					values[j], values[j+1] = values[j+1], values[j]
+					if len(scores) > 0 {
+						scores[j], scores[j+1] = scores[j+1], scores[j]
+					}
+				}
+			}
+		}
+
+		// LIMIT
+		if offset > 0 {
+			if offset >= int64(len(values)) {
+				values = []string{}
+			} else if offset < int64(len(values)) {
+				values = values[offset:]
+			}
+		}
+		if count >= 0 && int64(len(values)) > count {
+			values = values[:count]
+		}
+
+		// STORE — 存为 list
+		_, _ = s.Del(destKey)
+		for _, v := range values {
+			_, _ = s.RPush(destKey, v)
+		}
+
 	default:
 		logger.Logger.Debug().Str("cmd", cmd).Msg("收到未处理的复制命令")
 		return nil

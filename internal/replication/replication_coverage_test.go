@@ -1541,3 +1541,259 @@ func TestExecuteReplicatedCommand_TS_InvalidArgs(t *testing.T) {
 	err = executeReplicatedCommand(testStore, [][]byte{[]byte("TS.DEL"), []byte("key")})
 	assert.NoError(t, err)
 }
+
+// TestExecuteReplicatedCommand_RESTORE tests executeReplicatedCommand for RESTORE
+func TestExecuteReplicatedCommand_RESTORE(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	// Dump a key to get serialized data
+	testStore.Set("mykey", "hello")
+	dumpData, err := testStore.Dump("mykey")
+	assert.NoError(t, err)
+
+	// RESTORE to new key with REPLACE
+	err = executeReplicatedCommand(testStore, [][]byte{[]byte("RESTORE"), []byte("newkey"), []byte("0"), dumpData, []byte("REPLACE")})
+	assert.NoError(t, err)
+
+	// Verify restored value
+	val, err := testStore.Get("newkey")
+	assert.NoError(t, err)
+	assert.Equal(t, "hello", val)
+}
+
+// TestExecuteReplicatedCommand_RESTORE_WithTTL tests RESTORE with TTL
+func TestExecuteReplicatedCommand_RESTORE_WithTTL(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.Set("mykey", "world")
+	dumpData, err := testStore.Dump("mykey")
+	assert.NoError(t, err)
+
+	// RESTORE with 10s TTL
+	err = executeReplicatedCommand(testStore, [][]byte{[]byte("RESTORE"), []byte("newkey"), []byte("10000"), dumpData, []byte("REPLACE")})
+	assert.NoError(t, err)
+
+	// Verify restored value
+	val, err := testStore.Get("newkey")
+	assert.NoError(t, err)
+	assert.Equal(t, "world", val)
+}
+
+// TestExecuteReplicatedCommand_FLUSHDB tests executeReplicatedCommand for FLUSHDB
+func TestExecuteReplicatedCommand_FLUSHDB(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.Set("key1", "val1")
+	testStore.Set("key2", "val2")
+
+	// FLUSHDB should clear all keys
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("FLUSHDB")})
+	assert.NoError(t, err)
+
+	_, err = testStore.Get("key1")
+	assert.True(t, err != nil)
+	_, err = testStore.Get("key2")
+	assert.True(t, err != nil)
+}
+
+// TestExecuteReplicatedCommand_FLUSHALL tests executeReplicatedCommand for FLUSHALL
+func TestExecuteReplicatedCommand_FLUSHALL(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.Set("akey", "aval")
+
+	// FLUSHALL should clear all keys (same as FLUSHDB in BoltDB)
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("FLUSHALL")})
+	assert.NoError(t, err)
+
+	_, err = testStore.Get("akey")
+	assert.True(t, err != nil)
+}
+
+// TestExecuteReplicatedCommand_XAUTOCLAIM tests executeReplicatedCommand for XAUTOCLAIM
+func TestExecuteReplicatedCommand_XAUTOCLAIM(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	// XAUTOCLAIM on non-existent stream should not error
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("XAUTOCLAIM"), []byte("stream"), []byte("group"),
+		[]byte("consumer"), []byte("1000"), []byte("0-0"),
+	})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_XAUTOCLAIM_WithOptions tests XAUTOCLAIM with COUNT and JUSTID
+func TestExecuteReplicatedCommand_XAUTOCLAIM_WithOptions(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("XAUTOCLAIM"), []byte("stream"), []byte("group"),
+		[]byte("consumer"), []byte("1000"), []byte("0-0"),
+		[]byte("COUNT"), []byte("10"), []byte("JUSTID"),
+	})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_SORT_STORE_List tests SORT with STORE option (list source)
+func TestExecuteReplicatedCommand_SORT_STORE_List(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	// Set up source list
+	testStore.RPush("mylist", "3", "1", "2")
+
+	// SORT mylist STORE sortedlist
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("SORT"), []byte("mylist"), []byte("STORE"), []byte("sortedlist"),
+	})
+	assert.NoError(t, err)
+
+	// Verify stored result
+	vals, err := testStore.LRange("sortedlist", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 3, len(vals))
+	assert.Equal(t, "1", vals[0])
+	assert.Equal(t, "2", vals[1])
+	assert.Equal(t, "3", vals[2])
+}
+
+// TestExecuteReplicatedCommand_SORT_STORE_Set tests SORT with STORE option (set source)
+func TestExecuteReplicatedCommand_SORT_STORE_Set(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	// Set up source set
+	testStore.SAdd("myset", "c", "a", "b")
+
+	// SORT myset ALPHA STORE sortedset
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("SORT"), []byte("myset"), []byte("ALPHA"), []byte("STORE"), []byte("sortedset"),
+	})
+	assert.NoError(t, err)
+
+	// Verify stored result
+	vals, err := testStore.LRange("sortedset", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 3, len(vals))
+	assert.Equal(t, "a", vals[0])
+	assert.Equal(t, "b", vals[1])
+	assert.Equal(t, "c", vals[2])
+}
+
+// TestExecuteReplicatedCommand_SORT_STORE_Desc tests SORT DESC with STORE
+func TestExecuteReplicatedCommand_SORT_STORE_Desc(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.RPush("mylist", "3", "1", "2")
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("SORT"), []byte("mylist"), []byte("DESC"), []byte("STORE"), []byte("sortedlist"),
+	})
+	assert.NoError(t, err)
+
+	vals, err := testStore.LRange("sortedlist", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 3, len(vals))
+	assert.Equal(t, "3", vals[0])
+	assert.Equal(t, "2", vals[1])
+	assert.Equal(t, "1", vals[2])
+}
+
+// TestExecuteReplicatedCommand_SORT_NoStore tests SORT without STORE (read-only, no-op)
+func TestExecuteReplicatedCommand_SORT_NoStore(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.RPush("mylist", "3", "1", "2")
+
+	// Read-only SORT without STORE should not error (no-op in replication)
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("SORT"), []byte("mylist"),
+	})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_RESTORE_InvalidArgs tests RESTORE with too few args
+func TestExecuteReplicatedCommand_RESTORE_InvalidArgs(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	// RESTORE with too few args should not panic
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("RESTORE")})
+	assert.NoError(t, err)
+
+	err = executeReplicatedCommand(testStore, [][]byte{[]byte("RESTORE"), []byte("key")})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_SORT_STORE_Limit tests SORT LIMIT with STORE
+func TestExecuteReplicatedCommand_SORT_STORE_Limit(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.RPush("mylist", "5", "3", "1", "4", "2")
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("SORT"), []byte("mylist"), []byte("LIMIT"), []byte("1"), []byte("3"),
+		[]byte("STORE"), []byte("sortedlist"),
+	})
+	assert.NoError(t, err)
+
+	vals, err := testStore.LRange("sortedlist", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 3, len(vals))
+	assert.Equal(t, "2", vals[0]) // sorted: [1,2,3,4,5], offset 1, count 3 → [2,3,4]
+	assert.Equal(t, "3", vals[1])
+	assert.Equal(t, "4", vals[2])
+}
+
+// TestExecuteReplicatedCommand_XAUTOCLAIM_InvalidArgs tests XAUTOCLAIM with too few args
+func TestExecuteReplicatedCommand_XAUTOCLAIM_InvalidArgs(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	// XAUTOCLAIM with too few args should not panic
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("XAUTOCLAIM")})
+	assert.NoError(t, err)
+	err = executeReplicatedCommand(testStore, [][]byte{[]byte("XAUTOCLAIM"), []byte("key")})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_SORT_STORE_String tests SORT with STORE (string source, single element)
+func TestExecuteReplicatedCommand_SORT_STORE_String(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.Set("mystr", "42")
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("SORT"), []byte("mystr"), []byte("STORE"), []byte("sortedlist"),
+	})
+	assert.NoError(t, err)
+
+	vals, err := testStore.LRange("sortedlist", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(vals))
+	assert.Equal(t, "42", vals[0])
+}

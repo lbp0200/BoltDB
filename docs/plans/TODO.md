@@ -201,6 +201,39 @@ Tests: 29 new test functions in `replication_coverage_test.go` covering normal o
 | WRONGTYPE error handling fix | added `wrapStoreError` helper + fixed ~40 locations where ErrWrongType was wrapped as `"ERR %v"` instead of proper `"WRONGTYPE ..."` | Jun 2026 |
 | JSON/TS replication fix (9 commands) | `executeReplicatedCommand` — JSON.SET/DEL/ARRAPPEND/NUMINCRBY/NUMMULTBY/CLEAR + TS.CREATE/ADD/DEL + 13 tests | Jun 2026 |
 
+## 待办缺口（已知未完成）
+
+### P1.5 isWriteCommand 缺失写入命令
+
+**Status:** COMPLETE (committed in `de7f628`)
+
+| 命令 | 行号 (handler.go) | 影响 | 优先级 |
+|------|-------------------|------|--------|
+| RESTORE | 2294 | 创建/覆盖键 | 高 |
+| FLUSHDB | 4967 | 清除所有键 | 高 |
+| FLUSHALL | 4974 | 清除所有键 | 高 |
+| XAUTOCLAIM | 6578 | 声明流消息（变更状态） | 高 |
+| SORT … STORE | 6926/7057 | SORT 使用 STORE 选项时写入 | 高 |
+
+修复内容：
+- `replication_helper.go`: 5 个命令添加到 `isWriteCommand` 映射
+- `psync.go`: 5 个命令在 `executeReplicatedCommand` 中添加 case
+  - RESTORE: 解析 key/ttl/serializedData/REPLACE → `s.Restore()`
+  - FLUSHDB/FLUSHALL: `s.FlushDB()` + `s.ClearCaches()`
+  - XAUTOCLAIM: 解析 key/group/consumer/minIdleTime/start/COUNT/JUSTID → `s.XAutoClaim()`
+  - SORT…STORE: 完整排序逻辑（list/set/string/zset 源类型），支持 BY/ASC/DESC/ALPHA/LIMIT
+- 14 个新测试函数，涵盖正常路径、选项参数、非法参数、只读 SORT 无操作
+
+### P1.6 WRONGTYPE 错误包装不完整
+
+约 35 个命令使用 `fmt.Sprintf("ERR %v", err)` 包装 `store.ErrWrongType`，应返回 `"WRONGTYPE Operation against a key holding the wrong kind of value"`。write 命令优先级更高：
+
+**写命令（高优先级，20+ 个）：**
+`MSET`, `MSETNX`, `SETBIT`, `BITOP`, `BITFIELD`, `SETRANGE`, `PFADD`, `PFMERGE`, `RESTORE`, `EXPIRE`, `EXPIREAT`, `PEXPIRE`, `PEXPIREAT`, `PERSIST`, `RENAME`, `RENAMENX`, `SMOVE`, `ZINCRBY`, `SINTERSTORE`, `SUNIONSTORE`, `SDIFFSTORE`
+
+**读命令（中优先级，15 个）：**
+`GETBIT`, `BITCOUNT`, `BITPOS`, `BITLEN`, `PFCOUNT`, `PFINFO`, `OBJECT REFCOUNT`, `OBJECT ENCODING`, `OBJECT IDLETIME`, `KEYS`, `SMISMEMBER`, `SINTERCARD`, `ZRANK`, `ZREVRANK`, `ZCOUNT`, `ZRANGE`, `ZREVRANGE`
+
 ## 已知架构边界（不会做，需文档化）
 
 | 边界 | 原因 |
