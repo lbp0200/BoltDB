@@ -1355,3 +1355,189 @@ func TestExecuteReplicatedCommand_GETEX_NonExistent(t *testing.T) {
 	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETEX"), []byte("nonexistent")})
 	assert.NoError(t, err)
 }
+
+// TestExecuteReplicatedCommand_JSON_SET tests executeReplicatedCommand for JSON.SET
+func TestExecuteReplicatedCommand_JSON_SET(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("JSON.SET"), []byte("jsonkey"), []byte("$"), []byte(`{"name":"test"}`),
+	})
+	assert.NoError(t, err)
+
+	result, err := testStore.JSONGet("jsonkey", "$")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(result))
+}
+
+// TestExecuteReplicatedCommand_JSON_SET_WithNX tests JSON.SET with NX option
+func TestExecuteReplicatedCommand_JSON_SET_WithNX(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("JSON.SET"), []byte("jsonnx"), []byte("$"), []byte(`{"val":1}`), []byte("NX"),
+	})
+	assert.NoError(t, err)
+
+	// Second call with NX should not overwrite
+	err = executeReplicatedCommand(testStore, [][]byte{
+		[]byte("JSON.SET"), []byte("jsonnx"), []byte("$"), []byte(`{"val":2}`), []byte("NX"),
+	})
+	assert.NoError(t, err)
+
+	result, err := testStore.JSONGet("jsonnx", "$")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(result))
+}
+
+// TestExecuteReplicatedCommand_JSON_DEL tests executeReplicatedCommand for JSON.DEL
+func TestExecuteReplicatedCommand_JSON_DEL(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.JSONSet("jsondel", "$", `{"a":1,"b":2}`, false, false)
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("JSON.DEL"), []byte("jsondel"),
+	})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_JSON_ARRAPPEND tests executeReplicatedCommand for JSON.ARRAPPEND
+func TestExecuteReplicatedCommand_JSON_ARRAPPEND(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.JSONSet("jsonarr", "$", `[1,2]`, false, false)
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("JSON.ARRAPPEND"), []byte("jsonarr"), []byte("$"), []byte("3"),
+	})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_JSON_NUMINCRBY tests executeReplicatedCommand for JSON.NUMINCRBY
+func TestExecuteReplicatedCommand_JSON_NUMINCRBY(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.JSONSet("jsonnum", "$", `10`, false, false)
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("JSON.NUMINCRBY"), []byte("jsonnum"), []byte("$"), []byte("5"),
+	})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_JSON_NUMMULTBY tests executeReplicatedCommand for JSON.NUMMULTBY
+func TestExecuteReplicatedCommand_JSON_NUMMULTBY(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.JSONSet("jsonmult", "$", `10`, false, false)
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("JSON.NUMMULTBY"), []byte("jsonmult"), []byte("$"), []byte("2"),
+	})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_JSON_CLEAR tests executeReplicatedCommand for JSON.CLEAR
+func TestExecuteReplicatedCommand_JSON_CLEAR(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.JSONSet("jsonclear", "$", `{"a":1}`, false, false)
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("JSON.CLEAR"), []byte("jsonclear"),
+	})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_TS_CREATE tests executeReplicatedCommand for TS.CREATE
+func TestExecuteReplicatedCommand_TS_CREATE(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("TS.CREATE"), []byte("tscreatekey"), []byte("RETENTION"), []byte("3600000"),
+	})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_TS_ADD tests executeReplicatedCommand for TS.ADD
+func TestExecuteReplicatedCommand_TS_ADD(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("TS.ADD"), []byte("tsaddkey"), []byte("1000"), []byte("42.5"),
+	})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_TS_ADD_AutoTimestamp tests TS.ADD with *
+func TestExecuteReplicatedCommand_TS_ADD_AutoTimestamp(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("TS.ADD"), []byte("tsaddauto"), []byte("*"), []byte("3.14"),
+	})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_TS_DEL tests executeReplicatedCommand for TS.DEL
+func TestExecuteReplicatedCommand_TS_DEL(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	// Add some data points first
+	testStore.TSAdd("tsdelkey", 100, 1.0, store.TSAddOptions{})
+	testStore.TSAdd("tsdelkey", 200, 2.0, store.TSAddOptions{})
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("TS.DEL"), []byte("tsdelkey"), []byte("100"), []byte("150"),
+	})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_JSON_InvalidArgs tests JSON commands with invalid args
+func TestExecuteReplicatedCommand_JSON_InvalidArgs(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	// JSON.SET with too few args should not panic
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("JSON.SET"), []byte("key")})
+	assert.NoError(t, err)
+}
+
+// TestExecuteReplicatedCommand_TS_InvalidArgs tests TS commands with invalid args
+func TestExecuteReplicatedCommand_TS_InvalidArgs(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	// TS.ADD with too few args should not panic
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("TS.ADD"), []byte("key")})
+	assert.NoError(t, err)
+
+	// TS.DEL with too few args should not panic
+	err = executeReplicatedCommand(testStore, [][]byte{[]byte("TS.DEL"), []byte("key")})
+	assert.NoError(t, err)
+}

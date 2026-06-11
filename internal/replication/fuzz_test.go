@@ -14,7 +14,7 @@ func FuzzExecuteReplicatedCommand(f *testing.F) {
 	f.Add("DELkey")
 
 	f.Fuzz(func(t *testing.T, data string) {
-		testStore, err := store.NewBadgerStore("/tmp/fuzz_repl")
+		testStore, err := store.NewBadgerStore(t.TempDir())
 		if err != nil {
 			t.Skip("skipping")
 		}
@@ -32,7 +32,7 @@ func FuzzHandlePSync(f *testing.F) {
 	f.Add("replid123", int64(100))
 
 	f.Fuzz(func(t *testing.T, replId string, offset int64) {
-		testStore, err := store.NewBadgerStore("/tmp/fuzz_psync")
+		testStore, err := store.NewBadgerStore(t.TempDir())
 		if err != nil {
 			t.Skip("skipping")
 		}
@@ -54,7 +54,7 @@ func FuzzLoadRDBWithStore(f *testing.F) {
 	f.Add([]byte("INVALID"))
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		testStore, err := store.NewBadgerStore("/tmp/fuzz_rdb")
+		testStore, err := store.NewBadgerStore(t.TempDir())
 		if err != nil {
 			t.Skip("skipping")
 		}

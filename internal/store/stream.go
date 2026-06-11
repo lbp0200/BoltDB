@@ -503,12 +503,7 @@ func (s *BotreonStore) XRead(ctx context.Context, count int64, block int64, args
 		return nil
 	})
 
-	if block > 0 && len(result) == 0 {
-		// Implement blocking behavior
-		return s.xReadBlocking(ctx, count, block, args)
-	}
-
-	if block == 0 && len(result) == 0 && len(args) > 0 {
+	if block >= 0 && len(result) == 0 {
 		return s.xReadBlocking(ctx, count, block, args)
 	}
 
@@ -1296,6 +1291,9 @@ func (s *BotreonStore) XReadGroup(group, consumer string, count int64, block int
 		return nil
 	}, 30)
 
+	// NOTE: block parameter is parsed by the handler but blocking XREADGROUP is
+	// not yet implemented. When block >= 0 and no data is found, we should
+	// eventually wait for new entries via the stream notification mechanism.
 	return result, err
 }
 

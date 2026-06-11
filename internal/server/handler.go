@@ -6080,7 +6080,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	// ==================== XREAD ====================
 	case "XREAD":
 		var count int64 = 0
-		var block int64 = 0
+		var block int64 = -1
 
 		// Parse options
 		i := 0
@@ -6395,7 +6395,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	// ==================== XREADGROUP ====================
 	case "XREADGROUP":
 		var count int64 = 0
-		var block int64 = 0
+		var block int64 = -1
 		var group, consumer string
 
 		// Find GROUP keyword first

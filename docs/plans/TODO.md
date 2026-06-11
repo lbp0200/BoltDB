@@ -131,7 +131,7 @@ Fixed `GETDEL` and `GETEX` not being propagated during replication — both are 
 | COPY | ✅ | 2026-06-10 已修复：executeReplicatedCommand 添加 case（含所有类型）|
 | ZUNIONSTORE, ZINTERSTORE, ZDIFFSTORE | ✅ | 2026-06-10 已修复：executeReplicatedCommand 添加 case（含 WEIGHTS/AGGREGATE）|
 | ZRANGESTORE, GEOSEARCHSTORE | ✅ | 2026-06-10 已修复：executeReplicatedCommand 添加 case |
-| JSON.*, TS.* | P3 | 模块命令，store 层未实现 |
+| JSON.*, TS.* | ✅ | 2026-06-11 已修复：executeReplicatedCommand 添加 9 个 case（JSON: SET/DEL/ARRAPPEND/NUMINCRBY/NUMMULTBY/CLEAR, TS: CREATE/ADD/DEL） + 13 个测试 |
 
 ## ZMPOP Implementation
 
@@ -199,6 +199,7 @@ Tests: 29 new test functions in `replication_coverage_test.go` covering normal o
 | BZPOPMAX/BZPOPMIN blocking fix | replaced non-blocking stubs with real `BZPopMaxBlocking`/`BZPopMinBlocking` using channel-based wait + `registerAndRecheckZ` + `ZAdd` notification | Jun 2026 |
 | COMMAND implementation | `internal/server/command_info.go` — 223 commands with metadata, subcommands: `COMMAND`, `COMMAND COUNT`, `COMMAND INFO <cmd...>` | Jun 2026 |
 | WRONGTYPE error handling fix | added `wrapStoreError` helper + fixed ~40 locations where ErrWrongType was wrapped as `"ERR %v"` instead of proper `"WRONGTYPE ..."` | Jun 2026 |
+| JSON/TS replication fix (9 commands) | `executeReplicatedCommand` — JSON.SET/DEL/ARRAPPEND/NUMINCRBY/NUMMULTBY/CLEAR + TS.CREATE/ADD/DEL + 13 tests | Jun 2026 |
 
 ## 已知架构边界（不会做，需文档化）
 

@@ -1,5 +1,30 @@
 # Changelog
 
+## v8.20.0 (2026-06-11) — JSON/TS Replication Data Loss Fix & Protocol Bugfixes
+
+> **修复 9 个 JSON.*/TS.* 命令在 `executeReplicatedCommand` 中被静默丢弃的复制数据丢失问题。** 所有 JSON 和 Timeseries 写入命令（JSON.SET/DEL/ARRAPPEND/NUMINCRBY/NUMMULTBY/CLEAR、TS.CREATE/ADD/DEL）已通过 `isWriteCommand` 传播到复制流，但在副本端被静默忽略。Store 层实现实际已完成（`json.go:890 行`、`timeseries.go:611 行`）——仅 `executeReplicatedCommand` 的 switch 中缺少对应 case。另修复 XREAD 非阻塞读取在空流上无限期挂起的 bug。
+
+### 复制数据丢失修复
+
+- **JSON.* 复制修复**: `executeReplicatedCommand`（`psync.go`）添加 6 个 case：`JSON.SET`（含 NX/XX）、`JSON.DEL`、`JSON.ARRAPPEND`、`JSON.NUMINCRBY`、`JSON.NUMMULTBY`、`JSON.CLEAR`。参数解析与 handler 层一致。
+- **TS.* 复制修复**: `executeReplicatedCommand` 添加 3 个 case：`TS.CREATE`（含 RETENTION/ENCODING/DUPLICATE_POLICY）、`TS.ADD`（含 `*` 自动时间戳、ON_DUPLICATE）、`TS.DEL`。
+- **新增 13 个测试函数**覆盖正常路径、NX 选项、自动时间戳、无效参数边界情况。
+
+### Bug 修复
+
+- **XREAD `block == 0` 歧义**（`handler.go:6083`、`store/stream.go:506`）：`XREAD STREAMS mystream $`（无 BLOCK）在空流上无限期挂起。Handler 默认 `block = 0`（与 `BLOCK 0` 无限等待冲突）。修复：handler 默认 `block = -1`，store 仅当 `block >= 0` 时进入阻塞。
+- **XREADGROUP `block == 0` 歧义**（`handler.go:6398`）：同上模式，默认值改为 `-1`。
+
+### 协议合规
+
+- **SINTERCARD 集成测试修复**（`integration_test.go:958`）：命令已完全实现，但集成测试因 SINTERCARD 调用缺少必需的 `numkeys` 参数而被跳过。添加了 `numkeys`，移除了 `t.Skip()`。
+- **XREAD 集成测试取消跳过**（`integration_test.go:1411`）：`"response format not matching go-redis expectations"` 跳过已过时（RESP 格式在 `75ce9e1` 中已修复）。测试本身也有 bug（断言 `len(arr) >= 2`，但实际 RESP 格式为 `[[key, [entries]]]`）。修复断言以匹配实际格式。
+
+### 测试基础设施
+
+- **Fuzz 测试路径修复**（`fuzz_test.go`）：3 个 fuzz 函数使用硬编码 `/tmp/fuzz_*` 路径，替换为 `t.TempDir()` 以消除并行运行时的冲突风险。
+- **XReadGroup 记录 block 缺口**（`store/stream.go:1294`）：`block` 参数被 handler 解析但 store 忽略。添加注释说明阻塞 XREADGROUP 尚未实现。
+
 ## v8.14.0 (2026-05-24) — Convergence-Aware Suppression & Evolution Gate v1.1
 
 > **假阳性抑制与多维度趋势聚类版本。** Evolution Gate 升级 v1.1——新增收敛概率追踪与假阳性抑制机制，仅在系统显示强收敛证据时将瞬时 FAIL 降级为 WARN。多维度趋势聚类检测 2+ 子系统（存储/复制/集群）同时恶化。Evolution CLI 新增 `-json` 机器可读输出。实证校准验证全链路数据流闭合：`BasinAnalysis → ConvergenceProb → JSON → LoadHistory → Suppression`。

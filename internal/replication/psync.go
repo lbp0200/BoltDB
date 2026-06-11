@@ -1321,6 +1321,138 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			return gsErr
 		}
 
+	// JSON commands
+	case "JSON.SET":
+		if len(args) >= 4 {
+			key := string(args[1])
+			path := string(args[2])
+			value := string(args[3])
+			nx, xx := false, false
+			for i := 4; i < len(args); i++ {
+				opt := strings.ToUpper(string(args[i]))
+				if opt == "NX" {
+					nx = true
+				}
+				if opt == "XX" {
+					xx = true
+				}
+			}
+			_, jErr := s.JSONSet(key, path, value, nx, xx)
+			return jErr
+		}
+
+	case "JSON.DEL":
+		if len(args) >= 2 {
+			key := string(args[1])
+			paths := make([]string, 0)
+			for i := 2; i < len(args); i++ {
+				paths = append(paths, string(args[i]))
+			}
+			_, jErr := s.JSONDel(key, paths...)
+			return jErr
+		}
+
+	case "JSON.ARRAPPEND":
+		if len(args) >= 4 {
+			key := string(args[1])
+			path := string(args[2])
+			values := make([]string, 0)
+			for i := 3; i < len(args); i++ {
+				values = append(values, string(args[i]))
+			}
+			_, jErr := s.JSONArrAppend(key, path, values...)
+			return jErr
+		}
+
+	case "JSON.NUMINCRBY":
+		if len(args) >= 4 {
+			key := string(args[1])
+			path := string(args[2])
+			increment, _ := strconv.ParseFloat(string(args[3]), 64)
+			_, jErr := s.JSONNumIncrBy(key, path, increment)
+			return jErr
+		}
+
+	case "JSON.NUMMULTBY":
+		if len(args) >= 4 {
+			key := string(args[1])
+			path := string(args[2])
+			multiplier, _ := strconv.ParseFloat(string(args[3]), 64)
+			_, jErr := s.JSONNumMultBy(key, path, multiplier)
+			return jErr
+		}
+
+	case "JSON.CLEAR":
+		if len(args) >= 2 {
+			key := string(args[1])
+			path := "$"
+			if len(args) >= 3 {
+				path = string(args[2])
+			}
+			_, jErr := s.JSONClear(key, path)
+			return jErr
+		}
+
+	// TimeSeries commands
+	case "TS.CREATE":
+		if len(args) >= 2 {
+			key := string(args[1])
+			opts := store.TSCreateOptions{}
+			i := 2
+			for i < len(args) {
+				opt := strings.ToUpper(string(args[i]))
+				switch opt {
+				case "RETENTION":
+					i++
+					if i < len(args) {
+						opts.Retention, _ = strconv.ParseInt(string(args[i]), 10, 64)
+					}
+				case "ENCODING":
+					i++
+					if i < len(args) {
+						opts.Encoding = string(args[i])
+					}
+				case "DUPLICATE_POLICY":
+					i++
+					if i < len(args) {
+						opts.DuplicatePolicy = string(args[i])
+					}
+				}
+				i++
+			}
+			return s.TSCreate(key, opts)
+		}
+
+	case "TS.ADD":
+		if len(args) >= 4 {
+			key := string(args[1])
+			var timestamp int64
+			if string(args[2]) == "*" {
+				timestamp = time.Now().UnixNano() / int64(time.Millisecond)
+			} else {
+				timestamp, _ = strconv.ParseInt(string(args[2]), 10, 64)
+			}
+			value, _ := strconv.ParseFloat(string(args[3]), 64)
+			opts := store.TSAddOptions{}
+			if len(args) > 4 {
+				opt := strings.ToUpper(string(args[4]))
+				if opt == "ON_DUPLICATE" && len(args) > 5 {
+					opts.OnDuplicate = string(args[5])
+				}
+			}
+			_, tsErr := s.TSAdd(key, timestamp, value, opts)
+			return tsErr
+		}
+
+	case "TS.DEL":
+		if len(args) >= 4 {
+			key := string(args[1])
+			start := string(args[2])
+			stop := string(args[3])
+			_, tsErr := s.TSDel(key, start, stop)
+			return tsErr
+		}
+
 	default:
 		logger.Logger.Debug().Str("cmd", cmd).Msg("收到未处理的复制命令")
 		return nil

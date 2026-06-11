@@ -957,7 +957,6 @@ func TestCOPY(t *testing.T) {
 
 // TestSetAdvancedCommands 测试Set高级命令（SMISMEMBER, SINTERCARD）
 func TestSetAdvancedCommands(t *testing.T) {
-	t.Skip("SINTERCARD/SMISMEMBER not yet fully implemented")
 	setupTest(t)
 	defer teardownTest(t)
 
@@ -968,17 +967,17 @@ func TestSetAdvancedCommands(t *testing.T) {
 	_ = sharedClient.SAdd(ctx, "smismem2", "b", "c", "e").Err()
 
 	// SINTERCARD - 返回交集基数
-	result, err := sharedClient.Do(ctx, "SINTERCARD", "smismem1", "smismem2").Result()
+	result, err := sharedClient.Do(ctx, "SINTERCARD", "2", "smismem1", "smismem2").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(2), result) // 交集是 {b, c}
 
 	// SINTERCARD - 单个集合
-	result, err = sharedClient.Do(ctx, "SINTERCARD", "smismem1").Result()
+	result, err = sharedClient.Do(ctx, "SINTERCARD", "1", "smismem1").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(4), result) // 只有smismem1时，返回其基数
 
 	// SINTERCARD - 无交集
-	result, err = sharedClient.Do(ctx, "SINTERCARD", "smismem1", "noset").Result()
+	result, err = sharedClient.Do(ctx, "SINTERCARD", "2", "smismem1", "noset").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), result)
 
@@ -1411,7 +1410,6 @@ func TestBLPOPBlockingWithPush(t *testing.T) {
 
 // TestXREADBlocking 测试XREAD BLOCK功能
 func TestXREADBlocking(t *testing.T) {
-	t.Skip("XREAD blocking response format not yet matching go-redis expectations")
 	setupTest(t)
 	defer teardownTest(t)
 
@@ -1430,12 +1428,15 @@ func TestXREADBlocking(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEqual(t, nil, result)
 
-	// XREAD返回格式: [key, [entries...]]，每个stream返回一个[key, entries]对
-	// entries数组中每个元素是 [id, field, value, ...] 格式
+	// XREAD返回格式: [[key, [entries...], ...]]，外层数组每个元素是一个stream
+	// entries数组中每个元素是 [id, [field, value, ...]] 格式
 	arr, ok := result.([]interface{})
 	assert.True(t, ok)
-	// 期望: [mystream, [[id, field, value]]]
-	assert.True(t, len(arr) >= 2)
+	assert.Equal(t, 1, len(arr)) // 1 stream
+	streamArr, ok := arr[0].([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(streamArr)) // [streamKey, entries]
+	assert.Equal(t, "mystream", streamArr[0])
 }
 
 // jsonEqual compares two JSON strings semantically (ignoring field order)
