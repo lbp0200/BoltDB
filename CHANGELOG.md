@@ -1,5 +1,31 @@
 # Changelog
 
+## v8.21.0 (2026-06-15) — Phase 4 Technical Debt Complete
+
+> **Phase 4（技术债收敛）所有待办项全部完成。** 修复了两类复制数据丢失缺口（5 个缺失的写入命令 + BZPOPMAX/BZPOPMIN 阻塞式有序集合弹出），修复了 35+ 命令的 WRONGTYPE 错误包装为 Redis 兼容格式（49 处），并修复了 RESTORE 复制处理中缺少旧格式和 ABSTTL 支持的问题。
+
+### 复制数据丢失修复
+
+- **P1.5: `isWriteCommand` 缺失写入命令**（`replication_helper.go` + `psync.go` + 14 个测试函数）：`RESTORE`（含 TTL/ABSTTL/REPLACE/旧格式）、`FLUSHDB/FLUSHALL`（附带 `ClearCaches()` 防止读缓存过时）、`XAUTOCLAIM`（含 COUNT/JUSTID 选项）、`SORT … STORE`（完整排序逻辑 — list/set/string/zset 源类型、BY/ASC/DESC/ALPHA/LIMIT，只读 SORT 无操作）
+- **BZPOPMAX/BZPOPMIN**（`isWriteCommand` + `executeReplicatedCommand` 非阻塞 ZPopMax/ZPopMin + 2 个测试函数）：阻塞式有序集合弹出在复制流中完全缺失，导致主从数据静默分歧
+- 交叉引用验证：`command_info.go` 中所有标记 `flagWrite` 的写入命令（SPOP 通过 SREM 规范化已覆盖，MOVE/SWAPDB 为单数据库空操作，PUBLISH 为已知的 slave subscriber 非关键缺口）均已处理
+
+### WRONGTYPE 错误包装修复
+
+- **P1.6: 49 处 `fmt.Sprintf("ERR %v", err)` → `wrapStoreError(err)`**（`handler.go`）：覆盖 35+ 命令，确保 Redis 协议兼容的 `WRONGTYPE Operation against a key holding the wrong kind of value` 响应
+- **写命令（23 个）**: MSET, MSETNX, SETBIT, BITOP, BITFIELD, SETRANGE, PFADD, PFMERGE, RESTORE, EXPIRE, EXPIREAT, PEXPIRE, PEXPIREAT, PERSIST, RENAME, RENAMENX, SMOVE, ZINCRBY, SINTERSTORE, SUNIONSTORE, SDIFFSTORE, FLUSHDB, FLUSHALL
+- **读命令（21 个）**: GETBIT, BITCOUNT, BITPOS, BITLEN, PFCOUNT, PFINFO, OBJECT REFCOUNT/ENCODING/IDLETIME, KEYS, SMISMEMBER, SINTERCARD, ZRANK, ZREVRANK, ZCOUNT, MEMORY USAGE, SCAN, SSCAN, ZSCAN, DBSIZE, TIME
+- 已有显式 WRONGTYPE 检查的命令（含正确 ERR fallback）保持原样
+
+### 测试与验证
+
+- 16 个新增测试函数（P1.5 新增 14 个 + BZPOPMAX/BZPOPMIN 新增 2 个）
+- `go test -race -short ./internal/...` — 全部通过
+- `golangci-lint run` — 0 issues
+- `go vet ./...` — 0 warnings
+- Regression tests 通过
+- `redis-cli` 兼容性 53/77 基线不变
+
 ## v8.20.0 (2026-06-11) — JSON/TS Replication Data Loss Fix & Protocol Bugfixes
 
 > **修复 9 个 JSON.*/TS.* 命令在 `executeReplicatedCommand` 中被静默丢弃的复制数据丢失问题。** 所有 JSON 和 Timeseries 写入命令（JSON.SET/DEL/ARRAPPEND/NUMINCRBY/NUMMULTBY/CLEAR、TS.CREATE/ADD/DEL）已通过 `isWriteCommand` 传播到复制流，但在副本端被静默忽略。Store 层实现实际已完成（`json.go:890 行`、`timeseries.go:611 行`）——仅 `executeReplicatedCommand` 的 switch 中缺少对应 case。另修复 XREAD 非阻塞读取在空流上无限期挂起的 bug。

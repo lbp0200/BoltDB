@@ -224,6 +224,17 @@ Tests: 29 new test functions in `replication_coverage_test.go` covering normal o
   - SORT…STORE: 完整排序逻辑（list/set/string/zset 源类型），支持 BY/ASC/DESC/ALPHA/LIMIT
 - 14 个新测试函数，涵盖正常路径、选项参数、非法参数、只读 SORT 无操作
 
+### P1.5b BZPOPMAX/BZPOPMIN 复制缺口
+
+**Status:** COMPLETE (committed in `6a01ba7`)
+
+阻塞式有序集合弹出修改数据但不在 `isWriteCommand` 中，导致复制流中数据静默分歧。
+
+修复内容：
+- `replication_helper.go`: BZPOPMAX, BZPOPMIN 加入 `isWriteCommand`
+- `psync.go`: 非阻塞 `s.ZPopMax(key, 1)` / `s.ZPopMin(key, 1)` 副本端实现
+- 2 个测试函数验证弹出 + 剩余元素正确性
+
 ### P1.6 WRONGTYPE 错误包装不完整
 
 **Status:** COMPLETE (committed in `2d0af2a`)
