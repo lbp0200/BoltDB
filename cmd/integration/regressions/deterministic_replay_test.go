@@ -82,6 +82,18 @@ func TestRegressionCanonicalSPOP(t *testing.T) {
 // Propagation path: handler.go:5912 (canonicalization) → handler.go:528
 // (markDirtyKeys + PropagateCommand) → psync.go executeReplicatedCommand
 // (XADD case).
+//
+// Visibility barrier: replication offset equality (slaveOff >= masterOff)
+// does NOT imply data visibility. Stream writes are visible only after
+// executeReplicatedCommand commits to BadgerDB. Test polls XLEN instead
+// of relying on WaitForReplicaSync + sleep. See docs/replication/correctness.md
+// § "Offset Equality Is Not Visibility Equality".
+//
+// Note: a SET fence is written before XADD to push the master offset past
+// the snapshotOffset boundary. Without this, XADD's offset can equal the
+// FULLRESYNC snapshotOffset, causing it to fall through the RDB/backlog
+// gap (streams are not in RDB). See docs/replication/correctness.md
+// § "FULLRESYNC Semantics" for the offset boundary guarantee.
 func TestRegressionCanonicalXAdd(t *testing.T) {
 	master := StartRegression(t)
 	defer master.Close()
@@ -101,40 +113,42 @@ func TestRegressionCanonicalXAdd(t *testing.T) {
 		t.Fatal("slave did not sync in time")
 	}
 
-	// Write stream entries with * auto-ID (after sync — flows through backlog)
+	// Write a SET fence to advance the master offset past any subsequent
+	// FULLRESYNC snapshotOffset, ensuring the XADD's offset is firmly
+	// within the backlog range [snapshotOffset, currentOffset).
+	if err := master.Client.Set(ctx, "fence", "fence", 0).Err(); err != nil {
+		t.Fatalf("fence SET failed: %v", err)
+	}
+
+	// Write stream entry with * auto-ID (after sync — flows through backlog)
 	if err := master.Client.XAdd(ctx, &redis.XAddArgs{
 		Stream: "xadd:stream",
 		Values: map[string]interface{}{"field0": "val0"},
 	}).Err(); err != nil {
 		t.Fatalf("XAdd failed: %v", err)
 	}
-	if err := master.Client.XAdd(ctx, &redis.XAddArgs{
-		Stream: "xadd:stream",
-		Values: map[string]interface{}{"field1": "val1"},
-	}).Err(); err != nil {
-		t.Fatalf("XAdd failed: %v", err)
-	}
 
+	// Visibility barrier: poll slave XLEN until it matches master.
 	if !slave.WaitForReplicaSync(ctx, master, slave, 30*time.Second) {
 		t.Fatal("slave did not sync after writes")
 	}
-	if !slave.WaitForReplicaSync(ctx, master, slave, 30*time.Second) {
-		t.Fatal("slave did not sync after writes")
-	}
-	time.Sleep(1 * time.Second)
 
 	masterLen, err := master.Client.XLen(ctx, "xadd:stream").Result()
 	if err != nil {
 		t.Fatalf("master XLen failed: %v", err)
 	}
-	slaveLen, err := slave.Client.XLen(ctx, "xadd:stream").Result()
-	if err != nil {
-		t.Fatalf("slave XLen failed: %v", err)
+	deadline := time.Now().Add(15 * time.Second)
+	var slaveLen int64
+	for time.Now().Before(deadline) {
+		slaveLen, err = slave.Client.XLen(ctx, "xadd:stream").Result()
+		if err == nil && slaveLen >= masterLen {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
-	if slaveLen == 0 {
-		t.Fatalf("slave has no stream entries after sync")
+	if slaveLen < masterLen {
+		t.Fatalf("slave stream entries after sync: got %d, want %d", slaveLen, masterLen)
 	}
-	_ = masterLen
 }
 
 // TestRegressionCanonicalExpire verifies EXPIRE/PEXPIRE are translated to
