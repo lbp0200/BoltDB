@@ -3,7 +3,6 @@ package sentinel
 import (
 	"fmt"
 	"net"
-	"strings"
 	"time"
 
 	"github.com/lbp0200/BoltDB/internal/logger"
@@ -144,30 +143,20 @@ func (fm *FailoverManager) executeFailover(oldMaster *MasterInstance, newMaster 
 		return fmt.Errorf("failed to promote slave: %w", err)
 	}
 
-	// 2. 等待新主节点就绪
+	// 2. 等待新主节点就绪（轮询 ROLE，最长等待 5s）
 	logger.Logger.Info().Msg("等待新主节点就绪...")
-	time.Sleep(1 * time.Second)
-
-	// 3. 验证新主节点已提升
 	fm.sentinel.Metrics.RecordNewMaster(oldMaster.GetName())
-	role, err := GetRole(newMaster.Addr)
+	role, err := waitForRole(newMaster.Addr, 5*time.Second, 100*time.Millisecond)
 	if err != nil {
 		logger.Logger.Warn().
 			Str("addr", newMaster.Addr).
 			Err(err).
 			Msg("无法验证新主节点角色")
 	} else {
-		if !strings.HasPrefix(role, "+master") {
-			logger.Logger.Warn().
-				Str("addr", newMaster.Addr).
-				Str("role", role).
-				Msg("新主节点角色验证失败")
-		} else {
-			logger.Logger.Info().
-				Str("addr", newMaster.Addr).
-				Str("role", role).
-				Msg("新主节点已就绪")
-		}
+		logger.Logger.Info().
+			Str("addr", newMaster.Addr).
+			Str("role", role).
+			Msg("新主节点已就绪")
 	}
 
 	// 4. 将其他从节点重新配置为复制新主节点
@@ -234,4 +223,19 @@ func (fm *FailoverManager) AutoFailover(masterName string) error {
 		Msg("自动故障转移条件满足，开始故障转移")
 
 	return fm.StartFailover(masterName)
+}
+
+// waitForRole 轮询服务器角色，直到返回预期前缀或超时
+func waitForRole(addr string, timeout, interval time.Duration) (string, error) {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		role, err := GetRole(addr)
+		if err == nil {
+			return role, nil
+		}
+		lastErr = err
+		time.Sleep(interval)
+	}
+	return "", fmt.Errorf("timed out waiting for role: %w", lastErr)
 }

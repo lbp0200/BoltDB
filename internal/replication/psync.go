@@ -27,14 +27,17 @@ func HandlePSync(rm *ReplicationManager, replId string, offset int64) (*PSyncRes
 	rm.mu.RUnlock()
 
 	// 检查是否可以增量同步
-	if replId == currentReplId && offset > 0 {
+	// replId 匹配时允许 CONTINUE（offset >= 0），确保重连时
+	// 不会因为 offset == 0 触发不必要的 FULLRESYNC 造成数据丢失。
+	// 初始连接时 replId 为 "?"，不会匹配，触发 FULLRESYNC。
+	if replId == currentReplId && offset >= 0 {
 		// 检查backlog中是否有足够的数据
 		backlogStart := backlog.GetCurrentOffset() - backlog.GetSize()
 		if backlogStart < 0 {
 			backlogStart = 0
 		}
 
-		if offset >= backlogStart && offset < currentOffset {
+		if offset >= backlogStart && offset <= currentOffset {
 			// 可以增量同步
 			logger.Logger.Info().
 				Str("repl_id", replId).
@@ -84,6 +87,9 @@ func SendContinueResync(slave *SlaveConnection, replId string, offset int64) err
 
 // SendBacklogData 发送backlog数据到从节点
 func SendBacklogData(slave *SlaveConnection, backlog *ReplicationBacklog, startOffset, endOffset int64) error {
+	if startOffset >= endOffset {
+		return nil
+	}
 	data, err := backlog.GetRange(startOffset, endOffset)
 	if err != nil {
 		return fmt.Errorf("get backlog range failed: %w", err)

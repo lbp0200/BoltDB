@@ -15,6 +15,13 @@ Current verification status:
 
 ## FULLRESYNC Semantics
 
+**Streams are included in FULLRESYNC RDB baseline.** Previously, streams were
+replicated solely through the backlog (not in RDB snapshots). If a slave
+reconnected with a FULLRESYNC after stream data had been written, and the
+backlog gap was empty (`snapshotOffset == currentOffset`), stream entries were
+permanently lost. `GenerateRDB` now dumps stream entries (type byte `5`) and
+`LoadRDB` replays them via `XAdd`. Verified by `TestRegressionCanonicalXAdd`.
+
 **No lost writes.** All writes are guaranteed to be in either the RDB snapshot or
 the backlog. Proof:
 

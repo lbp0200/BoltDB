@@ -3,6 +3,7 @@ package replication
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/crc64"
@@ -71,6 +72,8 @@ func (enc *RDBEncoder) WriteKeyValue(key string, value interface{}, keyType stri
 		typeByte = 3 // HASH
 	case store.KeyTypeSortedSet:
 		typeByte = 4 // ZSET
+	case store.KeyTypeStream:
+		typeByte = 5 // STREAM
 	default:
 		return fmt.Errorf("unknown key type: %s", keyType)
 	}
@@ -174,6 +177,34 @@ func (enc *RDBEncoder) WriteSetKeyValue(key string, members []string, ttl int64)
 	enc.writeLength(uint64(len(members)))
 	for _, member := range members {
 		enc.writeString(member)
+	}
+	return nil
+}
+
+// WriteStreamKeyValue 写入 stream 键值对（仅包含条目，不含 consumer group）
+func (enc *RDBEncoder) WriteStreamKeyValue(key string, entries []store.StreamEntry) error {
+	enc.buf.WriteByte(5) // STREAM type
+	enc.writeString(key)
+
+	// Write metadata: length, firstID (ts-seq), lastID (ts-seq) 用于重建
+	enc.writeLength(uint64(len(entries)))
+	if len(entries) > 0 {
+		enc.writeString(entries[0].ID)
+		enc.writeString(entries[len(entries)-1].ID)
+	} else {
+		enc.writeString("0-0")
+		enc.writeString("0-0")
+	}
+
+	// Write entries
+	enc.writeLength(uint64(len(entries)))
+	for _, entry := range entries {
+		enc.writeString(entry.ID)
+		enc.writeLength(uint64(len(entry.Fields)))
+		for k, v := range entry.Fields {
+			enc.writeString(k)
+			enc.writeString(v)
+		}
 	}
 	return nil
 }
@@ -354,6 +385,14 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 					scoreBytes := []byte(fmt.Sprintf("%.10g", m.Score))
 					enc.writeBytes(scoreBytes)
 				}
+
+			case store.KeyTypeStream:
+				entries, err := readStreamInTxn(txn, key)
+				if err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取stream值失败")
+					continue
+				}
+				_ = enc.WriteStreamKeyValue(key, entries)
 
 			default:
 				logger.Logger.Debug().Str("key", key).Str("type", keyType).Msg("跳过不支持的RDB键类型")
@@ -567,4 +606,36 @@ func readZSetInTxn(txn *badger.Txn, key string) ([]store.ZSetMember, error) {
 		result = append(result, store.ZSetMember{Member: member, Score: score})
 	}
 	return result, nil
+}
+
+// readStreamInTxn 从事务中读取 stream 的全部条目
+func readStreamInTxn(txn *badger.Txn, key string) ([]store.StreamEntry, error) {
+	prefix := []byte("stream:" + key + ":data:")
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = true
+	opts.PrefetchSize = 100
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	var entries []store.StreamEntry
+	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+		item := it.Item()
+		id := string(bytes.TrimPrefix(item.Key(), prefix))
+		raw, err := item.ValueCopy(nil)
+		if err != nil {
+			return nil, err
+		}
+
+		var fields map[string]string
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			logger.Logger.Warn().Str("key", key).Str("id", id).Err(err).Msg("解码stream条目失败，跳过")
+			continue
+		}
+
+		entries = append(entries, store.StreamEntry{
+			ID:     id,
+			Fields: fields,
+		})
+	}
+	return entries, nil
 }

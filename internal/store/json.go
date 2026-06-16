@@ -760,7 +760,11 @@ func (s *BotreonStore) JSONClear(key, path string) (int64, error) {
 		newData = []byte("{}")
 		cleared = 1
 	} else {
-		newData, _ = json.Marshal(root)
+		var marshalErr error
+		newData, marshalErr = json.Marshal(root)
+		if marshalErr != nil {
+			return 0, errors.New("ERR failed to marshal JSON")
+		}
 	}
 
 	// Clear read cache

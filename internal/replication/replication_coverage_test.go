@@ -1162,6 +1162,22 @@ func TestExecuteReplicatedCommand_PFMERGE(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestExecuteReplicatedCommand_XADD tests executeReplicatedCommand for XADD
+func TestExecuteReplicatedCommand_XADD(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("XADD"), []byte("xadd:repl:stream"), []byte("*"), []byte("field"), []byte("val"),
+	})
+	assert.NoError(t, err)
+
+	entryCount, err := testStore.XLen("xadd:repl:stream")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), entryCount)
+}
+
 // TestExecuteReplicatedCommand_XACK tests executeReplicatedCommand for XACK
 func TestExecuteReplicatedCommand_XACK(t *testing.T) {
 	t.Parallel()

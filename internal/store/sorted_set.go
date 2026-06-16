@@ -1101,7 +1101,9 @@ func (s *BotreonStore) ZUnionStore(destination string, keys []string, weights []
 	}
 
 	// 删除目标集合的现有数据
-	_ = s.ZSetDel(destination)
+	if err := s.ZSetDel(destination); err != nil {
+		logger.Logger.Warn().Str("destination", destination).Err(err).Msg("ZUnionStore: 删除目标集合失败")
+	}
 
 	// 添加所有成员到目标集合
 	zsetMembers := make([]ZSetMember, 0, len(memberScores))
@@ -1122,7 +1124,9 @@ func (s *BotreonStore) ZUnionStore(destination string, keys []string, weights []
 func (s *BotreonStore) ZInterStore(destination string, keys []string, weights []float64, aggregate string) (int64, error) {
 	if len(keys) == 0 {
 		// 删除目标集合
-		_ = s.ZSetDel(destination)
+		if err := s.ZSetDel(destination); err != nil {
+			logger.Logger.Warn().Str("destination", destination).Err(err).Msg("ZInterStore: 删除目标集合失败")
+		}
 		return 0, nil
 	}
 
@@ -1185,7 +1189,9 @@ func (s *BotreonStore) ZInterStore(destination string, keys []string, weights []
 	}
 
 	// 删除目标集合的现有数据
-	_ = s.ZSetDel(destination)
+	if err := s.ZSetDel(destination); err != nil {
+		logger.Logger.Warn().Str("destination", destination).Err(err).Msg("ZInterStore: 删除目标集合失败")
+	}
 
 	// 添加所有成员到目标集合
 	zsetMembers := make([]ZSetMember, 0, len(memberScores))
@@ -1206,7 +1212,9 @@ func (s *BotreonStore) ZInterStore(destination string, keys []string, weights []
 func (s *BotreonStore) ZDiffStore(destination string, keys []string) (int64, error) {
 	if len(keys) == 0 {
 		// 删除目标集合
-		_ = s.ZSetDel(destination)
+		if err := s.ZSetDel(destination); err != nil {
+			logger.Logger.Warn().Str("destination", destination).Err(err).Msg("ZDiffStore: 删除目标集合失败")
+		}
 		return 0, nil
 	}
 
@@ -1237,7 +1245,9 @@ func (s *BotreonStore) ZDiffStore(destination string, keys []string) (int64, err
 	}
 
 	// 删除目标集合的现有数据
-	_ = s.ZSetDel(destination)
+	if err := s.ZSetDel(destination); err != nil {
+		logger.Logger.Warn().Str("destination", destination).Err(err).Msg("ZDiffStore: 删除目标集合失败")
+	}
 
 	// 添加所有成员到目标集合
 	if len(zsetMembers) > 0 {

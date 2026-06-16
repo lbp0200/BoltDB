@@ -271,7 +271,9 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 				}
 			}
 			if ttl > 0 {
-				_, _ = s.PExpire(key, int64(ttl.Milliseconds()))
+				if _, err := s.PExpire(key, int64(ttl.Milliseconds())); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("RDB: 设置列表TTL失败")
+				}
 			}
 
 		case 2: // SET
@@ -291,7 +293,9 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 				}
 			}
 			if ttl > 0 {
-				_, _ = s.PExpire(key, int64(ttl.Milliseconds()))
+				if _, err := s.PExpire(key, int64(ttl.Milliseconds())); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("RDB: 设置集合TTL失败")
+				}
 			}
 
 		case 3: // HASH
@@ -316,7 +320,9 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 				}
 			}
 			if ttl > 0 {
-				_, _ = s.PExpire(key, int64(ttl.Milliseconds()))
+				if _, err := s.PExpire(key, int64(ttl.Milliseconds())); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("RDB: 设置哈希TTL失败")
+				}
 			}
 
 		case 4: // ZSET (SortedSet)
@@ -350,7 +356,63 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 				}
 			}
 			if ttl > 0 {
-				_, _ = s.PExpire(key, int64(ttl.Milliseconds()))
+				if _, err := s.PExpire(key, int64(ttl.Milliseconds())); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("RDB: 设置有序集合TTL失败")
+				}
+			}
+
+		case 5: // STREAM
+			_, err := dec.readLength() // total length (skip, use numEntries below)
+			if err != nil {
+				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream长度失败，跳过")
+				continue
+			}
+			firstID, err := dec.readString()
+			if err != nil {
+				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream firstID失败，跳过")
+				continue
+			}
+			lastID, err := dec.readString()
+			if err != nil {
+				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream lastID失败，跳过")
+				continue
+			}
+			_ = firstID
+			_ = lastID
+
+			numEntries, err := dec.readLength()
+			if err != nil {
+				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream条目数失败，跳过")
+				continue
+			}
+			for i := uint64(0); i < numEntries; i++ {
+				entryID, err := dec.readString()
+				if err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream条目ID失败，跳过")
+					continue
+				}
+				numFields, err := dec.readLength()
+				if err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream字段数失败，跳过")
+					continue
+				}
+				fields := make(map[string]string)
+				for j := uint64(0); j < numFields; j++ {
+					fieldName, err := dec.readString()
+					if err != nil {
+						logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream字段名失败，跳过")
+						continue
+					}
+					fieldValue, err := dec.readString()
+					if err != nil {
+						logger.Logger.Warn().Str("key", key).Str("field", fieldName).Err(err).Msg("读取stream字段值失败，跳过")
+						continue
+					}
+					fields[fieldName] = fieldValue
+				}
+				if _, err := s.XAdd(key, store.StreamXAddOptions{}, entryID, fields); err != nil {
+					logger.Logger.Warn().Str("key", key).Str("id", entryID).Err(err).Msg("RDB加载stream条目失败")
+				}
 			}
 
 		case 0xFE: // DATABASE SELECTOR

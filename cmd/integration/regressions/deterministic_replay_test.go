@@ -2,6 +2,7 @@ package regressions
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -302,5 +303,97 @@ func TestRegressionCanonicalExpireOnExistingKey(t *testing.T) {
 	}
 	if slaveExists == 0 {
 		t.Fatalf("key not found on slave after sync")
+	}
+}
+
+// TestRegressionSlaveConnectionOwnership verifies that the slave connection
+// lifecycle is correctly managed: handleConnection transfers ownership to
+// handleSlaveReplicationConnection without double-close, and the slave does
+// not experience unexpected disconnections/reconnects during normal operation.
+//
+// This guards against regressions where:
+//   - handleConnection closes conn (replicationOwned=false) despite
+//     handlePSyncWithRDB having taken over
+//   - SendBacklogData failure prevents ReplicationTakeoverSignal from
+//     being returned, leaving replicationOwned=false
+//   - Slave connection is closed by two owners concurrently
+func TestRegressionSlaveConnectionOwnership(t *testing.T) {
+	master := StartRegression(t)
+	defer master.Close()
+
+	slave := StartRegression(t)
+	defer slave.Close()
+
+	ctx := context.Background()
+
+	// Connect slave
+	if err := slave.MakeSlave(master.Addr); err != nil {
+		t.Fatalf("MakeSlave failed: %v", err)
+	}
+	defer slave.StopSlave()
+
+	// Wait for initial FULLRESYNC
+	if !slave.WaitForReplicaSync(ctx, master, slave, 30*time.Second) {
+		t.Fatal("slave did not sync in time")
+	}
+
+	// Record reconnect count after initial sync
+	reconnectsAfterSync := slave.GetReconnectCount()
+	t.Logf("reconnects after initial sync: %d", reconnectsAfterSync)
+
+	// Write a SET to advance offset
+	if err := master.Client.Set(ctx, "ownership:key1", "val1", 0).Err(); err != nil {
+		t.Fatalf("SET key1 failed: %v", err)
+	}
+	if !slave.WaitForReplicaSync(ctx, master, slave, 10*time.Second) {
+		t.Fatal("slave did not sync after SET key1")
+	}
+
+	// Verify slave received the data
+	val1, err := slave.Client.Get(ctx, "ownership:key1").Result()
+	if err != nil {
+		t.Fatalf("slave GET key1 failed: %v", err)
+	}
+	if val1 != "val1" {
+		t.Fatalf("slave key1 value: got %q, want val1", val1)
+	}
+
+	// Verify offsets match
+	if off := slave.GetSlaveOffset(); off != master.GetMasterOffset() {
+		t.Fatalf("offset mismatch after key1: master=%d slave=%d", master.GetMasterOffset(), off)
+	}
+
+	// Write more commands to exercise the active connection
+	for i := 0; i < 5; i++ {
+		key := fmt.Sprintf("ownership:batch:%d", i)
+		if err := master.Client.Set(ctx, key, "data", 0).Err(); err != nil {
+			t.Fatalf("SET %s failed: %v", key, err)
+		}
+	}
+	if !slave.WaitForReplicaSync(ctx, master, slave, 10*time.Second) {
+		t.Fatal("slave did not sync after batch SETs")
+	}
+	for i := 0; i < 5; i++ {
+		key := fmt.Sprintf("ownership:batch:%d", i)
+		val, err := slave.Client.Get(ctx, key).Result()
+		if err != nil {
+			t.Fatalf("slave GET %s failed: %v", key, err)
+		}
+		if val != "data" {
+			t.Fatalf("slave %s value: got %q, want data", key, val)
+		}
+	}
+
+	// Verify reconnect count has not increased (no unexpected disconnects)
+	reconnectsAfterWork := slave.GetReconnectCount()
+	t.Logf("reconnects after work: %d", reconnectsAfterWork)
+	if reconnectsAfterWork > reconnectsAfterSync+1 {
+		t.Fatalf("unexpected reconnects: initial=%d current=%d",
+			reconnectsAfterSync, reconnectsAfterWork)
+	}
+
+	// Verify offsets still match after all work
+	if off := slave.GetSlaveOffset(); off != master.GetMasterOffset() {
+		t.Fatalf("offset mismatch after work: master=%d slave=%d", master.GetMasterOffset(), off)
 	}
 }

@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -214,5 +215,143 @@ func TestApplyConvergenceSuppression_NoRunsNoOp(t *testing.T) {
 
 	if r.Level != LevelFail {
 		t.Errorf("expected LevelFail unchanged, got %s", r.Level)
+	}
+}
+
+func TestClassifyDirection(t *testing.T) {
+	tests := []struct {
+		slope    float64
+		isHealth bool
+		want     string
+	}{
+		{0.0, true, trendStable},
+		{0.001, true, trendStable},
+		{0.01, true, trendImproving},
+		{-0.01, true, trendDegrading},
+		{0.01, false, trendDegrading},
+		{-0.01, false, trendImproving},
+	}
+	for _, tt := range tests {
+		got := classifyDirection(tt.slope, tt.isHealth)
+		if got != tt.want {
+			t.Errorf("classifyDirection(%v, %v) = %s, want %s", tt.slope, tt.isHealth, got, tt.want)
+		}
+	}
+}
+
+func TestFixTrendDirection(t *testing.T) {
+	tests := []struct {
+		initial  string
+		slope    float64
+		isHealth bool
+		want     string
+	}{
+		{"", 0.0, true, trendStable},
+		{"", 0.001, true, trendStable},
+		{"", 0.01, true, trendImproving},
+		{"", -0.01, true, trendDegrading},
+		{"", 0.01, false, trendDegrading},
+		{"", -0.01, false, trendImproving},
+	}
+	for _, tt := range tests {
+		trend := tt.initial
+		fixTrendDirection(&trend, tt.slope, tt.isHealth)
+		if trend != tt.want {
+			t.Errorf("fixTrendDirection({%v}, %v, %v) = %s, want %s", tt.initial, tt.slope, tt.isHealth, trend, tt.want)
+		}
+	}
+}
+
+func TestExtractFloat(t *testing.T) {
+	runs := []EvolutionRun{
+		{HealthOverall: 0.5},
+		{HealthOverall: 0.8},
+		{HealthOverall: 0.3},
+	}
+	vals := extractFloat(runs, func(r EvolutionRun) float64 { return r.HealthOverall })
+	if len(vals) != 3 {
+		t.Fatalf("expected 3 values, got %d", len(vals))
+	}
+	if math.Abs(vals[0]-0.5) > 1e-9 || math.Abs(vals[1]-0.8) > 1e-9 || math.Abs(vals[2]-0.3) > 1e-9 {
+		t.Errorf("unexpected values: %v", vals)
+	}
+}
+
+func TestComputeRecentSlope_FewRuns(t *testing.T) {
+	runs := []EvolutionRun{{HealthOverall: 0.5}}
+	slope := computeRecentSlope(runs, func(r EvolutionRun) float64 { return r.HealthOverall })
+	if slope != 0 {
+		t.Errorf("expected 0 for single run, got %f", slope)
+	}
+}
+
+func TestComputeRecentSlope_TwoRuns(t *testing.T) {
+	runs := []EvolutionRun{
+		{HealthOverall: 0.5},
+		{HealthOverall: 0.7},
+	}
+	slope := computeRecentSlope(runs, func(r EvolutionRun) float64 { return r.HealthOverall })
+	if slope <= 0 {
+		t.Errorf("expected positive slope, got %f", slope)
+	}
+}
+
+func TestComputeRecentSlope_ThreeRuns(t *testing.T) {
+	runs := []EvolutionRun{
+		{HealthOverall: 0.9},
+		{HealthOverall: 0.8},
+		{HealthOverall: 0.7},
+		{HealthOverall: 0.6},
+		{HealthOverall: 0.5},
+	}
+	slope := computeRecentSlope(runs, func(r EvolutionRun) float64 { return r.HealthOverall })
+	if slope >= 0 {
+		t.Errorf("expected negative slope, got %f", slope)
+	}
+}
+
+func TestComputeSparseSlope_FewNonZero(t *testing.T) {
+	runs := []EvolutionRun{{HealthOverall: 0.0}, {HealthOverall: 0.5}, {HealthOverall: 0.7}}
+	slope := computeSparseSlope(runs, func(r EvolutionRun) float64 { return r.HealthOverall })
+	if slope <= 0 {
+		t.Errorf("expected positive slope, got %f", slope)
+	}
+}
+
+func TestComputeSparseSlope_AllZero(t *testing.T) {
+	runs := []EvolutionRun{{HealthOverall: 0.0}, {HealthOverall: 0.0}}
+	slope := computeSparseSlope(runs, func(r EvolutionRun) float64 { return r.HealthOverall })
+	if slope != 0 {
+		t.Errorf("expected 0 for all zero, got %f", slope)
+	}
+}
+
+func TestComputeSparseSlope_SingleNonZero(t *testing.T) {
+	runs := []EvolutionRun{{HealthOverall: 0.0}, {HealthOverall: 0.0}, {HealthOverall: 0.5}}
+	slope := computeSparseSlope(runs, func(r EvolutionRun) float64 { return r.HealthOverall })
+	if slope != 0 {
+		t.Errorf("expected 0 for single non-zero, got %f", slope)
+	}
+}
+
+func TestClassifySlope(t *testing.T) {
+	tests := []struct {
+		slope  float64
+		metric string
+		want   string
+	}{
+		{0.0, "health", trendStable},
+		{0.003, "health", trendStable},
+		{0.01, "HealthOverall", trendImproving},
+		{-0.01, "HealthOverall", trendDegrading},
+		{0.01, "L0Final", trendDegrading},
+		{-0.01, "L0Final", trendImproving},
+		{0.01, "basin_depth", trendDegrading},
+	}
+	for _, tt := range tests {
+		got := classifySlope(tt.slope, tt.metric)
+		if got != tt.want {
+			t.Errorf("classifySlope(%v, %s) = %s, want %s", tt.slope, tt.metric, got, tt.want)
+		}
 	}
 }
