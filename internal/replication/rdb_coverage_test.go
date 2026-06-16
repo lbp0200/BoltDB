@@ -196,6 +196,47 @@ func TestLoadRDB_MultipleDataTypes(t *testing.T) {
 	assert.Equal(t, int64(1), int64(zcount))
 }
 
+// TestLoadRDB_WithHLLData tests RDB roundtrip for HyperLogLog
+func TestLoadRDB_WithHLLData(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	_, err := testStore.PFAdd("hllkey", "a", "b", "c", "d", "e")
+	assert.NoError(t, err)
+	count, err := testStore.PFCount("hllkey")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(5), count)
+
+	_, err = testStore.PFAdd("hllkey2", "x", "y", "z")
+	assert.NoError(t, err)
+
+	// Generate RDB
+	rdbData, err := GenerateRDB(testStore)
+	assert.NoError(t, err)
+	t.Logf("RDB data size: %d", len(rdbData))
+	if len(rdbData) > 80 {
+		t.Logf("RDB start hex: %x", rdbData[:80])
+		t.Logf("RDB end hex: %x", rdbData[len(rdbData)-20:])
+	}
+
+	// Create a new store and load RDB
+	testStore2 := setupTestStore(t)
+	defer testStore2.Close()
+
+	err = LoadRDBWithStore(rdbData, testStore2)
+	assert.NoError(t, err)
+
+	// Verify HLL data was restored
+	count2, err := testStore2.PFCount("hllkey")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(5), count2)
+
+	count3, err := testStore2.PFCount("hllkey2")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), count3)
+}
+
 // TestLoadRDB_EmptyData tests LoadRDB with empty data
 func TestLoadRDB_EmptyData(t *testing.T) {
 	t.Parallel()

@@ -374,6 +374,18 @@ func (s *BotreonStore) PFMerge(destKey string, sourceKeys ...string) error {
 	}, 30)
 }
 
+// RestoreHLL 从原始字节恢复 HyperLogLog（FULLRESYNC RDB 加载用）
+func (s *BotreonStore) RestoreHLL(key string, data []byte) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
+		typeKey := TypeOfKeyGet(key)
+		if err := txn.Set(typeKey, []byte(KeyTypeHyperLogLog)); err != nil {
+			return err
+		}
+		hllKey := []byte(fmt.Sprintf("hll:%s", key))
+		return txn.Set(hllKey, data)
+	}, 30)
+}
+
 // PFInfo 实现 Redis PFINFO 命令（可选）
 func (s *BotreonStore) PFInfo(key string) (map[string]int64, error) {
 	info := make(map[string]int64)

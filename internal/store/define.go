@@ -21,13 +21,14 @@ const CloseTimeout = 2 * time.Second
 
 const (
 	//UnderScore       = "_"
-	KeyTypeString     = "STRING"
-	KeyTypeList       = "LIST"
-	KeyTypeHash       = "HASH"
-	KeyTypeSet        = "SET"
-	KeyTypeJSON       = "JSON"
-	KeyTypeTimeSeries = "TIMESERIES"
-	KeyTypeStream     = "STREAM"
+	KeyTypeString      = "STRING"
+	KeyTypeList        = "LIST"
+	KeyTypeHash        = "HASH"
+	KeyTypeSet         = "SET"
+	KeyTypeJSON        = "JSON"
+	KeyTypeTimeSeries  = "TIMESERIES"
+	KeyTypeStream      = "STREAM"
+	KeyTypeHyperLogLog = "hyperloglog"
 	//KeyTypeSortedSet = "SORTEDSET" - defined in sorted_set.go as "zset"
 	//
 	//sortedSetIndex = "_INDEX_"

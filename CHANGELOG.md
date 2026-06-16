@@ -1,5 +1,36 @@
 # Changelog
 
+## v8.23.0 (2026-06-16) — RESP Shape Fix, FULLRESYNC Completeness & RDB Encoding Fix
+
+> **RESP 协议形状修复、FULLRESYNC 全类型覆盖、RDB readLength 编码 bug 修复。** 修复了 10 个 RESP 响应结构不符合 Redis 协议的问题（GEOPOS/GEORADIUS/GEOSEARCH 嵌套数组、SSCAN/HSCAN/WRONGTYPE/CLUSTER SLOTS/XINFO CONSUMERS/XAUTOCLAIM 等），补齐了 GEO/JSON/TimeSeries/HLL 四种数据类型的 FULLRESYNC RDB 支持，修复了从项目创建即存在的 RDB readLength 编码解码 bug（任何 count/length ≥ 64 的数据在 FULLRESYNC 解码时全部错位）。
+
+### RESP 形状修正（10 bugs）
+
+- **GEOPOS/GEORADIUS/GEOSEARCH**：`[m1, "lon,lat", m2, ...]` 平铺 → `[[m1, [lon, lat]], ...]` 嵌套数组
+- **SSCAN/HSCAN**：`[cursor, m1, m2, ...]` 平铺 → `[cursor, [members...]]` 嵌套
+- **XINFO CONSUMERS**：所有消费者平铺 → 每个消费者独立 NestedArray
+- **CLUSTER SLOTS**：`%v` 字符串 → 真实 RESP 嵌套结构
+- **XAUTOCLAIM**：平铺 → `[nextID, [[id, [field, val, ...]], ...]]`
+- **WRONGTYPE**：`*proto.Error` 确保不包 `"ERR %v"` 包装
+- 配套 24 测试 RESP Shape Contract Suite 入库
+
+### FULLRESYNC 全类型覆盖
+
+- **GEO**（type byte 6）、**JSON**（type byte 7）、**TimeSeries**（type byte 8）、**HLL**（type byte 9）写入 RDB encoder/decoder
+- HLL 新增 `RestoreHLL(key, data)` store API
+- FULLRESYNC 现在覆盖所有 10 种数据类型
+
+### RDB 编码 bug 修复
+
+- `internal/replication/rdb_loader.go:58` — `readLength` 使用 `b&0x80 == 0` 判断 6-bit 编码，应为 `b&0xC0 == 0`，导致任何 count/length ≥ 64 的数据解码错误
+- 影响范围：STRING/SET/LIST/HASH/ZSET 等所有类型在 count ≥ 64 时 FULLRESYNC 数据错位
+- 15 个边界回归测试（`rdb_length_test.go`）覆盖 63/64/16383/16384/100000 边界值
+
+### 测试与验证
+
+- `go test -race -short ./internal/...` — 全部通过
+- `golangci-lint run` — 0 issues
+
 ## v8.22.0 (2026-06-11) — CI Stability & Version Sync
 
 > **CI 稳定性修复与版本同步。** 修复了 CI/CD 流水线中三个持续报红的 flaky 问题：FuzzServerCommandSequence 在 600s 超时下被截断、goroutine leak 测试阈值过紧、默认版本号未与发布同步。

@@ -55,18 +55,18 @@ func (dec *RDBDecoder) readLength() (uint64, error) {
 	}
 
 	b := dec.buf.Next(1)[0]
-	if b&0x80 == 0 {
-		// 6位长度
+	if b&0xC0 == 0 {
+		// 6位长度 (00xxxxxx)
 		return uint64(b & 0x3F), nil
-	} else if b&0x40 == 0 {
-		// 14位长度
+	} else if b&0x80 == 0 {
+		// 14位长度 (01xxxxxx)
 		if dec.buf.Len() < 1 {
 			return 0, fmt.Errorf("unexpected end of buffer")
 		}
 		b2 := dec.buf.Next(1)[0]
 		return uint64(((uint64(b) & 0x3F) << 8) | uint64(b2)), nil
 	} else {
-		// 32位长度
+		// 32位长度 (10xxxxxx)
 		if dec.buf.Len() < 4 {
 			return 0, fmt.Errorf("unexpected end of buffer")
 		}
@@ -412,6 +412,84 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 				}
 				if _, err := s.XAdd(key, store.StreamXAddOptions{}, entryID, fields); err != nil {
 					logger.Logger.Warn().Str("key", key).Str("id", entryID).Err(err).Msg("RDB加载stream条目失败")
+				}
+			}
+
+		case 6: // GEO
+			length, err := dec.readLength()
+			if err != nil {
+				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取geo长度失败，跳过")
+				continue
+			}
+			var geoMembers []store.GeoMember
+			for i := uint64(0); i < length; i++ {
+				member, err := dec.readString()
+				if err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("读取geo成员失败，跳过")
+					continue
+				}
+				var lat, lon float64
+				if err := binary.Read(dec.buf, binary.LittleEndian, &lat); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("读取geo纬度失败，跳过")
+					continue
+				}
+				if err := binary.Read(dec.buf, binary.LittleEndian, &lon); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("读取geo经度失败，跳过")
+					continue
+				}
+				geoMembers = append(geoMembers, store.GeoMember{Member: member, Lat: lat, Lon: lon})
+			}
+			if len(geoMembers) > 0 {
+				if _, err := s.GeoAdd(key, geoMembers); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("存储geo值失败")
+				}
+			}
+			if ttl > 0 {
+				if _, err := s.PExpire(key, int64(ttl.Milliseconds())); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("RDB: 设置geo TTL失败")
+				}
+			}
+
+		case 7: // JSON
+			value, err := dec.readString()
+			if err != nil {
+				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取JSON值失败，跳过")
+				continue
+			}
+			if _, err := s.JSONSet(key, "$", value, false, false); err != nil {
+				logger.Logger.Warn().Str("key", key).Err(err).Msg("存储JSON值失败")
+			}
+
+		case 9: // HLL
+			data, err := dec.readBytes()
+			if err != nil {
+				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取HLL数据失败，跳过")
+				continue
+			}
+			if err := s.RestoreHLL(key, data); err != nil {
+				logger.Logger.Warn().Str("key", key).Err(err).Msg("存储HLL值失败")
+			}
+
+		case 8: // TIMESERIES
+			length, err := dec.readLength()
+			if err != nil {
+				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取time series长度失败，跳过")
+				continue
+			}
+			for i := uint64(0); i < length; i++ {
+				var timestamp int64
+				var value float64
+				if err := binary.Read(dec.buf, binary.LittleEndian, &timestamp); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("读取time series时间戳失败，跳过")
+					continue
+				}
+				if err := binary.Read(dec.buf, binary.LittleEndian, &value); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("读取time series值失败，跳过")
+					continue
+				}
+				opts := store.TSAddOptions{}
+				if _, err := s.TSAdd(key, timestamp, value, opts); err != nil {
+					logger.Logger.Warn().Str("key", key).Int64("ts", timestamp).Err(err).Msg("RDB加载time series数据点失败")
 				}
 			}
 

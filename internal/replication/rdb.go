@@ -74,6 +74,12 @@ func (enc *RDBEncoder) WriteKeyValue(key string, value interface{}, keyType stri
 		typeByte = 4 // ZSET
 	case store.KeyTypeStream:
 		typeByte = 5 // STREAM
+	case store.KeyTypeGeo:
+		typeByte = 6 // GEO
+	case store.KeyTypeJSON:
+		typeByte = 7 // JSON
+	case store.KeyTypeTimeSeries:
+		typeByte = 8 // TIMESERIES
 	default:
 		return fmt.Errorf("unknown key type: %s", keyType)
 	}
@@ -99,6 +105,21 @@ func (enc *RDBEncoder) WriteKeyValue(key string, value interface{}, keyType stri
 		for field, val := range v {
 			enc.writeString(field)
 			enc.writeBytes(val)
+		}
+	case []store.GeoMember:
+		// GEO
+		enc.writeLength(uint64(len(v)))
+		for _, m := range v {
+			enc.writeString(m.Member)
+			_ = binary.Write(enc.buf, binary.LittleEndian, m.Lat)
+			_ = binary.Write(enc.buf, binary.LittleEndian, m.Lon)
+		}
+	case []store.TimeSeriesDataPoint:
+		// TIMESERIES
+		enc.writeLength(uint64(len(v)))
+		for _, p := range v {
+			_ = binary.Write(enc.buf, binary.LittleEndian, p.Timestamp)
+			_ = binary.Write(enc.buf, binary.LittleEndian, p.Value)
 		}
 	default:
 		return fmt.Errorf("unsupported value type")
@@ -178,6 +199,55 @@ func (enc *RDBEncoder) WriteSetKeyValue(key string, members []string, ttl int64)
 	for _, member := range members {
 		enc.writeString(member)
 	}
+	return nil
+}
+
+// WriteJSONKeyValue 写入 JSON 键值对
+func (enc *RDBEncoder) WriteJSONKeyValue(key, value string) error {
+	enc.buf.WriteByte(7) // JSON type
+	enc.writeString(key)
+	enc.writeString(value)
+	return nil
+}
+
+// WriteTimeSeriesKeyValue 写入 time series 键值对
+func (enc *RDBEncoder) WriteTimeSeriesKeyValue(key string, points []store.TimeSeriesDataPoint) error {
+	enc.buf.WriteByte(8) // TIMESERIES type
+	enc.writeString(key)
+	enc.writeLength(uint64(len(points)))
+	for _, p := range points {
+		_ = binary.Write(enc.buf, binary.LittleEndian, p.Timestamp)
+		_ = binary.Write(enc.buf, binary.LittleEndian, p.Value)
+	}
+	return nil
+}
+
+// WriteGeoKeyValue 写入 geo 键值对
+func (enc *RDBEncoder) WriteGeoKeyValue(key string, members []store.GeoMember, ttl int64) error {
+	if ttl > 0 {
+		now := time.Now().Unix()
+		expireTime := now + ttl
+		enc.buf.WriteByte(0xFD)
+		// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
+		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTime))
+	}
+
+	enc.buf.WriteByte(6) // GEO type
+	enc.writeString(key)
+	enc.writeLength(uint64(len(members)))
+	for _, m := range members {
+		enc.writeString(m.Member)
+		_ = binary.Write(enc.buf, binary.LittleEndian, m.Lat)
+		_ = binary.Write(enc.buf, binary.LittleEndian, m.Lon)
+	}
+	return nil
+}
+
+// WriteHLLKeyValue 写入 HyperLogLog 键值对
+func (enc *RDBEncoder) WriteHLLKeyValue(key string, data []byte) error {
+	enc.buf.WriteByte(9) // HLL type
+	enc.writeString(key)
+	enc.writeBytes(data) // encoding byte + registers
 	return nil
 }
 
@@ -394,6 +464,38 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 				}
 				_ = enc.WriteStreamKeyValue(key, entries)
 
+			case store.KeyTypeJSON:
+				value, err := readJSONInTxn(txn, key)
+				if err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取JSON值失败")
+					continue
+				}
+				_ = enc.WriteJSONKeyValue(key, value)
+
+			case store.KeyTypeTimeSeries:
+				points, err := readTimeSeriesInTxn(txn, key)
+				if err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取time series值失败")
+					continue
+				}
+				_ = enc.WriteTimeSeriesKeyValue(key, points)
+
+			case store.KeyTypeGeo:
+				members, err := readGeoInTxn(txn, key)
+				if err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取geo值失败")
+					continue
+				}
+				_ = enc.WriteGeoKeyValue(key, members, ttl)
+
+			case store.KeyTypeHyperLogLog:
+				data, err := readHLLInTxn(txn, key)
+				if err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取HLL值失败")
+					continue
+				}
+				_ = enc.WriteHLLKeyValue(key, data)
+
 			default:
 				logger.Logger.Debug().Str("key", key).Str("type", keyType).Msg("跳过不支持的RDB键类型")
 			}
@@ -430,6 +532,14 @@ func readTTLFromValueTxn(txn *badger.Txn, key, keyType string) int64 {
 		valueKey = []byte("SET:" + key + ":count")
 	case store.KeyTypeSortedSet:
 		valueKey = []byte("zset:" + key + ":meta")
+	case store.KeyTypeGeo:
+		valueKey = []byte("geo:" + key + ":meta")
+	case store.KeyTypeJSON:
+		valueKey = []byte("JSON:" + key)
+	case store.KeyTypeTimeSeries:
+		valueKey = []byte("TS:" + key + ":meta")
+	case store.KeyTypeHyperLogLog:
+		valueKey = []byte("hll:" + key)
 	}
 	if valueKey == nil {
 		return 0
@@ -604,6 +714,106 @@ func readZSetInTxn(txn *badger.Txn, key string) ([]store.ZSetMember, error) {
 		}
 		score := math.Float64frombits(binary.BigEndian.Uint64(scoreBytes))
 		result = append(result, store.ZSetMember{Member: member, Score: score})
+	}
+	return result, nil
+}
+
+// decodeGeoHash decodes a 52-bit geohash to latitude and longitude
+func decodeGeoHash(hash uint64) (lat, lon float64) {
+	latBits := hash >> 26
+	lonBits := hash & ((1 << 26) - 1)
+	lat = decodeLatLonBits(latBits, -90, 90, 26)
+	lon = decodeLatLonBits(lonBits, -180, 180, 26)
+	return
+}
+
+func decodeLatLonBits(bits uint64, min, max float64, totalBits uint) float64 {
+	low, high := min, max
+	for i := uint(0); i < totalBits; i++ {
+		mid := (low + high) / 2
+		bitPos := totalBits - i - 1
+		if (bits>>bitPos)&1 == 1 {
+			low = mid
+		} else {
+			high = mid
+		}
+	}
+	return (low + high) / 2
+}
+
+// readJSONInTxn 从事务中读取 JSON 值
+func readJSONInTxn(txn *badger.Txn, key string) (string, error) {
+	item, err := txn.Get([]byte("JSON:" + key))
+	if err != nil {
+		return "", err
+	}
+	raw, err := item.ValueCopy(nil)
+	if err != nil {
+		return "", err
+	}
+	decoded, err := store.DecompressData(raw)
+	if err != nil {
+		return "", err
+	}
+	return string(decoded), nil
+}
+
+// readTimeSeriesInTxn 从事务中读取 time series 的全部数据点
+func readTimeSeriesInTxn(txn *badger.Txn, key string) ([]store.TimeSeriesDataPoint, error) {
+	prefix := []byte("TS:" + key + ":data:")
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = true
+	opts.PrefetchSize = 100
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	var result []store.TimeSeriesDataPoint
+	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+		item := it.Item()
+		raw, err := item.ValueCopy(nil)
+		if err != nil {
+			return nil, err
+		}
+		if len(raw) < 16 {
+			continue
+		}
+		timestamp := int64(binary.BigEndian.Uint64(raw[:8]))
+		value := math.Float64frombits(binary.BigEndian.Uint64(raw[8:16]))
+		result = append(result, store.TimeSeriesDataPoint{Timestamp: timestamp, Value: value})
+	}
+	return result, nil
+}
+
+// readHLLInTxn 从事务中读取 HyperLogLog 原始字节
+func readHLLInTxn(txn *badger.Txn, key string) ([]byte, error) {
+	hllKey := []byte("hll:" + key)
+	item, err := txn.Get(hllKey)
+	if err != nil {
+		return nil, err
+	}
+	return item.ValueCopy(nil)
+}
+
+// readGeoInTxn 从事务中读取 geo 的全部成员 (member, lat, lon)
+func readGeoInTxn(txn *badger.Txn, key string) ([]store.GeoMember, error) {
+	prefix := []byte("geo:" + key + ":index:")
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = true
+	opts.PrefetchSize = 100
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	var result []store.GeoMember
+	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+		item := it.Item()
+		member := string(item.Key()[len(prefix):])
+		raw, err := item.ValueCopy(nil)
+		if err != nil {
+			return nil, err
+		}
+		hash := binary.BigEndian.Uint64(raw)
+		lat, lon := decodeGeoHash(hash)
+		result = append(result, store.GeoMember{Member: member, Lat: lat, Lon: lon})
 	}
 	return result, nil
 }

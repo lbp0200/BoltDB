@@ -991,14 +991,16 @@ func TestExecuteCommand_GEOADD_Coverage(t *testing.T) {
 
 	// Verify member was added using GEOPOS
 	geoResp := handler.executeCommand(state, "GEOPOS", [][]byte{[]byte("mygeo"), []byte("SanFrancisco")}, "127.0.0.1:12345")
-	geoArr, ok := geoResp.(*proto.Array)
+	geoNested, ok := geoResp.(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(geoArr.Args) >= 1)
-	// GEOPOS returns [longitude, latitude] or nil if not found
-	if len(geoArr.Args) >= 1 && geoArr.Args[0] != nil {
-		// Values are returned as bulk strings
-		// We just verify non-nil response indicates member exists
-		assert.True(t, len(geoArr.Args[0]) > 0)
+	assert.True(t, len(geoNested.Elems) >= 1)
+	if len(geoNested.Elems) >= 1 {
+		// GEOPOS returns [longitude, latitude] as nested array
+		coord, ok := geoNested.Elems[0].(*proto.NestedArray)
+		assert.True(t, ok)
+		if ok {
+			assert.Equal(t, 2, len(coord.Elems))
+		}
 	}
 }
 
@@ -1046,13 +1048,16 @@ func TestExecuteCommand_GEOPOS_Coverage(t *testing.T) {
 	handler.executeCommand(state, "GEOADD", [][]byte{[]byte("mygeo"), []byte("-122.4194"), []byte("37.7749"), []byte("SF")}, "127.0.0.1:12345")
 
 	resp := handler.executeCommand(state, "GEOPOS", [][]byte{[]byte("mygeo"), []byte("SF")}, "127.0.0.1:12345")
-	arr, ok := resp.(*proto.Array)
+	nested, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) > 0)
-	// Verify position returned as "lat,lon" string
-	if len(arr.Args) > 0 {
-		assert.True(t, arr.Args[0] != nil)
-		assert.True(t, len(arr.Args[0]) > 0)
+	assert.True(t, len(nested.Elems) > 0)
+	// Verify position returned as nested [lon, lat] array
+	if len(nested.Elems) > 0 {
+		coord, ok := nested.Elems[0].(*proto.NestedArray)
+		assert.True(t, ok)
+		if ok {
+			assert.Equal(t, 2, len(coord.Elems))
+		}
 	}
 }
 
@@ -1073,6 +1078,58 @@ func TestExecuteCommand_GEOSEARCH_Coverage(t *testing.T) {
 	if len(arr.Args) > 0 {
 		assert.Equal(t, "SF", string(arr.Args[0]))
 	}
+}
+
+// TestExecuteCommand_GEOSEARCH_WithModifiers tests GEOSEARCH WITHCOORD/WITHDIST/WITHHASH
+func TestExecuteCommand_GEOSEARCH_WithModifiers_Coverage(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "GEOADD", [][]byte{[]byte("mygeo"), []byte("-122.4194"), []byte("37.7749"), []byte("SF")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "GEOADD", [][]byte{[]byte("mygeo"), []byte("-74.0060"), []byte("40.7128"), []byte("NYC")}, "127.0.0.1:12345")
+
+	// WITHCOORD — returns nested [member, [lon, lat]]
+	resp := handler.executeCommand(state, "GEOSEARCH", [][]byte{[]byte("mygeo"), []byte("FROMLONLAT"), []byte("-122.4194"), []byte("37.7749"), []byte("BYRADIUS"), []byte("5000"), []byte("km"), []byte("WITHCOORD")}, "127.0.0.1:12345")
+	nested, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	if len(nested.Elems) > 0 {
+		entry, ok := nested.Elems[0].(*proto.NestedArray)
+		assert.True(t, ok)
+		assert.True(t, len(entry.Elems) >= 2)
+		coord, ok := entry.Elems[1].(*proto.NestedArray)
+		assert.True(t, ok)
+		assert.Equal(t, 2, len(coord.Elems))
+	}
+
+	// WITHDIST — returns nested [member, dist]
+	resp = handler.executeCommand(state, "GEOSEARCH", [][]byte{[]byte("mygeo"), []byte("FROMLONLAT"), []byte("-122.4194"), []byte("37.7749"), []byte("BYRADIUS"), []byte("5000"), []byte("km"), []byte("WITHDIST")}, "127.0.0.1:12345")
+	nested, ok = resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	if len(nested.Elems) > 0 {
+		entry, ok := nested.Elems[0].(*proto.NestedArray)
+		assert.True(t, ok)
+		assert.True(t, len(entry.Elems) >= 2)
+	}
+
+	// WITHDIST WITHCOORD — returns nested [member, dist, [lon, lat]]
+	resp = handler.executeCommand(state, "GEOSEARCH", [][]byte{[]byte("mygeo"), []byte("FROMLONLAT"), []byte("-122.4194"), []byte("37.7749"), []byte("BYRADIUS"), []byte("5000"), []byte("km"), []byte("WITHDIST"), []byte("WITHCOORD")}, "127.0.0.1:12345")
+	nested, ok = resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	if len(nested.Elems) > 0 {
+		entry, ok := nested.Elems[0].(*proto.NestedArray)
+		assert.True(t, ok)
+		assert.True(t, len(entry.Elems) >= 3)
+		coord, ok := entry.Elems[2].(*proto.NestedArray)
+		assert.True(t, ok)
+		assert.Equal(t, 2, len(coord.Elems))
+	}
+
+	// WITHHASH — returns nested [member, hash]
+	resp = handler.executeCommand(state, "GEOSEARCH", [][]byte{[]byte("mygeo"), []byte("FROMLONLAT"), []byte("-122.4194"), []byte("37.7749"), []byte("BYRADIUS"), []byte("5000"), []byte("km"), []byte("WITHHASH")}, "127.0.0.1:12345")
+	nested, ok = resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.True(t, len(nested.Elems) > 0)
 }
 
 // TestExecuteCommand_XINFO_STREAMS tests XINFO STREAM command

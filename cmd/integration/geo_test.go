@@ -39,13 +39,34 @@ func TestGeoPos(t *testing.T) {
 	_, err := sharedClient.Do(ctx, "GEOADD", "mygeopos", "116.40", "39.90", "beijing", "121.47", "31.23", "shanghai").Result()
 	assert.NoError(t, err)
 
-	// GEOPOS - 获取位置（使用原始命令）
+	// GEOPOS - 获取位置
 	result, err := sharedClient.Do(ctx, "GEOPOS", "mygeopos", "beijing", "shanghai").Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})
 	assert.True(t, ok)
 	assert.Equal(t, 2, len(arr))
+
+	// Validate nested [lon, lat] structure for each coordinate
+	for _, elem := range arr {
+		coord, ok := elem.([]interface{})
+		assert.True(t, ok)
+		assert.Equal(t, 2, len(coord))
+		lon, ok := coord[0].(string)
+		assert.True(t, ok)
+		lat, ok := coord[1].(string)
+		assert.True(t, ok)
+		assert.True(t, len(lon) > 0)
+		assert.True(t, len(lat) > 0)
+	}
+
+	// Verify non-existent member returns nil
+	result, err = sharedClient.Do(ctx, "GEOPOS", "mygeopos", "nonexistent").Result()
+	assert.NoError(t, err)
+	nilArr, ok := result.([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(nilArr))
+	assert.Nil(t, nilArr[0])
 }
 
 // TestGeoHash 测试 GEOHASH 命令
@@ -107,9 +128,65 @@ func TestGeoSearch(t *testing.T) {
 	// GEOSEARCH - 按圆形区域搜索
 	result, err := sharedClient.Do(ctx, "GEOSEARCH", "mysearch", "FROMLONLAT", "116.40", "39.90", "BYRADIUS", "500", "km").Result()
 	assert.NoError(t, err)
-
-	// 验证返回了结果
 	assert.True(t, result != nil)
+}
+
+// TestGeoSearchWithModifiers 测试 GEOSEARCH WITHCOORD/WITHDIST/WITHHASH
+func TestGeoSearchWithModifiers(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	// 添加测试数据
+	_, err := sharedClient.Do(ctx, "GEOADD", "searchmod", "116.40", "39.90", "beijing").Result()
+	assert.NoError(t, err)
+	_, err = sharedClient.Do(ctx, "GEOADD", "searchmod", "121.47", "31.23", "shanghai").Result()
+	assert.NoError(t, err)
+
+	// WITHCOORD — 返回 nested [member, [lon, lat]]
+	result, err := sharedClient.Do(ctx, "GEOSEARCH", "searchmod", "FROMLONLAT", "116.40", "39.90", "BYRADIUS", "2000", "km", "WITHCOORD").Result()
+	assert.NoError(t, err)
+	arr := result.([]interface{})
+	assert.True(t, len(arr) > 0)
+	for _, elem := range arr {
+		entry := elem.([]interface{})
+		assert.True(t, len(entry) >= 2)
+		coord := entry[1].([]interface{})
+		assert.Equal(t, 2, len(coord))
+	}
+
+	// WITHDIST — 返回 nested [member, dist]
+	result, err = sharedClient.Do(ctx, "GEOSEARCH", "searchmod", "FROMLONLAT", "116.40", "39.90", "BYRADIUS", "2000", "km", "WITHDIST").Result()
+	assert.NoError(t, err)
+	arr = result.([]interface{})
+	assert.True(t, len(arr) > 0)
+	for _, elem := range arr {
+		entry := elem.([]interface{})
+		assert.True(t, len(entry) >= 2)
+	}
+
+	// WITHHASH — 返回 nested [member, hash]
+	result, err = sharedClient.Do(ctx, "GEOSEARCH", "searchmod", "FROMLONLAT", "116.40", "39.90", "BYRADIUS", "2000", "km", "WITHHASH").Result()
+	assert.NoError(t, err)
+	arr = result.([]interface{})
+	assert.True(t, len(arr) > 0)
+	for _, elem := range arr {
+		entry := elem.([]interface{})
+		assert.True(t, len(entry) >= 2)
+	}
+
+	// WITHDIST WITHCOORD — 返回 nested [member, dist, [lon, lat]]
+	result, err = sharedClient.Do(ctx, "GEOSEARCH", "searchmod", "FROMLONLAT", "116.40", "39.90", "BYRADIUS", "2000", "km", "WITHDIST", "WITHCOORD").Result()
+	assert.NoError(t, err)
+	arr = result.([]interface{})
+	assert.True(t, len(arr) > 0)
+	for _, elem := range arr {
+		entry := elem.([]interface{})
+		assert.True(t, len(entry) >= 3)
+		coord := entry[2].([]interface{})
+		assert.Equal(t, 2, len(coord))
+	}
 }
 
 // TestGeoSearchStore 测试 GEOSEARCHSTORE 命令

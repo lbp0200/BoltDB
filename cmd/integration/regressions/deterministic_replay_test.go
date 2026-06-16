@@ -397,3 +397,85 @@ func TestRegressionSlaveConnectionOwnership(t *testing.T) {
 		t.Fatalf("offset mismatch after work: master=%d slave=%d", master.GetMasterOffset(), off)
 	}
 }
+
+// TestRegressionFullResyncGeo verifies GEO data survives FULLRESYNC:
+// GEOADD data → slave connects → FULLRESYNC → slave has GEO data.
+func TestRegressionFullResyncGeo(t *testing.T) {
+	master := StartRegression(t)
+	defer master.Close()
+
+	slave := StartRegression(t)
+	defer slave.Close()
+
+	ctx := context.Background()
+
+	// Write GEO data to master
+	_, err := master.Client.Do(ctx, "GEOADD", "geo:test", "116.40", "39.90", "beijing").Result()
+	if err != nil {
+		t.Fatalf("GEOADD failed: %v", err)
+	}
+	_, err = master.Client.Do(ctx, "GEOADD", "geo:test", "121.47", "31.23", "shanghai").Result()
+	if err != nil {
+		t.Fatalf("GEOADD shanghai failed: %v", err)
+	}
+
+	// Connect slave (triggers FULLRESYNC)
+	if err := slave.MakeSlave(master.Addr); err != nil {
+		t.Fatalf("MakeSlave failed: %v", err)
+	}
+	defer slave.StopSlave()
+
+	if !slave.WaitForReplicaSync(ctx, master, slave, 30*time.Second) {
+		t.Fatal("slave did not sync in time")
+	}
+
+	// Verify slave has GEO data
+	result, err := slave.Client.Do(ctx, "GEOPOS", "geo:test", "beijing", "shanghai").Result()
+	if err != nil {
+		t.Fatalf("slave GEOPOS failed: %v", err)
+	}
+	arr, ok := result.([]interface{})
+	if !ok {
+		t.Fatalf("GEOPOS result is not array")
+	}
+	if len(arr) != 2 {
+		t.Fatalf("expected 2 positions, got %d", len(arr))
+	}
+	for i, elem := range arr {
+		coord, ok := elem.([]interface{})
+		if !ok || len(coord) != 2 {
+			t.Fatalf("position %d: expected [lon, lat] array, got %T %v", i, elem, elem)
+		}
+	}
+
+	// Verify key exists on both
+	masterExists, err := master.Client.Exists(ctx, "geo:test").Result()
+	if err != nil {
+		t.Fatalf("master EXISTS failed: %v", err)
+	}
+	slaveExists, err := slave.Client.Exists(ctx, "geo:test").Result()
+	if err != nil {
+		t.Fatalf("slave EXISTS failed: %v", err)
+	}
+	if masterExists != 1 {
+		t.Fatalf("master key should exist")
+	}
+	if slaveExists != 1 {
+		t.Fatalf("slave key should exist after FULLRESYNC")
+	}
+
+	// Verify GEOSEARCH returns same results on both
+	masterSearch, err := master.Client.Do(ctx, "GEOSEARCH", "geo:test", "FROMLONLAT", "110", "20", "BYRADIUS", "5000", "km").Result()
+	if err != nil {
+		t.Fatalf("master GEOSEARCH failed: %v", err)
+	}
+	slaveSearch, err := slave.Client.Do(ctx, "GEOSEARCH", "geo:test", "FROMLONLAT", "110", "20", "BYRADIUS", "5000", "km").Result()
+	if err != nil {
+		t.Fatalf("slave GEOSEARCH failed: %v", err)
+	}
+	masterArr := masterSearch.([]interface{})
+	slaveArr := slaveSearch.([]interface{})
+	if len(masterArr) != len(slaveArr) {
+		t.Fatalf("geo search results mismatch: master=%d slave=%d", len(masterArr), len(slaveArr))
+	}
+}

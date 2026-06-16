@@ -3692,12 +3692,16 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return wrapStoreError(err)
 		}
 		// 返回格式: [cursor, [member1, member2, ...]]
-		response := make([][]byte, 0, 2+len(result.Members))
-		response = append(response, []byte(strconv.FormatUint(result.Cursor, 10)))
-		for _, m := range result.Members {
-			response = append(response, []byte(m))
+		memberElems := make([]proto.RESP, len(result.Members))
+		for i, m := range result.Members {
+			memberElems[i] = proto.NewBulkString([]byte(m))
 		}
-		return &proto.Array{Args: response}
+		return &proto.NestedArray{
+			Elems: []proto.RESP{
+				proto.NewBulkString([]byte(strconv.FormatUint(result.Cursor, 10))),
+				&proto.NestedArray{Elems: memberElems},
+			},
+		}
 
 	// ==================== HSCAN ====================
 	case "HSCAN":
@@ -3733,13 +3737,17 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
-		hscanResp := make([][]byte, 0, 2+len(hscanResult.Fields)*2)
-		hscanResp = append(hscanResp, []byte(strconv.FormatUint(hscanResult.Cursor, 10)))
+		fieldElems := make([]proto.RESP, 0, len(hscanResult.Fields)*2)
 		for fieldName, fieldVal := range hscanResult.Fields {
-			hscanResp = append(hscanResp, []byte(fieldName))
-			hscanResp = append(hscanResp, fieldVal)
+			fieldElems = append(fieldElems, proto.NewBulkString([]byte(fieldName)))
+			fieldElems = append(fieldElems, proto.NewBulkString(fieldVal))
 		}
-		return &proto.Array{Args: hscanResp}
+		return &proto.NestedArray{
+			Elems: []proto.RESP{
+				proto.NewBulkString([]byte(strconv.FormatUint(hscanResult.Cursor, 10))),
+				&proto.NestedArray{Elems: fieldElems},
+			},
+		}
 
 	// SortedSet命令 - 由于代码太长，这里只实现主要命令
 	case "ZADD":
@@ -4737,26 +4745,42 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		case []string:
 			// 对于CLUSTER NODES，返回多行字符串
 			return proto.NewBulkString([]byte(strings.Join(v, "\n")))
-		case []interface{}:
-			// 对于CLUSTER SLOTS，返回数组
-			// 简化处理：转换为字符串数组
-			strs := make([][]byte, len(v))
-			for i, item := range v {
-				strs[i] = []byte(fmt.Sprintf("%v", item))
-			}
-			return &proto.Array{Args: strs}
 		case [][]interface{}:
 			// 对于CLUSTER SLOTS，槽位信息
-			// 格式：[[startSlot, endSlot, ip, port, nodeId], ...]
+			// 格式：[[startSlot, endSlot, [host, port, nodeId]], ...]
 			slotsResp := make([]proto.RESP, len(v))
 			for i, slotEntry := range v {
-				entry := make([][]byte, len(slotEntry))
+				entry := make([]proto.RESP, len(slotEntry))
 				for j, item := range slotEntry {
-					entry[j] = []byte(fmt.Sprintf("%v", item))
+					if sub, ok := item.([]interface{}); ok {
+						subEntry := make([]proto.RESP, len(sub))
+						for k, subItem := range sub {
+							subEntry[k] = proto.NewBulkString([]byte(fmt.Sprintf("%v", subItem)))
+						}
+						entry[j] = &proto.NestedArray{Elems: subEntry}
+					} else {
+						entry[j] = proto.NewBulkString([]byte(fmt.Sprintf("%v", item)))
+					}
 				}
-				slotsResp[i] = &proto.Array{Args: entry}
+				slotsResp[i] = &proto.NestedArray{Elems: entry}
 			}
 			return &proto.NestedArray{Elems: slotsResp}
+
+		case []interface{}:
+			entries := make([]proto.RESP, len(v))
+			for i, item := range v {
+				if sub, ok := item.([]interface{}); ok {
+					subEntry := make([]proto.RESP, len(sub))
+					for k, subItem := range sub {
+						subEntry[k] = proto.NewBulkString([]byte(fmt.Sprintf("%v", subItem)))
+					}
+					entries[i] = &proto.NestedArray{Elems: subEntry}
+				} else {
+					entries[i] = proto.NewBulkString([]byte(fmt.Sprintf("%v", item)))
+				}
+			}
+			return &proto.NestedArray{Elems: entries}
+
 		default:
 			return proto.NewSimpleString(fmt.Sprintf("%v", v))
 		}
@@ -5091,7 +5115,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	// ==================== LOLWUT ====================
 	case "LOLWUT":
 		// LOLWUT [VERSION version] - Redis version sanity check
-		version := "redis.bolt.8.9"
+		version := "redis.bolt.8.23"
 		if len(args) > 0 && strings.ToUpper(string(args[0])) == "VERSION" && len(args) > 1 {
 			version = string(args[1])
 		}
@@ -5634,15 +5658,20 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			}
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
-		results := make([][]byte, len(positions))
+		results := make([]proto.RESP, len(positions))
 		for i, pos := range positions {
 			if pos[0] == 0 && pos[1] == 0 {
-				results[i] = nil
+				results[i] = proto.NewBulkString(nil)
 			} else {
-				results[i] = []byte(fmt.Sprintf("%.6f,%.6f", pos[1], pos[0]))
+				results[i] = &proto.NestedArray{
+					Elems: []proto.RESP{
+						proto.NewBulkString([]byte(fmt.Sprintf("%.6f", pos[1]))),
+						proto.NewBulkString([]byte(fmt.Sprintf("%.6f", pos[0]))),
+					},
+				}
 			}
 		}
-		return &proto.Array{Args: results}
+		return &proto.NestedArray{Elems: results}
 
 	// ==================== GEOHASH ====================
 	case "GEOHASH":
@@ -5749,27 +5778,34 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 
-		var gResp [][]byte
-		for _, r := range gResults {
-			if gWithCoord {
-				gResp = append(gResp, []byte(r.Member))
-				gResp = append(gResp, []byte(fmt.Sprintf("%.6f", r.Lon)))
-				gResp = append(gResp, []byte(fmt.Sprintf("%.6f", r.Lat)))
-			} else if gWithDist && gWithHash {
-				gResp = append(gResp, []byte(r.Member))
-				gResp = append(gResp, []byte(fmt.Sprintf("%.4f", r.Dist)))
-				gResp = append(gResp, []byte(r.Hash))
-			} else if gWithDist {
-				gResp = append(gResp, []byte(r.Member))
-				gResp = append(gResp, []byte(fmt.Sprintf("%.4f", r.Dist)))
-			} else if gWithHash {
-				gResp = append(gResp, []byte(r.Member))
-				gResp = append(gResp, []byte(r.Hash))
-			} else {
-				gResp = append(gResp, []byte(r.Member))
+		if !gWithCoord && !gWithDist && !gWithHash {
+			gResp := make([][]byte, len(gResults))
+			for i, r := range gResults {
+				gResp[i] = []byte(r.Member)
 			}
+			return &proto.Array{Args: gResp}
 		}
-		return &proto.Array{Args: gResp}
+
+		gResp := make([]proto.RESP, len(gResults))
+		for i, r := range gResults {
+			elems := []proto.RESP{proto.NewBulkString([]byte(r.Member))}
+			if gWithDist {
+				elems = append(elems, proto.NewBulkString([]byte(fmt.Sprintf("%.4f", r.Dist))))
+			}
+			if gWithHash {
+				elems = append(elems, proto.NewBulkString([]byte(r.Hash)))
+			}
+			if gWithCoord {
+				elems = append(elems, &proto.NestedArray{
+					Elems: []proto.RESP{
+						proto.NewBulkString([]byte(fmt.Sprintf("%.6f", r.Lon))),
+						proto.NewBulkString([]byte(fmt.Sprintf("%.6f", r.Lat))),
+					},
+				})
+			}
+			gResp[i] = &proto.NestedArray{Elems: elems}
+		}
+		return &proto.NestedArray{Elems: gResp}
 
 	// ==================== GEOSEARCH ====================
 	case "GEOSEARCH":
@@ -5880,27 +5916,34 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 
 		// Format results
-		var response [][]byte
-		for _, r := range results {
-			if withCoord {
-				response = append(response, []byte(r.Member))
-				response = append(response, []byte(fmt.Sprintf("%.6f", r.Lon)))
-				response = append(response, []byte(fmt.Sprintf("%.6f", r.Lat)))
-			} else if withDist && withHash {
-				response = append(response, []byte(r.Member))
-				response = append(response, []byte(fmt.Sprintf("%.4f", r.Dist)))
-				response = append(response, []byte(r.Hash))
-			} else if withDist {
-				response = append(response, []byte(r.Member))
-				response = append(response, []byte(fmt.Sprintf("%.4f", r.Dist)))
-			} else if withHash {
-				response = append(response, []byte(r.Member))
-				response = append(response, []byte(r.Hash))
-			} else {
-				response = append(response, []byte(r.Member))
+		if !withCoord && !withDist && !withHash {
+			resp := make([][]byte, len(results))
+			for i, r := range results {
+				resp[i] = []byte(r.Member)
 			}
+			return &proto.Array{Args: resp}
 		}
-		return &proto.Array{Args: response}
+
+		resp := make([]proto.RESP, len(results))
+		for i, r := range results {
+			elems := []proto.RESP{proto.NewBulkString([]byte(r.Member))}
+			if withDist {
+				elems = append(elems, proto.NewBulkString([]byte(fmt.Sprintf("%.4f", r.Dist))))
+			}
+			if withHash {
+				elems = append(elems, proto.NewBulkString([]byte(r.Hash)))
+			}
+			if withCoord {
+				elems = append(elems, &proto.NestedArray{
+					Elems: []proto.RESP{
+						proto.NewBulkString([]byte(fmt.Sprintf("%.6f", r.Lon))),
+						proto.NewBulkString([]byte(fmt.Sprintf("%.6f", r.Lat))),
+					},
+				})
+			}
+			resp[i] = &proto.NestedArray{Elems: elems}
+		}
+		return &proto.NestedArray{Elems: resp}
 
 	// ==================== GEOSEARCHSTORE ====================
 	case "GEOSEARCHSTORE":
@@ -6620,26 +6663,39 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 
-		// Build response
-		response := make([][]byte, 0)
-		response = append(response, []byte(result.NextID))
+		// Build response: [nextID, [entry1, entry2, ...]]
 		if opts.JustID {
-			for _, id := range result.ClaimedIDs {
-				response = append(response, []byte(id))
+			entries := make([]proto.RESP, len(result.ClaimedIDs))
+			for i, id := range result.ClaimedIDs {
+				entries[i] = proto.NewBulkString([]byte(id))
 			}
-		} else {
-			for _, id := range result.ClaimedIDs {
-				response = append(response, []byte(id))
-			}
-			for _, msg := range result.Messages {
-				entry := [][]byte{[]byte("id"), []byte(msg.ID)}
-				for k, v := range msg.Fields {
-					entry = append(entry, []byte(k), []byte(v))
-				}
-				response = append(response, entry...)
+			return &proto.NestedArray{
+				Elems: []proto.RESP{
+					proto.NewBulkString([]byte(result.NextID)),
+					&proto.NestedArray{Elems: entries},
+				},
 			}
 		}
-		return &proto.Array{Args: response}
+
+		entries := make([]proto.RESP, 0, len(result.Messages))
+		for _, msg := range result.Messages {
+			fields := make([]proto.RESP, 0, len(msg.Fields)*2)
+			for k, v := range msg.Fields {
+				fields = append(fields, proto.NewBulkString([]byte(k)), proto.NewBulkString([]byte(v)))
+			}
+			entries = append(entries, &proto.NestedArray{
+				Elems: []proto.RESP{
+					proto.NewBulkString([]byte(msg.ID)),
+					&proto.NestedArray{Elems: fields},
+				},
+			})
+		}
+		return &proto.NestedArray{
+			Elems: []proto.RESP{
+				proto.NewBulkString([]byte(result.NextID)),
+				&proto.NestedArray{Elems: entries},
+			},
+		}
 
 	// ==================== XPENDING ====================
 	case "XPENDING":
@@ -6778,14 +6834,17 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				}
 				return proto.NewError(fmt.Sprintf("ERR %v", err))
 			}
-			response := make([][]byte, 0)
+			var response []proto.RESP
 			for _, c := range consumers {
-				response = append(response, []byte("name"))
-				response = append(response, []byte(c.Name))
-				response = append(response, []byte("seen"))
-				response = append(response, []byte(strconv.FormatInt(c.LastSeen, 10)))
+				consumerInfo := []proto.RESP{
+					proto.NewBulkString([]byte("name")),
+					proto.NewBulkString([]byte(c.Name)),
+					proto.NewBulkString([]byte("seen")),
+					proto.NewBulkString([]byte(strconv.FormatInt(c.LastSeen, 10))),
+				}
+				response = append(response, &proto.NestedArray{Elems: consumerInfo})
 			}
-			return &proto.Array{Args: response}
+			return &proto.NestedArray{Elems: response}
 		default:
 			return proto.NewError("ERR syntax error")
 		}
