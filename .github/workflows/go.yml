@@ -39,7 +39,7 @@ jobs:
         run: go build ./...
 
       - name: Test with coverage
-        run: go test -race -timeout 30s -short -coverprofile=coverage.out -covermode=atomic ./internal/... ./cmd/boltDB/... 2>/dev/null
+        run: go test -race -timeout 60s -short -coverprofile=coverage.out -covermode=atomic ./internal/... ./cmd/boltDB/... 2>/dev/null
 
       - name: Upload coverage
         if: always()

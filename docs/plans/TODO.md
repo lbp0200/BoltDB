@@ -23,7 +23,7 @@ PASS
 Window: 2026-06-01 ~ 2026-06-09
 ```
 
-- [x] Nightly soak pipeline (crontab, 2:00 daily, remote 2.16)
+- [x] Nightly soak pipeline (GHA, cron 2:00 daily UTC)
 - [x] Evolution gate (cross-run trend analysis)
 - [x] Basin analysis (phase space classification)
 - [x] Drift analysis (delta > 0.05 detection)
@@ -274,18 +274,23 @@ Tests: 29 new test functions in `replication_coverage_test.go` covering normal o
 
 ## 附录 A：Nightly Soak 运行参考
 
-**位置：** `ssh -i ~/.ssh/google_compute_engine elex-gm0135@10.1.2.16` → `/usr/home/elex/boltdb/`
-**调度：** crontab 每早 2:00
-**命令：**
+Nightly soak 在 GitHub Actions 上运行（`.github/workflows/nightly-soak.yml`），UTC 每日 02:00 触发。
+
+**调度：** cron `0 2 * * *`（UTC）
+**工作流：** `Nightly Soak` → Standalone Soak（1h） + Replication Soak（1h）并行执行
+**观测指标：** evolution gate（health/basin/drift）通过 `go run cmd/evolution/main.go` 检查
+**数据持久化：** evolution history 通过 `actions/cache@v4` 存储，跨 run 累计趋势数据
+**历史日志：** JSONL 轨迹数据上传至 Actions Artifacts（保留 30 天）
+**回查命令：**
 
 ```bash
-# 拉回最新报告
-scp -i ~/.ssh/google_compute_engine -r \
-  elex-gm0135@10.1.2.16:/tmp/bolt-nightly/ /tmp/soak-results/
+# 查看最近一次 nightly 报告
+gh run list --workflow "Nightly Soak" -L 1 --json databaseId \
+  | jq -r '.[0].databaseId' \
+  | xargs gh run view --log
 
-# SSH 查看 evolution
-ssh -i ~/.ssh/google_compute_engine elex-gm0135@10.1.2.16 \
-  "ls -t /tmp/bolt-nightly/20*/report/replication-evolution.md 2>/dev/null | head -1 | xargs cat"
+# 下载历史演化数据
+gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
 ```
 
 ## 附录 B：Monitoring Infrastructure (Completed / Frozen)
