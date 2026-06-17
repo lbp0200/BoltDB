@@ -5070,13 +5070,16 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		return proto.NewInteger(0)
 
 	case "WAIT":
-		// BoltDB does not support replication yet
-		// Return 0 (number of replicas acknowledged)
+		// Return number of connected slaves (simplified WAIT — does not
+		// block for acknowledgement, reports current count immediately).
 		if len(args) < 2 {
 			return proto.NewError("ERR wrong number of arguments for 'WAIT' command")
 		}
-		// #nosec G115 - result is always 0 for non-replicated implementation
-		return proto.NewInteger(0)
+		count := 0
+		if h.Replication != nil {
+			count = h.Replication.GetSlaveCount()
+		}
+		return proto.NewInteger(int64(count))
 
 	case "SLOWLOG":
 		// BoltDB does not implement slow query logging yet
@@ -5165,7 +5168,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	// ==================== LOLWUT ====================
 	case "LOLWUT":
 		// LOLWUT [VERSION version] - Redis version sanity check
-		version := "redis.bolt.8.23"
+		version := "redis.bolt." + Version
 		if len(args) > 0 && strings.ToUpper(string(args[0])) == "VERSION" && len(args) > 1 {
 			version = string(args[1])
 		}

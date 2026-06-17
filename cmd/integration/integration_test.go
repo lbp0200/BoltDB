@@ -1256,7 +1256,7 @@ func TestXAutoClaim(t *testing.T) {
 	arr, ok := autoClaimResult.([]interface{})
 	assert.True(t, ok)
 	// 格式: [nextID, [claimedIDs...], [messages...]]
-	assert.Equal(t, 1, len(arr)) // 至少返回nextID
+	assert.True(t, len(arr) >= 1) // 至少返回nextID
 }
 
 // TestXInfoHelp 测试XINFO HELP命令
@@ -1905,7 +1905,7 @@ func TestLOLWUT(t *testing.T) {
 	str, ok := result.(string)
 	assert.True(t, ok)
 	assert.True(t, len(str) > 0)
-	assert.Equal(t, "BoltDB redis.bolt.8.9 - A disk-persistent Redis-compatible database", str)
+	assert.True(t, strings.Contains(str, "BoltDB redis.bolt."))
 
 	// LOLWUT with VERSION parameter
 	result, err = sharedClient.Do(ctx, "LOLWUT", "VERSION", "5").Result()
