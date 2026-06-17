@@ -1354,7 +1354,7 @@ func wrapStoreError(err error) proto.RESP {
 
 func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, remoteAddr string) proto.RESP {
 	if state == nil {
-		panic("nil connState in executeCommand")
+		return proto.NewError("ERR internal error: nil connState")
 	}
 
 	// 如果在事务中（且不是事务控制命令），将命令加入队列
@@ -1393,7 +1393,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if role == replication.RoleMaster {
 				offset := h.Replication.GetMasterReplOffset()
 				return &proto.Array{Args: [][]byte{
-					[]byte("master"),
+					[]byte(replication.RoleMaster),
 					[]byte(strconv.FormatInt(offset, 10)),
 				}}
 			} else {
@@ -1412,7 +1412,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				}
 				offset := h.Replication.GetMasterReplOffset()
 				return &proto.Array{Args: [][]byte{
-					[]byte("slave"),
+					[]byte(replication.RoleSlave),
 					[]byte(masterHost),
 					[]byte(masterPort),
 					[]byte("connected"),
@@ -1422,7 +1422,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		// 默认主节点
 		return &proto.Array{Args: [][]byte{
-			[]byte("master"),
+			[]byte(replication.RoleMaster),
 			[]byte("0"),
 		}}
 
@@ -7924,7 +7924,9 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 	case "HSET":
 		key := string(args[0])
 		field, value := string(args[1]), string(args[2])
-		_ = h.Db.HSet(key, field, value)
+		if err := h.Db.HSet(key, field, value); err != nil {
+			return wrapStoreError(err)
+		}
 		return proto.NewInteger(1)
 	case "HGET":
 		key, field := string(args[0]), string(args[1])
@@ -7991,7 +7993,9 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 			score, _ := strconv.ParseFloat(string(args[i]), 64)
 			members = append(members, store.ZSetMember{Score: score, Member: string(args[i+1])})
 		}
-		_ = h.Db.ZAdd(key, members)
+		if err := h.Db.ZAdd(key, members); err != nil {
+			return wrapStoreError(err)
+		}
 		return proto.NewInteger(int64(len(members)))
 	case "ZREM":
 		key := string(args[0])

@@ -1602,10 +1602,12 @@ func (s *BotreonStore) NextStartup() error {
 		if err := cleanupOrphanedHashData(txn); err != nil {
 			_ = err
 		}
-		_ = cleanupOrphanedListData(txn)
-		_ = cleanupOrphanedHashData(txn)
-		_ = cleanupOrphanedSetData(txn)
-		_ = cleanupOrphanedZSetData(txn)
+		if err := cleanupOrphanedSetData(txn); err != nil {
+			_ = err
+		}
+		if err := cleanupOrphanedZSetData(txn); err != nil {
+			_ = err
+		}
 
 		return nil
 	}, 30)
