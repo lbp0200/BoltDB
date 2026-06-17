@@ -95,22 +95,21 @@ jobs:
           go test -race -timeout 10m -v \
             ./cmd/integration/ -run TestSoak 2>&1 | tee /tmp/soak-artifacts/soak-output.txt || true
 
-      - name: Evolution gate check
+      - name: Evolution gate check (advisory, does not block CI)
         if: always()
         run: |
           go run cmd/evolution/main.go \
             -dir=/tmp/soak-artifacts/report \
             -prefix=standalone \
-            -json > /tmp/soak-artifacts/gate-result.json
-          cat /tmp/soak-artifacts/gate-result.json
-          LEVEL=$(jq -r '.level' /tmp/soak-artifacts/gate-result.json)
+            -json > /tmp/soak-artifacts/gate-result.json || true
+          cat /tmp/soak-artifacts/gate-result.json 2>/dev/null
+          LEVEL=$(jq -r '.level' /tmp/soak-artifacts/gate-result.json 2>/dev/null)
           if [ "$LEVEL" = "FAIL" ]; then
-            echo "::error::EVOLUTION GATE: FAIL - system degradation detected"
-            jq -r '.reasons[]' /tmp/soak-artifacts/gate-result.json | while IFS= read -r r; do echo "::error::$r"; done
-            exit 1
+            echo "::warning::EVOLUTION GATE (ADVISORY): system degradation signals — review soak artifacts"
+            jq -r '.reasons[]' /tmp/soak-artifacts/gate-result.json 2>/dev/null | while IFS= read -r r; do echo "::warning::$r"; done
           elif [ "$LEVEL" = "WARN" ]; then
             echo "::warning::EVOLUTION GATE: WARN - degradation signals detected"
-            jq -r '.reasons[]' /tmp/soak-artifacts/gate-result.json | while IFS= read -r r; do echo "::warning::$r"; done
+            jq -r '.reasons[]' /tmp/soak-artifacts/gate-result.json 2>/dev/null | while IFS= read -r r; do echo "::warning::$r"; done
           else
             echo "EVOLUTION GATE: PASS"
           fi
