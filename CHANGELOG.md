@@ -1,5 +1,20 @@
 # Changelog
 
+## v8.25.0 (2026-06-17) — CI Pipeline Stability
+
+> **修复 CI 流水线系统性超时问题。** 单元测试超时 30s→60s（解决 GHA runner 上 internal/replication/server/store 三包同时超时），nightly soak 超时 120m→180m（26 天连续 cancellation 根因），对齐 nightly-soak.yml 与 go.yml 的 actions 版本，清理 TODO.md 中幽灵远程服务器记录。
+
+### 工程改进
+
+- **CI 超时修复**（`.github/workflows/go.yml`）：`go test -timeout 30s` → `60s`，消除 internal/replication/server/store 在慢 runner 上的间歇性超时
+- **Nightly Soak 超时修复**（`.github/workflows/nightly-soak.yml`）：standalone/replication 超时 120m → 180m，1h soak + convergence 总计耗时 >2h 的 runner 不再被精准截断
+- **Actions 版本对齐**（`.github/workflows/nightly-soak.yml`）：`checkout@v4` → `v5`，`setup-go@v5` → `v6`，添加 `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24`
+- **文档清理**（`docs/plans/TODO.md`）：删除 Phantom 远程服务器（`10.1.2.16`）引用，替换为 GHA 工作流查询命令
+
+### Issue
+
+- **Close #2 (Failover Oscillation)**：10/10 race-enabled 验证后正式关闭，附带完整证据链
+
 ## v8.24.0 (2026-06-17) — LMPOP, Blocking XREADGROUP, Sentinel Gossip & Technical Debt
 
 > **新增 LMPOP 命令、阻塞 XREADGROUP 支持、Sentinel 间 HELLO 通信修复、debug/benchmark 工具改进、错误消息格式统一。** 实现了 Redis 7.0+ 的列表多键弹出 LMPOP（与已有 ZMPOP 对称），补齐了阻塞 XREADGROUP 的 store 层等待逻辑，修复了 Sentinel `SendHello` 空操作问题使其能建立真实 TCP 连接，重写了 benchmark 工具的端口/构建/关闭流程，统一了 handler 中 9 处不一致的 `ERR syntax error` 错误消息格式。
