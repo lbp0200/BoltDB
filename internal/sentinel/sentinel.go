@@ -29,6 +29,8 @@ type Sentinel struct {
 	Gossip        *GossipProtocol
 	Metrics       *Metrics
 	ConfigManager *configManager
+
+	wg sync.WaitGroup
 }
 
 // GossipMessage 哨兵间通信消息
@@ -164,23 +166,35 @@ func (s *Sentinel) Start() {
 	s.mu.RUnlock()
 
 	for _, master := range masters {
-		go master.StartMonitoring(s)
+		s.wg.Add(1)
+		m := master
+		go func() {
+			defer s.wg.Done()
+			m.StartMonitoring(s)
+		}()
 	}
 
 	// 启动gossip协程
-	go s.startGossipProcessor()
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		s.startGossipProcessor()
+	}()
 }
 
 // Stop 停止哨兵
 func (s *Sentinel) Stop() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	close(s.stopCh)
 
 	for _, master := range s.masters {
 		master.Stop()
 	}
+	// 释放锁后再等待 goroutine 收束，避免 AutoFailover 请求 s.mu.RLock()
+	// 时与 s.wg.Wait() 产生死锁。
+	s.mu.Unlock()
+
+	s.wg.Wait()
 }
 
 // GetRunID 获取运行ID
@@ -286,7 +300,9 @@ func (s *Sentinel) handleSdownMessage(msg *GossipMessage) {
 
 		// 触发故障转移
 		fm := NewFailoverManager(s)
+		s.wg.Add(1)
 		go func() {
+			defer s.wg.Done()
 			if err := fm.AutoFailover(msg.MasterName); err != nil {
 				s.Metrics.RecordFailoverFailed(msg.MasterName)
 				logger.Logger.Error().
@@ -330,7 +346,9 @@ func (s *Sentinel) StartGossip(sentinelAddr string) {
 	s.AddSentinel(sentinelAddr)
 
 	// 定期发送hello消息
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 

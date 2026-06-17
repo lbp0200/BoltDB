@@ -82,6 +82,7 @@ func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
 	var shouldTriggerFailover bool
 
 	mi.mu.Lock()
+	defer mi.mu.Unlock()
 
 	if err != nil {
 		// 连接失败，检查是否超过 downAfter 未收到 pong
@@ -124,8 +125,6 @@ func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
 		}
 	}
 
-	mi.mu.Unlock()
-
 	if shouldBroadcast {
 		sentinel.BroadcastSdown(mi.name)
 	}
@@ -139,7 +138,9 @@ func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
 		}
 		mi.RecordFailover()
 		fm := NewFailoverManager(sentinel)
+		sentinel.wg.Add(1)
 		go func() {
+			defer sentinel.wg.Done()
 			defer func() {
 				if r := recover(); r != nil {
 					logger.Logger.Error().

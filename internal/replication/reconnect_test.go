@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lbp0200/BoltDB/internal/store"
 	"github.com/zeebo/assert"
 )
 
@@ -57,15 +58,23 @@ func TestSlaveReconnector_GoroutineLeak(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 		sr.Stop()
 		rm.Stop()
-		testStore.Close()
+		testStore.CloseWithTimeout(store.CloseTimeout)
+		// Let BadgerDB background goroutines settle before next iteration.
+		runtime.Gosched()
+		time.Sleep(20 * time.Millisecond)
 	}
 
-	time.Sleep(50 * time.Millisecond)
-	runtime.GC()
-	after := runtime.NumGoroutine()
-	leaked := after - before
-	// Threshold forgiving enough for CI load; genuine leaks are 20+ goroutines
-	if leaked > 15 {
-		t.Errorf("goroutine leak detected: before=%d after=%d leaked=%d", before, after, leaked)
+	// Give goroutines time to fully exit (BadgerDB compaction/GC goroutines
+	// may not terminate immediately after Close returns).
+	for i := 0; i < 20; i++ {
+		runtime.GC()
+		runtime.Gosched()
+		time.Sleep(10 * time.Millisecond)
+		after := runtime.NumGoroutine()
+		if after-before <= 15 {
+			return
+		}
 	}
+	after := runtime.NumGoroutine()
+	t.Errorf("goroutine leak suspected: before=%d after=%d leaked=%d", before, after, after-before)
 }

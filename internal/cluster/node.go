@@ -7,11 +7,20 @@ import (
 	"time"
 )
 
+// 集群节点标志常量
+const (
+	FlagMaster = "master"
+	FlagSlave  = "slave"
+	FlagMyself = "myself"
+	FlagFail   = "fail"
+	FlagPFail  = "pfail"
+)
+
 // Node 表示集群中的一个节点
 type Node struct {
 	ID       string      // 节点ID（40字符的十六进制字符串）
 	Addr     string      // 节点地址，格式: "host:port"
-	Flags    []string    // 节点标志，如: "master", "slave", "myself", "fail"
+	Flags    []string    // 节点标志，如: FlagMaster, FlagSlave, FlagMyself, FlagFail
 	MasterID string      // 如果是slave，指向master的ID
 	PingSent int64       // 最后一次ping发送时间（Unix时间戳，毫秒）
 	PongRecv int64       // 最后一次pong接收时间（Unix时间戳，毫秒）
@@ -77,7 +86,7 @@ func (n *Node) IsMaster() bool {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	for _, flag := range n.Flags {
-		if flag == "master" {
+		if flag == FlagMaster {
 			return true
 		}
 	}
@@ -89,7 +98,7 @@ func (n *Node) IsSlave() bool {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	for _, flag := range n.Flags {
-		if flag == "slave" {
+		if flag == FlagSlave {
 			return true
 		}
 	}
@@ -101,7 +110,7 @@ func (n *Node) IsMyself() bool {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	for _, flag := range n.Flags {
-		if flag == "myself" {
+		if flag == FlagMyself {
 			return true
 		}
 	}
@@ -112,14 +121,13 @@ func (n *Node) IsMyself() bool {
 func (n *Node) SetMyself() {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	// 移除旧的myself标志
 	newFlags := []string{}
 	for _, flag := range n.Flags {
-		if flag != "myself" {
+		if flag != FlagMyself {
 			newFlags = append(newFlags, flag)
 		}
 	}
-	n.Flags = append(newFlags, "myself")
+	n.Flags = append(newFlags, FlagMyself)
 }
 
 // UpdatePong 更新pong接收时间
@@ -141,7 +149,7 @@ func (n *Node) IsFailed() bool {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	for _, flag := range n.Flags {
-		if flag == "fail" {
+		if flag == FlagFail {
 			return true
 		}
 	}

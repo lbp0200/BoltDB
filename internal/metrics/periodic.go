@@ -4,13 +4,16 @@ import (
 	"context"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lbp0200/BoltDB/internal/logger"
 )
 
-func StartPeriodicSnapshot(ctx context.Context, c *Collector, interval time.Duration) {
+func StartPeriodicSnapshot(ctx context.Context, c *Collector, interval time.Duration, wg *sync.WaitGroup) {
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 

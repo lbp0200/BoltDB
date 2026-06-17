@@ -71,6 +71,11 @@ type Handler struct {
 
 	// wg 跟踪所有后台 goroutine，确保关闭时完整收束
 	wg sync.WaitGroup
+
+	// shuttingDown is set to 1 when Shutdown begins, so handleConnection
+	// goroutines that register after the conns iteration can exit promptly
+	// instead of blocking on ReadRESP with nobody to close their connection.
+	shuttingDown atomic.Int32
 }
 
 // connMeta 连接元数据
@@ -244,6 +249,8 @@ func (h *Handler) ServeTCP(l net.Listener) error {
 func (h *Handler) Shutdown() {
 	logger.Logger.Info().Msg("开始关闭 handler 所有连接...")
 
+	h.shuttingDown.Store(1)
+
 	// 关闭所有活跃 TCP 连接（解除 ReadRESP 阻塞，让 goroutine 自然退出）
 	h.connsMu.RLock()
 	var targets []struct {
@@ -349,6 +356,13 @@ func (h *Handler) handleConnection(conn net.Conn) {
 		}
 		_ = meta
 	}()
+
+	// 检查关闭信号：如果在 registerConnection 之后但在进入 ReadRESP
+	// 之前 Shutdown 已经开始，避免 ReadRESP 永久阻塞（没有 conn.Close
+	// 来解除阻塞）。
+	if h.shuttingDown.Load() != 0 {
+		return
+	}
 
 	for {
 		// 尝试读取所有可用的命令（支持 Pipeline）
@@ -1376,7 +1390,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		// 对于从节点: ["slave", "master地址", master端口, 状态, 已同步偏移量]
 		if h.Replication != nil {
 			role := h.Replication.GetRole()
-			if role == "master" {
+			if role == replication.RoleMaster {
 				offset := h.Replication.GetMasterReplOffset()
 				return &proto.Array{Args: [][]byte{
 					[]byte("master"),

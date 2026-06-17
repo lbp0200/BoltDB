@@ -412,7 +412,7 @@ func isTransientReplicationError(err error) bool {
 		return true
 	}
 	// 键不存在（主从切换时的正常现象）
-	if strings.Contains(errStr, "key not found") || strings.Contains(errStr, "ErrKeyNotFound") {
+	if strings.Contains(errStr, "key not found") {
 		return true
 	}
 	return false

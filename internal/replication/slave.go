@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lbp0200/BoltDB/internal/logger"
@@ -18,10 +19,10 @@ type SlaveConnection struct {
 	Conn          net.Conn
 	Reader        *bufio.Reader
 	Writer        *bufio.Writer
-	ReplOffset    int64 // 从节点的复制偏移量
-	ReplAckOffset int64 // 从节点确认的偏移量
-	Ready         bool  // 是否准备好接收命令
-	LastAckTime   int64 // 最后一次ACK时间
+	ReplOffset    atomic.Int64 // 从节点的复制偏移量
+	ReplAckOffset int64        // 从节点确认的偏移量
+	Ready         atomic.Bool  // 是否准备好接收命令
+	LastAckTime   int64        // 最后一次ACK时间
 	mu            sync.RWMutex
 	closeOnce     sync.Once
 	writeMu       sync.Mutex // 写锁：SendCommand/SendBacklogData 互斥，与 Close 不冲突
@@ -31,17 +32,18 @@ type SlaveConnection struct {
 func NewSlaveConnection(conn net.Conn) *SlaveConnection {
 	addr := conn.RemoteAddr().String()
 	slaveID := generateSlaveID(addr)
-	return &SlaveConnection{
+	sc := &SlaveConnection{
 		ID:            slaveID,
 		Addr:          addr,
 		Conn:          conn,
 		Reader:        bufio.NewReader(conn),
 		Writer:        bufio.NewWriter(conn),
-		ReplOffset:    0,
 		ReplAckOffset: 0,
-		Ready:         false,
 		LastAckTime:   time.Now().Unix(),
 	}
+	sc.Ready.Store(false)
+	sc.ReplOffset.Store(0)
+	return sc
 }
 
 // generateSlaveID 生成从节点ID
@@ -51,30 +53,22 @@ func generateSlaveID(addr string) string {
 
 // SetReady 设置就绪状态
 func (sc *SlaveConnection) SetReady(ready bool) {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
-	sc.Ready = ready
+	sc.Ready.Store(ready)
 }
 
 // IsReady 检查是否就绪
 func (sc *SlaveConnection) IsReady() bool {
-	sc.mu.RLock()
-	defer sc.mu.RUnlock()
-	return sc.Ready
+	return sc.Ready.Load()
 }
 
 // SetReplOffset 设置复制偏移量
 func (sc *SlaveConnection) SetReplOffset(offset int64) {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
-	sc.ReplOffset = offset
+	sc.ReplOffset.Store(offset)
 }
 
 // GetReplOffset 获取复制偏移量
 func (sc *SlaveConnection) GetReplOffset() int64 {
-	sc.mu.RLock()
-	defer sc.mu.RUnlock()
-	return sc.ReplOffset
+	return sc.ReplOffset.Load()
 }
 
 // UpdateReplAck 更新确认偏移量
@@ -91,7 +85,7 @@ func (sc *SlaveConnection) SendCommand(cmdBytes []byte, offset int64) error {
 	sc.writeMu.Lock()
 	defer sc.writeMu.Unlock()
 
-	if !sc.Ready {
+	if !sc.Ready.Load() {
 		return fmt.Errorf("slave not ready")
 	}
 
@@ -106,7 +100,7 @@ func (sc *SlaveConnection) SendCommand(cmdBytes []byte, offset int64) error {
 	}
 
 	// 更新偏移量
-	sc.ReplOffset = offset
+	sc.ReplOffset.Store(offset)
 
 	return nil
 }
@@ -183,8 +177,11 @@ func (sc *SlaveConnection) Close() error {
 			err = sc.Conn.Close()
 		}
 		// 步骤 2：等待所有写 goroutine 退出（它们会在 I/O 失败后释放 writeMu）
+		// Lock/unlock acts as a memory barrier: any goroutine holding writeMu
+		// will release it and exit once the conn above is closed, and this
+		// acquisition ensures we don't return before they've finished.
 		sc.writeMu.Lock()
-		//nolint:staticcheck
+		//nolint:staticcheck // SA2001: empty critical section intentional — memory barrier
 		sc.writeMu.Unlock()
 	})
 	return err

@@ -18,7 +18,7 @@ const (
 // ReplicationManager 管理主从复制
 type ReplicationManager struct {
 	mu               sync.RWMutex
-	role             string                      // "master" | "slave"
+	role             string                      // RoleMaster | RoleSlave
 	masterAddr       string                      // 主节点地址(当role=slave时)
 	masterConn       *MasterConnection           // 到主节点的连接(当role=slave时)
 	slaves           map[string]*SlaveConnection // 从节点连接(当role=master时)
@@ -26,8 +26,7 @@ type ReplicationManager struct {
 	masterReplOffset int64                       // 主节点复制偏移量
 	replId           string                      // 复制ID(主节点运行ID)
 	store            *store.BotreonStore         // 数据存储
-	stopCh           chan struct{}               // 停止信号
-	closeOnce        sync.Once                   // 确保关闭只执行一次
+	stopped          bool                        // 是否已停止
 	slaveReconnector *SlaveReconnector           // 从节点自动重连器
 }
 
@@ -41,7 +40,6 @@ func NewReplicationManager(store *store.BotreonStore) *ReplicationManager {
 		masterReplOffset: 0,
 		replId:           replId,
 		store:            store,
-		stopCh:           make(chan struct{}),
 	}
 	return rm
 }
@@ -248,27 +246,33 @@ func serializeCommand(cmd [][]byte) []byte {
 
 // Stop 停止复制管理器
 func (rm *ReplicationManager) Stop() {
-	rm.closeOnce.Do(func() {
-		close(rm.stopCh)
-	})
-
 	rm.mu.Lock()
-	defer rm.mu.Unlock()
+	if rm.stopped {
+		rm.mu.Unlock()
+		return
+	}
+	rm.stopped = true
 
-	// 关闭所有从节点连接
+	slaves := make([]*SlaveConnection, 0, len(rm.slaves))
 	for _, slave := range rm.slaves {
+		slaves = append(slaves, slave)
+	}
+	rm.slaves = make(map[string]*SlaveConnection)
+
+	masterConn := rm.masterConn
+	rm.masterConn = nil
+	rm.mu.Unlock()
+
+	// 在 锁外关闭连接，避免与 handlePSyncWithRDB 的锁链死锁
+	for _, slave := range slaves {
 		if err := slave.Close(); err != nil {
 			logger.Logger.Debug().Err(err).Msg("failed to close slave connection")
 		}
 	}
-	rm.slaves = make(map[string]*SlaveConnection)
-
-	// 关闭主节点连接
-	if rm.masterConn != nil {
-		if err := rm.masterConn.Close(); err != nil {
+	if masterConn != nil {
+		if err := masterConn.Close(); err != nil {
 			logger.Logger.Debug().Err(err).Msg("failed to close master connection")
 		}
-		rm.masterConn = nil
 	}
 }
 

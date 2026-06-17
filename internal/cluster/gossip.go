@@ -145,7 +145,7 @@ func (g *Gossiper) checkFailures() {
 		elapsed := now - node.PongRecv
 		if elapsed > failTimeout.Milliseconds() {
 			if !node.IsFailed() {
-				node.Flags = append(node.Flags, "pfail")
+				node.Flags = append(node.Flags, FlagPFail)
 				logger.Logger.Warn().
 					Str("node", node.ID).
 					Str("addr", node.Addr).

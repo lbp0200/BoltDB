@@ -6,6 +6,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/lbp0200/BoltDB/internal/logger"
 	"github.com/lbp0200/BoltDB/internal/proto"
@@ -16,6 +17,10 @@ type SentinelHandler struct {
 	sentinel       *Sentinel
 	configProvider *ConfigProvider
 	failoverMgr    *FailoverManager
+
+	mu    sync.Mutex
+	conns map[net.Conn]struct{}
+	wg    sync.WaitGroup
 }
 
 // NewSentinelHandler 创建新的哨兵处理器
@@ -24,11 +29,36 @@ func NewSentinelHandler(sentinel *Sentinel) *SentinelHandler {
 		sentinel:       sentinel,
 		configProvider: NewConfigProvider(sentinel),
 		failoverMgr:    NewFailoverManager(sentinel),
+		conns:          make(map[net.Conn]struct{}),
 	}
+}
+
+// Stop 关闭所有活跃连接并等待所有处理 goroutine 退出
+func (sh *SentinelHandler) Stop() {
+	sh.mu.Lock()
+	for conn := range sh.conns {
+		if err := conn.Close(); err != nil {
+			logger.Logger.Debug().Err(err).Msg("关闭哨兵客户端连接")
+		}
+	}
+	sh.mu.Unlock()
+	sh.wg.Wait()
 }
 
 // HandleConnection 处理连接
 func (sh *SentinelHandler) HandleConnection(conn net.Conn) {
+	sh.mu.Lock()
+	sh.conns[conn] = struct{}{}
+	sh.mu.Unlock()
+	sh.wg.Add(1)
+
+	defer func() {
+		sh.mu.Lock()
+		delete(sh.conns, conn)
+		sh.mu.Unlock()
+		sh.wg.Done()
+	}()
+
 	defer func() {
 		if err := conn.Close(); err != nil {
 			logger.Logger.Debug().Err(err).Msg("failed to close connection")

@@ -33,7 +33,7 @@ func NewCluster(store *store.BotreonStore, nodeID, addr string) (*Cluster, error
 
 	myself := NewNode(nodeID, addr)
 	myself.SetMyself()
-	myself.Flags = append(myself.Flags, "master")
+	myself.Flags = append(myself.Flags, FlagMaster)
 
 	cluster := &Cluster{
 		Myself: myself,

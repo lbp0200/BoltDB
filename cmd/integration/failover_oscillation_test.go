@@ -516,6 +516,10 @@ func TestRegressionFailoverOscillation(t *testing.T) {
 		t.Logf("  WARNING: high failover attempt ratio: started=%d odown=%d (possible oscillation)", failoverStartedA, odownA)
 	}
 
+	// Reset oscillation tracker for Scenario B so the failover dip from
+	// Scenario A doesn't contaminate the oscillation detection.
+	tracker.ResetOscillationTracking()
+
 	// ========================================================================
 	// SCENARIO B: Chain failover — kill promoted slave, verify another failover
 	// ========================================================================

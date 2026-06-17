@@ -49,6 +49,7 @@ type GossipProtocol struct {
 	listener net.Listener
 	peers    map[string]*GossipPeer
 	stopCh   chan struct{}
+	wg       sync.WaitGroup
 }
 
 // NewGossipProtocol 创建gossip协议管理器
@@ -78,10 +79,18 @@ func (gp *GossipProtocol) Start() error {
 	logger.Logger.Info().Int("port", gp.listener.Addr().(*net.TCPAddr).Port).Msg("Gossip协议监听端口已启动")
 
 	// 启动接受连接协程
-	go gp.acceptConnections()
+	gp.wg.Add(1)
+	go func() {
+		defer gp.wg.Done()
+		gp.acceptConnections()
+	}()
 
 	// 启动连接管理协程
-	go gp.managePeers()
+	gp.wg.Add(1)
+	go func() {
+		defer gp.wg.Done()
+		gp.managePeers()
+	}()
 
 	return nil
 }
@@ -94,6 +103,8 @@ func (gp *GossipProtocol) Stop() {
 			logger.Logger.Warn().Err(err).Msg("Failed to close gossip listener")
 		}
 	}
+
+	gp.wg.Wait()
 
 	gp.mu.Lock()
 	for addr := range gp.peers {
@@ -134,7 +145,11 @@ func (gp *GossipProtocol) acceptConnections() {
 			continue
 		}
 
-		go gp.handleConnection(conn)
+		gp.wg.Add(1)
+		go func(c net.Conn) {
+			defer gp.wg.Done()
+			gp.handleConnection(c)
+		}(conn)
 	}
 }
 
@@ -288,7 +303,9 @@ func (gp *GossipProtocol) handleSdown(conn net.Conn, parts []string) {
 			}
 			master.RecordFailover()
 			fm := NewFailoverManager(gp.sentinel)
+			gp.wg.Add(1)
 			go func() {
+				defer gp.wg.Done()
 				if err := fm.AutoFailover(masterName); err != nil {
 					logger.Logger.Error().
 						Str("master_name", masterName).
@@ -430,8 +447,10 @@ func (gp *GossipProtocol) BroadcastSdown(masterName string, sdownCount int) {
 	gp.mu.RUnlock()
 
 	message := "SDOWN " + masterName + " " + strconv.Itoa(sdownCount) + "\n"
+	gp.wg.Add(len(addrs))
 	for _, addr := range addrs {
 		go func(peerAddr string) {
+			defer gp.wg.Done()
 			conn, err := net.DialTimeout("tcp", peerAddr, 5*time.Second)
 			if err != nil {
 				return

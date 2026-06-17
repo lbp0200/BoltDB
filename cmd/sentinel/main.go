@@ -44,6 +44,8 @@ func main() {
 	}
 	logger.Logger.Info().Str("addr", *addrFlag).Msg("sentinel started")
 
+	handler := sentinel.NewSentinelHandler(s)
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
@@ -51,10 +53,9 @@ func main() {
 		<-sigCh
 		logger.Logger.Info().Msg("shutting down sentinel")
 		_ = ln.Close()
+		handler.Stop()
 		s.Stop()
 	}()
-
-	handler := sentinel.NewSentinelHandler(s)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {

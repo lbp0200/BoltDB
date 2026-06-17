@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -115,7 +116,8 @@ func main() {
 		}()
 		logger.Logger.Info().Str("addr", *metricsAddrFlag).Msg("metrics endpoint enabled")
 	}
-	metrics.StartPeriodicSnapshot(ctx, collector, 60*time.Second)
+	var metricsWg sync.WaitGroup
+	metrics.StartPeriodicSnapshot(ctx, collector, 60*time.Second, &metricsWg)
 
 	// 初始化集群（如果启用了集群模式）
 	if *clusterEnabledFlag {
@@ -150,6 +152,7 @@ func main() {
 	logger.Logger.Info().Msg("开始执行关闭序列...")
 	replMgr.Stop()
 	cancel()
+	metricsWg.Wait()
 	handler.Shutdown()
 	logger.Logger.Info().Msg("关闭序列完成")
 }

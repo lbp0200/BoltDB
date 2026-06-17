@@ -314,3 +314,31 @@ func TestSentinel_startGossipProcessor(t *testing.T) {
 	// Give time for processing
 	time.Sleep(100 * time.Millisecond)
 }
+
+// TestSentinel_StartStop_WaitsForGoroutines verifies that Stop() blocks
+// until all tracked goroutines have exited (no goroutine leak on shutdown).
+func TestSentinel_StartStop_WaitsForGoroutines(t *testing.T) {
+	t.Parallel()
+	s := NewSentinel(2, 30*time.Second)
+	s.AddMaster("mymaster", "127.0.0.1:6379", 2)
+
+	s.Start()
+
+	// StartGossip should also be tracked
+	s.StartGossip("127.0.0.1:26380")
+
+	// Stop must complete within a reasonable time (all goroutines
+	// exit via stopCh, not deadline timers).
+	done := make(chan struct{})
+	go func() {
+		s.Stop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// success
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop() blocked longer than expected — goroutine not responding to stopCh")
+	}
+}

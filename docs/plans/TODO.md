@@ -203,7 +203,33 @@ Tests: 29 new test functions in `replication_coverage_test.go` covering normal o
 
 ## 待办缺口（已知未完成）
 
-### P1.5 isWriteCommand 缺失写入命令
+### P1.5 Shutdown / Lifecycle Correctness
+
+**Status:** COMPLETE (2026-06-17)
+
+完整的关闭链路已完成收束：
+
+| 组件 | 机制 |
+|------|------|
+| Handler.Shutdown | `shuttingDown` atomic + `wg.Wait()` + conn Close |
+| SlaveConnection | atomic fields (`ReplOffset`, `Ready`) + memory barrier Close |
+| ReplicationManager.Stop | slave conn close + master conn close |
+| SlaveReconnector.Stop | `stopCh` + `wg.Wait()` |
+| BackupManager | BGSave `wg` tracking + `Wait()` |
+| Sentinel.Stop | `s.wg.Wait()` + lock ordering fix (release `s.mu` before wait) |
+| GossipProtocol.Stop | `gp.wg.Wait()` (all accept/manage/handleConnection tracked) |
+| SentinelHandler.Stop | conn tracking + close + `wg.Wait()` |
+| PressureMonitor.Start | `wg` tracking + `Wait()` method |
+| Metrics periodic snapshot | `wg` parameter + main.go shutdown ordering |
+| AutoFailover goroutines (3x) | wg tracking via sentinel/gossip wg |
+| Monitor goroutine leak test | retry-based assertion (no more flake) |
+| main.go shutdown sequence | `replMgr.Stop()` → `cancel()` → `metricsWg.Wait()` → `handler.Shutdown()` → `db.Close()` |
+
+所有 goroutine 通过 wg 追踪，关闭顺序明确保证：listener close → replMgr stop → cancel → handler shutdown → db close。
+
+---
+
+### P1.5b isWriteCommand 缺失写入命令
 
 **Status:** COMPLETE (committed in `de7f628`)
 

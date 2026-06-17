@@ -225,7 +225,7 @@ func (cc *ClusterCommands) handleMeet(args []string) (string, error) {
 		return "", err
 	}
 	node := NewNode(nodeID, addr)
-	node.Flags = append(node.Flags, "master")
+	node.Flags = append(node.Flags, FlagMaster)
 	cc.cluster.AddNode(node)
 
 	return "OK", nil
@@ -273,7 +273,7 @@ func (cc *ClusterCommands) handleReplicate(args []string) (string, error) {
 	}
 
 	cc.cluster.Myself.MasterID = masterID
-	cc.cluster.Myself.Flags = []string{"slave", "myself"}
+	cc.cluster.Myself.Flags = []string{FlagSlave, FlagMyself}
 
 	for i := uint32(0); i < SlotCount; i++ {
 		if cc.cluster.Slots[i] == cc.cluster.Myself {
@@ -472,7 +472,7 @@ func (cc *ClusterCommands) handleReset(args []string) (string, error) {
 
 	// 重置节点状态
 	cc.cluster.Myself.MasterID = ""
-	cc.cluster.Myself.Flags = []string{"master", "myself"}
+	cc.cluster.Myself.Flags = []string{FlagMaster, FlagMyself}
 
 	// 增加纪元
 	cc.cluster.Epoch++

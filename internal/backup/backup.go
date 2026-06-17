@@ -16,6 +16,8 @@ type BackupManager struct {
 	lastSaveTime   int64
 	lastSaveTimeMu sync.RWMutex
 	backupDir      string
+
+	wg sync.WaitGroup
 }
 
 // NewBackupManager 创建新的备份管理器
@@ -39,20 +41,26 @@ func (bm *BackupManager) Save() error {
 	bm.lastSaveTime = time.Now().Unix()
 	bm.lastSaveTimeMu.Unlock()
 
-	_ = backupFile // 记录备份文件路径
+	logger.Logger.Info().Str("file", backupFile).Msg("RDB backup saved")
 	return nil
 }
 
 // BGSave 后台保存RDB
 func (bm *BackupManager) BGSave() error {
-	// 在goroutine中执行备份
+	bm.wg.Add(1)
 	go func() {
+		defer bm.wg.Done()
 		if err := bm.Save(); err != nil {
 			logger.Logger.Error().Err(err).Msg("BGSAVE failed")
 		}
 	}()
 
 	return nil
+}
+
+// Wait 等待所有后台备份完成
+func (bm *BackupManager) Wait() {
+	bm.wg.Wait()
 }
 
 // LastSave 获取最后保存时间

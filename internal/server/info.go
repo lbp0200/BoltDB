@@ -5,6 +5,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/lbp0200/BoltDB/internal/replication"
 )
 
 // Version 版本号，通过 ldflags 注入
@@ -50,7 +52,7 @@ func (h *Handler) buildInfoResponse(section string) string {
 			builder.WriteString("role:" + role + "\n")
 
 			switch role {
-			case "master":
+			case replication.RoleMaster:
 				builder.WriteString("connected_slaves:" + strconv.Itoa(h.Replication.GetSlaveCount()) + "\n")
 				builder.WriteString("master_replid:" + h.Replication.GetReplicationID() + "\n")
 				builder.WriteString("master_repl_offset:" + strconv.FormatInt(h.Replication.GetMasterReplOffset(), 10) + "\n")
@@ -64,7 +66,7 @@ func (h *Handler) buildInfoResponse(section string) string {
 				for i, slave := range slaves {
 					builder.WriteString("slave" + strconv.Itoa(i) + ":ip=" + slave.Addr + ",port=6379,state=online,offset=" + strconv.FormatInt(slave.GetReplOffset(), 10) + ",lag=0\n")
 				}
-			case "slave":
+			case replication.RoleSlave:
 				masterAddr := h.Replication.GetMasterAddr()
 				if masterAddr != "" {
 					builder.WriteString("master_host:" + strings.Split(masterAddr, ":")[0] + "\n")

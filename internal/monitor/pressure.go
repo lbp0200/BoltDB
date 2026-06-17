@@ -77,6 +77,10 @@ type jsonlSample struct {
 	Fragmented      bool    `json:"frag,omitempty"`
 }
 
+// maxSamples caps PressureMonitor.samples to prevent unbounded memory
+// growth on long soak runs. 10k samples at 1s ≈ 2.8h (soak duration ceiling).
+const maxSamples = 10000
+
 // PressureMonitor 定时采样系统压力指标，支持退化不变性断言
 type PressureMonitor struct {
 	mu      sync.Mutex
@@ -90,6 +94,8 @@ type PressureMonitor struct {
 	jsonlFile *os.File
 
 	temporal *TemporalAnalyzer
+
+	wg sync.WaitGroup
 }
 
 // NewPressureMonitor 创建压力监控器
@@ -122,7 +128,9 @@ func (pm *PressureMonitor) SetJSONLPath(path string) error {
 // Start 启动后台采样 goroutine
 func (pm *PressureMonitor) Start(ctx context.Context, interval time.Duration) {
 	pm.interval = interval
+	pm.wg.Add(1)
 	go func() {
+		defer pm.wg.Done()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		if pm.jsonlFile != nil {
@@ -141,6 +149,11 @@ func (pm *PressureMonitor) Start(ctx context.Context, interval time.Duration) {
 			}
 		}
 	}()
+}
+
+// Wait 阻塞直到采样 goroutine 退出（在取消 context 后调用以等待完整收束）
+func (pm *PressureMonitor) Wait() {
+	pm.wg.Wait()
 }
 
 // Samples 返回所有采样（线程安全快照）
@@ -211,6 +224,10 @@ func (pm *PressureMonitor) sample() {
 
 	pm.mu.Lock()
 	pm.samples = append(pm.samples, s)
+	if len(pm.samples) > maxSamples {
+		n := copy(pm.samples, pm.samples[len(pm.samples)-maxSamples:])
+		pm.samples = pm.samples[:n]
+	}
 	pm.mu.Unlock()
 
 	fmt.Println(FormatSnapshot(s))

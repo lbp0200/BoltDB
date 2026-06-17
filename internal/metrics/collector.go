@@ -3,6 +3,8 @@ package metrics
 import (
 	"sync"
 	"time"
+
+	"github.com/lbp0200/BoltDB/internal/replication"
 )
 
 type Collector struct {
@@ -64,7 +66,7 @@ func (c *Collector) refresh() Snapshot {
 	slaveN := 0
 	blSize := int64(0)
 	blAvail := int64(0)
-	role := "master"
+	role := replication.RoleMaster
 	if c.MasterReplOffsetFn != nil {
 		masterOff = c.MasterReplOffsetFn()
 	}
@@ -87,7 +89,7 @@ func (c *Collector) refresh() Snapshot {
 		role = c.RoleFn()
 	}
 
-	if role == "slave" {
+	if role == replication.RoleSlave {
 		lag = masterOff - slaveOff
 	}
 

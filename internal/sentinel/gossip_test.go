@@ -330,3 +330,84 @@ func TestGossipProtocol_sendHellos(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	assert.True(t, true)
 }
+
+// TestGossipProtocol_Stop_WaitsForHandleConnection verifies that Stop()
+// waits for in-flight handleConnection goroutines before returning.
+func TestGossipProtocol_Stop_WaitsForHandleConnection(t *testing.T) {
+	t.Parallel()
+	sentinel := NewSentinel(1, 30000)
+	defer sentinel.Stop()
+
+	gp := NewGossipProtocol(sentinel, nil)
+	err := gp.Start()
+	assert.Nil(t, err)
+
+	// Connect to ourselves — this creates a handleConnection goroutine.
+	port := gp.GetPort()
+	conn, err := net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(port))
+	assert.Nil(t, err)
+
+	// Give the connection time to be accepted and the goroutine to start.
+	time.Sleep(50 * time.Millisecond)
+
+	// Close the client side first so handleConnection's ReadString
+	// returns EOF before Stop() waits for wg.
+	conn.Close()
+
+	// Stop must complete promptly — the handleConnection goroutine
+	// should have exited after ReadString returned EOF.
+	done := make(chan struct{})
+	go func() {
+		gp.Stop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// success
+	case <-time.After(3 * time.Second):
+		t.Fatal("Stop() blocked — handleConnection goroutine not tracked or not exiting")
+	}
+}
+
+// TestGossipProtocol_Stop_WaitsForMultipleConnections verifies that Stop()
+// waits for multiple concurrent handleConnection goroutines.
+func TestGossipProtocol_Stop_WaitsForMultipleConnections(t *testing.T) {
+	t.Parallel()
+	sentinel := NewSentinel(1, 30000)
+	defer sentinel.Stop()
+
+	gp := NewGossipProtocol(sentinel, nil)
+	err := gp.Start()
+	assert.Nil(t, err)
+
+	port := gp.GetPort()
+
+	// Create 3 concurrent connections.
+	var conns []net.Conn
+	for i := 0; i < 3; i++ {
+		conn, err := net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(port))
+		assert.Nil(t, err)
+		conns = append(conns, conn)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Close all client connections so handleConnection goroutines exit.
+	for _, c := range conns {
+		c.Close()
+	}
+
+	done := make(chan struct{})
+	go func() {
+		gp.Stop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// success
+	case <-time.After(3 * time.Second):
+		t.Fatal("Stop() blocked — concurrent handleConnection goroutines not tracked")
+	}
+}
