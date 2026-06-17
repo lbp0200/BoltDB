@@ -1,5 +1,36 @@
 # Changelog
 
+## v8.24.0 (2026-06-17) — LMPOP, Blocking XREADGROUP, Sentinel Gossip & Technical Debt
+
+> **新增 LMPOP 命令、阻塞 XREADGROUP 支持、Sentinel 间 HELLO 通信修复、debug/benchmark 工具改进、错误消息格式统一。** 实现了 Redis 7.0+ 的列表多键弹出 LMPOP（与已有 ZMPOP 对称），补齐了阻塞 XREADGROUP 的 store 层等待逻辑，修复了 Sentinel `SendHello` 空操作问题使其能建立真实 TCP 连接，重写了 benchmark 工具的端口/构建/关闭流程，统一了 handler 中 9 处不一致的 `ERR syntax error` 错误消息格式。
+
+### 新功能
+
+- **LMPOP**（`list.go`/`handler.go`/`psync.go`/`command_info.go`）：列表版多键弹出，支持 LEFT/RIGHT + COUNT，单事务原子操作，RESP shape 测试 + 覆盖率测试
+- **阻塞 XREADGROUP**（`stream.go`）：移除 TODO stub，实现 `xReadGroupBlocking`，复用 stream 通知机制，支持 BLOCK 0（无限等待）和 BLOCK \<ms\>（超时），ctx 取消支持
+- **Sentinel 间 HELLO 通信**（`sentinel.go`/`gossip.go`）：`SendHello` 从空操作改为通过 `GossipProtocol.sendHello()` 发送真实 TCP HELLO，`formatHello`/`formatPong` 增加 `RunID` 回退
+
+### Bug 修复
+
+- **流元数据编码 bug**（`stream.go:1079`）：`XGroupCreate` 首次创建 stream 时误用 `json.Marshal` 存储元数据，与 `decodeStreamMeta` 的 48 字节二进制格式不兼容，导致先 `XGROUP CREATE` 再 `XADD` 返回 `"invalid stream metadata size"`
+- **debug 客户端端口硬编码**（`debug_client.go`）：默认端口从 `6379`（Redis 默认）改为 `6337`（BoltDB 默认），新增 `-addr` flag
+
+### 工具改进
+
+- **benchmark 工具重写**（`benchmark/main.go`）：自动构建 binary、端口可配置（`-port`）、优雅关闭（SHUTDOWN → 超时 → Kill）、修复输出解析双重重叠 bug
+
+### 代码质量
+
+- **错误消息统一**（`handler.go`）：9 处 `ERR syntax error` 变体统一为 `"ERR syntax error, unknown option '%s'"`（加引号，与 `wrong number of arguments for 'COMMAND'` 模式一致）
+- **覆盖率测试补充**：GETDEL、GETEX、HRANDFIELD、ZDIFF — 4 个命令新增 handler 级覆盖
+- **阻塞 XREADGROUP 测试**：2 个新的 store 级测试（通知到达 + 超时清理）
+
+### 测试与验证
+
+- `go test -race -short ./internal/server/... ./internal/store/... ./internal/sentinel/... ./internal/cluster/... ./internal/proto/... ./internal/logger/... ./internal/backup/... ./internal/helper/... ./internal/metrics/... ./internal/monitor/...` — 全部通过
+- `golangci-lint run` — 0 issues
+- Sentinel 集成测试（GossipStability/FailoverConvergence/SplitBrain/FalsePositive）— 全部通过
+
 ## v8.23.0 (2026-06-16) — RESP Shape Fix, FULLRESYNC Completeness & RDB Encoding Fix
 
 > **RESP 协议形状修复、FULLRESYNC 全类型覆盖、RDB readLength 编码 bug 修复。** 修复了 10 个 RESP 响应结构不符合 Redis 协议的问题（GEOPOS/GEORADIUS/GEOSEARCH 嵌套数组、SSCAN/HSCAN/WRONGTYPE/CLUSTER SLOTS/XINFO CONSUMERS/XAUTOCLAIM 等），补齐了 GEO/JSON/TimeSeries/HLL 四种数据类型的 FULLRESYNC RDB 支持，修复了从项目创建即存在的 RDB readLength 编码解码 bug（任何 count/length ≥ 64 的数据在 FULLRESYNC 解码时全部错位）。

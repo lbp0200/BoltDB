@@ -501,6 +501,27 @@ func TestRESPShape_GetNonExistent(t *testing.T) {
 	assert.True(t, bs == nil || *bs == nil)
 }
 
+func TestRESPShape_LMPOP(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "RPUSH", [][]byte{[]byte("lmshp"), []byte("a"), []byte("b")}, "127.0.0.1:12345")
+
+	// LMPOP returns NestedArray[key, [elements...]]
+	resp := handler.executeCommand(state, "LMPOP", [][]byte{[]byte("1"), []byte("lmshp"), []byte("LEFT"), []byte("COUNT"), []byte("2")}, "127.0.0.1:12345")
+	na := shapeNestedArray(t, resp, 2)
+	shapeBulkString(t, na.Elems[0], 1) // key name
+	innerArr, ok := na.Elems[1].(*proto.Array)
+	assert.True(t, ok)
+	assert.True(t, len(innerArr.Args) >= 1)
+
+	// Non-existent key returns NilArray
+	resp = handler.executeCommand(state, "LMPOP", [][]byte{[]byte("1"), []byte("nosuchkey"), []byte("LEFT")}, "127.0.0.1:12345")
+	_, ok = resp.(proto.NilArray)
+	assert.True(t, ok)
+}
+
 func TestRESPShape_TypeNonExistent(t *testing.T) {
 	t.Parallel()
 	handler, state := setupTestHandler(t)

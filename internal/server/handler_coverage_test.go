@@ -405,6 +405,46 @@ func TestExecuteCommand_MSETNX_Coverage(t *testing.T) {
 	assert.Equal(t, "value2", val2)
 }
 
+// TestExecuteCommand_GETDEL_Coverage tests GETDEL command
+func TestExecuteCommand_GETDEL_Coverage(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.Db.Set("gddel", "todelete")
+	resp := handler.executeCommand(state, "GETDEL", [][]byte{[]byte("gddel")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "todelete", string(*bs))
+
+	_, err := handler.Db.Get("gddel")
+	assert.Error(t, err)
+
+	resp = handler.executeCommand(state, "GETDEL", [][]byte{[]byte("nonexist")}, "127.0.0.1:12345")
+	shapeIsNilBulk(t, resp)
+}
+
+// TestExecuteCommand_GETEX_Coverage tests GETEX command
+func TestExecuteCommand_GETEX_Coverage(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.Db.Set("gdex", "value")
+	resp := handler.executeCommand(state, "GETEX", [][]byte{[]byte("gdex"), []byte("EX"), []byte("10")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "value", string(*bs))
+
+	ttl := handler.executeCommand(state, "TTL", [][]byte{[]byte("gdex")}, "127.0.0.1:12345")
+	ttlInt, ok := ttl.(*proto.Integer)
+	assert.True(t, ok)
+	assert.True(t, int64(*ttlInt) >= 0)
+
+	resp = handler.executeCommand(state, "GETEX", [][]byte{[]byte("nonexist")}, "127.0.0.1:12345")
+	shapeIsNilBulk(t, resp)
+}
+
 // TestExecuteCommand_GETSET tests GETSET command
 func TestExecuteCommand_GETSET_Coverage(t *testing.T) {
 	t.Parallel()
@@ -1333,30 +1373,66 @@ func TestExecuteCommand_LMPOP_Coverage(t *testing.T) {
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	// Add list
+	// Add list: [a, b]
 	handler.executeCommand(state, "RPUSH", [][]byte{[]byte("list1"), []byte("a"), []byte("b")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "RPUSH", [][]byte{[]byte("list2"), []byte("x"), []byte("y"), []byte("z")}, "127.0.0.1:12345")
 
-	// LMPOP may not be fully implemented
+	// LMPOP RIGHT from list1 → pops "b"
 	resp := handler.executeCommand(state, "LMPOP", [][]byte{[]byte("1"), []byte("list1"), []byte("RIGHT")}, "127.0.0.1:12345")
-	if err, ok := resp.(*proto.Error); ok {
-		// Command not implemented - acceptable
-		assert.True(t, strings.Contains(string(*err), "unknown command") || strings.Contains(string(*err), "ERR"))
-		return
-	}
-
-	// If implemented, verify element was popped
-	arr, ok := resp.(*proto.Array)
+	na, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
-	if ok && len(arr.Args) >= 2 {
-		assert.Equal(t, "list1", string(arr.Args[0]))
-		// Args[1] is the popped element as bulk string ([]byte)
-		assert.Equal(t, "b", string(arr.Args[1]))
-	}
+	assert.Equal(t, 2, len(na.Elems))
+	key := string(*na.Elems[0].(*proto.BulkString))
+	assert.Equal(t, "list1", key)
+	inner := na.Elems[1].(*proto.Array)
+	assert.Equal(t, 1, len(inner.Args))
+	assert.Equal(t, "b", string(inner.Args[0]))
 
 	// Verify list length decreased
 	llen := handler.executeCommand(state, "LLEN", [][]byte{[]byte("list1")}, "127.0.0.1:12345")
-	llenInt, _ := llen.(*proto.Integer)
-	assert.Equal(t, int64(1), int64(*llenInt))
+	assert.Equal(t, int64(1), int64(*llen.(*proto.Integer)))
+
+	// LMPOP LEFT from list2 with COUNT 2 → pops [x, y]
+	resp2 := handler.executeCommand(state, "LMPOP", [][]byte{[]byte("1"), []byte("list2"), []byte("LEFT"), []byte("COUNT"), []byte("2")}, "127.0.0.1:12345")
+	na2, ok2 := resp2.(*proto.NestedArray)
+	assert.True(t, ok2)
+	assert.Equal(t, 2, len(na2.Elems))
+	assert.Equal(t, "list2", string(*na2.Elems[0].(*proto.BulkString)))
+	inner2 := na2.Elems[1].(*proto.Array)
+	assert.Equal(t, 2, len(inner2.Args))
+	assert.Equal(t, "x", string(inner2.Args[0]))
+	assert.Equal(t, "y", string(inner2.Args[1]))
+
+	// Verify list2 has 1 element left
+	llen2 := handler.executeCommand(state, "LLEN", [][]byte{[]byte("list2")}, "127.0.0.1:12345")
+	assert.Equal(t, int64(1), int64(*llen2.(*proto.Integer)))
+
+	// LMPOP from empty list → NilArray
+	resp3 := handler.executeCommand(state, "LMPOP", [][]byte{[]byte("1"), []byte("nonexistent"), []byte("LEFT")}, "127.0.0.1:12345")
+	_, ok3 := resp3.(proto.NilArray)
+	assert.True(t, ok3)
+
+	// LMPOP with multiple keys: first non-empty wins
+	resp4 := handler.executeCommand(state, "LMPOP", [][]byte{[]byte("2"), []byte("empty_list"), []byte("list1"), []byte("LEFT")}, "127.0.0.1:12345")
+	na4, ok4 := resp4.(*proto.NestedArray)
+	assert.True(t, ok4)
+	assert.Equal(t, "list1", string(*na4.Elems[0].(*proto.BulkString)))
+
+	// LMPOP on wrong type → WRONGTYPE
+	handler.executeCommand(state, "SET", [][]byte{[]byte("strkey"), []byte("value")}, "127.0.0.1:12345")
+	resp5 := handler.executeCommand(state, "LMPOP", [][]byte{[]byte("1"), []byte("strkey"), []byte("LEFT")}, "127.0.0.1:12345")
+	err5, ok5 := resp5.(*proto.Error)
+	assert.True(t, ok5)
+	assert.True(t, strings.Contains(string(*err5), "WRONGTYPE"))
+
+	// LMPOP with invalid args
+	resp6 := handler.executeCommand(state, "LMPOP", [][]byte{[]byte("1"), []byte("list1"), []byte("INVALID")}, "127.0.0.1:12345")
+	_, ok6 := resp6.(*proto.Error)
+	assert.True(t, ok6)
+
+	resp7 := handler.executeCommand(state, "LMPOP", [][]byte{[]byte("0"), []byte("list1"), []byte("LEFT")}, "127.0.0.1:12345")
+	_, ok7 := resp7.(*proto.Error)
+	assert.True(t, ok7)
 }
 
 // TestExecuteCommand_ZRANDMEMBER tests ZRANDMEMBER command
@@ -1503,6 +1579,36 @@ func TestExecuteCommand_HDEL_Coverage(t *testing.T) {
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.True(t, int64(*integer) >= 0)
+}
+
+// TestExecuteCommand_HRANDFIELD_Coverage tests HRANDFIELD command
+func TestExecuteCommand_HRANDFIELD_Coverage(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "HSET", [][]byte{[]byte("hrand"), []byte("f1"), []byte("v1"), []byte("f2"), []byte("v2")}, "127.0.0.1:12345")
+
+	// HRANDFIELD with no count returns Array (count=1 default)
+	resp := handler.executeCommand(state, "HRANDFIELD", [][]byte{[]byte("hrand")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(arr.Args))
+
+	resp = handler.executeCommand(state, "HRANDFIELD", [][]byte{[]byte("hrand"), []byte("2")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(arr.Args))
+
+	resp = handler.executeCommand(state, "HRANDFIELD", [][]byte{[]byte("hrand"), []byte("2"), []byte("WITHVALUES")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 4, len(arr.Args))
+
+	resp = handler.executeCommand(state, "HRANDFIELD", [][]byte{[]byte("nonexist")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(arr.Args))
 }
 
 // TestExecuteCommand_ZADD tests ZADD command

@@ -235,6 +235,7 @@ func init() {
 		{name: "ZINCRBY", arity: 4, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "ZINTERSTORE", arity: -4, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: -1, step: 1},
 		{name: "ZLEXCOUNT", arity: 4, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
+		{name: "LMPOP", arity: -4, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: -1, step: 1},
 		{name: "ZMPOP", arity: -4, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: -1, step: 1},
 		{name: "ZMSCORE", arity: -3, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "ZPOPMAX", arity: -2, flags: []commandFlag{flagWrite}, firstKey: 1, lastKey: 1, step: 1},

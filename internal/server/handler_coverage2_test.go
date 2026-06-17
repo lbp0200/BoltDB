@@ -1116,6 +1116,31 @@ func TestExecuteCommand_ZDIFFSTORE_Coverage(t *testing.T) {
 	assert.Equal(t, int64(2), int64(*integer))
 }
 
+// TestExecuteCommand_ZDIFF_Coverage tests ZDIFF command
+func TestExecuteCommand_ZDIFF_Coverage(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.Db.ZAdd("zdiff1", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}, {Member: "c", Score: 3}})
+	handler.Db.ZAdd("zdiff2", []store.ZSetMember{{Member: "b", Score: 2}})
+
+	resp := handler.executeCommand(state, "ZDIFF", [][]byte{[]byte("2"), []byte("zdiff1"), []byte("zdiff2")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(arr.Args))
+
+	resp = handler.executeCommand(state, "ZDIFF", [][]byte{[]byte("2"), []byte("zdiff1"), []byte("zdiff2"), []byte("WITHSCORES")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 4, len(arr.Args))
+
+	resp = handler.executeCommand(state, "ZDIFF", [][]byte{[]byte("2"), []byte("empty"), []byte("zdiff1")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(arr.Args))
+}
+
 // TestExecuteCommand_ZLEXCOUNT_Coverage tests ZLEXCOUNT command
 func TestExecuteCommand_ZLEXCOUNT_Coverage(t *testing.T) {
 	t.Parallel()

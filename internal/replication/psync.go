@@ -780,6 +780,30 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			return err
 		}
 
+	case "LMPOP":
+		if len(args) >= 4 {
+			numKeys, kErr := strconv.Atoi(string(args[1]))
+			if kErr != nil || numKeys < 1 || 2+numKeys > len(args) {
+				return nil
+			}
+			keys := make([]string, numKeys)
+			for i := 0; i < numKeys; i++ {
+				keys[i] = string(args[2+i])
+			}
+			modifier := strings.ToUpper(string(args[2+numKeys]))
+			if modifier != "LEFT" && modifier != "RIGHT" {
+				return nil
+			}
+			count := 1
+			if len(args) >= 4+numKeys && strings.ToUpper(string(args[3+numKeys])) == "COUNT" {
+				if c, cErr := strconv.Atoi(string(args[4+numKeys])); cErr == nil && c > 0 {
+					count = c
+				}
+			}
+			_, _, err := s.LMPop(keys, modifier, count)
+			return err
+		}
+
 	case "ZMPOP":
 		if len(args) >= 4 {
 			numKeys, kErr := strconv.Atoi(string(args[1]))

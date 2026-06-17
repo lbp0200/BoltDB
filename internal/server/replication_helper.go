@@ -23,7 +23,7 @@ func isWriteCommand(cmd string) bool {
 		"SADD": true, "SREM": true, "SMOVE": true,
 		"SINTERSTORE": true, "SUNIONSTORE": true, "SDIFFSTORE": true,
 		"ZADD": true, "ZREM": true, "ZINCRBY": true,
-		"ZPOPMAX": true, "ZPOPMIN": true, "ZMPOP": true,
+		"ZPOPMAX": true, "ZPOPMIN": true, "ZMPOP": true, "LMPOP": true,
 		"ZREMRANGEBYRANK": true, "ZREMRANGEBYSCORE": true, "ZREMRANGEBYLEX": true,
 		"ZUNIONSTORE": true, "ZINTERSTORE": true, "ZDIFFSTORE": true,
 		"ZRANGESTORE": true,

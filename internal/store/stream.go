@@ -1074,9 +1074,7 @@ func (s *BotreonStore) XGroupCreate(key, group, startID string) error {
 		_, err = txn.Get(metaKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			_ = txn.Set(typeKey, []byte(KeyTypeStream))
-			meta := &streamMetaData{}
-			metaData, _ := json.Marshal(meta)
-			_ = txn.Set(metaKey, metaData)
+			_ = txn.Set(metaKey, encodeStreamMeta(&streamMetaData{}))
 		} else if err != nil {
 			return err
 		}
@@ -1174,7 +1172,10 @@ func (s *BotreonStore) XGroupSetID(key, group, id string) error {
 }
 
 // XReadGroup reads from a consumer group
-func (s *BotreonStore) XReadGroup(group, consumer string, count int64, block int64, keys ...string) ([]map[string][]StreamEntry, error) {
+func (s *BotreonStore) XReadGroup(ctx context.Context, group, consumer string, count int64, block int64, keys ...string) ([]map[string][]StreamEntry, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	result := make([]map[string][]StreamEntry, 0)
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {
@@ -1291,10 +1292,82 @@ func (s *BotreonStore) XReadGroup(group, consumer string, count int64, block int
 		return nil
 	}, 30)
 
-	// NOTE: block parameter is parsed by the handler but blocking XREADGROUP is
-	// not yet implemented. When block >= 0 and no data is found, we should
-	// eventually wait for new entries via the stream notification mechanism.
+	if block >= 0 && len(result) == 0 && len(keys) > 0 {
+		r, e := s.xReadGroupBlocking(ctx, group, consumer, count, block, keys)
+		return r, e
+	}
 	return result, err
+}
+
+// xReadGroupBlocking implements blocking XREADGROUP
+func (s *BotreonStore) xReadGroupBlocking(ctx context.Context, group, consumer string, count int64, block int64, keys []string) ([]map[string][]StreamEntry, error) {
+	resultCh := make(chan StreamReadResult, 1)
+	var timeoutCh <-chan time.Time
+	if block > 0 {
+		timeoutCh = time.After(time.Duration(block) * time.Millisecond)
+	}
+
+	s.streamBlockingMu.Lock()
+	for _, key := range keys {
+		s.streamBlockingChans[key] = append(s.streamBlockingChans[key], resultCh)
+	}
+	s.streamBlockingMu.Unlock()
+
+	result, err := s.XReadGroup(ctx, group, consumer, count, -1, keys...)
+	if err != nil {
+		s.unregisterStreamBlocking(resultCh, keys)
+		return nil, err
+	}
+	if len(result) > 0 {
+		s.unregisterStreamBlocking(resultCh, keys)
+		return result, nil
+	}
+
+	if block == 0 {
+		for {
+			select {
+			case <-ctx.Done():
+				s.unregisterStreamBlocking(resultCh, keys)
+				return nil, nil
+			case <-resultCh:
+				result, err = s.XReadGroup(ctx, group, consumer, count, -1, keys...)
+				if err != nil {
+					s.unregisterStreamBlocking(resultCh, keys)
+					return nil, err
+				}
+				if len(result) > 0 {
+					s.unregisterStreamBlocking(resultCh, keys)
+					return result, nil
+				}
+				s.streamBlockingMu.Lock()
+				for _, key := range keys {
+					s.streamBlockingChans[key] = append(s.streamBlockingChans[key], resultCh)
+				}
+				s.streamBlockingMu.Unlock()
+			}
+		}
+	}
+
+	select {
+	case <-ctx.Done():
+		s.unregisterStreamBlocking(resultCh, keys)
+		return nil, nil
+	case <-resultCh:
+		result, err = s.XReadGroup(ctx, group, consumer, count, -1, keys...)
+		if err != nil {
+			s.unregisterStreamBlocking(resultCh, keys)
+			return nil, err
+		}
+		if len(result) > 0 {
+			s.unregisterStreamBlocking(resultCh, keys)
+			return result, nil
+		}
+		s.unregisterStreamBlocking(resultCh, keys)
+		return nil, nil
+	case <-timeoutCh:
+		s.unregisterStreamBlocking(resultCh, keys)
+		return nil, nil
+	}
 }
 
 // XAck acknowledges messages in a stream

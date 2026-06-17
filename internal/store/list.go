@@ -1096,6 +1096,109 @@ func (s *BotreonStore) LRem(key string, count int64, value string) (int, error) 
 	return removed, err
 }
 
+// LMPop 实现 Redis LMPOP 命令，从多个列表中弹出元素
+// keys: 要操作的键列表
+// modifier: "LEFT" 或 "RIGHT"
+// count: 要弹出的元素数量
+// 返回第一个非空键的键名和被弹出的元素列表
+func (s *BotreonStore) LMPop(keys []string, modifier string, count int) (string, []string, error) {
+	for _, key := range keys {
+		err := s.checkTypeBeforeOp(key, KeyTypeList)
+		if err != nil {
+			return "", nil, err
+		}
+		s.keyLockMgr.Lock(key)
+		var results []string
+		err = s.retryUpdate(func(txn *badger.Txn) error {
+			length, start, end, err := s.listGetMetaTxn(txn, key)
+			if err != nil {
+				if length == 0 {
+					return nil
+				}
+				return err
+			}
+			if length == 0 {
+				return nil
+			}
+
+			currentStart := start
+			currentEnd := end
+			currentLength := length
+			results = make([]string, 0, count)
+
+			for i := 0; i < count && currentLength > 0; i++ {
+				var nodeID, nextNodeID string
+				if modifier == "LEFT" {
+					nodeID = currentStart
+					if currentLength > 1 {
+						nextKey := s.listKey(key, nodeID, "next")
+						item, err := txn.Get([]byte(nextKey))
+						if err != nil {
+							return err
+						}
+						nextVal, _ := item.ValueCopy(nil)
+						nextNodeID = string(nextVal)
+					}
+				} else {
+					nodeID = currentEnd
+					if currentLength > 1 {
+						prevKey := s.listKey(key, nodeID, "prev")
+						item, err := txn.Get([]byte(prevKey))
+						if err != nil {
+							return err
+						}
+						prevVal, _ := item.ValueCopy(nil)
+						nextNodeID = string(prevVal)
+					}
+				}
+
+				nodeKey := s.listKey(key, nodeID)
+				item, err := txn.Get([]byte(nodeKey))
+				if err != nil {
+					return err
+				}
+				valueBytes, _ := item.ValueCopy(nil)
+				results = append(results, string(valueBytes))
+
+				s.deleteNode(txn, key, nodeID)
+
+				if modifier == "LEFT" {
+					currentStart = nextNodeID
+					if currentLength > 1 {
+						if err := s.linkNodes(txn, key, end, currentStart); err != nil {
+							return err
+						}
+					} else {
+						currentStart = ""
+						currentEnd = ""
+					}
+				} else {
+					currentEnd = nextNodeID
+					if currentLength > 1 {
+						if err := s.linkNodes(txn, key, currentEnd, start); err != nil {
+							return err
+						}
+					} else {
+						currentStart = ""
+						currentEnd = ""
+					}
+				}
+				currentLength--
+			}
+
+			return s.listUpdateMeta(txn, key, currentLength, currentStart, currentEnd)
+		}, 30)
+		s.keyLockMgr.Unlock(key)
+		if err != nil {
+			return "", nil, err
+		}
+		if len(results) > 0 {
+			return key, results, nil
+		}
+	}
+	return "", nil, nil
+}
+
 // RPOPLPUSH 实现 Redis RPOPLPUSH 命令
 func (s *BotreonStore) RPopLPush(source, destination string) (string, error) {
 	var value string

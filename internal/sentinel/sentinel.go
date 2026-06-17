@@ -25,6 +25,8 @@ type Sentinel struct {
 	// gossip消息通道
 	gossipCh chan *GossipMessage
 
+	// TCP-based gossip protocol for inter-sentinel communication
+	Gossip        *GossipProtocol
 	Metrics       *Metrics
 	ConfigManager *configManager
 }
@@ -309,8 +311,17 @@ func (s *Sentinel) handleHelloMessage(msg *GossipMessage) {
 
 // SendHello 发送hello消息到指定哨兵
 func (s *Sentinel) SendHello(sentinelAddr string) error {
-	// 简化实现：实际应该建立TCP连接并发送hello消息
-	logger.Logger.Debug().Str("sentinel", sentinelAddr).Msg("发送hello消息")
+	if s.Gossip != nil {
+		// 注册到 gossip 协议层，后续由 gossip 管理周期性通信
+		_ = s.Gossip.AddPeer(sentinelAddr, "")
+		// 立即尝试发送 HELLO 消息建立连接
+		if err := s.Gossip.sendHello(sentinelAddr); err != nil {
+			logger.Logger.Debug().Str("sentinel", sentinelAddr).Err(err).Msg("发送hello消息失败")
+			return err
+		}
+		return nil
+	}
+	logger.Logger.Debug().Str("sentinel", sentinelAddr).Msg("发送hello消息（Gossip未初始化）")
 	return nil
 }
 

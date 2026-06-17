@@ -398,13 +398,21 @@ func (gp *GossipProtocol) sendHello(addr string) error {
 // formatHello 格式化HELLO消息
 func (gp *GossipProtocol) formatHello() string {
 	port := gp.GetPort()
+	runID := gp.config.RunID
+	if runID == "" {
+		runID = gp.sentinel.GetRunID()
+	}
 	epoch := gp.sentinel.GetConfigEpoch()
-	return "HELLO " + gp.config.RunID + " " + strconv.Itoa(port) + " " + strconv.FormatInt(epoch, 10) + "\n"
+	return "HELLO " + runID + " " + strconv.Itoa(port) + " " + strconv.FormatInt(epoch, 10) + "\n"
 }
 
 // formatPong 格式化PONG消息
 func (gp *GossipProtocol) formatPong() string {
-	return "PONG " + gp.config.RunID + "\n"
+	runID := gp.config.RunID
+	if runID == "" {
+		runID = gp.sentinel.GetRunID()
+	}
+	return "PONG " + runID + "\n"
 }
 
 // sendMessage 发送消息

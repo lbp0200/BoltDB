@@ -337,6 +337,9 @@ func TestRegressionFailoverOscillation(t *testing.T) {
 	gp1 := sentinel.NewGossipProtocol(s1, cfg)
 	gp2 := sentinel.NewGossipProtocol(s2, cfg)
 	gp3 := sentinel.NewGossipProtocol(s3, cfg)
+	s1.Gossip = gp1
+	s2.Gossip = gp2
+	s3.Gossip = gp3
 
 	err = gp1.Start()
 	assert.NoError(t, err)
@@ -360,7 +363,6 @@ func TestRegressionFailoverOscillation(t *testing.T) {
 	assert.NoError(t, gp2.AddPeer(p3, s2.GetRunID()))
 	assert.NoError(t, gp3.AddPeer(p1, s3.GetRunID()))
 	assert.NoError(t, gp3.AddPeer(p2, s3.GetRunID()))
-
 	time.Sleep(1 * time.Second)
 
 	s1.Start()
@@ -867,6 +869,9 @@ func TestRegressionFailoverOscillationScenarioD(t *testing.T) {
 	gp1 := sentinel.NewGossipProtocol(s1, cfg)
 	gp2 := sentinel.NewGossipProtocol(s2, cfg)
 	gp3 := sentinel.NewGossipProtocol(s3, cfg)
+	s1.Gossip = gp1
+	s2.Gossip = gp2
+	s3.Gossip = gp3
 	assert.NoError(t, gp1.Start())
 	assert.NoError(t, gp2.Start())
 	assert.NoError(t, gp3.Start())

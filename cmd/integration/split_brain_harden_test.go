@@ -72,6 +72,9 @@ func TestRegressionSplitBrainConvergenceHarden(t *testing.T) {
 	gp1 := sentinel.NewGossipProtocol(s1, cfg)
 	gp2 := sentinel.NewGossipProtocol(s2, cfg)
 	gp3 := sentinel.NewGossipProtocol(s3, cfg)
+	s1.Gossip = gp1
+	s2.Gossip = gp2
+	s3.Gossip = gp3
 
 	err = gp1.Start()
 	assert.NoError(t, err)

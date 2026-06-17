@@ -4342,6 +4342,56 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		return &proto.Array{Args: result}
 
+	case "LMPOP":
+		if len(args) < 3 {
+			return proto.NewError("ERR wrong number of arguments for 'LMPOP' command")
+		}
+		numKeys, kErr := strconv.Atoi(string(args[0]))
+		if kErr != nil || numKeys < 1 || 1+numKeys+1 > len(args) {
+			return proto.NewError("ERR syntax error")
+		}
+		keys := make([]string, numKeys)
+		for i := 0; i < numKeys; i++ {
+			keys[i] = string(args[1+i])
+		}
+		modifier := strings.ToUpper(string(args[1+numKeys]))
+		if modifier != "LEFT" && modifier != "RIGHT" {
+			return proto.NewError("ERR syntax error")
+		}
+		count := 1
+		if len(args) >= 3+numKeys {
+			if strings.ToUpper(string(args[2+numKeys])) == "COUNT" {
+				if len(args) < 4+numKeys {
+					return proto.NewError("ERR syntax error")
+				}
+				c, cErr := strconv.Atoi(string(args[3+numKeys]))
+				if cErr != nil || c < 1 {
+					return proto.NewError("ERR value is not an integer or out of range")
+				}
+				count = c
+			}
+		}
+		key, elements, err := h.Db.LMPop(keys, modifier, count)
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		if key == "" || len(elements) == 0 {
+			return proto.NilArray{}
+		}
+		elemArgs := make([][]byte, len(elements))
+		for i, e := range elements {
+			elemArgs[i] = []byte(e)
+		}
+		return &proto.NestedArray{
+			Elems: []proto.RESP{
+				proto.NewBulkString([]byte(key)),
+				&proto.Array{Args: elemArgs},
+			},
+		}
+
 	case "ZMPOP":
 		if len(args) < 3 {
 			return proto.NewError("ERR wrong number of arguments for 'ZMPOP' command")
@@ -5212,7 +5262,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				limitCount = count
 				i += 3
 			default:
-				return proto.NewError(fmt.Sprintf("ERR syntax error, unexpected option: %s", opt))
+				return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
 			}
 		}
 
@@ -5766,7 +5816,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			case "ASC", "DESC":
 				gI++
 			default:
-				return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option %s", opt))
+				return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
 			}
 		}
 
@@ -5906,7 +5956,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				withHash = true
 				i++
 			default:
-				return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option %s", opt))
+				return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
 			}
 		}
 
@@ -6067,7 +6117,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				opts.MinID = string(args[i+1])
 				i += 2
 			default:
-				return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option %s", opt))
+				return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
 			}
 		}
 
@@ -6479,7 +6529,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				block = b
 				i += 2
 			default:
-				return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option %s", opt))
+				return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
 			}
 		}
 
@@ -6519,7 +6569,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				block = b
 				i += 2
 			default:
-				return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option %s at index %d", opt, i))
+				return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
 			}
 		}
 
@@ -6542,7 +6592,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			streamIDs[j] = string(args[i+j*2+1])
 		}
 
-		results, err := h.Db.XReadGroup(group, consumer, count, block, streamKeys...)
+		results, err := h.Db.XReadGroup(h.Ctx, group, consumer, count, block, streamKeys...)
 		if err != nil {
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -6914,7 +6964,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 					maxLen, _ = strconv.ParseInt(opt, 10, 64)
 					i++
 				} else {
-					return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option %s", opt))
+					return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
 				}
 			}
 		}
@@ -7450,7 +7500,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				}
 				opts.DuplicatePolicy = string(args[i])
 			default:
-				return proto.NewError(fmt.Sprintf("ERR syntax error, unexpected option: %s", opt))
+				return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
 			}
 			i++
 		}
@@ -7670,7 +7720,8 @@ func boolToInt(b bool) int {
 }
 
 // parseScore parses Redis-style score bounds including special values
-// Supports: "-inf", "+inf", "(", "[", and numeric values
+//
+// used in tests (linter skips _test.go)
 //
 //nolint:unused
 func parseScore(s string) (float64, error) {
