@@ -354,7 +354,7 @@ gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
 | 包 | 之前覆盖率 | 当前覆盖率 | 目标 |
 |----|-----------|-----------|------|
 | replication | 56.6% | 64.2% | 65%+ |
-| server | 54.4% | 54.4% | 60%+ |
+| server | 54.4% | 56.3% | 60%+ |
 
 **已完成（2026-06-18）：**
 - [x] `replication` RDB round-trip 测试：GEO / JSON / TimeSeries / Stream（`TestLoadRDB_With*`）
@@ -362,8 +362,17 @@ gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
 - [x] `replication` errorsIsStop / isTransientReplicationError 单元测试（0% → 100%）
 - [x] 7 个写/读函数从 0% 提升至 70%-100%（`WriteJSONKeyValue`, `WriteTimeSeriesKeyValue`, `WriteGeoKeyValue`, `WriteStreamKeyValue`, `readJSONInTxn`, `readTimeSeriesInTxn`, `readGeoInTxn`, `readStreamInTxn`）
 
+**已完成（2026-06-18 v2）：**
+- [x] `server` 5 个 metrics.go 函数从 0% → 100%（ActiveClientCount, BlockedClientCount, MonitorClientCount, PubSubClientCount, TotalOutputBytes）
+- [x] `server` clientListRESP 从 12.5% → 100%（覆盖 subscriber / inTransaction / outputBufferLimit 路径）
+- [x] `server` markDirtyKeys 从 50% → 100%（watcher 路径）
+- [x] `server` processRequest 从 50% → 56.2%（empty args 错误路径）
+- [x] `server` PubSubQuitSignal.String / MultiResponse.String 从 0% → 100%
+- [x] `server` 新增 30+ 测试用例：错误边界（nil state, empty command, wrong arity, CLIENT KILL/KILL 变体, EXPIRETIME, PEXPIRETIME, HELLO, ACL, LATENCY, MEMORY, XGROUP HELP 等）
+
 **待补：**
-- [ ] `server` 错误路径边界 case
+- [ ] `server` Shutdown 单元测试（需要 proper context setup）
+- [ ] `server` 剩余 54.4% 未覆盖代码（PubSub/Monitor 集成级路径）
 
 ---
 
