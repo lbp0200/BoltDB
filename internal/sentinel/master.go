@@ -74,15 +74,17 @@ func (mi *MasterInstance) StartMonitoring(sentinel *Sentinel) {
 func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
 	mi.mu.RLock()
 	addr := mi.addr
+	lastFailoverTime := mi.lastFailoverTime
+	failoverCooldown := mi.failoverCooldown
 	mi.mu.RUnlock()
 
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 
 	var shouldBroadcast bool
 	var shouldTriggerFailover bool
+	var sdownCount int
 
 	mi.mu.Lock()
-	defer mi.mu.Unlock()
 
 	if err != nil {
 		// 连接失败，检查是否超过 downAfter 未收到 pong
@@ -90,6 +92,7 @@ func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
 			mi.state = "sdown"
 			mi.sdownCount++
 			mi.lastPingTime = time.Now()
+			sdownCount = mi.sdownCount
 			sentinel.Metrics.RecordSdown(mi.name)
 			logger.Logger.Warn().
 				Str("master_name", mi.name).
@@ -125,18 +128,24 @@ func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
 		}
 	}
 
+	mi.mu.Unlock()
+
 	if shouldBroadcast {
-		sentinel.BroadcastSdown(mi.name)
+		sentinel.BroadcastSdown(mi.name, sdownCount)
 	}
 
 	if shouldTriggerFailover {
-		if !mi.CanFailover() {
+		canFailover := lastFailoverTime.IsZero() || time.Since(lastFailoverTime) >= failoverCooldown
+		if !canFailover {
 			logger.Logger.Warn().
 				Str("master_name", mi.name).
 				Msg("故障转移冷却中，跳过触发")
 			return
 		}
-		mi.RecordFailover()
+		mi.mu.Lock()
+		mi.lastFailoverTime = time.Now()
+		mi.mu.Unlock()
+		sentinel.Metrics.RecordFailoverStart(mi.name)
 		fm := NewFailoverManager(sentinel)
 		sentinel.wg.Add(1)
 		go func() {

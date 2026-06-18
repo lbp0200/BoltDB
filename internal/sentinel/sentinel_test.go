@@ -154,10 +154,10 @@ func TestSentinel_BroadcastSdown(t *testing.T) {
 	s.AddMaster("mymaster", "127.0.0.1:6379", 2)
 
 	// 广播主观下线 - 验证不 panic
-	s.BroadcastSdown("mymaster")
+	s.BroadcastSdown("mymaster", 1)
 
 	// 广播不存在的主节点
-	s.BroadcastSdown("nonexistent")
+	s.BroadcastSdown("nonexistent", 0)
 
 	// 清理
 	s.Stop()

@@ -220,7 +220,7 @@ func (s *Sentinel) IncrementConfigEpoch() int64 {
 }
 
 // BroadcastSdown 广播主观下线消息到其他哨兵
-func (s *Sentinel) BroadcastSdown(masterName string) {
+func (s *Sentinel) BroadcastSdown(masterName string, sdownCount int) {
 	master := s.GetMaster(masterName)
 	if master == nil {
 		return
@@ -232,7 +232,7 @@ func (s *Sentinel) BroadcastSdown(masterName string) {
 		SourceRunID:  s.runID,
 		SentinelAddr: "", // 稍后填充
 		State:        "sdown",
-		SdownCount:   master.GetSdownCount(),
+		SdownCount:   sdownCount,
 		Timestamp:    time.Now(),
 	}
 
