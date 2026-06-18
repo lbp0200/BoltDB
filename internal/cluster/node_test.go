@@ -175,6 +175,14 @@ func TestNode_IsFailed(t *testing.T) {
 	assert.False(t, node.IsFailed())
 }
 
+// TestNode_IsFailed_WithFlag tests IsFailed when fail flag is set
+func TestNode_IsFailed_WithFlag(t *testing.T) {
+	t.Parallel()
+	node := NewNode("node1", "127.0.0.1:6379")
+	node.Flags = append(node.Flags, FlagFail)
+	assert.True(t, node.IsFailed())
+}
+
 // TestGenerateNodeID tests generateNodeID
 func TestGenerateNodeID(t *testing.T) {
 	t.Parallel()
