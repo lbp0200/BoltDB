@@ -1633,7 +1633,7 @@ func (s *BotreonStore) checkDataExists(txn *badger.Txn, key, keyType string) (bo
 		return err == nil, err
 	case KeyTypeHash:
 		// Hash检查count键
-		countKey := []byte(fmt.Sprintf("%s:%s:count", KeyTypeHash, key))
+		countKey := s.hashCountKey(key)
 		_, err := txn.Get(countKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			return false, nil

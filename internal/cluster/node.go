@@ -144,6 +144,16 @@ func (n *Node) UpdatePing() {
 	n.PingSent = time.Now().UnixMilli()
 }
 
+// hasFailFlag 检查节点是否已有 FAIL 或 PFAIL 标记（不加锁，调用者需持有锁）
+func (n *Node) hasFailFlag() bool {
+	for _, flag := range n.Flags {
+		if flag == FlagFail || flag == FlagPFail {
+			return true
+		}
+	}
+	return false
+}
+
 // IsFailed 检查节点是否失败
 func (n *Node) IsFailed() bool {
 	n.mu.RLock()
