@@ -355,6 +355,8 @@ gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
 |----|-----------|-----------|------|
 | replication | 64.2% | 65.3% | 65%+ ✅ |
 | server | 56.3% | **60.8%** | 60%+ ✅ |
+| sentinel | 61.1% | **76.8%** | — |
+| store | 61.1% | **61.2%** | — |
 
 **已完成（2026-06-18）：**
 - [x] `replication` RDB round-trip 测试：GEO / JSON / TimeSeries / Stream（`TestLoadRDB_With*`）
@@ -393,8 +395,19 @@ gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
 - [x] `server` 总覆盖率从 58.2% → **60.8%** ✅ 目标达成
 - [x] 所有 11 个 internal 包测试通过 + linter clean
 
+**已完成（2026-06-18 v5）：**
+- [x] `sentinel` 覆盖率从 **61.1% → 76.8%**（+15.7%），36 个函数 0%→100%：
+  - 所有 slave.go 方法（IsOnline/RecordHeartbeat/MarkOffline/RecordInfoError）
+  - 所有 metrics.go Record* 方法（RecordSdown/RecordODown/RecordFailoverStart/RecordNewMaster/RecordFailoverFailed/RecordLeaderChange/RecordSdownBroadcast/RecordSdownReceived/RecordGossipSend/RecordGossipRecv）
+  - 所有 metrics.go Get* 方法（GetDetectionCount/GetLeaderChanges/etc.）
+  - 所有 metrics.go 计时函数（DetectionLatency/ElectionDuration/RecoveryDuration/LeaderStabilization/GossipPropagationTime/SdownTimestamp/ODownTimestamp/FailoverStartTime/NewMasterTime）
+  - newConfigManager / Save / Load / handler.Stop / gossip.AddPeer
+- [x] `store` 6 个函数 0%→100%（GetTotalSubscriberCount/GetBlockedClientCount/NewBadgerStoreWithCompression/RLock/RUnlock/NewKeyLockManager）
+- [x] 所有 11 个 internal 包测试通过 + linter clean
+
 **待补（低优先）：**
 - [ ] `server` 剩余 未覆盖代码：`handlePSyncWithRDB`（0%）、`handleSlaveReplicationConnection`（0%）、`runMonitorLoop`（93.9%）→ 需要集成级/复制环境
+- [ ] `sentinel` 剩余 未覆盖：updateConfiguration（0%）、waitForRole（0%）→ 需要集成级 failover 环境
 
 ---
 
