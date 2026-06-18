@@ -374,6 +374,10 @@ func dialMaster(addr string) (*MasterConnection, error) {
 	if err != nil {
 		return nil, err
 	}
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		_ = tcpConn.SetKeepAlive(true)
+		_ = tcpConn.SetKeepAlivePeriod(10 * time.Second)
+	}
 
 	return &MasterConnection{
 		Addr:   addr,

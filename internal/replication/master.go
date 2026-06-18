@@ -33,6 +33,10 @@ func NewMasterConnection(addr string) (*MasterConnection, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dial master failed: %w", err)
 	}
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		_ = tcpConn.SetKeepAlive(true)
+		_ = tcpConn.SetKeepAlivePeriod(10 * time.Second)
+	}
 
 	mc := &MasterConnection{
 		Addr:   addr,

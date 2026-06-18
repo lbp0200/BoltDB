@@ -30,6 +30,10 @@ type SlaveConnection struct {
 
 // NewSlaveConnection 创建新的从节点连接
 func NewSlaveConnection(conn net.Conn) *SlaveConnection {
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		_ = tcpConn.SetKeepAlive(true)
+		_ = tcpConn.SetKeepAlivePeriod(10 * time.Second)
+	}
 	addr := conn.RemoteAddr().String()
 	slaveID := generateSlaveID(addr)
 	sc := &SlaveConnection{

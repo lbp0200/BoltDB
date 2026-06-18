@@ -338,6 +338,12 @@ gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
 
 ## 当前工作（2026-06-18）
 
+### CI 修复（2026-06-18）— committed `1c5a085`
+
+- [x] **HSet 并发计数损坏**：`currentCount` 在 retryUpdate 之前的 View 事务中读取，重试时使用陈旧值，导致并发 HSET 到不同 field 时计数丢失。修复：将 count 读取移到 retryUpdate 回调内部（与 HSetNX/SAdd/HDel/HMSet 一致）。
+- [x] **TestRegressionPsyncReconnectNoLoss 假阳性**：bounded duplicate window 内（≤2 条）的个别 MISSING key 使用 `t.Errorf` 而非 `t.Logf`，使测试即使在容忍范围内也标记为 FAIL。修复：容忍范围内的 missing/extra key 使用 `t.Logf`，超出容忍才 `t.Errorf`。
+- [x] **remote-test.sh 双主机支持**：自动检测可达的远程主机（公司 10.1.2.16 / 家庭 192.168.1.251），消除手动配置依赖。
+
 ### 覆盖率提升 — 0 个 0% 函数剩余 🎉
 
 **已完成（2026-06-18 v10）：**
@@ -349,7 +355,7 @@ gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
 
 ### Shutdown 序列收束：backupMgr.Wait()
 
-**Status:** WIP — 代码和文档已修改，未提交。
+**Status:** COMPLETE（已提交于 `b7e6e1f`）
 
 `main.go:157` 已添加 `backupMgr.Wait()` 到关闭序列，确保 BGSAVE goroutine 在 `db.Close()` 前完成。文档已同步更新（design-constraints, shutdown-race, replication/architecture, replication/failure-modes, stability-spec, state-machine, backup_extended_test）。
 
