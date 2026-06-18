@@ -353,8 +353,8 @@ gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
 
 | 包 | 之前覆盖率 | 当前覆盖率 | 目标 |
 |----|-----------|-----------|------|
-| replication | 56.6% | 64.2% | 65%+ |
-| server | 54.4% | 56.3% | 60%+ |
+| replication | 64.2% | 65.3% | 65%+ ✅ |
+| server | 56.3% | **60.8%** | 60%+ ✅ |
 
 **已完成（2026-06-18）：**
 - [x] `replication` RDB round-trip 测试：GEO / JSON / TimeSeries / Stream（`TestLoadRDB_With*`）
@@ -370,9 +370,31 @@ gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
 - [x] `server` PubSubQuitSignal.String / MultiResponse.String 从 0% → 100%
 - [x] `server` 新增 30+ 测试用例：错误边界（nil state, empty command, wrong arity, CLIENT KILL/KILL 变体, EXPIRETIME, PEXPIRETIME, HELLO, ACL, LATENCY, MEMORY, XGROUP HELP 等）
 
-**待补：**
-- [ ] `server` Shutdown 单元测试（需要 proper context setup）
-- [ ] `server` 剩余 54.4% 未覆盖代码（PubSub/Monitor 集成级路径）
+**已完成（2026-06-18 v3）：**
+- [x] `server` 7 个 0% 函数 → 6 个大幅提升：
+  - `buildPubSubPush` 0% → 100%
+  - `processMonitorCommand` 0% → 100%
+  - `processPubSubCommand` 0% → 95.2%
+  - `Shutdown` 0% → 92.9%
+  - `runMonitorLoop` 0% → 6.1%（nil channel 早期返回）
+  - `runPubSubLoop` 39.2% → 41.2%（nil subscriber + MONITOR command 路径）
+  - `copyHash` 80% → 100%（wrong type 错误路径）
+  - `broadcastToMonitors` 80% → 100%（active client 路径）
+- [x] `replication` `ParseBacklogSize` 0% → 100%（7 个测试覆盖所有分支 + 边界值）
+- [x] `replication` `GetSlaveReplOffset` / `GetReconnectCount` 0% → 100%
+- [x] 所有新增测试通过 + linter clean
+
+**已完成（2026-06-18 v4）：**
+- [x] `server` 覆盖 JSON/TS 命令 handler 层测试（handler_coverage6_test.go）：
+  - JSON.SET / GET / DEL / TYPE / MGET / ARRAPPEND / ARRLEN / NUMINCRBY / NUMMULTBY / CLEAR
+  - 覆盖成功路径、错误参数、key-not-found 路径
+  - TS.CREATE / ADD / GET / LEN / DEL — 覆盖基本路径与选项
+- [x] `server` executeCommand 从 56.4% → 59.6%
+- [x] `server` 总覆盖率从 58.2% → **60.8%** ✅ 目标达成
+- [x] 所有 11 个 internal 包测试通过 + linter clean
+
+**待补（低优先）：**
+- [ ] `server` 剩余 未覆盖代码：`handlePSyncWithRDB`（0%）、`handleSlaveReplicationConnection`（0%）、`runMonitorLoop`（93.9%）→ 需要集成级/复制环境
 
 ---
 
