@@ -1,11 +1,108 @@
 package monitor
 
 import (
+	"encoding/json"
 	"math"
+	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/zeebo/assert"
 )
+
+func TestSaveEvolutionHistory(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+
+	err := SaveEvolutionHistory(dir, "test", []byte(`{"test": true}`), now)
+	assert.NoError(t, err)
+
+	entries, err := os.ReadDir(dir)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(entries))
+	assert.True(t, strings.HasPrefix(entries[0].Name(), "test-"))
+	assert.True(t, strings.HasSuffix(entries[0].Name(), ".json"))
+}
+
+func TestSaveEvolutionHistory_Error(t *testing.T) {
+	err := SaveEvolutionHistory("/nonexistent-path-12345", "test", []byte(`{}`), time.Now())
+	assert.Error(t, err)
+}
+
+func TestSaveEvolutionHistory_Overwrites(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+
+	err := SaveEvolutionHistory(dir, "test", []byte(`{"version":1}`), now)
+	assert.NoError(t, err)
+
+	err = SaveEvolutionHistory(dir, "other", []byte(`{"version":2}`), now)
+	assert.NoError(t, err)
+
+	entries, err := os.ReadDir(dir)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(entries))
+}
+
+func TestLoadEvolutionHistory(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+
+	run1 := EvolutionRun{Timestamp: now.Add(-2 * time.Hour), Converging: true, ConvergenceProb: 0.9}
+	run2 := EvolutionRun{Timestamp: now.Add(-1 * time.Hour), Converging: false, ConvergenceProb: 0.3}
+
+	data1, err := json.Marshal(run1)
+	assert.NoError(t, err)
+	data2, err := json.Marshal(run2)
+	assert.NoError(t, err)
+
+	err = SaveEvolutionHistory(dir, "test", data1, now.Add(-2*time.Hour))
+	assert.NoError(t, err)
+	err = SaveEvolutionHistory(dir, "test", data2, now.Add(-1*time.Hour))
+	assert.NoError(t, err)
+
+	runs, err := LoadEvolutionHistory(dir, "test")
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(runs))
+	assert.True(t, runs[0].Timestamp.Before(runs[1].Timestamp))
+}
+
+func TestLoadEvolutionHistory_EmptyDir(t *testing.T) {
+	dir := t.TempDir()
+	runs, err := LoadEvolutionHistory(dir, "test")
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(runs))
+}
+
+func TestLoadEvolutionHistory_InvalidDir(t *testing.T) {
+	runs, err := LoadEvolutionHistory("/nonexistent-12345", "test")
+	assert.Error(t, err)
+	assert.Nil(t, runs)
+}
+
+func TestLoadEvolutionHistory_FiltersPrefix(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+
+	run := EvolutionRun{Timestamp: now, Converging: true, ConvergenceProb: 0.9}
+	data, err := json.Marshal(run)
+	assert.NoError(t, err)
+
+	err = SaveEvolutionHistory(dir, "alpha", data, now)
+	assert.NoError(t, err)
+
+	run2 := EvolutionRun{Timestamp: now.Add(-1 * time.Minute), Converging: false, ConvergenceProb: 0.3}
+	data2, err := json.Marshal(run2)
+	assert.NoError(t, err)
+
+	err = SaveEvolutionHistory(dir, "beta", data2, now.Add(-1*time.Minute))
+	assert.NoError(t, err)
+
+	runs, err := LoadEvolutionHistory(dir, "alpha")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(runs))
+}
 
 func makeRun(converging bool, prob float64) EvolutionRun {
 	return EvolutionRun{

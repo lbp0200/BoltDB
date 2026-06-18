@@ -1,9 +1,13 @@
 package server
 
 import (
+	"context"
+	"net"
 	"testing"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
+	"github.com/lbp0200/BoltDB/internal/replication"
 	"github.com/lbp0200/BoltDB/internal/store"
 	"github.com/zeebo/assert"
 )
@@ -361,4 +365,77 @@ func TestProcessRequest_MONITOR_Command_Coverage(t *testing.T) {
 	resp := handler.processRequest(req, nil, "127.0.0.1:12345", nil, nil, state)
 	_, ok := resp.(*proto.SimpleString)
 	assert.True(t, ok)
+}
+
+func TestHandlePSyncWithRDB_WrongArgs(t *testing.T) {
+	t.Parallel()
+	handler, _ := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.handlePSyncWithRDB(
+		[][]byte{[]byte("only-replid")},
+		"127.0.0.1:6379", nil, nil, nil,
+	)
+	_, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+}
+
+func TestHandlePSyncWithRDB_InvalidOffset(t *testing.T) {
+	t.Parallel()
+	handler, _ := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.handlePSyncWithRDB(
+		[][]byte{[]byte("replid"), []byte("not-a-number")},
+		"127.0.0.1:6379", nil, nil, nil,
+	)
+	_, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+}
+
+func TestHandleSlaveReplicationConnection_NilContext(t *testing.T) {
+	t.Parallel()
+	handler, _ := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.Replication = replication.NewReplicationManager(handler.Db)
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	slaveConn := replication.NewSlaveConnection(clientEnd)
+	handler.wg.Add(1)
+	go handler.handleSlaveReplicationConnection(nil, slaveConn)
+	serverEnd.Close()
+	slaveConn.Close()
+}
+
+func TestHandleSlaveReplicationConnection_CancelledContext(t *testing.T) {
+	t.Parallel()
+	handler, _ := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.Replication = replication.NewReplicationManager(handler.Db)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	slaveConn := replication.NewSlaveConnection(clientEnd)
+	handler.wg.Add(1)
+	done := make(chan struct{})
+	go func() {
+		handler.handleSlaveReplicationConnection(ctx, slaveConn)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handleSlaveReplicationConnection did not return after context cancellation")
+	}
 }

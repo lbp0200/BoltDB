@@ -950,3 +950,116 @@ func TestZScan(t *testing.T) {
 	assert.NoError(t, err)
 	_ = result
 }
+
+func TestRegisterAndRecheckZMax_NoData(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	ch := make(chan string, 1)
+	_, _, ok := store.registerAndRecheckZMax([]string{"empty_zset"}, ch)
+	assert.False(t, ok)
+
+	// Verify channel was registered
+	store.blockingZPopMu.Lock()
+	_, exists := store.blockingZPopChans["empty_zset"]
+	store.blockingZPopMu.Unlock()
+	assert.True(t, exists)
+}
+
+func TestRegisterAndRecheckZMax_WithData(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	store.ZAdd("zmax_zset", []ZSetMember{
+		{Member: "a", Score: 1.0},
+		{Member: "b", Score: 2.0},
+	})
+
+	ch := make(chan string, 1)
+	key, member, ok := store.registerAndRecheckZMax([]string{"zmax_zset"}, ch)
+	assert.True(t, ok)
+	assert.Equal(t, "zmax_zset", key)
+	assert.Equal(t, "b", member.Member)
+	assert.Equal(t, 2.0, member.Score)
+
+	// Channel should have been unregistered after finding data
+	store.blockingZPopMu.Lock()
+	_, exists := store.blockingZPopChans["zmax_zset"]
+	store.blockingZPopMu.Unlock()
+	assert.False(t, exists)
+}
+
+func TestRegisterAndRecheckZMin_NoData(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	ch := make(chan string, 1)
+	_, _, ok := store.registerAndRecheckZMin([]string{"empty_zset"}, ch)
+	assert.False(t, ok)
+
+	store.blockingZPopMu.Lock()
+	_, exists := store.blockingZPopChans["empty_zset"]
+	store.blockingZPopMu.Unlock()
+	assert.True(t, exists)
+}
+
+func TestRegisterAndRecheckZMin_WithData(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	store.ZAdd("zmin_zset", []ZSetMember{
+		{Member: "a", Score: 1.0},
+		{Member: "b", Score: 2.0},
+	})
+
+	ch := make(chan string, 1)
+	key, member, ok := store.registerAndRecheckZMin([]string{"zmin_zset"}, ch)
+	assert.True(t, ok)
+	assert.Equal(t, "zmin_zset", key)
+	assert.Equal(t, "a", member.Member)
+	assert.Equal(t, 1.0, member.Score)
+
+	store.blockingZPopMu.Lock()
+	_, exists := store.blockingZPopChans["zmin_zset"]
+	store.blockingZPopMu.Unlock()
+	assert.False(t, exists)
+}
+
+func TestUnregisterBlockingZPop(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	ch := make(chan string, 1)
+	store.blockingZPopMu.Lock()
+	store.blockingZPopChans["zpop_key"] = []chan string{ch}
+	store.blockingZPopMu.Unlock()
+
+	store.unregisterBlockingZPop(ch, []string{"zpop_key"})
+
+	store.blockingZPopMu.Lock()
+	_, exists := store.blockingZPopChans["zpop_key"]
+	store.blockingZPopMu.Unlock()
+	assert.False(t, exists)
+}
+
+func TestUnregisterBlockingZPop_MultipleKeys(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	ch1 := make(chan string, 1)
+	ch2 := make(chan string, 1)
+	store.blockingZPopMu.Lock()
+	store.blockingZPopChans["key_a"] = []chan string{ch1}
+	store.blockingZPopChans["key_b"] = []chan string{ch1, ch2}
+	store.blockingZPopMu.Unlock()
+
+	store.unregisterBlockingZPop(ch1, []string{"key_a", "key_b"})
+
+	store.blockingZPopMu.Lock()
+	_, existsA := store.blockingZPopChans["key_a"]
+	chansB := store.blockingZPopChans["key_b"]
+	store.blockingZPopMu.Unlock()
+	assert.False(t, existsA)
+	assert.Equal(t, 1, len(chansB))
+	assert.Equal(t, ch2, chansB[0])
+}

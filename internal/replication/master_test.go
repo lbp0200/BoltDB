@@ -2,12 +2,31 @@ package replication
 
 import (
 	"bufio"
+	"bytes"
+	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
+	"github.com/zeebo/assert"
 )
+
+type errReadMock struct {
+	err error
+}
+
+func (e *errReadMock) Read(b []byte) (int, error) { return 0, e.err }
+func (e *errReadMock) Write(b []byte) (int, error) { return len(b), nil }
+func (e *errReadMock) Close() error                { return nil }
+func (e *errReadMock) LocalAddr() net.Addr         { return &net.TCPAddr{Port: 1} }
+func (e *errReadMock) RemoteAddr() net.Addr        { return &net.TCPAddr{Port: 2} }
+func (e *errReadMock) SetDeadline(t time.Time) error      { return nil }
+func (e *errReadMock) SetReadDeadline(t time.Time) error  { return nil }
+func (e *errReadMock) SetWriteDeadline(t time.Time) error { return nil }
+
+var _ net.Conn = (*errReadMock)(nil)
 
 // Helper to create a test server for NewMasterConnection test
 func startTestServer(t *testing.T) (string, func()) {
@@ -313,10 +332,71 @@ func TestMasterConnection_ReadBulkString_EOF(t *testing.T) {
 	t.Skip("EOF test requires more complex mock setup")
 }
 
-func TestMasterConnection_readUntilEOF(t *testing.T) {
+func TestMasterConnection_readUntilEOF_WithHexMarker(t *testing.T) {
 	t.Parallel()
-	// Skip this test as it requires a more complex mock setup
-	t.Skip("readUntilEOF test requires more complex mock setup")
+	rdbData := []byte("REDIS0009some-rdb-data-content")
+	eofMarker := "abcdef0123456789abcdef0123456789abcdef01"
+	fullData := append(append([]byte{}, rdbData...), []byte(eofMarker)...)
+
+	mc := &MasterConnection{
+		Reader: bufio.NewReader(bytes.NewReader(fullData)),
+		Writer: bufio.NewWriter(&bytes.Buffer{}),
+		stopCh: make(chan struct{}),
+	}
+
+	result, err := mc.readUntilEOF()
+	assert.NoError(t, err)
+	assert.Equal(t, rdbData, result)
+}
+
+func TestMasterConnection_readUntilEOF_LargeRDB(t *testing.T) {
+	t.Parallel()
+	// Large RDB (> 4096 bytes) to exercise multiple bufio reads
+	rdbData := make([]byte, 10000)
+	for i := range rdbData {
+		rdbData[i] = 'A' + byte(i%26)
+	}
+	eofMarker := "abcdef0123456789abcdef0123456789abcdef01"
+	fullData := append([]byte{}, rdbData...)
+	fullData = append(fullData, []byte(eofMarker)...)
+
+	mc := &MasterConnection{
+		Reader: bufio.NewReader(bytes.NewReader(fullData)),
+		Writer: bufio.NewWriter(&bytes.Buffer{}),
+		stopCh: make(chan struct{}),
+	}
+
+	result, err := mc.readUntilEOF()
+	assert.NoError(t, err)
+	assert.Equal(t, rdbData, result)
+}
+
+func TestMasterConnection_readUntilEOF_NoMarker(t *testing.T) {
+	t.Parallel()
+	data := []byte("small-data-without-hex-marker")
+	mc := &MasterConnection{
+		Reader: bufio.NewReader(bytes.NewReader(data)),
+		Writer: bufio.NewWriter(&bytes.Buffer{}),
+		stopCh: make(chan struct{}),
+	}
+
+	result, err := mc.readUntilEOF()
+	assert.NoError(t, err)
+	assert.Equal(t, data, result)
+}
+
+func TestMasterConnection_readUntilEOF_ReadError(t *testing.T) {
+	t.Parallel()
+	errMock := &errReadMock{err: fmt.Errorf("connection reset")}
+	mc := &MasterConnection{
+		Reader: bufio.NewReader(errMock),
+		Writer: bufio.NewWriter(&bytes.Buffer{}),
+		stopCh: make(chan struct{}),
+	}
+
+	_, err := mc.readUntilEOF()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "connection reset") || strings.Contains(err.Error(), "read RDB data failed"))
 }
 
 func TestMasterConnection_ReadResponse_BulkString(t *testing.T) {

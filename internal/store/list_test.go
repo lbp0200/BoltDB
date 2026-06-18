@@ -821,3 +821,152 @@ func TestListWrongType(t *testing.T) {
 	assert.Error(t, err)
 	assert.Equal(t, ErrWrongType, err)
 }
+
+func TestRegisterBlockingPop(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	ch := make(chan BlockingResult, 1)
+	store.registerBlockingPop("test_key", ch)
+
+	store.blockingMu.RLock()
+	chans, exists := store.blockingPopChans["test_key"]
+	store.blockingMu.RUnlock()
+	assert.True(t, exists)
+	assert.Equal(t, 1, len(chans))
+	assert.Equal(t, ch, chans[0])
+}
+
+func TestRegisterBlockingPop_MultipleChannels(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	ch1 := make(chan BlockingResult, 1)
+	ch2 := make(chan BlockingResult, 1)
+	store.registerBlockingPop("multi_key", ch1)
+	store.registerBlockingPop("multi_key", ch2)
+
+	store.blockingMu.RLock()
+	chans, exists := store.blockingPopChans["multi_key"]
+	store.blockingMu.RUnlock()
+	assert.True(t, exists)
+	assert.Equal(t, 2, len(chans))
+	assert.Equal(t, ch1, chans[0])
+	assert.Equal(t, ch2, chans[1])
+}
+
+func TestBRPOPLPUSHBlocking_WithData(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	store.RPush("src", "value1")
+	store.RPush("src", "value2")
+
+	value, err := store.BRPOPLPUSHBlocking(context.Background(), "src", "dst", 0)
+	assert.NoError(t, err)
+	assert.Equal(t, "value2", value)
+
+	dstVal, _ := store.LIndex("dst", 0)
+	assert.Equal(t, "value2", dstVal)
+}
+
+func TestBRPOPLPUSHBlocking_EmptyList(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	value, err := store.BRPOPLPUSHBlocking(context.Background(), "empty_src", "dst", 0)
+	assert.NoError(t, err)
+	assert.Equal(t, "", value)
+}
+
+func TestBRPOPLPUSHBlocking_ConcurrentPush(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	done := make(chan struct{})
+	go func() {
+		value, err := store.BRPOPLPUSHBlocking(context.Background(), "concurrent_src", "concurrent_dst", 3)
+		assert.NoError(t, err)
+		assert.Equal(t, "pushed_data", value)
+		close(done)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	_, err := store.RPush("concurrent_src", "pushed_data")
+	assert.NoError(t, err)
+
+	select {
+	case <-done:
+	case <-time.After(4 * time.Second):
+		t.Fatal("BRPOPLPUSHBlocking timed out waiting for concurrent push")
+	}
+}
+
+func TestBRPOPLPUSHBlocking_ContextCancel(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	value, err := store.BRPOPLPUSHBlocking(ctx, "cancel_src", "cancel_dst", 10)
+	assert.NoError(t, err)
+	assert.Equal(t, "", value)
+}
+
+func TestBLMoveBlocking_WithData(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	store.RPush("src", "value1")
+	value, err := store.BLMoveBlocking(context.Background(), "src", "dst", "LEFT", "RIGHT", 0)
+	assert.NoError(t, err)
+	assert.Equal(t, "value1", value)
+
+	dstVal, _ := store.LIndex("dst", 0)
+	assert.Equal(t, "value1", dstVal)
+}
+
+func TestBLMoveBlocking_EmptyList(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	value, err := store.BLMoveBlocking(context.Background(), "empty_src", "dst", "LEFT", "RIGHT", 0)
+	assert.NoError(t, err)
+	assert.Equal(t, "", value)
+}
+
+func TestBLMoveBlocking_ConcurrentPush(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	done := make(chan struct{})
+	go func() {
+		value, err := store.BLMoveBlocking(context.Background(), "push_src", "push_dst", "RIGHT", "LEFT", 3)
+		assert.NoError(t, err)
+		assert.Equal(t, "new_value", value)
+		close(done)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	_, err := store.RPush("push_src", "new_value")
+	assert.NoError(t, err)
+
+	select {
+	case <-done:
+	case <-time.After(4 * time.Second):
+		t.Fatal("BLMoveBlocking timed out waiting for concurrent push")
+	}
+}
+
+func TestBLMoveBlocking_ContextCancel(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	value, err := store.BLMoveBlocking(ctx, "cancel_src", "cancel_dst", "LEFT", "RIGHT", 10)
+	assert.NoError(t, err)
+	assert.Equal(t, "", value)
+}

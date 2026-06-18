@@ -1,8 +1,14 @@
 package monitor
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/zeebo/assert"
 )
 
 func TestDetectAnomalies_Empty(t *testing.T) {
@@ -284,6 +290,166 @@ func TestAnomalyReport_Empty(t *testing.T) {
 	if !contains(md, "No anomalies detected") {
 		t.Errorf("expected 'No anomalies detected' for empty report, got:\n%s", md)
 	}
+}
+
+func TestSaveAnomalyReport(t *testing.T) {
+	dir := t.TempDir()
+	r := AnomalyReport{
+		Version:    1,
+		Timestamp:  time.Now(),
+		Prefix:     "test",
+		RunCount:   5,
+		Stable:     true,
+		Confidence: "high",
+	}
+	SaveAnomalyReport(dir, "test-run", r)
+
+	jpath := filepath.Join(dir, "test-run-anomaly.json")
+	data, err := os.ReadFile(jpath)
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(string(data), "test"))
+
+	mdPath := filepath.Join(dir, "test-run-anomaly.md")
+	mdData, err := os.ReadFile(mdPath)
+	assert.NoError(t, err)
+	assert.True(t, len(mdData) > 0)
+}
+
+func TestSaveAnomalyReport_WithAnomalies(t *testing.T) {
+	dir := t.TempDir()
+	r := AnomalyReport{
+		Version:    1,
+		Timestamp:  time.Now(),
+		Prefix:     "test",
+		RunCount:   10,
+		Stable:     false,
+		Confidence: "medium",
+		Anomalies: []Anomaly{
+			{Type: "basin_drift", Severity: "warn", Message: "basin drifting detected"},
+			{Type: "l0_escalation", Severity: "critical", Message: "L0 score exceeded threshold"},
+		},
+	}
+	SaveAnomalyReport(dir, "test-run", r)
+
+	jpath := filepath.Join(dir, "test-run-anomaly.json")
+	data, err := os.ReadFile(jpath)
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(string(data), "basin_drift"))
+	assert.True(t, strings.Contains(string(data), "l0_escalation"))
+
+	mdPath := filepath.Join(dir, "test-run-anomaly.md")
+	_, err = os.ReadFile(mdPath)
+	assert.NoError(t, err)
+}
+
+func TestSaveAnomalyReport_InvalidDir(t *testing.T) {
+	r := AnomalyReport{Version: 1, Timestamp: time.Now(), Prefix: "test"}
+	SaveAnomalyReport("/nonexistent-parent-dir-12345", "test-run", r)
+}
+
+func TestCorrelateCommits_NoRuns(t *testing.T) {
+	r := &AnomalyReport{Anomalies: []Anomaly{{Type: "basin_drift"}}}
+	correlateCommits(r, nil, "")
+}
+
+func TestCorrelateCommits_OneRun(t *testing.T) {
+	r := &AnomalyReport{Anomalies: []Anomaly{{Type: "basin_drift"}}}
+	runs := []EvolutionRun{{Timestamp: time.Now()}}
+	correlateCommits(r, runs, "")
+}
+
+func TestCorrelateCommits_WithCommits(t *testing.T) {
+	repoDir := t.TempDir()
+
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	err := cmd.Run()
+	assert.NoError(t, err)
+
+	cmd = exec.Command("git", "config", "user.email", "test@test.com")
+	cmd.Dir = repoDir
+	assert.NoError(t, cmd.Run())
+	cmd = exec.Command("git", "config", "user.name", "Test")
+	cmd.Dir = repoDir
+	assert.NoError(t, cmd.Run())
+
+	now := time.Now()
+
+	assert.NoError(t, os.WriteFile(filepath.Join(repoDir, "a.txt"), []byte("a"), 0644))
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = repoDir
+	assert.NoError(t, cmd.Run())
+
+	twoHoursAgo := now.Add(-2 * time.Hour)
+	cmd = exec.Command("git", "commit", "-m", "first commit", "--date", twoHoursAgo.Format(time.RFC3339))
+	cmd.Dir = repoDir
+	assert.NoError(t, cmd.Run())
+
+	assert.NoError(t, os.WriteFile(filepath.Join(repoDir, "b.txt"), []byte("b"), 0644))
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = repoDir
+	assert.NoError(t, cmd.Run())
+
+	oneHourAgo := now.Add(-1 * time.Hour)
+	cmd = exec.Command("git", "commit", "-m", "second commit", "--date", oneHourAgo.Format(time.RFC3339))
+	cmd.Dir = repoDir
+	assert.NoError(t, cmd.Run())
+
+	since := now.Add(-1 * time.Hour)
+	until := now.Add(1 * time.Minute)
+
+	commits := getCommitsInWindow(repoDir, since, until)
+	assert.Equal(t, 2, len(commits))
+	assert.Equal(t, 40, len(commits[0].Hash))
+	assert.Equal(t, 40, len(commits[1].Hash))
+
+	runs := []EvolutionRun{
+		{Timestamp: now.Add(-3 * time.Hour)},
+		{Timestamp: now.Add(1 * time.Minute)},
+	}
+
+	r := &AnomalyReport{
+		Prefix:    "test",
+		Anomalies: []Anomaly{{Type: "basin_drift", Severity: "low", Message: "test"}},
+	}
+	correlateCommits(r, runs, repoDir)
+	assert.Equal(t, 1, len(r.Anomalies))
+}
+
+func TestCorrelateCommits_EmptyRange(t *testing.T) {
+	repoDir := t.TempDir()
+
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	err := cmd.Run()
+	assert.NoError(t, err)
+
+	cmd = exec.Command("git", "config", "user.email", "test@test.com")
+	cmd.Dir = repoDir
+	assert.NoError(t, cmd.Run())
+	cmd = exec.Command("git", "config", "user.name", "Test")
+	cmd.Dir = repoDir
+	assert.NoError(t, cmd.Run())
+
+	assert.NoError(t, os.WriteFile(filepath.Join(repoDir, "a.txt"), []byte("a"), 0644))
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = repoDir
+	assert.NoError(t, cmd.Run())
+
+	cmd = exec.Command("git", "commit", "-m", "initial", "--date", time.Now().Add(-1*time.Hour).Format(time.RFC3339))
+	cmd.Dir = repoDir
+	assert.NoError(t, cmd.Run())
+
+	until := time.Now().Add(-2 * time.Hour)
+	since := time.Now().Add(-4 * time.Hour)
+
+	commits := getCommitsInWindow(repoDir, since, until)
+	assert.Equal(t, 0, len(commits))
+}
+
+func TestGetCommitsInWindow_NoRepo(t *testing.T) {
+	commits := getCommitsInWindow("/nonexistent", time.Now(), time.Now())
+	assert.Nil(t, commits)
 }
 
 func contains(s, substr string) bool {

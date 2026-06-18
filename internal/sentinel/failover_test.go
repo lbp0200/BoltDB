@@ -3,6 +3,7 @@ package sentinel
 import (
 	"net"
 	"testing"
+	"time"
 
 	"github.com/zeebo/assert"
 )
@@ -334,4 +335,66 @@ func TestFailoverManager_UpdateConfiguration_WithSlave(t *testing.T) {
 	// It will fail when trying to promote slave (network call will fail)
 	// But this gives us coverage of executeFailover code path
 	_ = fm.AutoFailover("test-master")
+}
+
+func TestFailoverManager_updateConfiguration_Direct(t *testing.T) {
+	t.Parallel()
+	sentinel := NewSentinel(1, 30000)
+	defer sentinel.Stop()
+
+	err := sentinel.AddMaster("test-master", "127.0.0.1:6379", 2)
+	assert.NoError(t, err)
+
+	master := sentinel.GetMaster("test-master")
+
+	slave := NewSlaveInstance("slave1", "127.0.0.1:6380")
+	master.AddSlave(slave)
+
+	fm := NewFailoverManager(sentinel)
+
+	initialEpoch := sentinel.GetConfigEpoch()
+
+	fm.updateConfiguration(master, slave)
+
+	assert.Equal(t, initialEpoch+1, sentinel.GetConfigEpoch())
+	assert.Equal(t, "127.0.0.1:6380", master.GetAddr())
+	assert.Equal(t, "ok", master.GetState())
+	assert.Equal(t, int64(1), sentinel.Metrics.GetLeaderChanges())
+}
+
+func TestWaitForRole_Success(t *testing.T) {
+	t.Parallel()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.NoError(t, err)
+	defer ln.Close()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		buf := make([]byte, 1024)
+		_, _ = conn.Read(buf)
+
+		conn.Write([]byte("*1\r\n$4\r\nROLE\r\n"))
+	}()
+
+	addr := ln.Addr().String()
+	role, err := waitForRole(addr, 2*time.Second, 50*time.Millisecond)
+	assert.NoError(t, err)
+	assert.Equal(t, "*1", role)
+	<-done
+}
+
+func TestWaitForRole_Timeout(t *testing.T) {
+	t.Parallel()
+
+	addr := "127.0.0.1:9999"
+	_, err := waitForRole(addr, 50*time.Millisecond, 10*time.Millisecond)
+	assert.Error(t, err)
 }

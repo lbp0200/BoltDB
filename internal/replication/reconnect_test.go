@@ -1,10 +1,14 @@
 package replication
 
 import (
+	"bufio"
+	"bytes"
+	"net"
 	"runtime"
 	"testing"
 	"time"
 
+	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/lbp0200/BoltDB/internal/store"
 	"github.com/zeebo/assert"
 )
@@ -77,4 +81,587 @@ func TestSlaveReconnector_GoroutineLeak(t *testing.T) {
 	}
 	after := runtime.NumGoroutine()
 	t.Errorf("goroutine leak suspected: before=%d after=%d leaked=%d", before, after, after-before)
+}
+
+func TestSlaveReconnector_GetLastOffset(t *testing.T) {
+	t.Parallel()
+	sr := &SlaveReconnector{}
+
+	assert.Equal(t, int64(0), sr.GetLastOffset())
+
+	sr.lastOffset.Store(12345)
+	assert.Equal(t, int64(12345), sr.GetLastOffset())
+}
+
+func TestSlaveReconnector_GetReconnectCount(t *testing.T) {
+	t.Parallel()
+	sr := &SlaveReconnector{}
+
+	assert.Equal(t, int64(0), sr.GetReconnectCount())
+
+	sr.reconnectCount.Store(7)
+	assert.Equal(t, int64(7), sr.GetReconnectCount())
+}
+
+func TestSlaveReconnector_writeRespToMaster(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	mc := &MasterConnection{
+		Writer: bufio.NewWriter(&buf),
+		stopCh: make(chan struct{}),
+	}
+
+	sr := &SlaveReconnector{}
+	err := sr.writeRespToMaster(mc, []byte("+PONG\r\n"))
+	assert.NoError(t, err)
+	assert.Equal(t, "+PONG\r\n", buf.String())
+}
+
+func TestSlaveReconnector_sendHandshake(t *testing.T) {
+	t.Parallel()
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		br := bufio.NewReader(serverEnd)
+		for i := 0; i < 4; i++ {
+			_, err := proto.ReadRESP(br)
+			if err != nil {
+				return
+			}
+			_, err = serverEnd.Write([]byte("+OK\r\n"))
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	sr := &SlaveReconnector{}
+	err := sr.sendHandshake(mc)
+	assert.NoError(t, err)
+	<-done
+}
+
+func TestSlaveReconnector_sendHandshake_ReadError(t *testing.T) {
+	t.Parallel()
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	// Close server end immediately to cause read error on first response
+	serverEnd.Close()
+
+	sr := &SlaveReconnector{}
+	err := sr.sendHandshake(mc)
+	assert.Error(t, err)
+}
+
+func TestSlaveReconnector_sendPSYNC_FullResync(t *testing.T) {
+	t.Parallel()
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		br := bufio.NewReader(serverEnd)
+		_, err := proto.ReadRESP(br)
+		if err != nil {
+			return
+		}
+		_, err = serverEnd.Write([]byte("+FULLRESYNC abc123 100\r\n"))
+		if err != nil {
+			return
+		}
+	}()
+
+	sr := &SlaveReconnector{}
+	fullResync, err := sr.sendPSYNC(mc)
+	assert.NoError(t, err)
+	assert.True(t, fullResync)
+	assert.Equal(t, "abc123", sr.lastReplId)
+	assert.Equal(t, int64(100), sr.lastOffset.Load())
+	<-done
+}
+
+func TestSlaveReconnector_sendPSYNC_Continue(t *testing.T) {
+	t.Parallel()
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		br := bufio.NewReader(serverEnd)
+		_, err := proto.ReadRESP(br)
+		if err != nil {
+			return
+		}
+		_, err = serverEnd.Write([]byte("+CONTINUE def456\r\n"))
+		if err != nil {
+			return
+		}
+	}()
+
+	sr := &SlaveReconnector{}
+	fullResync, err := sr.sendPSYNC(mc)
+	assert.NoError(t, err)
+	assert.False(t, fullResync)
+	<-done
+}
+
+func TestSlaveReconnector_sendPSYNC_UnexpectedResponse(t *testing.T) {
+	t.Parallel()
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		br := bufio.NewReader(serverEnd)
+		_, err := proto.ReadRESP(br)
+		if err != nil {
+			return
+		}
+		_, err = serverEnd.Write([]byte("-ERR unknown command\r\n"))
+		if err != nil {
+			return
+		}
+	}()
+
+	sr := &SlaveReconnector{}
+	_, err := sr.sendPSYNC(mc)
+	assert.Error(t, err)
+	<-done
+}
+
+func TestSlaveReconnector_readCommandLoop_PING(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	sr := NewSlaveReconnector(rm, testStore, "127.0.0.1:6379")
+	sr.state.Store(int32(SlaveConnected))
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sr.readCommandLoop(mc)
+	}()
+
+	_, err := serverEnd.Write([]byte("*1\r\n$4\r\nPING\r\n"))
+	assert.NoError(t, err)
+
+	br := bufio.NewReader(serverEnd)
+	resp, err := proto.ReadRESP(br)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(resp.Args))
+	assert.Equal(t, "PONG", string(resp.Args[0]))
+
+	close(sr.stopCh)
+	clientEnd.Close()
+	err = <-done
+	assert.NoError(t, err)
+}
+
+func TestSlaveReconnector_readCommandLoop_REPLCONF_GETACK(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	sr := NewSlaveReconnector(rm, testStore, "127.0.0.1:6379")
+	sr.state.Store(int32(SlaveConnected))
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sr.readCommandLoop(mc)
+	}()
+
+	_, err := serverEnd.Write([]byte("*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n"))
+	assert.NoError(t, err)
+
+	br := bufio.NewReader(serverEnd)
+	resp, err := proto.ReadRESP(br)
+	assert.NoError(t, err)
+	assert.Equal(t, 3, len(resp.Args))
+	assert.Equal(t, "REPLCONF", string(resp.Args[0]))
+	assert.Equal(t, "ACK", string(resp.Args[1]))
+	assert.Equal(t, "0", string(resp.Args[2]))
+
+	close(sr.stopCh)
+	clientEnd.Close()
+	err = <-done
+	assert.NoError(t, err)
+}
+
+func TestSlaveReconnector_readCommandLoop_SELECT(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	sr := NewSlaveReconnector(rm, testStore, "127.0.0.1:6379")
+	sr.state.Store(int32(SlaveConnected))
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sr.readCommandLoop(mc)
+	}()
+
+	_, err := serverEnd.Write([]byte("*2\r\n$6\r\nSELECT\r\n$1\r\n0\r\n"))
+	assert.NoError(t, err)
+
+	time.Sleep(50 * time.Millisecond)
+
+	close(sr.stopCh)
+	clientEnd.Close()
+	err = <-done
+	assert.NoError(t, err)
+}
+
+func TestSlaveReconnector_readCommandLoop_SET(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	sr := NewSlaveReconnector(rm, testStore, "127.0.0.1:6379")
+	sr.state.Store(int32(SlaveConnected))
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sr.readCommandLoop(mc)
+	}()
+
+	_, err := serverEnd.Write([]byte("*3\r\n$3\r\nSET\r\n$5\r\nmykey\r\n$5\r\nmyval\r\n"))
+	assert.NoError(t, err)
+
+	for i := 0; i < 50; i++ {
+		val, err := testStore.Get("mykey")
+		if err == nil {
+			assert.Equal(t, "myval", val)
+			goto done
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for SET to be processed")
+
+done:
+	close(sr.stopCh)
+	clientEnd.Close()
+	err = <-done
+	assert.NoError(t, err)
+}
+
+func TestSlaveReconnector_readCommandLoop_ReadError(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	sr := NewSlaveReconnector(rm, testStore, "127.0.0.1:6379")
+	sr.state.Store(int32(SlaveConnected))
+
+	serverEnd.Close()
+
+	err := sr.readCommandLoop(mc)
+	assert.Error(t, err)
+}
+
+func TestSlaveReconnector_readCommandLoop_StopCh(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	sr := NewSlaveReconnector(rm, testStore, "127.0.0.1:6379")
+	sr.state.Store(int32(SlaveConnected))
+
+	close(sr.stopCh)
+
+	err := sr.readCommandLoop(mc)
+	assert.NoError(t, err)
+}
+
+func TestSlaveReconnector_readCommandLoop_OffsetTracking(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	sr := NewSlaveReconnector(rm, testStore, "127.0.0.1:6379")
+	sr.state.Store(int32(SlaveConnected))
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sr.readCommandLoop(mc)
+	}()
+
+	_, err := serverEnd.Write([]byte("*3\r\n$3\r\nSET\r\n$2\r\nk1\r\n$2\r\nv1\r\n"))
+	assert.NoError(t, err)
+
+	var offset int64
+	for i := 0; i < 50; i++ {
+		offset = sr.lastOffset.Load()
+		if offset > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.True(t, offset > 0)
+
+	_, err = serverEnd.Write([]byte("*3\r\n$3\r\nSET\r\n$2\r\nk2\r\n$2\r\nv2\r\n"))
+	assert.NoError(t, err)
+
+	var offset2 int64
+	for i := 0; i < 50; i++ {
+		offset2 = sr.lastOffset.Load()
+		if offset2 > offset {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.True(t, offset2 > offset)
+
+	close(sr.stopCh)
+	clientEnd.Close()
+	err = <-done
+	assert.NoError(t, err)
+}
+
+func TestSlaveReconnector_readCommandLoop_MultipleCommands(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	sr := NewSlaveReconnector(rm, testStore, "127.0.0.1:6379")
+	sr.state.Store(int32(SlaveConnected))
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sr.readCommandLoop(mc)
+	}()
+
+	br := bufio.NewReader(serverEnd)
+
+	_, err := serverEnd.Write([]byte("*3\r\n$3\r\nSET\r\n$1\r\na\r\n$3\r\nAAA\r\n"))
+	assert.NoError(t, err)
+
+	for i := 0; i < 50; i++ {
+		if _, err := testStore.Get("a"); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	_, err = serverEnd.Write([]byte("*1\r\n$4\r\nPING\r\n"))
+	assert.NoError(t, err)
+
+	resp, err := proto.ReadRESP(br)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(resp.Args))
+	assert.Equal(t, "PONG", string(resp.Args[0]))
+
+	_, err = serverEnd.Write([]byte("*3\r\n$3\r\nSET\r\n$1\r\nb\r\n$3\r\nBBB\r\n"))
+	assert.NoError(t, err)
+
+	for i := 0; i < 50; i++ {
+		if _, err := testStore.Get("b"); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	valA, _ := testStore.Get("a")
+	assert.Equal(t, "AAA", valA)
+	valB, _ := testStore.Get("b")
+	assert.Equal(t, "BBB", valB)
+
+	close(sr.stopCh)
+	clientEnd.Close()
+	err = <-done
+	assert.NoError(t, err)
+}
+
+func TestSlaveReconnector_sendPSYNC_WithReplId(t *testing.T) {
+	t.Parallel()
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		br := bufio.NewReader(serverEnd)
+		_, err := proto.ReadRESP(br)
+		if err != nil {
+			return
+		}
+		_, err = serverEnd.Write([]byte("+CONTINUE existing-replid\r\n"))
+		if err != nil {
+			return
+		}
+	}()
+
+	sr := &SlaveReconnector{
+		lastReplId: "existing-replid",
+	}
+	sr.lastOffset.Store(500)
+	fullResync, err := sr.sendPSYNC(mc)
+	assert.NoError(t, err)
+	assert.False(t, fullResync)
+	assert.Equal(t, "existing-replid", sr.lastReplId)
+	<-done
 }

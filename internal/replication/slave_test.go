@@ -289,3 +289,36 @@ func TestSlaveConnection_ReadCommand(t *testing.T) {
 	assert.NotEqual(t, nil, cmd)
 	assert.Equal(t, 3, len(cmd.Args))
 }
+
+func TestSlaveConnection_LockUnlock(t *testing.T) {
+	t.Parallel()
+	conn := newMockConn()
+	slave := NewSlaveConnection(conn)
+
+	// Lock 应该不会阻塞（未锁状态）
+	slave.Lock()
+	// 在 Lock 下操作是安全的
+	// Unlock 应该不会 panic
+	slave.Unlock()
+}
+
+func TestSlaveConnection_WriteAndFlush(t *testing.T) {
+	t.Parallel()
+	conn := newMockConn()
+	slave := NewSlaveConnection(conn)
+
+	data := []byte("+OK\r\n")
+	err := slave.WriteAndFlush(data)
+	assert.NoError(t, err)
+	assert.Equal(t, data, conn.writeBuffer)
+}
+
+func TestSlaveConnection_WriteAndFlush_EmptyData(t *testing.T) {
+	t.Parallel()
+	conn := newMockConn()
+	slave := NewSlaveConnection(conn)
+
+	err := slave.WriteAndFlush([]byte{})
+	assert.NoError(t, err)
+	assert.Equal(t, []byte{}, conn.writeBuffer)
+}

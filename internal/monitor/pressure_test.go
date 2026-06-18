@@ -265,6 +265,29 @@ func TestPressureMonitor_SetJSONLPath_InvalidPath(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestPressureMonitor_Wait(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	pm := NewPressureMonitor(nil, nil)
+	pm.Start(ctx, 20*time.Millisecond)
+
+	time.Sleep(60 * time.Millisecond)
+	cancel()
+
+	done := make(chan struct{})
+	go func() {
+		pm.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Wait() timed out")
+	}
+
+	assert.True(t, pm.Stopped())
+}
+
 func TestPressureMonitor_Start_WithJSONL(t *testing.T) {
 	tmpFile := t.TempDir() + "/test.jsonl"
 	ctx, cancel := context.WithCancel(context.Background())
