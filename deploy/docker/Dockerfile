@@ -47,4 +47,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # Default command
 ENTRYPOINT ["bolt"]
-CMD ["-dir", "/data", "-log-level", "info"]
+CMD ["-addr", ":6379", "-dir", "/data", "-log-level", "info"]
