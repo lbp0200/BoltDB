@@ -50,35 +50,12 @@ func (s *BotreonStore) HSet(key, field string, value interface{}) error {
 	hkey := s.hashKey(key, field)
 	typeKey := TypeOfKeyGet(key)
 
-	// 先在View事务中获取当前计数
-	var currentCount uint64
-	err := s.db.View(func(txn *badger.Txn) error {
-		countKey := s.hashCountKey(key)
-		countItem, err := txn.Get(countKey)
-		if err == nil {
-			val, err := countItem.ValueCopy(nil)
-			if err != nil {
-				return fmt.Errorf("HSet: failed to get count value: %v", err)
-			}
-			currentCount = helper.BytesToUint64(val)
-		} else if !errors.Is(err, badger.ErrKeyNotFound) {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	// 然后在Update事务中写入
 	return s.retryUpdate(func(txn *badger.Txn) error {
-		// 检查字段是否存在
 		exists := false
 		if _, err := txn.Get(hkey); err == nil {
 			exists = true
 		}
 
-		// Check if key already exists with a different type
 		item, err := txn.Get(typeKey)
 		if err == nil {
 			val, err := item.ValueCopy(nil)
@@ -97,13 +74,23 @@ func (s *BotreonStore) HSet(key, field string, value interface{}) error {
 			return err
 		}
 
-		// 写入字段值（带压缩）
 		if err := s.setValueWithCompression(txn, hkey, bValue); err != nil {
 			return err
 		}
 
-		// 更新计数器
 		countKey := s.hashCountKey(key)
+		var currentCount uint64
+		countItem, err := txn.Get(countKey)
+		if err == nil {
+			val, err := countItem.ValueCopy(nil)
+			if err != nil {
+				return fmt.Errorf("HSet: failed to get count value: %v", err)
+			}
+			currentCount = helper.BytesToUint64(val)
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
+
 		if !exists {
 			currentCount++
 		}
