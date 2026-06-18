@@ -154,5 +154,6 @@ func main() {
 	cancel()
 	metricsWg.Wait()
 	handler.Shutdown()
+	backupMgr.Wait()
 	logger.Logger.Info().Msg("关闭序列完成")
 }

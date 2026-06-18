@@ -87,6 +87,7 @@ func TestBackupManager_BGSave(t *testing.T) {
 
 	err = bm.BGSave()
 	assert.NoError(t, err)
+	bm.Wait()
 }
 
 // TestBackupManager_BackupBadger tests BackupBadger

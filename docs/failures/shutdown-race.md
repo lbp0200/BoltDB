@@ -14,6 +14,7 @@
   → replMgr.Stop()       (close slave TCP connections → unblock reads)
   → cancel()             (cancel root context → all goroutines see Done)
   → handler.Shutdown()   (close all client TCP conns + WaitGroup.Wait)
+  → backupMgr.Wait()      (wait for in-flight BGSAVE goroutine)
   → db.CloseWithTimeout() (deferred — guaranteed: 0 goroutines accessing DB)
   ```
 - Race scenarios:
@@ -24,7 +25,7 @@
   5. **Backup/GC race**: Background backup or retention goroutine still running when DB closes
 
 ## Invariant Violated
-- **Zero goroutines access DB after handler.Shutdown() returns**
+- **Zero goroutines access DB after backupMgr.Wait() returns**
 - **All goroutines are tracked**: every `go` spawn must be in `Handler.wg` or `SlaveReconnector.wg`
 - **Close timeout must not be hit**: if `CloseTimeout` fires regularly, there's a leak
 

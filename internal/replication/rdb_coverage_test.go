@@ -524,3 +524,133 @@ func TestWriteKeyValue_LargeSet(t *testing.T) {
 	rdbData := enc.Bytes()
 	assert.True(t, len(rdbData) > 0)
 }
+
+// TestLoadRDB_WithGeoData tests RDB round-trip for GEO data
+func TestLoadRDB_WithGeoData(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	_, err := testStore.GeoAdd("mygeo", []store.GeoMember{
+		{Member: "Paris", Lat: 48.8566, Lon: 2.3521},
+		{Member: "London", Lat: 51.5074, Lon: -0.1278},
+	})
+	assert.NoError(t, err)
+
+	rdbData, err := GenerateRDB(testStore)
+	assert.NoError(t, err)
+
+	testStore2 := setupTestStore(t)
+	defer testStore2.Close()
+
+	err = LoadRDBWithStore(rdbData, testStore2)
+	assert.NoError(t, err)
+
+	positions, err := testStore2.GeoPos("mygeo", "Paris", "London")
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(positions))
+}
+
+// TestLoadRDB_WithJSONData tests RDB round-trip for JSON data
+func TestLoadRDB_WithJSONData(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	_, err := testStore.JSONSet("myjson", "$", `{"name":"test","value":42}`, false, false)
+	assert.NoError(t, err)
+
+	rdbData, err := GenerateRDB(testStore)
+	assert.NoError(t, err)
+
+	testStore2 := setupTestStore(t)
+	defer testStore2.Close()
+
+	err = LoadRDBWithStore(rdbData, testStore2)
+	assert.NoError(t, err)
+
+	vals, err := testStore2.JSONGet("myjson", "$")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(vals))
+}
+
+// TestLoadRDB_WithTimeSeriesData tests RDB round-trip for TimeSeries data
+func TestLoadRDB_WithTimeSeriesData(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	_, err := testStore.TSAdd("myts", 1000, 42.5, store.TSAddOptions{})
+	assert.NoError(t, err)
+	_, err = testStore.TSAdd("myts", 2000, 43.5, store.TSAddOptions{})
+	assert.NoError(t, err)
+
+	rdbData, err := GenerateRDB(testStore)
+	assert.NoError(t, err)
+
+	testStore2 := setupTestStore(t)
+	defer testStore2.Close()
+
+	err = LoadRDBWithStore(rdbData, testStore2)
+	assert.NoError(t, err)
+
+	point, err := testStore2.TSGet("myts")
+	assert.NoError(t, err)
+	assert.NotNil(t, point)
+	assert.Equal(t, float64(43.5), point.Value)
+}
+
+// TestLoadRDB_WithStreamData tests RDB round-trip for Stream data
+func TestLoadRDB_WithStreamData(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	_, err := testStore.XAdd("mystream", store.StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1", "field2": "value2"})
+	assert.NoError(t, err)
+	_, err = testStore.XAdd("mystream", store.StreamXAddOptions{}, "1000000000001-0", map[string]string{"field3": "value3"})
+	assert.NoError(t, err)
+
+	rdbData, err := GenerateRDB(testStore)
+	assert.NoError(t, err)
+
+	testStore2 := setupTestStore(t)
+	defer testStore2.Close()
+
+	err = LoadRDBWithStore(rdbData, testStore2)
+	assert.NoError(t, err)
+
+	entries, err := testStore2.XRange("mystream", "-", "+", 0)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(entries))
+	assert.Equal(t, "1000000000000-0", entries[0].ID)
+}
+
+// TestDecodeLatLonBits tests decodeLatLonBits function directly
+func TestDecodeLatLonBits(t *testing.T) {
+	t.Parallel()
+
+	// All zeros → converges toward min
+	result := decodeLatLonBits(0, -90, 90, 26)
+	if !(result > -90 && result < -89) {
+		t.Errorf("expected near -90, got %f", result)
+	}
+
+	// All ones → converges toward max
+	result = decodeLatLonBits(0x3FFFFFF, -90, 90, 26)
+	if !(result > 89 && result < 90) {
+		t.Errorf("expected near 90, got %f", result)
+	}
+
+	// Single bit at position 25 (MSB of 26) → positive
+	result = decodeLatLonBits(0x2000000, -90, 90, 26)
+	if !(result > 0) {
+		t.Errorf("expected positive, got %f", result)
+	}
+
+	// 1-bit encoding: 0 → -90, 1 → 90
+	result = decodeLatLonBits(0, -180, 180, 1)
+	assert.Equal(t, float64(-90), result)
+	result = decodeLatLonBits(1, -180, 180, 1)
+	assert.Equal(t, float64(90), result)
+}

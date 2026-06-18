@@ -142,6 +142,8 @@ func setupMasterSlaveServer(t *testing.T) (masterClient, slaveClient *redis.Clie
 		masterClient.Close()
 		slaveListener.Close()
 		masterListener.Close()
+		masterBackupMgr.Wait()
+		slaveBackupMgr.Wait()
 		slaveDB.Close()
 		masterDB.Close()
 	}

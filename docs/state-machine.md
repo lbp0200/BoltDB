@@ -27,7 +27,7 @@
                   └──────────┘
 ```
 
-**Invariant:** After `handler.Shutdown()` returns, zero goroutines access the DB. The deferred `db.Close()` is the last operation.
+**Invariant:** After `backupMgr.Wait()` returns, zero goroutines access the DB. The deferred `db.Close()` is the last operation.
 
 **Ordering** (enforced by `main.go`):
 ```
@@ -35,6 +35,7 @@ close listener → ServeTCP returns
 → replMgr.Stop()       (close slave TCP connections → unblock reads)
 → cancel()             (cancel root context → all goroutines see Done)
 → handler.Shutdown()   (close all client TCP conns + WaitGroup.Wait)
+→ backupMgr.Wait()     (wait for in-flight BGSAVE goroutine → no DB access after)
 → db.Close()           (deferred — guaranteed: 0 goroutines accessing DB)
 ```
 

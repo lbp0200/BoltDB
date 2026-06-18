@@ -173,6 +173,8 @@ func setupSoakReplication(t *testing.T) *soakReplEnv {
 		masterClient.Close()
 		slaveListener.Close()
 		masterListener.Close()
+		masterBackup.Wait()
+		slaveBackup.Wait()
 		slaveDB.Close()
 		masterDB.Close()
 	}

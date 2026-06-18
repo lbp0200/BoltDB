@@ -113,6 +113,7 @@ close listener → ServeTCP returns
 → replMgr.Stop()       (close slave TCP connections → unblock reads)
 → cancel()             (cancel root context → all goroutines see Done)
 → handler.Shutdown()   (close all client TCP conns + WaitGroup.Wait)
+→ backupMgr.Wait()     (wait for in-flight BGSAVE goroutine → no DB access after)
 → db.Close()           (deferred — guaranteed: 0 goroutines accessing DB)
 ```
 
@@ -120,4 +121,4 @@ close listener → ServeTCP returns
   is closed by `replMgr.Stop()`
 - `reconnectLoop` is tracked in `SlaveReconnector.wg`; `replMgr.Stop()` closes
   `stopCh` + master connection
-- NO goroutine should call any DB method after `handler.Shutdown()` returns
+- NO goroutine should call any DB method after `backupMgr.Wait()` returns

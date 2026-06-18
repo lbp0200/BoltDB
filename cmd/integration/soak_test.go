@@ -230,6 +230,7 @@ func TestSoak(t *testing.T) {
 
 	listener.Close()
 	h.Shutdown()
+	backupMgr.Wait()
 	client.Close()
 	pubsubMgr.Clear()
 	db.Close()

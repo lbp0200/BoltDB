@@ -2,6 +2,7 @@ package replication
 
 import (
 	"bufio"
+	"fmt"
 	"strconv"
 	"testing"
 	"time"
@@ -1893,4 +1894,32 @@ func TestExecuteReplicatedCommand_RESTORE_ABSTTL(t *testing.T) {
 	val, err := testStore.Get("newkey")
 	assert.NoError(t, err)
 	assert.Equal(t, "world", val)
+}
+
+// TestErrorsIsStop tests errorsIsStop function
+func TestErrorsIsStop(t *testing.T) {
+	t.Parallel()
+
+	assert.False(t, errorsIsStop(nil, nil))
+
+	err := fmt.Errorf("test error")
+	assert.False(t, errorsIsStop(err, nil))
+
+	stopCh := make(chan struct{})
+	assert.False(t, errorsIsStop(err, stopCh))
+
+	close(stopCh)
+	assert.True(t, errorsIsStop(err, stopCh))
+}
+
+// TestIsTransientReplicationError tests isTransientReplicationError function
+func TestIsTransientReplicationError(t *testing.T) {
+	t.Parallel()
+
+	assert.False(t, isTransientReplicationError(nil))
+	assert.True(t, isTransientReplicationError(fmt.Errorf("max retries exhausted after 3 attempts")))
+	assert.True(t, isTransientReplicationError(fmt.Errorf("write rejected by backpressure")))
+	assert.True(t, isTransientReplicationError(fmt.Errorf("key not found")))
+	assert.False(t, isTransientReplicationError(fmt.Errorf("connection refused")))
+	assert.False(t, isTransientReplicationError(fmt.Errorf("")))
 }

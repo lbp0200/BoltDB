@@ -139,7 +139,7 @@ retryUpdate → preWriteCheck(L0 score) → soft/hard gate → writeSlot semapho
 | PubSub / Monitor | Root context | `ctx.Done()` on `cancel()` |
 | PressureMonitor sampling | Background goroutine | `ctx.Done()` on `cancel()` |
 
-**Invariant**: After `handler.Shutdown()` returns, zero goroutines access the DB.
+**Invariant**: After `backupMgr.Wait()` returns, zero goroutines access the DB.
 
 **Shutdown ordering** (enforced by `main.go`):
 ```

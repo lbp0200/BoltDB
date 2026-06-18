@@ -162,7 +162,7 @@ up.
 ```
 replMgr.Stop() → close slave TCP conns → ReadRESP unblocks
 → cancel() → all goroutines see ctx.Done()
-→ handler.Shutdown() → wg.Wait → 0 goroutines left
+→ handler.Shutdown() → wg.Wait → backupMgr.Wait() → 0 goroutines left
 → db.Close() → safe
 ```
 

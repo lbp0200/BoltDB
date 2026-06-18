@@ -118,6 +118,7 @@ func startRegressionWithDB(t *testing.T, db *store.BotreonStore, backupDir strin
 		// 确保没有 handleConnection/handleSlaveReplicationConnection
 		// 在 db.Close() 之后还访问存储。
 		h.Shutdown()
+		backupMgr.Wait()
 		_ = client.Close()
 		pubsubMgr.Clear()
 		// 注意：不关闭 db——由调用方负责

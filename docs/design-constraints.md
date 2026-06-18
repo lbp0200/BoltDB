@@ -120,7 +120,8 @@ After partition ends:
 2. replMgr.Stop()       → close slave TCP connections → unblock reads
 3. cancel()             → cancel root context → all goroutines see Done
 4. handler.Shutdown()   → close all client TCP conns + wg.Wait()
-5. db.Close()           → deferred — guaranteed: 0 goroutines accessing DB
+5. backupMgr.Wait()     → wait for in-flight BGSAVE goroutine
+6. db.Close()           → deferred — guaranteed: 0 goroutines accessing DB
 ```
 
 **Invariant:** After step 4 returns, exactly zero goroutines may call any DB method.
@@ -201,7 +202,7 @@ Any new feature must answer these questions before merging:
 
 ### 7.4 Lifecycle Impact
 - Does it affect shutdown ordering? → Verify against section 5
-- Does it add new DB access paths? → Must stop before handler.Shutdown() returns
+- Does it add new DB access paths? → Must stop before backupMgr.Wait() returns
 - Does it create new timer/ticker? → Must clean up on ctx.Done()
 
 ### 7.5 Regression Coverage

@@ -336,6 +336,37 @@ gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
 
 > No further development planned. Component freeze effective 2026-06-09.
 
+## 当前工作（2026-06-18）
+
+### Shutdown 序列收束：backupMgr.Wait()
+
+**Status:** WIP — 代码和文档已修改，未提交。
+
+`main.go:157` 已添加 `backupMgr.Wait()` 到关闭序列，确保 BGSAVE goroutine 在 `db.Close()` 前完成。文档已同步更新（design-constraints, shutdown-race, replication/architecture, replication/failure-modes, stability-spec, state-machine, backup_extended_test）。
+
+**已完成（2026-06-18）：**
+- [x] update TODO.md shutdown sequence
+- [x] update shutdown-race.md L28 + design-constraints.md L205 invariant
+- [x] integration tests 补全 backupMgr.Wait()：`regressions/framework.go`, `soak_test.go`, `replication_full_test.go`, `soak_replication_test.go`
+
+### 覆盖率提升
+
+| 包 | 之前覆盖率 | 当前覆盖率 | 目标 |
+|----|-----------|-----------|------|
+| replication | 56.6% | 64.2% | 65%+ |
+| server | 54.4% | 54.4% | 60%+ |
+
+**已完成（2026-06-18）：**
+- [x] `replication` RDB round-trip 测试：GEO / JSON / TimeSeries / Stream（`TestLoadRDB_With*`）
+- [x] `replication` decodeGeoHash / decodeLatLonBits 纯函数直接测试（100% → 100%）
+- [x] `replication` errorsIsStop / isTransientReplicationError 单元测试（0% → 100%）
+- [x] 7 个写/读函数从 0% 提升至 70%-100%（`WriteJSONKeyValue`, `WriteTimeSeriesKeyValue`, `WriteGeoKeyValue`, `WriteStreamKeyValue`, `readJSONInTxn`, `readTimeSeriesInTxn`, `readGeoInTxn`, `readStreamInTxn`）
+
+**待补：**
+- [ ] `server` 错误路径边界 case
+
+---
+
 ## 归档索引
 
 已完成的计划文档在 `docs/plans/archive/`：
