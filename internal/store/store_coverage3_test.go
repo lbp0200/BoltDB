@@ -1,9 +1,11 @@
 package store
 
 import (
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/dgraph-io/badger/v4"
 	"github.com/zeebo/assert"
 )
 
@@ -326,4 +328,45 @@ func TestIsUUIDFormat_Coverage(t *testing.T) {
 	assert.True(t, isUUIDFormat("550e8400-e29b-41d4-a716-446655440000"))
 	assert.False(t, isUUIDFormat(""))
 	assert.False(t, isUUIDFormat("not-a-uuid"))
+}
+
+func TestDecompressZSTD_Coverage(t *testing.T) {
+	t.Parallel()
+	original := []byte(strings.Repeat("compressible data for ZSTD test! ", 200))
+
+	compressed, err := compressZSTD(original)
+	assert.NoError(t, err)
+
+	compressed = compressed[len(compressionMagicZSTD):]
+
+	decompressed, err := decompressZSTD(compressed)
+	assert.NoError(t, err)
+	assert.True(t, len(decompressed) > 0)
+	assert.Equal(t, string(original), string(decompressed))
+}
+
+func TestReadValueInTxn_Coverage(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	mustSet(t, s, "rvt_key", "test_value_for_readtxn")
+
+	err := s.db.View(func(txn *badger.Txn) error {
+		val, err := s.ReadValueInTxn(txn, []byte(s.stringKey("rvt_key")))
+		assert.NoError(t, err)
+		assert.Equal(t, "test_value_for_readtxn", string(val))
+		return nil
+	})
+	assert.NoError(t, err)
+}
+
+func TestDecompressData_Coverage(t *testing.T) {
+	t.Parallel()
+	original := []byte(strings.Repeat("decompress data test ", 50))
+
+	compressed, err := compressZSTD(original)
+	assert.NoError(t, err)
+
+	decompressed, err := DecompressData(compressed)
+	assert.NoError(t, err)
+	assert.Equal(t, string(original), string(decompressed))
 }
