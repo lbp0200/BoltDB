@@ -3,6 +3,7 @@ package helper
 import (
 	"math"
 	"testing"
+	"time"
 
 	"github.com/zeebo/assert"
 )
@@ -105,6 +106,33 @@ func TestBytesToFloat64_InvalidLength(t *testing.T) {
 	// Test with empty slice
 	_, err = BytesToFloat64([]byte{})
 	assert.Error(t, err)
+}
+
+func TestProtectGoroutine(t *testing.T) {
+	t.Run("normal execution", func(t *testing.T) {
+		done := make(chan bool)
+		ProtectGoroutine(func() {
+			done <- true
+		})
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("goroutine did not execute")
+		}
+	})
+
+	t.Run("panic recovery", func(t *testing.T) {
+		done := make(chan bool)
+		ProtectGoroutine(func() {
+			defer func() { done <- true }()
+			panic("test panic")
+		})
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("panic recovery did not complete")
+		}
+	})
 }
 
 func TestInterfaceToBytes(t *testing.T) {
