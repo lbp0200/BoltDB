@@ -356,7 +356,7 @@ gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
 | replication | 64.2% | 65.3% | 65%+ ✅ |
 | server | 56.3% | **60.8%** | 60%+ ✅ |
 | sentinel | 61.1% | **76.8%** | — |
-| store | 61.1% | **61.2%** | — |
+| store | 61.1% | **67.6%** | — |
 
 **已完成（2026-06-18）：**
 - [x] `replication` RDB round-trip 测试：GEO / JSON / TimeSeries / Stream（`TestLoadRDB_With*`）
@@ -403,6 +403,17 @@ gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
   - 所有 metrics.go 计时函数（DetectionLatency/ElectionDuration/RecoveryDuration/LeaderStabilization/GossipPropagationTime/SdownTimestamp/ODownTimestamp/FailoverStartTime/NewMasterTime）
   - newConfigManager / Save / Load / handler.Stop / gossip.AddPeer
 - [x] `store` 6 个函数 0%→100%（GetTotalSubscriberCount/GetBlockedClientCount/NewBadgerStoreWithCompression/RLock/RUnlock/NewKeyLockManager）
+
+**已完成（2026-06-18 v6）：**
+- [x] `store` 覆盖率从 **61.3% → 67.6%**（+6.3%），33 个函数 0%→100%：
+  - TTL 家族（Expire/ExpireAt/PExpire/PExpireAt/TTL/PTTL/Persist）7 个
+  - 元操作（Rename/RenameNX/DelString）3 个
+  - 扫描（Keys/Scan/RandomKey）3 个
+  - 内省（MemoryUsage/ObjectRefCount/ObjectEncoding/ObjectIdleTime）4 个
+  - 时间（Time/NextStartup）2 个
+  - 生命周期（FlushDB/ClearAllData/ClearCaches/CloseWithTimeout/IterateRawKeys/GetDB）6 个
+  - 序列化（Dump/Restore/writeRDBString/writeRDBBytes）4 个
+  - 其他（GetRetryMetrics/SetBackpressureConfig/GetBackpressureConfig/LRU Cache.Clear/collectAllKeys）5 个
 - [x] 所有 11 个 internal 包测试通过 + linter clean
 
 **待补（低优先）：**
