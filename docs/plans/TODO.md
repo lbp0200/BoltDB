@@ -359,6 +359,12 @@ gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
 
 - [x] **TODO.md 修正**：backupMgr.Wait() 的 "WIP — 未提交" 状态改为 COMPLETE（实际在 `b7e6e1f` 已提交）。
 
+### Sentinel 死锁修复（2026-06-18）— committed `944f055`
+
+- [x] **checkMaster 自死锁**：`mi.mu.Lock()` 后调用 `CanFailover()`（试图获取 `mi.mu.RLock`）和 `RecordFailover()`（试图获取 `mi.mu.Lock`）。Go 的 RWMutex 不可重入，导致永久死锁。修复：在 Lock 前读取 `lastFailoverTime`/`failoverCooldown`，内联检查；`BroadcastSdown` 移出 Lock 区域，传 `sdownCount` 直接避免嵌套 RLock。
+
+  **影响**：CI `TestSentinelFailoverConvergence` 之前阻塞 21 分钟导致 1500s 超时，整个 `cmd/integration` 包被拖垮。此修复应使集成测试时间从 1500s+ 降至正常水平。
+
 ### 覆盖率提升 — 0 个 0% 函数剩余 🎉
 
 **已完成（2026-06-18 v10）：**
