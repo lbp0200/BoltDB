@@ -245,6 +245,29 @@ func TestWriteRESP(t *testing.T) {
 			resp:     &Array{Args: [][]byte{[]byte("OK")}},
 			expected: "*1\r\n$2\r\nOK\r\n",
 		},
+		{
+			name:     "nil bulk string",
+			resp:     NewBulkString(nil),
+			expected: "$-1\r\n",
+		},
+		{
+			name:     "nested array",
+			resp: &NestedArray{Elems: []RESP{
+				NewSimpleString("a"),
+				NewInteger(42),
+			}},
+			expected: "*2\r\n+a\r\n:42\r\n",
+		},
+		{
+			name:     "nil array",
+			resp:     NilArray{},
+			expected: "*-1\r\n",
+		},
+		{
+			name:     "raw string",
+			resp:     RawString("+CUSTOM\r\n"),
+			expected: "+CUSTOM\r\n",
+		},
 	}
 
 	for _, tt := range tests {
@@ -630,6 +653,12 @@ func TestReadRESP_TruncatedInlineCommand(t *testing.T) {
 }
 
 // TestNewScanResponse tests NewScanResponse function
+func TestNilArrayString(t *testing.T) {
+	t.Parallel()
+	n := NilArray{}
+	assert.Equal(t, "*-1\r\n", n.String())
+}
+
 func TestNewScanResponse(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
