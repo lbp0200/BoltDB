@@ -69,9 +69,11 @@ jobs:
 
       - name: Run stable integration tests (PR hard gate)
         run: |
-          go test -race -timeout 1200s \
+          go test -race -timeout 1500s \
             -skip 'TestSoak$|TestSoakReplication$|FuzzServerConcurrent$|FuzzServerCommandSequence|TestRegressionFailoverOscillation|TestSoakReplicationShortStrict' \
-            ./cmd/integration/...
+            ./cmd/integration/
+          go test -race -timeout 600s \
+            ./cmd/integration/regressions/
 
       - name: Restore evolution history
         uses: actions/cache@v4

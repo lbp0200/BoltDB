@@ -355,7 +355,7 @@ gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
 
 - [x] **CI stderr 抑制修复**：`.github/workflows/go.yml` 测试步骤 `2>/dev/null` → `2>&1`。原配置隐藏 race detector 输出，使 -race 检测到的数据竞争完全不可见。
 
-- [x] **CI 集成测试超时提升**：`go.yml` 集成测试 `-timeout 600s` → `1200s`（20m）。CI runner 构建+执行 `-race` 的 `cmd/integration/...` 需时较长（~15min 纯测试），1200s 给足够余量。
+- [x] **CI 集成测试拆分+超时提升**：`go.yml` 集成测试拆分为 `cmd/integration/` + `cmd/integration/regressions/` 两个独立 `go test` 调用，各自有独立 timeout。主包 `-timeout 1500s`（25min），regressions 包 `-timeout 600s`（10min）。独立调用避免主包超时拖累 regressions。
 
 - [x] **TODO.md 修正**：backupMgr.Wait() 的 "WIP — 未提交" 状态改为 COMPLETE（实际在 `b7e6e1f` 已提交）。
 
