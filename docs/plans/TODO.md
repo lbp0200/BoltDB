@@ -344,6 +344,21 @@ gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
 - [x] **TestRegressionPsyncReconnectNoLoss 假阳性**：bounded duplicate window 内（≤2 条）的个别 MISSING key 使用 `t.Errorf` 而非 `t.Logf`，使测试即使在容忍范围内也标记为 FAIL。修复：容忍范围内的 missing/extra key 使用 `t.Logf`，超出容忍才 `t.Errorf`。
 - [x] **remote-test.sh 双主机支持**：自动检测可达的远程主机（公司 10.1.2.16 / 家庭 192.168.1.251），消除手动配置依赖。
 
+### CI 改进 + TCP Keepalive（2026-06-18）— committed `a87daba`
+
+- [x] **TCP keepalive for 复制连接**：三个入口添加 `SetKeepAlive(true)` + `SetKeepAlivePeriod(10s)`：
+  - `dialMaster()`（slave→master 重连连接）
+  - `NewMasterConnection()`（slave→master 连接）
+  - `NewSlaveConnection()`（master←slave 接受连接）
+  
+  无 keepalive 时，死连接需 2+ 小时（Linux 默认 TCP keepalive）才能检测到。10s 间隔下，死连接在 ~30-40s 内被检测到（3 次探测失败），避免 slave 在失效 ReadRESP 上无限阻塞。
+
+- [x] **CI stderr 抑制修复**：`.github/workflows/go.yml` 测试步骤 `2>/dev/null` → `2>&1`。原配置隐藏 race detector 输出，使 -race 检测到的数据竞争完全不可见。
+
+- [x] **CI 集成测试超时提升**：`go.yml` 集成测试 `-timeout 600s` → `900s`。CI runner 构建+执行 `-race` 的 `cmd/integration/...` 需时较长（~17min 含编译），600s 不够。
+
+- [x] **TODO.md 修正**：backupMgr.Wait() 的 "WIP — 未提交" 状态改为 COMPLETE（实际在 `b7e6e1f` 已提交）。
+
 ### 覆盖率提升 — 0 个 0% 函数剩余 🎉
 
 **已完成（2026-06-18 v10）：**

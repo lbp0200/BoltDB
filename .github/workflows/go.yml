@@ -69,7 +69,7 @@ jobs:
 
       - name: Run stable integration tests (PR hard gate)
         run: |
-          go test -race -timeout 600s \
+          go test -race -timeout 900s \
             -skip 'TestSoak$|TestSoakReplication$|FuzzServerConcurrent$|FuzzServerCommandSequence|TestRegressionFailoverOscillation|TestSoakReplicationShortStrict' \
             ./cmd/integration/...
 
