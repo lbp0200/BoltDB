@@ -356,7 +356,7 @@ gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
 | replication | 64.2% | 65.3% | 65%+ ✅ |
 | server | 56.3% | **60.8%** | 60%+ ✅ |
 | sentinel | 61.1% | **76.8%** | — |
-| store | 61.1% | **67.6%** | — |
+| store | 61.1% | **71.6%** | — |
 | logger | 76.3% | **97.4%** | — |
 
 **已完成（2026-06-18）：**
@@ -423,9 +423,25 @@ gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
   - DebugWith / InfoWith / WarningWith / ErrorWith 带字段函数
 - [x] 所有 11 个 internal 包测试通过 + linter clean
 
-**待补（低优先）：**
-- [ ] `server` 剩余 未覆盖代码：`handlePSyncWithRDB`（0%）、`handleSlaveReplicationConnection`（0%）、`runMonitorLoop`（93.9%）→ 需要集成级/复制环境
-- [ ] `sentinel` 剩余 未覆盖：updateConfiguration（0%）、waitForRole（0%）→ 需要集成级 failover 环境
+**已完成（2026-06-18 v8）：**
+- [x] `store` 覆盖率从 **67.6% → 71.6%**（+4.0%），15 个函数 0%→100%：
+  - Geo：GeoSearch/GeoDel/GeoRemove/GeoGetHash/GeoGetAllDistances 5 个
+  - ZSet：ZMPop/ZDiff/ZRandMember 3 个
+  - List：LMPop 1 个
+  - Stream：CreateEmptyStream 1 个
+  - 批量：SetStringBatch 1 个
+  - 其他：LRU Cache.Size/PubSub.Clear/isUUIDFormat 3 个
+  - partial: GeoSearchStore/GAGeoGetAllHashes/GeoGetAllPositions/HScan
+- [x] 所有 11 个 internal 包测试通过 + linter clean
+
+**剩余 0%（均需特殊条件）：**
+- `store` 内部辅助：deleteByPrefix/copyKeysByPrefix/getListData/checkDataExists/readRDBExpireTime/restoreLegacy
+- `store` 阻塞操作：registerBlockingPop/BRPOPLPUSHBlocking/BLMoveBlocking/unregisterBlockingZPop/registerAndRecheckZMax/registerAndRecheckZMin
+- `store` 压缩边缘：decompressZSTD/ReadValueInTxn/DecompressData
+- `store` RDB 恢复：RestoreHLL
+- `server` 复制：handlePSyncWithRDB/handleSlaveReplicationConnection/runMonitorLoop(93.9%)
+- `sentinel` 故障转移：updateConfiguration/waitForRole
+- `replication` 重连：sendHandshake/sendPSYNC/readCommandLoop/writeRespToMaster/readUntilEOF/Lock/Unlock/WriteAndFlush
 
 ---
 
