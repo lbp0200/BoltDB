@@ -357,6 +357,7 @@ gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
 | server | 56.3% | **60.8%** | 60%+ ✅ |
 | sentinel | 61.1% | **76.8%** | — |
 | store | 61.1% | **67.6%** | — |
+| logger | 76.3% | **97.4%** | — |
 
 **已完成（2026-06-18）：**
 - [x] `replication` RDB round-trip 测试：GEO / JSON / TimeSeries / Stream（`TestLoadRDB_With*`）
@@ -414,6 +415,12 @@ gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
   - 生命周期（FlushDB/ClearAllData/ClearCaches/CloseWithTimeout/IterateRawKeys/GetDB）6 个
   - 序列化（Dump/Restore/writeRDBString/writeRDBBytes）4 个
   - 其他（GetRetryMetrics/SetBackpressureConfig/GetBackpressureConfig/LRU Cache.Clear/collectAllKeys）5 个
+- [x] 所有 11 个 internal 包测试通过 + linter clean
+
+**已完成（2026-06-18 v7）：**
+- [x] `logger` 覆盖率从 **76.3% → 97.4%**（+21.1%），8 个函数 0%→100%：
+  - Debug / Info / Warning / Error 写函数
+  - DebugWith / InfoWith / WarningWith / ErrorWith 带字段函数
 - [x] 所有 11 个 internal 包测试通过 + linter clean
 
 **待补（低优先）：**
