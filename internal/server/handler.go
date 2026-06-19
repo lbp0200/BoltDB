@@ -7796,7 +7796,10 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 	case "DEL":
 		count := int64(0)
 		for _, arg := range args {
-			deleted, _ := h.Db.Del(string(arg))
+			deleted, err := h.Db.Del(string(arg))
+			if err != nil {
+				return wrapStoreError(err)
+			}
 			count += deleted
 		}
 		return proto.NewInteger(count)
@@ -7819,7 +7822,7 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		delta, _ := strconv.ParseInt(string(args[1]), 10, 64)
 		val, err := h.Db.INCRBY(key, delta)
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapStoreError(err)
 		}
 		return proto.NewInteger(val)
 	case "DECRBY":
@@ -7832,15 +7835,24 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		return proto.NewInteger(val)
 	case "APPEND":
 		key, value := string(args[0]), string(args[1])
-		length, _ := h.Db.APPEND(key, value)
+		length, err := h.Db.APPEND(key, value)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		return proto.NewInteger(int64(length))
 	case "STRLEN":
 		key := string(args[0])
-		length, _ := h.Db.StrLen(key)
+		length, err := h.Db.StrLen(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		return proto.NewInteger(int64(length))
 	case "EXISTS":
 		key := string(args[0])
-		exists, _ := h.Db.Exists(key)
+		exists, err := h.Db.Exists(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		if exists {
 			return proto.NewInteger(1)
 		}
@@ -7848,25 +7860,37 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 	case "EXPIRE":
 		key := string(args[0])
 		seconds, _ := strconv.Atoi(string(args[1]))
-		success, _ := h.Db.Expire(key, seconds)
+		success, err := h.Db.Expire(key, seconds)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		if success {
 			return proto.NewInteger(1)
 		}
 		return proto.NewInteger(0)
 	case "TTL":
 		key := string(args[0])
-		ttl, _ := h.Db.TTL(key)
+		ttl, err := h.Db.TTL(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		return proto.NewInteger(ttl)
 	case "PERSIST":
 		key := string(args[0])
-		success, _ := h.Db.Persist(key)
+		success, err := h.Db.Persist(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		if success {
 			return proto.NewInteger(1)
 		}
 		return proto.NewInteger(0)
 	case "TYPE":
 		key := string(args[0])
-		keyType, _ := h.Db.Type(key)
+		keyType, err := h.Db.Type(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		return proto.NewSimpleString(keyType)
 	case "LPUSH":
 		key := string(args[0])
@@ -7874,7 +7898,10 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		for i := 1; i < len(args); i++ {
 			values[i-1] = string(args[i])
 		}
-		count, _ := h.Db.LPush(key, values...)
+		count, err := h.Db.LPush(key, values...)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		return proto.NewInteger(int64(count))
 	case "RPUSH":
 		key := string(args[0])
@@ -7882,31 +7909,46 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		for i := 1; i < len(args); i++ {
 			values[i-1] = string(args[i])
 		}
-		count, _ := h.Db.RPush(key, values...)
+		count, err := h.Db.RPush(key, values...)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		return proto.NewInteger(int64(count))
 	case "LPOP":
 		key := string(args[0])
-		val, _ := h.Db.LPop(key)
+		val, err := h.Db.LPop(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		if val == "" {
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString([]byte(val))
 	case "RPOP":
 		key := string(args[0])
-		val, _ := h.Db.RPop(key)
+		val, err := h.Db.RPop(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		if val == "" {
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString([]byte(val))
 	case "LLEN":
 		key := string(args[0])
-		length, _ := h.Db.LLen(key)
+		length, err := h.Db.LLen(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		return proto.NewInteger(int64(length))
 	case "LRANGE":
 		key := string(args[0])
 		start, _ := strconv.ParseInt(string(args[1]), 10, 64)
 		stop, _ := strconv.ParseInt(string(args[2]), 10, 64)
-		items, _ := h.Db.LRange(key, start, stop)
+		items, err := h.Db.LRange(key, start, stop)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		results := make([][]byte, len(items))
 		for i, item := range items {
 			results[i] = []byte(item)
@@ -7921,14 +7963,20 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		return proto.NewInteger(1)
 	case "HGET":
 		key, field := string(args[0]), string(args[1])
-		val, _ := h.Db.HGet(key, field)
-		if len(val) == 0 {
+		val, err := h.Db.HGet(key, field)
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
+		if err != nil || val == nil {
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString(val)
 	case "HGETALL":
 		key := string(args[0])
-		data, _ := h.Db.HGetAll(key)
+		data, err := h.Db.HGetAll(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		flatArgs := make([][]byte, 0)
 		for k, v := range data {
 			flatArgs = append(flatArgs, []byte(k), []byte(v))
@@ -7940,7 +7988,10 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		for i := 1; i < len(args); i++ {
 			fields[i-1] = string(args[i])
 		}
-		count, _ := h.Db.HDel(key, fields...)
+		count, err := h.Db.HDel(key, fields...)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		return proto.NewInteger(int64(count))
 	case "SADD":
 		key := string(args[0])
@@ -7948,11 +7999,17 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		for i := 1; i < len(args); i++ {
 			members[i-1] = string(args[i])
 		}
-		count, _ := h.Db.SAdd(key, members...)
+		count, err := h.Db.SAdd(key, members...)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		return proto.NewInteger(int64(count))
 	case "SMEMBERS":
 		key := string(args[0])
-		members, _ := h.Db.SMembers(key)
+		members, err := h.Db.SMembers(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		results := make([][]byte, len(members))
 		for i, m := range members {
 			results[i] = []byte(m)
@@ -7960,14 +8017,20 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		return &proto.Array{Args: results}
 	case "SISMEMBER":
 		key, member := string(args[0]), string(args[1])
-		exists, _ := h.Db.SIsMember(key, member)
+		exists, err := h.Db.SIsMember(key, member)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		if exists {
 			return proto.NewInteger(1)
 		}
 		return proto.NewInteger(0)
 	case "SCARD":
 		key := string(args[0])
-		count, _ := h.Db.SCard(key)
+		count, err := h.Db.SCard(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		return proto.NewInteger(int64(count))
 	case "SREM":
 		key := string(args[0])
@@ -7975,7 +8038,10 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		for i := 1; i < len(args); i++ {
 			members[i-1] = string(args[i])
 		}
-		count, _ := h.Db.SRem(key, members...)
+		count, err := h.Db.SRem(key, members...)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		return proto.NewInteger(int64(count))
 	case "ZADD":
 		key := string(args[0])
@@ -7991,20 +8057,35 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 	case "ZREM":
 		key := string(args[0])
 		member := string(args[1])
-		_, _ = h.Db.ZRem(key, member)
-		return proto.NewInteger(1)
+		count, err := h.Db.ZRem(key, member)
+		if err != nil {
+			return wrapStoreError(err)
+		}
+		return proto.NewInteger(count)
 	case "ZCARD":
 		key := string(args[0])
-		count, _ := h.Db.ZCard(key)
+		count, err := h.Db.ZCard(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		return proto.NewInteger(int64(count))
 	case "ZSCORE":
 		key, member := string(args[0]), string(args[1])
-		score, _, _ := h.Db.ZScore(key, member)
+		score, exists, err := h.Db.ZScore(key, member)
+		if err != nil {
+			return wrapStoreError(err)
+		}
+		if !exists {
+			return proto.NewBulkString(nil)
+		}
 		return proto.NewBulkString([]byte(strconv.FormatFloat(score, 'f', -1, 64)))
 	case "ZINCRBY":
 		key, member := string(args[0]), string(args[2])
 		delta, _ := strconv.ParseFloat(string(args[1]), 64)
-		newScore, _ := h.Db.ZIncrBy(key, member, delta)
+		newScore, err := h.Db.ZIncrBy(key, member, delta)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		return proto.NewBulkString([]byte(strconv.FormatFloat(newScore, 'f', -1, 64)))
 	default:
 		return proto.NewError(fmt.Sprintf("ERR command '%s' not supported in transaction", cmd))
