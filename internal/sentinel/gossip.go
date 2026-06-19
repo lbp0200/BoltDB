@@ -352,13 +352,6 @@ func (gp *GossipProtocol) touchPeer(addr string) {
 	}
 }
 
-//nolint:unused
-func (gp *GossipProtocol) removePeer(addr string) {
-	gp.mu.Lock()
-	defer gp.mu.Unlock()
-	delete(gp.peers, addr)
-}
-
 // managePeers 管理对等体连接
 func (gp *GossipProtocol) managePeers() {
 	ticker := time.NewTicker(gp.config.HelloInterval)

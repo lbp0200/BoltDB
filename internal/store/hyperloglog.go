@@ -111,17 +111,6 @@ func (h *HyperLogLog) add(data []byte) bool {
 	return false
 }
 
-//nolint:unused
-func (h *HyperLogLog) count() int {
-	count := 0
-	for _, reg := range h.registers {
-		if decodeRegister(reg) > 0 {
-			count++
-		}
-	}
-	return count
-}
-
 // hashData 计算数据的哈希值
 func hashData(data []byte) uint64 {
 	h := fnv.New64a()

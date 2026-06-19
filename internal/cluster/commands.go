@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/lbp0200/BoltDB/internal/logger"
 )
 
 // ClusterCommands 处理CLUSTER命令
@@ -283,7 +285,9 @@ func (cc *ClusterCommands) handleReplicate(args []string) (string, error) {
 	cc.cluster.Myself.Slots = []SlotRange{}
 	cc.cluster.mu.Unlock()
 
-	_ = cc.cluster.SaveConfig()
+	if err := cc.cluster.SaveConfig(); err != nil {
+		logger.Logger.Warn().Err(err).Msg("CLUSTER SETSLOT: failed to persist config")
+	}
 	return "OK", nil
 }
 

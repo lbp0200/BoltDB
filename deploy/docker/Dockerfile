@@ -39,12 +39,12 @@ RUN chown -R bolt:bolt /data
 USER bolt
 
 # Expose default port
-EXPOSE 6379
+EXPOSE 6337
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD redis-cli -p 6379 PING || exit 1
+    CMD redis-cli -p 6337 PING || exit 1
 
 # Default command
 ENTRYPOINT ["bolt"]
-CMD ["-addr", ":6379", "-dir", "/data", "-log-level", "info"]
+CMD ["-addr", ":6337", "-dir", "/data", "-log-level", "info"]

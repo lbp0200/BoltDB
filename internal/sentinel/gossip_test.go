@@ -110,6 +110,13 @@ func TestGossipProtocol_AddUpdatePeer(t *testing.T) {
 	assert.Equal(t, 1, count)
 }
 
+// removePeer removes a peer from the gossip protocol (test helper)
+func (gp *GossipProtocol) removePeer(addr string) {
+	gp.mu.Lock()
+	defer gp.mu.Unlock()
+	delete(gp.peers, addr)
+}
+
 // TestGossipProtocol_RemovePeer tests removePeer
 func TestGossipProtocol_RemovePeer(t *testing.T) {
 	t.Parallel()

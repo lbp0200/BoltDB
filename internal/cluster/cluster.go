@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/lbp0200/BoltDB/internal/logger"
 	"github.com/lbp0200/BoltDB/internal/store"
 )
 
@@ -94,7 +95,9 @@ func (c *Cluster) AddNode(node *Node) {
 	c.mu.Lock()
 	c.Nodes[node.ID] = node
 	c.mu.Unlock()
-	_ = c.SaveConfig() // 持久化
+	if err := c.SaveConfig(); err != nil {
+		logger.Logger.Warn().Err(err).Str("nodeID", node.ID).Msg("AddNode: failed to persist config")
+	}
 }
 
 // RemoveNode 从集群中移除节点
@@ -108,7 +111,9 @@ func (c *Cluster) RemoveNode(nodeID string) {
 		}
 	}
 	c.mu.Unlock()
-	_ = c.SaveConfig()
+	if err := c.SaveConfig(); err != nil {
+		logger.Logger.Warn().Err(err).Str("nodeID", nodeID).Msg("RemoveNode: failed to persist config")
+	}
 }
 
 // AssignSlot 将槽位分配给指定节点

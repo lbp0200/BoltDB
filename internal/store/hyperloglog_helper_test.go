@@ -4,6 +4,17 @@ import (
 	"testing"
 )
 
+// count returns the number of non-zero registers in the HLL (test helper)
+func (h *HyperLogLog) count() int {
+	count := 0
+	for _, reg := range h.registers {
+		if decodeRegister(reg) > 0 {
+			count++
+		}
+	}
+	return count
+}
+
 // TestHyperLogLogEncodeDecode tests encodeRegister and decodeRegister
 func TestHyperLogLogEncodeDecode(t *testing.T) {
 	t.Parallel()
