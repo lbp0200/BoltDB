@@ -8,20 +8,6 @@ import (
 	"github.com/zeebo/assert"
 )
 
-func TestNetwork_SendPing(t *testing.T) {
-	t.Parallel()
-	ok, err := SendPing("invalid-address")
-	assert.Error(t, err)
-	assert.False(t, ok)
-}
-
-func TestNetwork_SendInfoReplication(t *testing.T) {
-	t.Parallel()
-	info, err := SendInfoReplication("invalid-address")
-	assert.Error(t, err)
-	assert.Equal(t, "", info)
-}
-
 func TestNetwork_GetRole(t *testing.T) {
 	t.Parallel()
 	role, err := GetRole("invalid-address")

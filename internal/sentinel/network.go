@@ -132,67 +132,6 @@ func SendReplicaOf(slaveAddr, masterAddr string) error {
 	return nil
 }
 
-// SendPing 发送PING命令检查节点是否存活
-func SendPing(addr string) (bool, error) {
-	sc, err := NewSentinelConnection(addr)
-	if err != nil {
-		return false, err
-	}
-	defer func() {
-		if err := sc.Close(); err != nil {
-			logger.Logger.Debug().Err(err).Msg("Failed to close sentinel connection")
-		}
-	}()
-
-	// 发送 PING
-	cmd := "*1\r\n$4\r\nPING\r\n"
-	if err := sc.SendCommand(cmd); err != nil {
-		return false, err
-	}
-
-	// 读取响应
-	resp, err := sc.ReadResponse()
-	if err != nil {
-		return false, err
-	}
-
-	return strings.HasPrefix(resp, "+PONG") || resp == "+PONG", nil
-}
-
-// SendInfoReplication 发送 INFO replication 命令获取复制信息
-func SendInfoReplication(addr string) (string, error) {
-	sc, err := NewSentinelConnection(addr)
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		if err := sc.Close(); err != nil {
-			logger.Logger.Debug().Err(err).Msg("Failed to close sentinel connection")
-		}
-	}()
-
-	// 发送 INFO replication
-	cmd := "*2\r\n$4\r\nINFO\r\n$11\r\nreplication\r\n"
-	if err := sc.SendCommand(cmd); err != nil {
-		return "", err
-	}
-
-	// 读取响应（多行）
-	var resp strings.Builder
-	for {
-		line, err := sc.reader.ReadString('\n')
-		if err != nil {
-			break
-		}
-		resp.WriteString(line)
-		if line == "\r\n" || line == "\n" {
-			break
-		}
-	}
-
-	return resp.String(), nil
-}
-
 // GetRole 获取节点角色
 func GetRole(addr string) (string, error) {
 	sc, err := NewSentinelConnection(addr)

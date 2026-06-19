@@ -420,7 +420,7 @@ async function startBoltdb() {
   }
 
   const binary = join(dataDir, "boltDB");
-  execSync(`go build -a -o ${binary} cmd/boltDB/main.go`, {
+  execSync(`go build -o ${binary} cmd/boltDB/main.go`, {
     cwd: REPO_ROOT,
     stdio: "pipe",
   });
