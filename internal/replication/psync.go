@@ -1168,6 +1168,7 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 				}
 			}
 			var members []store.ZSetMember
+			var zErr error
 			if byLex {
 				lexMembers, lErr := s.ZRangeByLex(srcKey, min, max, int(limitOffset), int(limitCount))
 				if lErr != nil {
@@ -1180,7 +1181,10 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			} else if byScore {
 				minScore, _ := strconv.ParseFloat(min, 64)
 				maxScore, _ := strconv.ParseFloat(max, 64)
-				members, _ = s.ZRangeByScore(srcKey, minScore, maxScore, int(limitOffset), int(limitCount), false, false)
+				members, zErr = s.ZRangeByScore(srcKey, minScore, maxScore, int(limitOffset), int(limitCount), false, false)
+				if zErr != nil {
+					return zErr
+				}
 			} else {
 				start, _ := strconv.ParseInt(min, 10, 64)
 				stop, _ := strconv.ParseInt(max, 10, 64)
@@ -1208,7 +1212,9 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 					members[i], members[j] = members[j], members[i]
 				}
 			}
-			_, _ = s.Del(dstKey)
+			if _, dErr := s.Del(dstKey); dErr != nil {
+				logger.Logger.Warn().Err(dErr).Str("dstKey", dstKey).Msg("ZRANGESTORE: failed to clear destination before ZAdd")
+			}
 			if len(members) > 0 {
 				return s.ZAdd(dstKey, members)
 			}
@@ -1237,7 +1243,10 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			if tErr != nil || srcType == "none" {
 				return nil
 			}
-			dstExists, _ := s.Exists(dstKey)
+			dstExists, dErr := s.Exists(dstKey)
+			if dErr != nil {
+				logger.Logger.Warn().Err(dErr).Str("dstKey", dstKey).Msg("COPY: Exists check failed, proceeding with copy")
+			}
 			if dstExists && !replace {
 				return nil
 			}
@@ -1254,7 +1263,9 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 					return lErr
 				}
 				if length == 0 {
-					_, _ = s.Del(dstKey)
+					if _, dErr := s.Del(dstKey); dErr != nil {
+						logger.Logger.Warn().Err(dErr).Str("dstKey", dstKey).Msg("COPY: failed to clear empty list destination")
+					}
 					return nil
 				}
 				items, lrErr := s.LRange(srcKey, 0, int64(length))
@@ -1264,7 +1275,9 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 				if len(items) == 0 {
 					return nil
 				}
-				_, _ = s.Del(dstKey)
+				if _, dErr := s.Del(dstKey); dErr != nil {
+					logger.Logger.Warn().Err(dErr).Str("dstKey", dstKey).Msg("COPY: failed to clear list destination before RPush")
+				}
 				_, rErr := s.RPush(dstKey, items...)
 				return rErr
 			case "hash":
@@ -1275,7 +1288,9 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 				if len(data) == 0 {
 					return nil
 				}
-				_, _ = s.Del(dstKey)
+				if _, dErr := s.Del(dstKey); dErr != nil {
+					logger.Logger.Warn().Err(dErr).Str("dstKey", dstKey).Msg("COPY: failed to clear hash destination before HMSet")
+				}
 				fv := make(map[string]interface{}, len(data))
 				for k, v := range data {
 					fv[k] = string(v)
@@ -1289,7 +1304,9 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 				if len(members) == 0 {
 					return nil
 				}
-				_, _ = s.Del(dstKey)
+				if _, dErr := s.Del(dstKey); dErr != nil {
+					logger.Logger.Warn().Err(dErr).Str("dstKey", dstKey).Msg("COPY: failed to clear set destination before SAdd")
+				}
 				_, addErr := s.SAdd(dstKey, members...)
 				return addErr
 			case "zset":
@@ -1300,7 +1317,9 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 				if len(zMembers) == 0 {
 					return nil
 				}
-				_, _ = s.Del(dstKey)
+				if _, dErr := s.Del(dstKey); dErr != nil {
+					logger.Logger.Warn().Err(dErr).Str("dstKey", dstKey).Msg("COPY: failed to clear zset destination before ZAdd")
+				}
 				zAdd := make([]store.ZSetMember, len(zMembers))
 				for i, m := range zMembers {
 					zAdd[i] = store.ZSetMember{Score: m.Score, Member: m.Member}
@@ -1645,7 +1664,10 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 		}
 
 		// 获取源数据
-		keyType, _ := s.Type(key)
+		keyType, tErr := s.Type(key)
+		if tErr != nil {
+			return fmt.Errorf("SORT: failed to get type for key %s: %w", key, tErr)
+		}
 		var values []string
 		var scores []float64
 
@@ -1665,10 +1687,16 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 				values = []string{}
 			}
 		case "string":
-			val, _ := s.Get(key)
+			val, gErr := s.Get(key)
+			if gErr != nil {
+				return fmt.Errorf("SORT: failed to get string key %s: %w", key, gErr)
+			}
 			values = []string{val}
 		case "zset":
-			members, _ := s.ZRange(key, 0, -1)
+			members, zErr := s.ZRange(key, 0, -1)
+			if zErr != nil {
+				return fmt.Errorf("SORT: failed to ZRange key %s: %w", key, zErr)
+			}
 			for _, m := range members {
 				values = append(values, m.Member)
 				scores = append(scores, m.Score)
@@ -1682,7 +1710,10 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			weights := make([]float64, len(values))
 			for idx, val := range values {
 				targetKey := strings.Replace(byPattern, "*", val, 1)
-				weightVal, _ := s.Get(targetKey)
+				weightVal, wErr := s.Get(targetKey)
+				if wErr != nil {
+					logger.Logger.Warn().Err(wErr).Str("key", targetKey).Msg("SORT BY: failed to get weight key, using default")
+				}
 				if weightVal != "" {
 					if f, parseErr := strconv.ParseFloat(weightVal, 64); parseErr == nil {
 						weights[idx] = f
@@ -1749,9 +1780,13 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 		}
 
 		// STORE — 存为 list
-		_, _ = s.Del(destKey)
+		if _, dErr := s.Del(destKey); dErr != nil {
+			logger.Logger.Warn().Err(dErr).Str("destKey", destKey).Msg("SORT STORE: failed to clear destination")
+		}
 		for _, v := range values {
-			_, _ = s.RPush(destKey, v)
+			if _, rErr := s.RPush(destKey, v); rErr != nil {
+				return fmt.Errorf("SORT STORE: failed to RPush to %s: %w", destKey, rErr)
+			}
 		}
 
 	default:
