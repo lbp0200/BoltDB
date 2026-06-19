@@ -31,12 +31,12 @@ Choose your platform:
 
 ```bash
 # macOS
-brew install lbp0200/bolt/bolt
+brew install lbp0200/boltdb/boltdb
 
 # Docker (build from source)
 cd deploy/docker
-docker build -t lbp0200/bolt:latest .
-docker run -d -p 6379:6379 -v /tmp/bolt:/data lbp0200/bolt:latest
+docker build -t lbp0200/boltDB:latest .
+docker run -d -p 6337:6337 -v /tmp/bolt:/data lbp0200/boltDB:latest
 
 # Ubuntu/Debian
 sudo dpkg -i boltdb_*.deb

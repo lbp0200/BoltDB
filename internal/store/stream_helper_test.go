@@ -5,6 +5,11 @@ import (
 	"testing"
 )
 
+// streamPendingKey returns the key for a stream's pending entries.
+func streamPendingKey(key, group string) []byte {
+	return []byte(prefixStream + key + streamPending + ":" + group)
+}
+
 // TestParseStreamID tests parseStreamID
 func TestParseStreamID(t *testing.T) {
 	t.Parallel()

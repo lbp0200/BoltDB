@@ -1,7 +1,6 @@
 package store
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -97,21 +96,6 @@ func geoHashToString(hash uint64) string {
 	return result.String()
 }
 
-//nolint:unused
-func stringToGeoHash(s string) (uint64, error) {
-	const base32Chars = "0123456789bcdefghjkmnpqrstuvwxyz"
-	var hash uint64
-	for i := len(s) - 1; i >= 0; i-- {
-		c := s[i]
-		idx := bytes.IndexByte([]byte(base32Chars), c)
-		if idx == -1 {
-			return 0, errors.New("invalid geohash character")
-		}
-		hash = (hash << 5) | uint64(idx)
-	}
-	return hash, nil
-}
-
 // calculateDistance calculates distance between two points using Haversine formula
 func calculateDistance(lat1, lon1, lat2, lon2 float64) float64 {
 	lat1Rad := lat1 * math.Pi / 180
@@ -134,11 +118,6 @@ func geoKey(key string) []byte {
 // geoIndexKey returns the key for storing a member's geohash
 func geoIndexKey(key, member string) []byte {
 	return []byte(prefixKeyGeoBytes + key + geoIndex + ":" + member)
-}
-
-//nolint:unused
-func geoMembersKey(key string) []byte {
-	return []byte(prefixKeyGeoBytes + key + geoMembers + ":")
 }
 
 // geoHashToCoordKey returns the key for storing hash -> member mapping

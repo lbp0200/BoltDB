@@ -2,10 +2,29 @@ package server
 
 import (
 	"math"
+	"strconv"
 	"testing"
 
 	"github.com/zeebo/assert"
 )
+
+// parseScore parses Redis-style score bounds including special values
+func parseScore(s string) (float64, error) {
+	switch s {
+	case "-inf":
+		return float64(math.Inf(-1)), nil
+	case "+inf", "inf":
+		return float64(math.Inf(1)), nil
+	case "-inf(", "-inf[":
+		return float64(math.Inf(-1)), nil
+	case "+inf(", "+inf[":
+		return float64(math.Inf(1)), nil
+	}
+	if len(s) > 0 && s[0] == '(' {
+		s = s[1:]
+	}
+	return strconv.ParseFloat(s, 64)
+}
 
 func TestParseScore(t *testing.T) {
 	t.Parallel()

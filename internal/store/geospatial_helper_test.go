@@ -1,8 +1,30 @@
 package store
 
 import (
+	"bytes"
+	"errors"
 	"testing"
 )
+
+// stringToGeoHash converts a geohash string to a uint64 hash.
+func stringToGeoHash(s string) (uint64, error) {
+	const base32Chars = "0123456789bcdefghjkmnpqrstuvwxyz"
+	var hash uint64
+	for i := len(s) - 1; i >= 0; i-- {
+		c := s[i]
+		idx := bytes.IndexByte([]byte(base32Chars), c)
+		if idx == -1 {
+			return 0, errors.New("invalid geohash character")
+		}
+		hash = (hash << 5) | uint64(idx)
+	}
+	return hash, nil
+}
+
+// geoMembersKey returns the key for storing geo member set.
+func geoMembersKey(key string) []byte {
+	return []byte(prefixKeyGeoBytes + key + geoMembers + ":")
+}
 
 // TestStringToGeoHash tests stringToGeoHash
 func TestStringToGeoHash(t *testing.T) {

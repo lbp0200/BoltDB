@@ -1540,13 +1540,13 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			}
 			return proto.NewInteger(1)
 		case "PAUSE":
-			// 暂停客户端（简化实现：空操作）
+			logger.Logger.Warn().Msg("CLIENT PAUSE is not implemented (no-op)")
 			return proto.OK
 		case "UNPAUSE":
-			// 取消暂停（简化实现：空操作）
+			logger.Logger.Warn().Msg("CLIENT UNPAUSE is not implemented (no-op)")
 			return proto.OK
 		case "INFO":
-			addr := "127.0.0.1:6379"
+			addr := fmt.Sprintf("127.0.0.1:%d", h.Port)
 			clientID := int64(0)
 			fd := 0
 			clientName := ""
@@ -7734,28 +7734,6 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
-}
-
-// parseScore parses Redis-style score bounds including special values
-//
-// used in tests (linter skips _test.go)
-//
-//nolint:unused
-func parseScore(s string) (float64, error) {
-	switch s {
-	case "-inf":
-		return float64(math.Inf(-1)), nil
-	case "+inf", "inf":
-		return float64(math.Inf(1)), nil
-	case "-inf(", "-inf[":
-		return float64(math.Inf(-1)), nil
-	case "+inf(", "+inf[":
-		return float64(math.Inf(1)), nil
-	}
-	if len(s) > 0 && s[0] == '(' {
-		s = s[1:]
-	}
-	return strconv.ParseFloat(s, 64)
 }
 
 // parseScoreExclusive checks if a score string represents an exclusive bound

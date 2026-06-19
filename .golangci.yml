@@ -7,8 +7,6 @@ run:
 
 linters:
   default: standard
-  disable:
-    - errname
   settings:
     staticcheck:
       checks:

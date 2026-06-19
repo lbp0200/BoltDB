@@ -75,7 +75,7 @@ curl -L https://github.com/lbp0200/BoltDB/releases/latest/download/boltDB-1.0.0-
 chmod +x boltDB
 
 # 启动服务器
-./boltDB --dir=./data --addr=:6379
+./boltDB --dir=./data --addr=:6337
 ```
 
 #### Linux (arm64)
@@ -97,7 +97,7 @@ curl -L https://github.com/lbp0200/BoltDB/releases/latest/download/boltDB-1.0.0-
 chmod +x boltDB
 
 # 启动服务器
-./boltDB --dir=./data --addr=:6379
+./boltDB --dir=./data --addr=:6337
 ```
 
 #### macOS (Apple Silicon)
@@ -108,7 +108,7 @@ curl -L https://github.com/lbp0200/BoltDB/releases/latest/download/boltDB-1.0.0-
 chmod +x boltDB
 
 # 启动服务器
-./boltDB --dir=./data --addr=:6379
+./boltDB --dir=./data --addr=:6337
 ```
 
 #### Windows
@@ -116,7 +116,7 @@ chmod +x boltDB
 ```powershell
 # 从 https://github.com/lbp0200/BoltDB/releases 下载
 # 解压并运行：
-.\boltDB.exe --dir=.\data --addr=:6379
+.\boltDB.exe --dir=.\data --addr=:6337
 ```
 
 ### 通过 Homebrew 安装 (macOS)
@@ -191,17 +191,17 @@ git clone https://github.com/lbp0200/BoltDB.git
 cd BoltDB
 
 # 编译
-go build -o boltDB ./cmd/boltDB/
+go build -o ./build/boltDB cmd/boltDB/main.go
 
 # 运行
-./boltDB --dir=./data --addr=:6379
+./build/boltDB --dir=./data --addr=:6337
 ```
 
 ### 使用 redis-cli
 
 ```bash
 # 连接
-redis-cli -p 6379
+redis-cli -p 6337
 
 # 字符串操作
 SET mykey "Hello from disk!"
@@ -236,7 +236,7 @@ ZRANGE leaderboard 0 -1 WITHSCORES
 ```bash
 # 运行服务器
 docker run -d \
-  -p 6379:6379 \
+  -p 6337:6337 \
   -v /path/to/data:/data \
   --name boltdb \
   lbp0200/boltdb:latest
@@ -248,10 +248,10 @@ services:
   boltDB:
     image: lbp0200/boltdb:latest
     ports:
-      - "6379:6379"
+      - "6337:6337"
     volumes:
       - ./data:/data
-    command: --dir=/data --addr=:6379
+    command: --dir=/data --addr=:6337
 EOF
 
 docker-compose up -d
@@ -267,16 +267,16 @@ docker-compose up -d
 
 ```bash
 # 启动 BoltDB 服务器
-./boltDB --dir=/tmp/bolt_data --addr=:6379
+./boltDB --dir=/tmp/bolt_data --addr=:6337
 
 # 使用 redis-cli 连接
-redis-cli -p 6379 PING
+redis-cli -p 6337 PING
 # PONG
 
-redis-cli -p 6379 SET mykey "Hello BoltDB!"
+redis-cli -p 6337 SET mykey "Hello BoltDB!"
 # OK
 
-redis-cli -p 6379 GET mykey
+redis-cli -p 6337 GET mykey
 # Hello BoltDB!
 ```
 
@@ -288,13 +288,13 @@ BoltDB 支持复制，可以设置主从拓扑。
 
 ```bash
 # 终端 1: 启动主节点 (端口 6379)
-./boltDB --dir=/tmp/bolt_master --addr=:6379
+./boltDB --dir=/tmp/bolt_master --addr=:6337
 
 # 终端 2: 启动从节点 (端口 6380，从主节点复制)
-./boltDB --dir=/tmp/bolt_slave --addr=:6380 --replicaof 127.0.0.1 6379
+./boltDB --dir=/tmp/bolt_slave --addr=:6380 --replicaof 127.0.0.1 6337
 
 # 测试复制
-redis-cli -p 6379 SET key "value"
+redis-cli -p 6337 SET key "value"
 redis-cli -p 6380 GET key  # 返回 "value"
 ```
 
@@ -327,7 +327,7 @@ redis-cli -p 6379 GET test  # 返回 "hello"
 # 创建哨兵配置
 cat > sentinel.conf << EOF
 port 26379
-sentinel monitor mymaster 127.0.0.1 6379 2
+sentinel monitor mymaster 127.0.0.1 6337 2
 sentinel down-after-milliseconds mymaster 30000
 sentinel failover-timeout mymaster 180000
 EOF
@@ -346,10 +346,10 @@ SENTINEL MASTER mymaster
 
 ```bash
 # 终端 1: 启动主节点
-./boltDB --dir=/tmp/bolt_master --addr=:6379
+./boltDB --dir=/tmp/bolt_master --addr=:6337
 
 # 终端 2: 启动从节点
-./boltDB --dir=/tmp/bolt_slave --addr=:6380 --replicaof 127.0.0.1 6379
+./boltDB --dir=/tmp/bolt_slave --addr=:6380 --replicaof 127.0.0.1 6337
 ```
 
 #### 哨兵命令
@@ -373,30 +373,30 @@ BoltDB 支持 Redis Cluster 协议，16384 个槽位。
 
 ```bash
 # 启动集群模式（拥有所有槽位）
-./boltDB --cluster --dir=/tmp/bolt_cluster --addr=:6379
+./boltDB --cluster --dir=/tmp/bolt_cluster --addr=:6337
 
 # 查看集群状态
-redis-cli -p 6379 CLUSTER INFO
-redis-cli -p 6379 CLUSTER NODES
-redis-cli -p 6379 CLUSTER KEYSLOT mykey
+redis-cli -p 6337 CLUSTER INFO
+redis-cli -p 6337 CLUSTER NODES
+redis-cli -p 6337 CLUSTER KEYSLOT mykey
 ```
 
 #### 多节点集群
 
 ```bash
 # 终端 1: 节点 1 (槽位 0-8191)
-./boltDB --cluster --dir=/tmp/node1 --addr=:6379
-redis-cli -p 6379 CLUSTER ADDSLOTS {0..8191}
+./boltDB --cluster --dir=/tmp/node1 --addr=:6337
+redis-cli -p 6337 CLUSTER ADDSLOTS {0..8191}
 
 # 终端 2: 节点 2 (槽位 8192-16383)
 ./boltDB --cluster --dir=/tmp/node2 --addr=:6380
 redis-cli -p 6380 CLUSTER ADDSLOTS {8192..16383}
 
 # 终端 3: 连接节点
-redis-cli -p 6380 CLUSTER MEET 127.0.0.1 6379
+redis-cli -p 6380 CLUSTER MEET 127.0.0.1 6337
 
 # 验证
-redis-cli -p 6379 CLUSTER NODES
+redis-cli -p 6337 CLUSTER NODES
 ```
 
 #### Hash Tag
@@ -405,9 +405,9 @@ redis-cli -p 6379 CLUSTER NODES
 
 ```bash
 # 具有相同 hash tag 的键位于同一槽位
-redis-cli -p 6379 SET "{user:1}:name" "Alice"
-redis-cli -p 6379 SET "{user:1}:age" "25"
-redis-cli -p 6379 GET "{user:1}:name"
+redis-cli -p 6337 SET "{user:1}:name" "Alice"
+redis-cli -p 6337 SET "{user:1}:age" "25"
+redis-cli -p 6337 GET "{user:1}:name"
 ```
 
 ---
@@ -419,7 +419,7 @@ redis-cli -p 6379 GET "{user:1}:name"
 | 参数 | 默认值 | 说明 |
 |-----------|---------|-------------|
 | `--dir` | `./data` | 数据目录 |
-| `--addr` | `:6379` | 监听地址 |
+| `--addr` | `:6337` | 监听地址 |
 | `--log-level` | `warning` | 日志级别 (debug/info/warning/error) |
 | `--cluster` | `false` | 启用集群模式 |
 | `--replicaof` | - | 主节点地址（从节点模式） |
@@ -464,7 +464,7 @@ BoltDB 可以被 redis-sentinel 监控实现自动故障转移：
 # 创建哨兵配置
 cat > sentinel.conf << EOF
 port 26379
-sentinel monitor mymaster 127.0.0.1 6379 2
+sentinel monitor mymaster 127.0.0.1 6337 2
 sentinel down-after-milliseconds mymaster 30000
 sentinel failover-timeout mymaster 180000
 EOF
@@ -512,7 +512,7 @@ redis-cli -p 6379 SLAVEOF 127.0.0.1 6380
 
 # 写入 BoltDB，从 Redis 读取
 redis-cli -p 6380 SET "test" "hello"
-redis-cli -p 6379 GET "test"  # 返回 "hello"
+redis-cli -p 6337 GET "test"  # 返回 "hello"
 ```
 
 ---

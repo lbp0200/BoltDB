@@ -77,7 +77,7 @@ curl -L https://github.com/lbp0200/BoltDB/releases/latest/download/boltDB-1.0.0-
 chmod +x boltDB
 
 # Start server
-./boltDB --dir=./data --addr=:6379
+./boltDB --dir=./data --addr=:6337
 ```
 
 #### Linux (arm64)
@@ -88,7 +88,7 @@ curl -L https://github.com/lbp0200/BoltDB/releases/latest/download/boltDB-1.0.0-
 chmod +x boltDB
 
 # Start server
-./boltDB --dir=./data --addr=:6379
+./boltDB --dir=./data --addr=:6337
 ```
 
 #### macOS (amd64)
@@ -99,7 +99,7 @@ curl -L https://github.com/lbp0200/BoltDB/releases/latest/download/boltDB-1.0.0-
 chmod +x boltDB
 
 # Start server
-./boltDB --dir=./data --addr=:6379
+./boltDB --dir=./data --addr=:6337
 ```
 
 #### macOS (arm64 / Apple Silicon)
@@ -110,7 +110,7 @@ curl -L https://github.com/lbp0200/BoltDB/releases/latest/download/boltDB-1.0.0-
 chmod +x boltDB
 
 # Start server
-./boltDB --dir=./data --addr=:6379
+./boltDB --dir=./data --addr=:6337
 ```
 
 #### Windows
@@ -118,7 +118,7 @@ chmod +x boltDB
 ```powershell
 # Download from https://github.com/lbp0200/BoltDB/releases
 # Extract and run:
-.\boltDB.exe --dir=.\data --addr=:6379
+.\boltDB.exe --dir=.\data --addr=:6337
 ```
 
 ### Install via Homebrew | 通过 Homebrew 安装 (macOS)
@@ -194,10 +194,10 @@ git clone https://github.com/lbp0200/BoltDB.git
 cd BoltDB
 
 # Build
-go build -o boltDB ./cmd/boltDB/
+go build -o ./build/boltDB cmd/boltDB/main.go
 
 # Run
-./boltDB --dir=./data --addr=:6379
+./build/boltDB --dir=./data --addr=:6337
 ```
 
 #### Windows
@@ -208,25 +208,25 @@ cd BoltDB
 
 go build -o boltDB.exe .\cmd\boltDB\
 
-.\boltDB.exe --dir=.\data --addr=:6379
+.\boltDB.exe --dir=.\data --addr=:6337
 ```
 
 #### Cross-compilation | 交叉编译
 
 ```bash
 # Build for all platforms
-GOOS=linux GOARCH=amd64 go build -o boltDB-linux-amd64 ./cmd/boltDB/
-GOOS=linux GOARCH=arm64 go build -o boltDB-linux-arm64 ./cmd/boltDB/
-GOOS=darwin GOARCH=amd64 go build -o boltDB-darwin-amd64 ./cmd/boltDB/
-GOOS=darwin GOARCH=arm64 go build -o boltDB-darwin-arm64 ./cmd/boltDB/
-GOOS=windows GOARCH=amd64 go build -o boltDB-windows-amd64.exe ./cmd/boltDB/
+GOOS=linux GOARCH=amd64 go build -o ./build/boltDB-linux-amd64 cmd/boltDB/main.go
+GOOS=linux GOARCH=arm64 go build -o ./build/boltDB-linux-arm64 cmd/boltDB/main.go
+GOOS=darwin GOARCH=amd64 go build -o ./build/boltDB-darwin-amd64 cmd/boltDB/main.go
+GOOS=darwin GOARCH=arm64 go build -o ./build/boltDB-darwin-arm64 cmd/boltDB/main.go
+GOOS=windows GOARCH=amd64 go build -o ./build/boltDB-windows-amd64.exe cmd/boltDB/main.go
 ```
 
 ### Use with redis-cli | 使用 redis-cli
 
 ```bash
 # Connect
-redis-cli -p 6379
+redis-cli -p 6337
 
 # String operations
 SET mykey "Hello from disk!"
@@ -261,7 +261,7 @@ ZRANGE leaderboard 0 -1 WITHSCORES
 ```bash
 # Run server
 docker run -d \
-  -p 6379:6379 \
+  -p 6337:6337 \
   -v /path/to/data:/data \
   --name boltdb \
   lbp0200/boltDB:latest
@@ -273,10 +273,10 @@ services:
   boltDB:
     image: lbp0200/boltDB:latest
     ports:
-      - "6379:6379"
+      - "6337:6337"
     volumes:
       - ./data:/data
-    command: --dir=/data --addr=:6379
+    command: --dir=/data --addr=:6337
 EOF
 
 docker-compose up -d
@@ -292,16 +292,16 @@ Basic standalone deployment for single-node usage.
 
 ```bash
 # Start BoltDB server
-./boltDB --dir=/tmp/bolt_data --addr=:6379
+./build/boltDB --dir=/tmp/bolt_data --addr=:6337
 
 # Connect with redis-cli
-redis-cli -p 6379 PING
+redis-cli -p 6337 PING
 # PONG
 
-redis-cli -p 6379 SET mykey "Hello BoltDB!"
+redis-cli -p 6337 SET mykey "Hello BoltDB!"
 # OK
 
-redis-cli -p 6379 GET mykey
+redis-cli -p 6337 GET mykey
 # Hello BoltDB!
 ```
 
@@ -313,13 +313,13 @@ BoltDB supports replication. You can set up master-slave topology.
 
 ```bash
 # Terminal 1: Start Master on port 6379
-./boltDB --dir=/tmp/bolt_master --addr=:6379
+./boltDB --dir=/tmp/bolt_master --addr=:6337
 
 # Terminal 2: Start Slave on port 6380 (replicates from master)
-./boltDB --dir=/tmp/bolt_slave --addr=:6380 --replicaof 127.0.0.1 6379
+./boltDB --dir=/tmp/bolt_slave --addr=:6380 --replicaof 127.0.0.1 6337
 
 # Test replication
-redis-cli -p 6379 SET key "value"
+redis-cli -p 6337 SET key "value"
 redis-cli -p 6380 GET key  # Returns "value"
 ```
 
@@ -352,7 +352,7 @@ For high availability, use **redis-sentinel** to monitor BoltDB instances.
 # Create sentinel config
 cat > sentinel.conf << EOF
 port 26379
-sentinel monitor mymaster 127.0.0.1 6379 2
+sentinel monitor mymaster 127.0.0.1 6337 2
 sentinel down-after-milliseconds mymaster 30000
 sentinel failover-timeout mymaster 180000
 EOF
@@ -371,10 +371,10 @@ SENTINEL MASTER mymaster
 
 ```bash
 # Terminal 1: Start Master
-./boltDB --dir=/tmp/bolt_master --addr=:6379
+./boltDB --dir=/tmp/bolt_master --addr=:6337
 
 # Terminal 2: Start Slave
-./boltDB --dir=/tmp/bolt_slave --addr=:6380 --replicaof 127.0.0.1 6379
+./boltDB --dir=/tmp/bolt_slave --addr=:6380 --replicaof 127.0.0.1 6337
 ```
 
 #### Sentinel Commands
@@ -398,30 +398,30 @@ BoltDB supports Redis Cluster protocol with 16384 slots.
 
 ```bash
 # Start with cluster mode enabled (owns all slots)
-./boltDB --cluster --dir=/tmp/bolt_cluster --addr=:6379
+./boltDB --cluster --dir=/tmp/bolt_cluster --addr=:6337
 
 # Verify cluster status
-redis-cli -p 6379 CLUSTER INFO
-redis-cli -p 6379 CLUSTER NODES
-redis-cli -p 6379 CLUSTER KEYSLOT mykey
+redis-cli -p 6337 CLUSTER INFO
+redis-cli -p 6337 CLUSTER NODES
+redis-cli -p 6337 CLUSTER KEYSLOT mykey
 ```
 
 #### Multi-Node Cluster
 
 ```bash
 # Terminal 1: Node 1 (slots 0-8191)
-./boltDB --cluster --dir=/tmp/node1 --addr=:6379
-redis-cli -p 6379 CLUSTER ADDSLOTS {0..8191}
+./boltDB --cluster --dir=/tmp/node1 --addr=:6337
+redis-cli -p 6337 CLUSTER ADDSLOTS {0..8191}
 
 # Terminal 2: Node 2 (slots 8192-16383)
 ./boltDB --cluster --dir=/tmp/node2 --addr=:6380
 redis-cli -p 6380 CLUSTER ADDSLOTS {8192..16383}
 
 # Terminal 3: Connect nodes
-redis-cli -p 6380 CLUSTER MEET 127.0.0.1 6379
+redis-cli -p 6380 CLUSTER MEET 127.0.0.1 6337
 
 # Verify
-redis-cli -p 6379 CLUSTER NODES
+redis-cli -p 6337 CLUSTER NODES
 ```
 
 #### Hash Tags
@@ -430,9 +430,9 @@ Use hash tags to keep related keys on the same node:
 
 ```bash
 # Keys with same hash tag stay on same slot
-redis-cli -p 6379 SET "{user:1}:name" "Alice"
-redis-cli -p 6379 SET "{user:1}:age" "25"
-redis-cli -p 6379 GET "{user:1}:name"
+redis-cli -p 6337 SET "{user:1}:name" "Alice"
+redis-cli -p 6337 SET "{user:1}:age" "25"
+redis-cli -p 6337 GET "{user:1}:name"
 ```
 
 ---
@@ -444,7 +444,7 @@ redis-cli -p 6379 GET "{user:1}:name"
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--dir` | `./data` | Data directory |
-| `--addr` | `:6379` | Listen address |
+| `--addr` | `:6337` | Listen address |
 | `--log-level` | `warning` | Log level (debug/info/warning/error) |
 
 ### Environment Variables | 环境变量
@@ -487,7 +487,7 @@ BoltDB can be monitored by redis-sentinel for automatic failover:
 # Create sentinel config
 cat > sentinel.conf << EOF
 port 26379
-sentinel monitor mymaster 127.0.0.1 6379 2
+sentinel monitor mymaster 127.0.0.1 6337 2
 sentinel down-after-milliseconds mymaster 30000
 sentinel failover-timeout mymaster 180000
 EOF
@@ -555,7 +555,7 @@ redis-cli -p 6379 GET "test"  # Returns "hello"
 
 ```bash
 # Using redis-benchmark (50 concurrent clients, 10000 requests)
-redis-benchmark -h localhost -p 6379 -t PING,SET,GET,INCR,LPUSH -c 50 -n 10000
+redis-benchmark -h localhost -p 6337 -t PING,SET,GET,INCR,LPUSH -c 50 -n 10000
 ```
 
 #### Actual Results | 实际测试结果
