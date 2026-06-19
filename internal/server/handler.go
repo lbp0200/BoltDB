@@ -33,6 +33,7 @@ type connState struct {
 	transaction   *TransactionState
 	clientInfo    *ClientInfo
 	clusterAsking bool
+	authenticated bool
 	watchedKeys   map[string]struct{}
 	dirtyKeys     map[string]struct{}
 	subscriber    *store.Subscriber
@@ -1355,6 +1356,16 @@ func wrapStoreError(err error) proto.RESP {
 func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, remoteAddr string) proto.RESP {
 	if state == nil {
 		return proto.NewError("ERR internal error: nil connState")
+	}
+
+	// 如果配置了密码，检查是否已认证
+	if password := os.Getenv("BOLTDB_PASSWORD"); password != "" && !state.authenticated {
+		switch cmd {
+		case "AUTH", "PING", "QUIT", "COMMAND", "HELLO":
+			// 这些命令可以绕过认证
+		default:
+			return proto.NewError("NOAUTH Authentication required.")
+		}
 	}
 
 	// 如果在事务中（且不是事务控制命令），将命令加入队列
@@ -7205,6 +7216,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		password := os.Getenv("BOLTDB_PASSWORD")
 		if password == "" {
 			// 没有配置密码，任何密码都接受
+			state.authenticated = true
 			return proto.NewSimpleString("OK")
 		}
 
@@ -7215,6 +7227,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 
 		if inputPassword == password {
+			state.authenticated = true
 			return proto.NewSimpleString("OK")
 		}
 		return proto.NewError("ERR invalid password")

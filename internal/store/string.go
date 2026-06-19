@@ -20,11 +20,7 @@ func (s *BotreonStore) stringKey(key string) string {
 
 // Set 实现 Redis SET 命令
 func (s *BotreonStore) Set(key string, value string) error {
-	if s.readCache != nil {
-		s.readCache.Set(key, []byte(value))
-	}
-
-	return s.retryUpdate(func(txn *badger.Txn) error {
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// Check if key already exists with a different type
 		badgerTypeKey := TypeOfKeyGet(key)
 		item, err := txn.Get(badgerTypeKey)
@@ -47,6 +43,10 @@ func (s *BotreonStore) Set(key string, value string) error {
 		strKey := s.stringKey(key)
 		return s.setValueWithCompression(txn, []byte(strKey), []byte(value))
 	}, 30)
+	if err == nil && s.readCache != nil {
+		s.readCache.Set(key, []byte(value))
+	}
+	return err
 }
 
 // SetWithTTL 字符串操作，设置键值对并设置过期时间
