@@ -13,10 +13,10 @@ This guide covers running BoltDB as a systemd service on Linux.
 
 ```bash
 # Download and install BoltDB
-sudo curl -L -o /usr/local/bin/bolt https://github.com/lbp0200/BoltDB/releases/latest/download/bolt
+sudo curl -L -o /usr/local/bin/boltDB https://github.com/lbp0200/BoltDB/releases/latest/download/boltDB
 
 # Make executable
-sudo chmod +x /usr/local/bin/bolt
+sudo chmod +x /usr/local/bin/boltDB
 ```
 
 ### 2. Create Service User
@@ -54,7 +54,7 @@ After=network.target
 Type=simple
 User=bolt
 Group=bolt
-ExecStart=/usr/local/bin/bolt -addr=:6379 -dir=/var/lib/bolt -log-level info
+ExecStart=/usr/local/bin/boltDB -addr=:6337 -dir=/var/lib/bolt -log-level info
 WorkingDirectory=/var/lib/bolt
 Restart=always
 RestartSec=5
@@ -84,7 +84,7 @@ After=network.target
 Type=simple
 User=bolt
 Group=bolt
-ExecStart=/usr/local/bin/bolt -cluster -addr=:6379 -dir=/var/lib/bolt -log-level info
+ExecStart=/usr/local/bin/boltDB -cluster -addr=:6337 -dir=/var/lib/bolt -log-level info
 WorkingDirectory=/var/lib/bolt
 Restart=always
 RestartSec=5
@@ -99,7 +99,7 @@ ProtectHome=true
 ReadWritePaths=/var/lib/bolt /var/log/bolt
 
 # Cluster ports (if using multiple nodes)
-# ExecStart=/usr/local/bin/bolt -cluster -addr=:6379 -dir=/var/lib/bolt -log-level info
+# ExecStart=/usr/local/bin/boltDB -cluster -addr=:6337 -dir=/var/lib/bolt -log-level info
 
 [Install]
 WantedBy=multi-user.target
@@ -119,7 +119,7 @@ After=network.target
 Type=simple
 User=bolt
 Group=bolt
-ExecStart=/usr/local/bin/bolt -addr=:6379 -dir=/var/lib/bolt -log-level info
+ExecStart=/usr/local/bin/boltDB -addr=:6337 -dir=/var/lib/bolt -log-level info
 WorkingDirectory=/var/lib/bolt
 Restart=always
 RestartSec=5
@@ -147,7 +147,7 @@ After=network.target
 Type=simple
 User=bolt
 Group=bolt
-ExecStart=/usr/local/bin/bolt -addr=:6380 -dir=/var/lib/bolt-slave -replicaof 127.0.0.1 6379 -log-level info
+ExecStart=/usr/local/bin/boltDB -addr=:6380 -dir=/var/lib/bolt-slave -replicaof 127.0.0.1 6337 -log-level info
 WorkingDirectory=/var/lib/bolt-slave
 Restart=always
 RestartSec=5
@@ -248,8 +248,8 @@ You can pass environment variables to BoltDB:
 ```ini
 [Service]
 Environment="BOLTDB_LOG_LEVEL=info"
-Environment="BOLTDB_ADDR=:6379"
-ExecStart=/usr/local/bin/bolt -dir=/var/lib/bolt
+Environment="BOLTDB_ADDR=:6337"
+ExecStart=/usr/local/bin/boltDB -dir=/var/lib/bolt
 ```
 
 Or create `/etc/sysconfig/bolt`:
@@ -265,7 +265,7 @@ Update service file:
 ```ini
 [Service]
 EnvironmentFile=/etc/sysconfig/bolt
-ExecStart=/usr/local/bin/bolt -dir=$BOLTDB_DIR -log-level=$BOLTDB_LOG_LEVEL
+ExecStart=/usr/local/bin/boltDB -dir=$BOLTDB_DIR -log-level=$BOLTDB_LOG_LEVEL
 ```
 
 ## Resource Limits
@@ -291,25 +291,25 @@ Add health check:
 ```ini
 [Service]
 # Health check via ExecStartPost
-ExecStartPost=/bin/bash -c 'sleep 2 && redis-cli -p 6379 PING || exit 1'
+ExecStartPost=/bin/bash -c 'sleep 2 && redis-cli -p 6337 PING || exit 1'
 ```
 
 ## Multiple Instances
 
 Run multiple BoltDB instances on different ports:
 
-### Instance 1 (Port 6379)
+### Instance 1 (Port 6337)
 
 ```bash
-sudo cp /etc/systemd/system/bolt.service /etc/systemd/system/bolt-6379.service
-sudo nano /etc/systemd/system/bolt-6379.service
+sudo cp /etc/systemd/system/bolt.service /etc/systemd/system/bolt-6337.service
+sudo nano /etc/systemd/system/bolt-6337.service
 ```
 
 Update:
 
 ```ini
 [Service]
-ExecStart=/usr/local/bin/bolt -addr=:6379 -dir=/var/lib/bolt-6379 -log-level info
+ExecStart=/usr/local/bin/boltDB -addr=:6337 -dir=/var/lib/bolt-6337 -log-level info
 ```
 
 ### Instance 2 (Port 6380)
@@ -323,22 +323,22 @@ Update:
 
 ```ini
 [Service]
-ExecStart=/usr/local/bin/bolt -addr=:6380 -dir=/var/lib/bolt-6380 -log-level info
+ExecStart=/usr/local/bin/boltDB -addr=:6380 -dir=/var/lib/bolt-6380 -log-level info
 ```
 
 Create directories:
 
 ```bash
-sudo mkdir -p /var/lib/bolt-6379 /var/lib/bolt-6380
-sudo chown bolt:bolt /var/lib/bolt-6379 /var/lib/bolt-6380
+sudo mkdir -p /var/lib/bolt-6337 /var/lib/bolt-6380
+sudo chown bolt:bolt /var/lib/bolt-6337 /var/lib/bolt-6380
 ```
 
 Start both:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl start bolt-6379 bolt-6380
-sudo systemctl enable bolt-6379 bolt-6380
+sudo systemctl start bolt-6337 bolt-6380
+sudo systemctl enable bolt-6337 bolt-6380
 ```
 
 ## High Availability with Keepalived
@@ -380,7 +380,7 @@ vrrp_instance VI_1 {
 
 ```ini
 [Service]
-ExecStart=/usr/local/bin/bolt -addr=192.168.1.100:6379 -dir=/var/lib/bolt
+ExecStart=/usr/local/bin/boltDB -addr=192.168.1.100:6337 -dir=/var/lib/bolt
 ```
 
 ## Troubleshooting
@@ -392,14 +392,14 @@ ExecStart=/usr/local/bin/bolt -addr=192.168.1.100:6379 -dir=/var/lib/bolt
 sudo journalctl -u bolt -xe
 
 # Check if port is in use
-sudo netstat -tlnp | grep 6379
+sudo netstat -tlnp | grep 6337
 
 # Check permissions
 ls -la /var/lib/bolt
 ls -la /var/log/bolt
 
 # Test binary manually
-sudo -u bolt /usr/local/bin/bolt -dir=/var/lib/bolt
+sudo -u bolt /usr/local/bin/boltDB -dir=/var/lib/bolt
 ```
 
 ### Permission Issues
@@ -445,8 +445,8 @@ Group=bolt
 
 # Configuration
 EnvironmentFile=/etc/sysconfig/bolt
-ExecStart=/usr/local/bin/bolt \
-    -addr=:6379 \
+ExecStart=/usr/local/bin/boltDB \
+    -addr=:6337 \
     -dir=/var/lib/bolt \
     -log-level info \
     -cluster=${BOLT_CLUSTER:-false}
@@ -475,7 +475,7 @@ StandardError=journal
 SyslogIdentifier=bolt
 
 # Health check
-ExecStartPost=/bin/bash -c 'for i in 1 2 3; do redis-cli -p 6379 PING && break || sleep 1; done'
+ExecStartPost=/bin/bash -c 'for i in 1 2 3; do redis-cli -p 6337 PING && break || sleep 1; done'
 
 [Install]
 WantedBy=multi-user.target

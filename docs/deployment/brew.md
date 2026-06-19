@@ -14,7 +14,7 @@
 brew tap lbp0200/boltdb
 
 # Install BoltDB
-brew install bolt
+brew install boltdb
 ```
 
 ### Option 2: Build from Source
@@ -34,14 +34,14 @@ go install ./cmd/boltDB
 ## Starting BoltDB
 
 ```bash
-# Start with default settings (port 6379, data dir ./data)
-bolt
+# Start with default settings (port 6337, data dir ./data)
+boltDB
 
 # Start with custom settings
-bolt -addr=:6380 -dir=/var/lib/bolt -log-level info
+boltDB -addr=:6380 -dir=/var/lib/bolt -log-level info
 
 # Start in cluster mode
-bolt -cluster -addr=:6379 -dir=/var/lib/bolt
+boltDB -cluster -addr=:6337 -dir=/var/lib/bolt
 ```
 
 ## Running as a Service (launchd)
@@ -69,8 +69,8 @@ Create `/Library/LaunchDaemons/com.boltdb.plist`:
     <string>com.boltdb</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/bolt</string>
-        <string>-addr=:6379</string>
+        <string>/usr/local/bin/boltDB</string>
+        <string>-addr=:6337</string>
         <string>-dir=/var/lib/bolt</string>
         <string>-log-level=info</string>
     </array>
@@ -123,9 +123,9 @@ For cluster mode, use this plist:
     <string>com.boltdb.cluster</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/bolt</string>
+        <string>/usr/local/bin/boltDB</string>
         <string>-cluster</string>
-        <string>-addr=:6379</string>
+        <string>-addr=:6337</string>
         <string>-dir=/var/lib/bolt</string>
         <string>-log-level=info</string>
     </array>
@@ -145,7 +145,7 @@ For cluster mode, use this plist:
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-addr` | Server address | `:6379` |
+| `-addr` | Server address | `:6337` |
 | `-dir` | Data directory | `./data` |
 | `-log-level` | Log level (debug/info/warn/error) | `warning` |
 | `-cluster` | Enable cluster mode | `false` |
@@ -155,30 +155,30 @@ For cluster mode, use this plist:
 
 ```bash
 # Upgrade BoltDB
-brew upgrade bolt
+brew upgrade boltdb
 
 # Or reinstall
-brew reinstall bolt
+brew reinstall boltdb
 ```
 
 ## Uninstalling
 
 ```bash
 # Remove BoltDB
-brew uninstall bolt
+brew uninstall boltdb
 
 # Remove tap (optional)
-brew untap lbp0200/bolt
+brew untap lbp0200/boltdb
 ```
 
 ## Troubleshooting
 
 ### Port Already in Use
 
-If port 6379 is already in use, specify a different port:
+If port 6337 is already in use, specify a different port:
 
 ```bash
-bolt -addr=:6380
+boltDB -addr=:6380
 ```
 
 ### Permission Denied
@@ -188,5 +188,5 @@ If you encounter permission errors, ensure the data directory is writable:
 ```bash
 mkdir -p /var/lib/bolt
 chmod 755 /var/lib/bolt
-bolt -dir=/var/lib/bolt
+boltDB -dir=/var/lib/bolt
 ```

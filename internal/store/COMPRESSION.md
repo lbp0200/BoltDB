@@ -103,7 +103,7 @@ import (
 
 func main() {
     // 使用LZ4压缩（默认）
-    db, err := store.NewBoltDBStore("/tmp/boltreon")
+    db, err := store.NewBoltDBStore("/tmp/boltDB")
     if err != nil {
         panic(err)
     }

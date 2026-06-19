@@ -56,10 +56,10 @@ go test ./internal/server -bench=. -benchmem
 
 ```bash
 # 启动服务器
-go run cmd/boltreon/main.go -addr :6379
+go run cmd/boltDB/main.go -addr :6337
 
 # 在另一个终端使用redis-cli
-redis-cli -p 6379
+redis-cli -p 6337
 
 # 测试命令
 127.0.0.1:6379> PING

@@ -33,11 +33,11 @@ sudo apt-get install -f
 
 ```bash
 # Check version
-bolt --version
+boltDB --version
 
 # Test connection
-bolt -addr=:6379 &
-redis-cli -p 6379 PING
+boltDB -addr=:6337 &
+redis-cli -p 6337 PING
 ```
 
 ### Method 2: Install from Repository
@@ -58,7 +58,7 @@ sudo apt update
 #### Install BoltDB
 
 ```bash
-sudo apt install bolt
+sudo apt install boltdb
 ```
 
 ### Method 3: Build from Source
@@ -75,7 +75,7 @@ cd BoltDB
 go build -o ./build/boltDB cmd/boltDB/main.go
 
 # Install
-sudo mv ./build/boltDB /usr/local/bin/bolt
+sudo mv ./build/boltDB /usr/local/bin/boltDB
 ```
 
 ## Configuration
@@ -100,17 +100,17 @@ sudo chown -R $USER:$USER /var/log/bolt
 
 ```bash
 # Basic usage
-bolt -dir=/var/lib/bolt -log-level info
+boltDB -dir=/var/lib/bolt -log-level info
 
 # With custom port
-bolt -addr=:6380 -dir=/var/lib/bolt
+boltDB -addr=:6380 -dir=/var/lib/bolt
 
 # Cluster mode
-bolt -cluster -addr=:6379 -dir=/var/lib/bolt
+boltDB -cluster -addr=:6337 -dir=/var/lib/bolt
 
 # Master-slave replication
-bolt -addr=:6379 -dir=/var/lib/bolt  # Master
-bolt -addr=:6380 -dir=/var/lib/bolt-slave -replicaof 127.0.0.1 6379  # Slave
+boltDB -addr=:6337 -dir=/var/lib/bolt  # Master
+boltDB -addr=:6380 -dir=/var/lib/bolt-slave -replicaof 127.0.0.1 6337  # Slave
 ```
 
 ### With systemd
@@ -127,7 +127,7 @@ After=network.target
 Type=simple
 User=bolt
 Group=bolt
-ExecStart=/usr/local/bin/bolt -dir=/var/lib/bolt -log-level info
+ExecStart=/usr/local/bin/boltDB -dir=/var/lib/bolt -log-level info
 WorkingDirectory=/var/lib/bolt
 Restart=always
 RestartSec=5
@@ -197,7 +197,7 @@ Add your options:
 
 ```conf
 # BoltDB Configuration
-addr=:6379
+addr=:6337
 dir=/var/lib/bolt
 log-level=info
 cluster=false
@@ -206,7 +206,7 @@ cluster=false
 Run with config:
 
 ```bash
-bolt -config /etc/bolt/bolt.conf
+boltDB -config /etc/bolt/bolt.conf
 ```
 
 ## Upgrading
@@ -228,14 +228,14 @@ sudo systemctl restart bolt
 
 ```bash
 sudo apt update
-sudo apt upgrade bolt
+sudo apt upgrade boltdb
 ```
 
 ## Uninstalling
 
 ```bash
 # Remove package
-sudo dpkg -r bolt
+sudo dpkg -r boltdb
 
 # Remove repository (if added)
 sudo rm /etc/apt/sources.list.d/boltdb.list
@@ -249,10 +249,10 @@ If using UFW:
 
 ```bash
 # Allow BoltDB port
-sudo ufw allow 6379/tcp
+sudo ufw allow 6337/tcp
 
 # Allow specific IP
-sudo ufw allow from 192.168.1.0/24 to any port 6379
+sudo ufw allow from 192.168.1.0/24 to any port 6337
 ```
 
 ## Troubleshooting
@@ -268,7 +268,7 @@ ls -la /var/lib/bolt
 ls -la /var/log/bolt
 
 # Check port
-sudo netstat -tlnp | grep 6379
+sudo netstat -tlnp | grep 6337
 ```
 
 ### Permission Denied
@@ -282,21 +282,21 @@ sudo chown -R bolt:bolt /var/lib/bolt /var/log/bolt
 
 ```bash
 # Find what's using the port
-sudo lsof -i :6379
+sudo lsof -i :6337
 
 # Use different port
-bolt -addr=:6380
+boltDB -addr=:6380
 ```
 
 ## Verification
 
 ```bash
 # Test basic operations
-redis-cli -p 6379 SET test "hello"
-redis-cli -p 6379 GET test
-redis-cli -p 6379 PING
+redis-cli -p 6337 SET test "hello"
+redis-cli -p 6337 GET test
+redis-cli -p 6337 PING
 
 # Check info
-redis-cli -p 6379 INFO
-redis-cli -p 6379 ROLE
+redis-cli -p 6337 INFO
+redis-cli -p 6337 ROLE
 ```

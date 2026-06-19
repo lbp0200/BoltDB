@@ -17,10 +17,10 @@
 ```bash
 # Build from source
 cd deploy/docker
-docker build -t lbp0200/bolt:latest .
+docker build -t lbp0200/boltDB:latest .
 
 # Or pull from Docker Hub (when available)
-docker pull lbp0200/bolt:latest
+docker pull lbp0200/boltDB:latest
 ```
 
 ## Quick Start Examples
@@ -54,9 +54,9 @@ docker-compose -f docker-compose.yml -f docker-compose.sentinel.yml up -d
 # Run BoltDB container
 docker run -d \
   --name boltdb \
-  -p 6379:6379 \
+  -p 6337:6337 \
   -v /tmp/bolt:/data \
-  lbp0200/bolt
+  lbp0200/boltDB
 
 # Verify it's running
 docker ps
@@ -67,10 +67,10 @@ docker ps
 ```bash
 docker run -d \
   --name boltdb \
-  -p 6380:6379 \
+  -p 6380:6337 \
   -v /var/lib/bolt:/data \
   -e BOLTDB_LOG_LEVEL=info \
-  lbp0200/bolt -addr=:6379 -dir=/data
+  lbp0200/boltDB -addr=:6337 -dir=/data
 ```
 
 ## Docker Compose
@@ -84,10 +84,10 @@ version: '3.8'
 
 services:
   bolt:
-    image: lbp0200/bolt
+    image: lbp0200/boltDB
     container_name: boltdb
     ports:
-      - "6379:6379"
+      - "6337:6337"
     volumes:
       - bolt-data:/data
     restart: unless-stopped
@@ -110,21 +110,21 @@ version: '3.8'
 
 services:
   bolt-node1:
-    image: lbp0200/bolt
+    image: lbp0200/boltDB
     ports:
-      - "7001:6379"
+      - "7001:6337"
     volumes:
       - node1-data:/data
-    command: ["-cluster", "-addr", ":6379", "-dir", "/data"]
+    command: ["-cluster", "-addr", ":6337", "-dir", "/data"]
     restart: unless-stopped
 
   bolt-node2:
-    image: lbp0200/bolt
+    image: lbp0200/boltDB
     ports:
-      - "7002:6379"
+      - "7002:6337"
     volumes:
       - node2-data:/data
-    command: ["-cluster", "-addr", ":6379", "-dir", "/data"]
+    command: ["-cluster", "-addr", ":6337", "-dir", "/data"]
     depends_on:
       - bolt-node1
     restart: unless-stopped
@@ -141,21 +141,21 @@ version: '3.8'
 
 services:
   bolt-master:
-    image: lbp0200/bolt
+    image: lbp0200/boltDB
     ports:
-      - "6379:6379"
+      - "6337:6337"
     volumes:
       - master-data:/data
     command: ["-dir", "/data"]
     restart: unless-stopped
 
   bolt-slave:
-    image: lbp0200/bolt
+    image: lbp0200/boltDB
     ports:
-      - "6380:6379"
+      - "6380:6337"
     volumes:
       - slave-data:/data
-    command: ["-addr", ":6379", "-dir", "/data", "-replicaof", "bolt-master", "6379"]
+    command: ["-addr", ":6337", "-dir", "/data", "-replicaof", "bolt-master", "6337"]
     depends_on:
       - bolt-master
     restart: unless-stopped
@@ -172,9 +172,9 @@ version: '3.8'
 
 services:
   bolt-master:
-    image: lbp0200/bolt
+    image: lbp0200/boltDB
     ports:
-      - "6379:6379"
+      - "6337:6337"
     volumes:
       - master-data:/data
     command: ["-dir", "/data"]
@@ -183,12 +183,12 @@ services:
       - bolt-net
 
   bolt-slave1:
-    image: lbp0200/bolt
+    image: lbp0200/boltDB
     ports:
-      - "6380:6379"
+      - "6380:6337"
     volumes:
       - slave1-data:/data
-    command: ["-addr", ":6379", "-dir", "/data", "-replicaof", "bolt-master", "6379"]
+    command: ["-addr", ":6337", "-dir", "/data", "-replicaof", "bolt-master", "6337"]
     depends_on:
       - bolt-master
     restart: unless-stopped
@@ -217,7 +217,7 @@ Create `sentinel.conf`:
 
 ```conf
 port 26379
-sentinel monitor mymaster bolt-master 6379 2
+sentinel monitor mymaster bolt-master 6337 2
 sentinel down-after-milliseconds mymaster 30000
 sentinel failover-timeout mymaster 180000
 ```
@@ -227,7 +227,7 @@ sentinel failover-timeout mymaster 180000
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `BOLTDB_LOG_LEVEL` | Log level (debug/info/warn/error) | `warning` |
-| `BOLTDB_ADDR` | Server address | `:6379` |
+| `BOLTDB_ADDR` | Server address | `:6337` |
 | `BOLTDB_DIR` | Data directory | `./data` |
 
 ## Data Persistence
@@ -264,7 +264,7 @@ docker restart boltdb
 docker exec -it boltdb redis-cli
 
 # Connect to BoltDB
-docker exec -it boltdb redis-cli -p 6379 PING
+docker exec -it boltdb redis-cli -p 6337 PING
 ```
 
 ## Networking
@@ -273,9 +273,9 @@ docker exec -it boltdb redis-cli -p 6379 PING
 
 ```bash
 docker run -d \
-  -p 192.168.1.100:6379:6379 \
+  -p 192.168.1.100:6337:6337 \
   -v /tmp/bolt:/data \
-  lbp0200/bolt
+  lbp0200/boltDB
 ```
 
 ### Use Host Network
@@ -284,7 +284,7 @@ docker run -d \
 docker run -d \
   --network host \
   -v /tmp/bolt:/data \
-  lbp0200/bolt
+  lbp0200/boltDB
 ```
 
 ## Security
@@ -294,9 +294,9 @@ docker run -d \
 ```bash
 docker run -d \
   --user 1000:1000 \
-  -p 6379:6379 \
+  -p 6337:6337 \
   -v /tmp/bolt:/data \
-  lbp0200/bolt
+  lbp0200/boltDB
 ```
 
 ### Enable TLS (Future)
@@ -314,7 +314,7 @@ cd BoltDB
 docker build -t my-boltdb .
 
 # Run
-docker run -d -p 6379:6379 -v /tmp/bolt:/data my-boltdb
+docker run -d -p 6337:6337 -v /tmp/bolt:/data my-boltdb
 ```
 
 ## Health Check
@@ -324,7 +324,7 @@ Add health check to your compose file:
 ```yaml
 services:
   bolt:
-    image: lbp0200/bolt
+    image: lbp0200/boltDB
     healthcheck:
       test: ["CMD", "redis-cli", "PING"]
       interval: 30s
