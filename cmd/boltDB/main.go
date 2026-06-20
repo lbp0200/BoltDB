@@ -126,6 +126,8 @@ func main() {
 			logger.Logger.Fatal().Err(err).Msg("Failed to create cluster")
 		}
 		handler.Cluster = c
+		// 启动 gossip 循环
+		c.Gossip.Start()
 		logger.Logger.Info().Msg("Cluster mode enabled")
 	}
 	ln, err := net.Listen("tcp", *addrFlag)
@@ -151,6 +153,9 @@ func main() {
 
 	logger.Logger.Info().Msg("开始执行关闭序列...")
 	replMgr.Stop()
+	if handler.Cluster != nil {
+		handler.Cluster.Gossip.Stop()
+	}
 	cancel()
 	metricsWg.Wait()
 	handler.Shutdown()

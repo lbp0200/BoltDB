@@ -12,22 +12,27 @@ import (
 	"github.com/zeebo/assert"
 )
 
-// buildPubSubPush coverage: 0% -> 100%
-// Tests the "message" path (no pattern)
-
+// buildPubSubPush coverage: message path, pmessage path, RESP2 and RESP3
 func TestBuildPubSubPush_Message_Coverage(t *testing.T) {
 	t.Parallel()
 	msg := &store.Message{
 		Channel: "testchan",
 		Data:    []byte("testdata"),
 	}
-	resp := buildPubSubPush(msg)
-	arr, ok := resp.(*proto.Array)
+	// RESP2 path
+	resp := buildPubSubPush(msg, 2)
+	na, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.Equal(t, 3, len(arr.Args))
-	assert.Equal(t, "message", string(arr.Args[0]))
-	assert.Equal(t, "testchan", string(arr.Args[1]))
-	assert.Equal(t, "testdata", string(arr.Args[2]))
+	assert.Equal(t, 3, len(na.Elems))
+	assert.Equal(t, "message", string(*na.Elems[0].(*proto.BulkString)))
+	assert.Equal(t, "testchan", string(*na.Elems[1].(*proto.BulkString)))
+	assert.Equal(t, "testdata", string(*na.Elems[2].(*proto.BulkString)))
+
+	// RESP3 path
+	resp3 := buildPubSubPush(msg, 3)
+	p, ok := resp3.(*proto.Push)
+	assert.True(t, ok)
+	assert.Equal(t, 3, len(p.Elems))
 }
 
 func TestBuildPubSubPush_PMessage_Coverage(t *testing.T) {
@@ -37,14 +42,14 @@ func TestBuildPubSubPush_PMessage_Coverage(t *testing.T) {
 		Pattern: "test*",
 		Data:    []byte("testdata"),
 	}
-	resp := buildPubSubPush(msg)
-	arr, ok := resp.(*proto.Array)
+	resp := buildPubSubPush(msg, 2)
+	na, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.Equal(t, 4, len(arr.Args))
-	assert.Equal(t, "pmessage", string(arr.Args[0]))
-	assert.Equal(t, "test*", string(arr.Args[1]))
-	assert.Equal(t, "testchan", string(arr.Args[2]))
-	assert.Equal(t, "testdata", string(arr.Args[3]))
+	assert.Equal(t, 4, len(na.Elems))
+	assert.Equal(t, "pmessage", string(*na.Elems[0].(*proto.BulkString)))
+	assert.Equal(t, "test*", string(*na.Elems[1].(*proto.BulkString)))
+	assert.Equal(t, "testchan", string(*na.Elems[2].(*proto.BulkString)))
+	assert.Equal(t, "testdata", string(*na.Elems[3].(*proto.BulkString)))
 }
 
 // runPubSubLoop coverage: 39.2% — test early return when subscriber is nil

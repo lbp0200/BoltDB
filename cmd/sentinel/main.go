@@ -16,9 +16,10 @@ import (
 )
 
 var (
-	addrFlag     = flag.String("addr", ":26379", "sentinel listen addr")
-	configFlag   = flag.String("config", "", "sentinel config file (redis sentinel.conf format)")
-	logLevelFlag = flag.String("log-level", "", "log level: DEBUG, INFO, WARNING, ERROR")
+	addrFlag       = flag.String("addr", ":26379", "sentinel listen addr")
+	configFlag     = flag.String("config", "", "sentinel config file (redis sentinel.conf format)")
+	gossipPortFlag = flag.Int("gossip-port", 0, "sentinel gossip port (0 = random)")
+	logLevelFlag   = flag.String("log-level", "", "log level: DEBUG, INFO, WARNING, ERROR")
 )
 
 func main() {
@@ -36,13 +37,29 @@ func main() {
 		}
 	}
 
+	// 启动 gossip 协议
+	gossipCfg := sentinel.DefaultGossipConfig()
+	gossipCfg.Port = *gossipPortFlag
+	gp := sentinel.NewGossipProtocol(s, gossipCfg)
+	s.Gossip = gp
+	if err := gp.Start(); err != nil {
+		logger.Logger.Fatal().Err(err).Msg("failed to start gossip protocol")
+	}
+
+	// 从配置中的 known-sentinel 条目添加对等体
+	for _, peerAddr := range s.GetOtherSentinels() {
+		if err := gp.AddPeer(peerAddr, s.GetRunID()); err != nil {
+			logger.Logger.Warn().Str("peer", peerAddr).Err(err).Msg("failed to add gossip peer")
+		}
+	}
+
 	s.Start()
 
 	ln, err := net.Listen("tcp", *addrFlag)
 	if err != nil {
 		logger.Logger.Fatal().Err(err).Str("addr", *addrFlag).Msg("failed to listen")
 	}
-	logger.Logger.Info().Str("addr", *addrFlag).Msg("sentinel started")
+	logger.Logger.Info().Str("addr", *addrFlag).Int("gossip-port", gp.GetPort()).Msg("sentinel started")
 
 	handler := sentinel.NewSentinelHandler(s)
 
@@ -54,6 +71,7 @@ func main() {
 		logger.Logger.Info().Msg("shutting down sentinel")
 		_ = ln.Close()
 		handler.Stop()
+		gp.Stop()
 		s.Stop()
 	}()
 	for {

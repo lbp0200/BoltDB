@@ -302,7 +302,9 @@ func TestExecuteCommand_HELLO_Resp3_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	resp := handler.executeCommand(state, "HELLO", [][]byte{[]byte("3")}, "127.0.0.1:12345")
-	assert.True(t, resp != nil)
+	_, ok := resp.(*proto.Map)
+	assert.True(t, ok)
+	assert.Equal(t, 3, state.respVersion)
 }
 
 func TestExecuteCommand_ACL_NotSupported_Coverage(t *testing.T) {

@@ -153,8 +153,18 @@ func (s *Sentinel) AddSentinel(addr string) {
 			return
 		}
 	}
+
 	s.otherSentinels = append(s.otherSentinels, addr)
 	logger.Logger.Info().Str("sentinel", addr).Msg("添加哨兵")
+}
+
+// GetOtherSentinels 获取其他哨兵地址列表（只读副本）
+func (s *Sentinel) GetOtherSentinels() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make([]string, len(s.otherSentinels))
+	copy(result, s.otherSentinels)
+	return result
 }
 
 // Start 启动哨兵
@@ -245,6 +255,11 @@ func (s *Sentinel) BroadcastSdown(masterName string, sdownCount int) {
 	case s.gossipCh <- msg:
 	default:
 		// 通道满，忽略
+	}
+
+	// 如果有网络gossip，也通过网络广播
+	if s.Gossip != nil {
+		s.Gossip.BroadcastSdown(masterName, sdownCount)
 	}
 }
 

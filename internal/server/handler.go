@@ -39,6 +39,7 @@ type connState struct {
 	subscriber    *store.Subscriber
 	monitoring    bool
 	monitorCh     chan []byte
+	respVersion   int // 2 for RESP2 (default), 3 for RESP3; set by HELLO
 }
 
 type Handler struct {
@@ -597,6 +598,22 @@ func getResponseType(resp proto.RESP) string {
 		return "Integer"
 	case *proto.Array:
 		return "Array"
+	case *proto.Map:
+		return "Map"
+	case *proto.Set:
+		return "Set"
+	case *proto.Push:
+		return "Push"
+	case *proto.Null:
+		return "Null"
+	case *proto.Double:
+		return "Double"
+	case *proto.Boolean:
+		return "Boolean"
+	case *proto.BigNumber:
+		return "BigNumber"
+	case *proto.VerbatimString:
+		return "VerbatimString"
 	default:
 		return "Unknown"
 	}
@@ -854,7 +871,7 @@ func (h *Handler) runPubSubLoop(ctx context.Context, conn net.Conn, reader *bufi
 			if !ok {
 				return
 			}
-			resp := buildPubSubPush(msg)
+			resp := buildPubSubPush(msg, state.respVersion)
 			if err := proto.WriteRESP(writer, resp); err != nil {
 				return
 			}
@@ -905,21 +922,36 @@ func (h *Handler) runPubSubLoop(ctx context.Context, conn net.Conn, reader *bufi
 	}
 }
 
-// buildPubSubPush constructs a RESP push message from a store.Message
-func buildPubSubPush(msg *store.Message) proto.RESP {
+// buildPubSubPush constructs a RESP push message from a store.Message.
+// For RESP3 (respVersion == 3), uses Push type; for RESP2, uses Array.
+func buildPubSubPush(msg *store.Message, respVersion int) proto.RESP {
+	var elems []proto.RESP
 	if msg.Pattern != "" {
-		return &proto.Array{Args: [][]byte{
-			[]byte("pmessage"),
-			[]byte(msg.Pattern),
-			[]byte(msg.Channel),
-			msg.Data,
-		}}
+		elems = []proto.RESP{
+			proto.NewBulkString([]byte("pmessage")),
+			proto.NewBulkString([]byte(msg.Pattern)),
+			proto.NewBulkString([]byte(msg.Channel)),
+			proto.NewBulkString(msg.Data),
+		}
+	} else {
+		elems = []proto.RESP{
+			proto.NewBulkString([]byte("message")),
+			proto.NewBulkString([]byte(msg.Channel)),
+			proto.NewBulkString(msg.Data),
+		}
 	}
-	return &proto.Array{Args: [][]byte{
-		[]byte("message"),
-		[]byte(msg.Channel),
-		msg.Data,
-	}}
+	if respVersion == 3 {
+		return &proto.Push{Elems: elems}
+	}
+	return &proto.NestedArray{Elems: elems}
+}
+
+// makePushOrArray wraps elements in Push (RESP3) or NestedArray (RESP2)
+func makePushOrArray(elems []proto.RESP, respVersion int) proto.RESP {
+	if respVersion == 3 {
+		return &proto.Push{Elems: elems}
+	}
+	return &proto.NestedArray{Elems: elems}
 }
 
 // processPubSubCommand handles commands received while in PubSub mode.
@@ -948,11 +980,11 @@ func (h *Handler) processPubSubCommand(state *connState, req *proto.Array, remot
 			Responses: make([]proto.RESP, len(subscribed)),
 		}
 		for i, ch := range subscribed {
-			resp.Responses[i] = &proto.NestedArray{Elems: []proto.RESP{
+			resp.Responses[i] = makePushOrArray([]proto.RESP{
 				proto.NewBulkString([]byte("subscribe")),
 				proto.NewBulkString([]byte(ch)),
 				proto.NewInteger(int64(i + 1)),
-			}}
+			}, state.respVersion)
 		}
 		return resp
 
@@ -972,11 +1004,11 @@ func (h *Handler) processPubSubCommand(state *connState, req *proto.Array, remot
 			Responses: make([]proto.RESP, len(subscribed)),
 		}
 		for i, p := range subscribed {
-			resp.Responses[i] = &proto.NestedArray{Elems: []proto.RESP{
+			resp.Responses[i] = makePushOrArray([]proto.RESP{
 				proto.NewBulkString([]byte("psubscribe")),
 				proto.NewBulkString([]byte(p)),
 				proto.NewInteger(int64(i + 1)),
-			}}
+			}, state.respVersion)
 		}
 		return resp
 
@@ -995,21 +1027,21 @@ func (h *Handler) processPubSubCommand(state *connState, req *proto.Array, remot
 			unsubscribed = h.PubSub.Unsubscribe(state.subscriber)
 		}
 		if len(unsubscribed) == 0 {
-			return &proto.NestedArray{Elems: []proto.RESP{
+			return makePushOrArray([]proto.RESP{
 				proto.NewBulkString([]byte("unsubscribe")),
 				proto.NewBulkString([]byte("")),
 				proto.NewInteger(0),
-			}}
+			}, state.respVersion)
 		}
 		resp := &MultiResponse{
 			Responses: make([]proto.RESP, len(unsubscribed)),
 		}
 		for i, ch := range unsubscribed {
-			resp.Responses[i] = &proto.NestedArray{Elems: []proto.RESP{
+			resp.Responses[i] = makePushOrArray([]proto.RESP{
 				proto.NewBulkString([]byte("unsubscribe")),
 				proto.NewBulkString([]byte(ch)),
 				proto.NewInteger(0),
-			}}
+			}, state.respVersion)
 		}
 		return resp
 
@@ -1028,21 +1060,21 @@ func (h *Handler) processPubSubCommand(state *connState, req *proto.Array, remot
 			unsubscribed = h.PubSub.PUnsubscribe(state.subscriber)
 		}
 		if len(unsubscribed) == 0 {
-			return &proto.NestedArray{Elems: []proto.RESP{
+			return makePushOrArray([]proto.RESP{
 				proto.NewBulkString([]byte("punsubscribe")),
 				proto.NewBulkString([]byte("")),
 				proto.NewInteger(0),
-			}}
+			}, state.respVersion)
 		}
 		resp := &MultiResponse{
 			Responses: make([]proto.RESP, len(unsubscribed)),
 		}
 		for i, p := range unsubscribed {
-			resp.Responses[i] = &proto.NestedArray{Elems: []proto.RESP{
+			resp.Responses[i] = makePushOrArray([]proto.RESP{
 				proto.NewBulkString([]byte("punsubscribe")),
 				proto.NewBulkString([]byte(p)),
 				proto.NewInteger(0),
-			}}
+			}, state.respVersion)
 		}
 		return resp
 
@@ -3177,10 +3209,8 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				return proto.NewError("ERR Protocol version is not supported")
 			}
 			protoLevel = level
-			if protoLevel == 3 {
-				return proto.NewError("ERR RESP3 is not supported")
-			}
 		}
+		state.respVersion = protoLevel
 		role := "master"
 		if h.Replication != nil {
 			role = h.Replication.GetRole()
@@ -3193,24 +3223,26 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if state.clientInfo != nil {
 			id = state.clientInfo.ID
 		}
-		return &proto.NestedArray{
-			Elems: []proto.RESP{
-				proto.NewBulkString([]byte("server")),
-				proto.NewBulkString([]byte("boltdb")),
-				proto.NewBulkString([]byte("version")),
-				proto.NewBulkString([]byte(Version)),
-				proto.NewBulkString([]byte("proto")),
-				proto.NewInteger(int64(protoLevel)),
-				proto.NewBulkString([]byte("id")),
-				proto.NewInteger(id),
-				proto.NewBulkString([]byte("mode")),
-				proto.NewBulkString([]byte(mode)),
-				proto.NewBulkString([]byte("role")),
-				proto.NewBulkString([]byte(role)),
-				proto.NewBulkString([]byte("modules")),
-				&proto.NestedArray{Elems: []proto.RESP{}},
-			},
+		elements := []proto.RESP{
+			proto.NewBulkString([]byte("server")),
+			proto.NewBulkString([]byte("boltdb")),
+			proto.NewBulkString([]byte("version")),
+			proto.NewBulkString([]byte(Version)),
+			proto.NewBulkString([]byte("proto")),
+			proto.NewInteger(int64(protoLevel)),
+			proto.NewBulkString([]byte("id")),
+			proto.NewInteger(id),
+			proto.NewBulkString([]byte("mode")),
+			proto.NewBulkString([]byte(mode)),
+			proto.NewBulkString([]byte("role")),
+			proto.NewBulkString([]byte(role)),
+			proto.NewBulkString([]byte("modules")),
+			&proto.NestedArray{Elems: []proto.RESP{}},
 		}
+		if protoLevel == 3 {
+			return &proto.Map{Elems: elements}
+		}
+		return &proto.NestedArray{Elems: elements}
 
 	case "HLEN":
 		if len(args) < 1 {
@@ -5490,11 +5522,11 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			Responses: make([]proto.RESP, len(subscribed)),
 		}
 		for i, ch := range subscribed {
-			resp.Responses[i] = &proto.NestedArray{Elems: []proto.RESP{
+			resp.Responses[i] = makePushOrArray([]proto.RESP{
 				proto.NewBulkString([]byte("subscribe")),
 				proto.NewBulkString([]byte(ch)),
 				proto.NewInteger(int64(i + 1)),
-			}}
+			}, state.respVersion)
 		}
 		return resp
 
@@ -5519,11 +5551,11 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			Responses: make([]proto.RESP, len(subscribed)),
 		}
 		for i, p := range subscribed {
-			resp.Responses[i] = &proto.NestedArray{Elems: []proto.RESP{
+			resp.Responses[i] = makePushOrArray([]proto.RESP{
 				proto.NewBulkString([]byte("psubscribe")),
 				proto.NewBulkString([]byte(p)),
 				proto.NewInteger(int64(i + 1)),
-			}}
+			}, state.respVersion)
 		}
 		return resp
 
@@ -5537,11 +5569,11 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if len(args) >= 1 {
 				channel = string(args[0])
 			}
-			return &proto.NestedArray{Elems: []proto.RESP{
+			return makePushOrArray([]proto.RESP{
 				proto.NewBulkString([]byte("unsubscribe")),
 				proto.NewBulkString([]byte(channel)),
 				proto.NewInteger(0),
-			}}
+			}, state.respVersion)
 		}
 		var unsubscribed []string
 		if len(args) >= 1 {
@@ -5554,21 +5586,21 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			unsubscribed = h.PubSub.Unsubscribe(state.subscriber)
 		}
 		if len(unsubscribed) == 0 {
-			return &proto.NestedArray{Elems: []proto.RESP{
+			return makePushOrArray([]proto.RESP{
 				proto.NewBulkString([]byte("unsubscribe")),
 				proto.NewBulkString([]byte("")),
 				proto.NewInteger(0),
-			}}
+			}, state.respVersion)
 		}
 		resp := &MultiResponse{
 			Responses: make([]proto.RESP, len(unsubscribed)),
 		}
 		for i, ch := range unsubscribed {
-			resp.Responses[i] = &proto.NestedArray{Elems: []proto.RESP{
+			resp.Responses[i] = makePushOrArray([]proto.RESP{
 				proto.NewBulkString([]byte("unsubscribe")),
 				proto.NewBulkString([]byte(ch)),
 				proto.NewInteger(0),
-			}}
+			}, state.respVersion)
 		}
 		return resp
 
@@ -5582,11 +5614,11 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if len(args) >= 1 {
 				pattern = string(args[0])
 			}
-			return &proto.NestedArray{Elems: []proto.RESP{
+			return makePushOrArray([]proto.RESP{
 				proto.NewBulkString([]byte("punsubscribe")),
 				proto.NewBulkString([]byte(pattern)),
 				proto.NewInteger(0),
-			}}
+			}, state.respVersion)
 		}
 		var unsubscribed []string
 		if len(args) >= 1 {
@@ -5599,21 +5631,21 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			unsubscribed = h.PubSub.PUnsubscribe(state.subscriber)
 		}
 		if len(unsubscribed) == 0 {
-			return &proto.NestedArray{Elems: []proto.RESP{
+			return makePushOrArray([]proto.RESP{
 				proto.NewBulkString([]byte("punsubscribe")),
 				proto.NewBulkString([]byte("")),
 				proto.NewInteger(0),
-			}}
+			}, state.respVersion)
 		}
 		resp := &MultiResponse{
 			Responses: make([]proto.RESP, len(unsubscribed)),
 		}
 		for i, p := range unsubscribed {
-			resp.Responses[i] = &proto.NestedArray{Elems: []proto.RESP{
+			resp.Responses[i] = makePushOrArray([]proto.RESP{
 				proto.NewBulkString([]byte("punsubscribe")),
 				proto.NewBulkString([]byte(p)),
 				proto.NewInteger(0),
-			}}
+			}, state.respVersion)
 		}
 		return resp
 
@@ -5750,7 +5782,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			h.watchMonitors[key][state] = struct{}{}
 		}
 		h.watchMu.Unlock()
-		return proto.NewInteger(int64(len(args)))
+		return proto.NewSimpleString("OK")
 
 	case "UNWATCH":
 		if state.watchedKeys != nil {

@@ -71,6 +71,99 @@ func (n *NestedArray) String() string {
 	return b.String()
 }
 
+// RESP3 types
+
+// Map represents a RESP3 Map type, wire prefix '%'
+type Map struct {
+	Elems []RESP // key1, val1, key2, val2, ...
+}
+
+func (m *Map) String() string {
+	var b strings.Builder
+	b.WriteString("%")
+	b.WriteString(strconv.Itoa(len(m.Elems) / 2))
+	b.WriteString("\r\n")
+	for _, elem := range m.Elems {
+		b.WriteString(elem.String())
+	}
+	return b.String()
+}
+
+// Set represents a RESP3 Set type, wire prefix '~'
+type Set struct {
+	Elems []RESP
+}
+
+func (s *Set) String() string {
+	var b strings.Builder
+	b.WriteString("~")
+	b.WriteString(strconv.Itoa(len(s.Elems)))
+	b.WriteString("\r\n")
+	for _, elem := range s.Elems {
+		b.WriteString(elem.String())
+	}
+	return b.String()
+}
+
+// Push represents a RESP3 Push type, wire prefix '>'
+// Used for PubSub messages, monitor output, and other server-initiated pushes.
+type Push struct {
+	Elems []RESP
+}
+
+func (p *Push) String() string {
+	var b strings.Builder
+	b.WriteString(">")
+	b.WriteString(strconv.Itoa(len(p.Elems)))
+	b.WriteString("\r\n")
+	for _, elem := range p.Elems {
+		b.WriteString(elem.String())
+	}
+	return b.String()
+}
+
+// Null represents a RESP3 Null value, wire prefix '_'
+type Null struct{}
+
+func (n Null) String() string { return "_\r\n" }
+
+// Double represents a RESP3 Double value, wire prefix ','
+type Double struct {
+	Value float64
+}
+
+func (d Double) String() string { return "," + strconv.FormatFloat(d.Value, 'g', -1, 64) + "\r\n" }
+
+// Boolean represents a RESP3 Boolean value, wire prefix '#'
+type Boolean struct {
+	Value bool
+}
+
+func (b Boolean) String() string {
+	if b.Value {
+		return "#t\r\n"
+	}
+	return "#f\r\n"
+}
+
+// BigNumber represents a RESP3 Big number, wire prefix '('
+type BigNumber struct {
+	Value string
+}
+
+func (b BigNumber) String() string { return "(" + b.Value + "\r\n" }
+
+// VerbatimString represents a RESP3 Verbatim string, wire prefix '='
+// Contains a 3-byte encoding prefix (e.g. "txt") followed by ':' and the value.
+type VerbatimString struct {
+	Encoding string // 3-char encoding, e.g. "txt" or "mkd"
+	Value    string
+}
+
+func (v VerbatimString) String() string {
+	return "=" + strconv.Itoa(len(v.Encoding)+1+len(v.Value)) + "\r\n" + v.Encoding + ":" + v.Value + "\r\n"
+}
+
 func ReadRESP(r *bufio.Reader) (*Array, error) {
 	line, err := readLine(r)
 	if err != nil {
@@ -259,6 +352,33 @@ func WriteRESP(w io.Writer, resp RESP) error {
 				return err
 			}
 		}
+	case *Map:
+		if _, err := fmt.Fprintf(w, "%%%d\r\n", len(v.Elems)/2); err != nil {
+			return err
+		}
+		for _, elem := range v.Elems {
+			if err := WriteRESP(w, elem); err != nil {
+				return err
+			}
+		}
+	case *Set:
+		if _, err := fmt.Fprintf(w, "~%d\r\n", len(v.Elems)); err != nil {
+			return err
+		}
+		for _, elem := range v.Elems {
+			if err := WriteRESP(w, elem); err != nil {
+				return err
+			}
+		}
+	case *Push:
+		if _, err := fmt.Fprintf(w, ">%d\r\n", len(v.Elems)); err != nil {
+			return err
+		}
+		for _, elem := range v.Elems {
+			if err := WriteRESP(w, elem); err != nil {
+				return err
+			}
+		}
 	case *SimpleString:
 		if _, err := fmt.Fprintf(w, "+%s\r\n", string(*v)); err != nil {
 			return err
@@ -273,6 +393,39 @@ func WriteRESP(w io.Writer, resp RESP) error {
 		}
 	case NilArray:
 		if _, err := w.Write([]byte("*-1\r\n")); err != nil {
+			return err
+		}
+	case Null:
+		if _, err := w.Write([]byte("_\r\n")); err != nil {
+			return err
+		}
+	case Double:
+		if _, err := fmt.Fprintf(w, ",%s\r\n", strconv.FormatFloat(v.Value, 'g', -1, 64)); err != nil {
+			return err
+		}
+	case Boolean:
+		if v.Value {
+			if _, err := w.Write([]byte("#t\r\n")); err != nil {
+				return err
+			}
+		} else {
+			if _, err := w.Write([]byte("#f\r\n")); err != nil {
+				return err
+			}
+		}
+	case BigNumber:
+		if _, err := fmt.Fprintf(w, "(%s\r\n", v.Value); err != nil {
+			return err
+		}
+	case VerbatimString:
+		payload := v.Encoding + ":" + v.Value
+		if _, err := fmt.Fprintf(w, "=%d\r\n", len(payload)); err != nil {
+			return err
+		}
+		if _, err := w.Write([]byte(payload)); err != nil {
+			return err
+		}
+		if _, err := w.Write([]byte("\r\n")); err != nil {
 			return err
 		}
 	case RawString:

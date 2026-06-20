@@ -515,6 +515,134 @@ func TestRawString(t *testing.T) {
 	}
 }
 
+// RESP3 type tests
+
+func TestRESP3_Write(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		resp     RESP
+		expected string
+	}{
+		{
+			name:     "map",
+			resp:     &Map{Elems: []RESP{NewBulkString([]byte("k")), NewBulkString([]byte("v"))}},
+			expected: "%1\r\n$1\r\nk\r\n$1\r\nv\r\n",
+		},
+		{
+			name:     "empty map",
+			resp:     &Map{Elems: []RESP{}},
+			expected: "%0\r\n",
+		},
+		{
+			name:     "set",
+			resp:     &Set{Elems: []RESP{NewBulkString([]byte("a")), NewBulkString([]byte("b"))}},
+			expected: "~2\r\n$1\r\na\r\n$1\r\nb\r\n",
+		},
+		{
+			name:     "empty set",
+			resp:     &Set{Elems: []RESP{}},
+			expected: "~0\r\n",
+		},
+		{
+			name:     "push",
+			resp:     &Push{Elems: []RESP{NewBulkString([]byte("message")), NewBulkString([]byte("ch"))}},
+			expected: ">2\r\n$7\r\nmessage\r\n$2\r\nch\r\n",
+		},
+		{
+			name:     "null",
+			resp:     Null{},
+			expected: "_\r\n",
+		},
+		{
+			name:     "double positive",
+			resp:     Double{Value: 3.14},
+			expected: ",3.14\r\n",
+		},
+		{
+			name:     "double integer",
+			resp:     Double{Value: 42},
+			expected: ",42\r\n",
+		},
+		{
+			name:     "boolean true",
+			resp:     Boolean{Value: true},
+			expected: "#t\r\n",
+		},
+		{
+			name:     "boolean false",
+			resp:     Boolean{Value: false},
+			expected: "#f\r\n",
+		},
+		{
+			name:     "big number",
+			resp:     BigNumber{Value: "123456789012345678901234567890"},
+			expected: "(123456789012345678901234567890\r\n",
+		},
+		{
+			name:     "verbatim string",
+			resp:     VerbatimString{Encoding: "txt", Value: "hello"},
+			expected: "=9\r\ntxt:hello\r\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			err := WriteRESP(&buf, tt.resp)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, buf.String())
+		})
+	}
+}
+
+func TestRESP3_String(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		resp     RESP
+		expected string
+	}{
+		{
+			name:     "map string",
+			resp:     &Map{Elems: []RESP{NewBulkString([]byte("k")), NewBulkString([]byte("v"))}},
+			expected: "%1\r\n$1\r\nk\r\n$1\r\nv\r\n",
+		},
+		{
+			name:     "push string",
+			resp:     &Push{Elems: []RESP{NewBulkString([]byte("message")), NewBulkString([]byte("ch"))}},
+			expected: ">2\r\n$7\r\nmessage\r\n$2\r\nch\r\n",
+		},
+		{
+			name:     "null string",
+			resp:     Null{},
+			expected: "_\r\n",
+		},
+		{
+			name:     "double string",
+			resp:     Double{Value: -2.5},
+			expected: ",-2.5\r\n",
+		},
+		{
+			name:     "boolean string",
+			resp:     Boolean{Value: true},
+			expected: "#t\r\n",
+		},
+		{
+			name:     "big number string",
+			resp:     BigNumber{Value: "42"},
+			expected: "(42\r\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.resp.String()
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func TestReadRESP_PartialPackets(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

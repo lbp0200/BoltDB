@@ -218,9 +218,15 @@ func (gp *GossipProtocol) handleHello(conn net.Conn, parts []string) {
 	}
 
 	runID := parts[0]
+	port := parts[1] // sender's gossip listener port
 	epoch, _ := strconv.ParseInt(parts[2], 10, 64)
 
-	peerAddr := conn.RemoteAddr().String()
+	// Use the sender's gossip port from the message, not the ephemeral source port
+	host, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	peerAddr := net.JoinHostPort(host, port)
 
 	// 添加或更新对等体
 	gp.addOrUpdatePeer(peerAddr, runID)
@@ -377,14 +383,11 @@ func (gp *GossipProtocol) sendHellos() {
 			continue
 		}
 
-		if peer.HelloSent {
-			continue
-		}
-
 		if err := gp.sendHello(addr); err != nil {
 			logger.Logger.Warn().Str("peer", addr).Err(err).Msg("发送HELLO消息失败")
 		} else {
 			peer.HelloSent = true
+			peer.LastSeen = time.Now()
 		}
 	}
 }

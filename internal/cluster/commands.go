@@ -1,12 +1,16 @@
 package cluster
 
 import (
+	"bufio"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/logger"
+	"github.com/lbp0200/BoltDB/internal/proto"
 )
 
 // ClusterCommands 处理CLUSTER命令
@@ -208,27 +212,102 @@ func (cc *ClusterCommands) handleSetSlot(args []string) (string, error) {
 }
 
 // handleMeet 处理CLUSTER MEET命令
+// 2 个参数（ip, port）：用户发起的 MEET，连接到目标节点并交换信息
+// 3 个参数（ip, port, peerNodeID）：其他节点发起的内部 MEET，添加该节点到本地表
 func (cc *ClusterCommands) handleMeet(args []string) (string, error) {
 	if len(args) < 2 {
 		return "", fmt.Errorf("ERR wrong number of arguments for 'CLUSTER MEET' command")
 	}
 
 	ip := args[0]
-	port, err := strconv.Atoi(args[1])
-	if err != nil {
+	portStr := args[1]
+	if _, err := strconv.Atoi(portStr); err != nil {
 		return "", fmt.Errorf("ERR invalid port")
 	}
 
-	addr := fmt.Sprintf("%s:%d", ip, port)
+	addr := net.JoinHostPort(ip, portStr)
 
-	// 创建新节点（简化实现，实际应该通过握手获取节点ID）
+	// Internal MEET from another node: 3 args (ip, port, peerNodeID)
+	if len(args) >= 3 {
+		peerNodeID := args[2]
+		node := NewNode(peerNodeID, addr)
+		node.Flags = append(node.Flags, FlagMaster)
+		cc.cluster.AddNode(node)
+		logger.Logger.Info().
+			Str("peer", peerNodeID).
+			Str("addr", addr).
+			Msg("cluster MEET: added peer from internal handshake")
+		// Return our own node ID so the caller can update its node table
+		return cc.cluster.Myself.ID, nil
+	}
+
+	// User-facing MEET: connect to target and perform handshake
+	// First, add a placeholder node for the target
 	nodeID, err := generateNodeID()
 	if err != nil {
 		return "", err
 	}
-	node := NewNode(nodeID, addr)
-	node.Flags = append(node.Flags, FlagMaster)
-	cc.cluster.AddNode(node)
+	placeholder := NewNode(nodeID, addr)
+	placeholder.Flags = append(placeholder.Flags, FlagMaster)
+	cc.cluster.AddNode(placeholder)
+
+	// Connect to the target and send handshake
+	myIP, myPort, err := cc.cluster.Myself.GetHostPort()
+	if err != nil {
+		// Fallback: keep placeholder, no handshake
+		logger.Logger.Warn().Err(err).Msg("cluster MEET: failed to parse own address, skipping handshake")
+		return "OK", nil
+	}
+
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		logger.Logger.Warn().Err(err).Str("target", addr).Msg("cluster MEET: failed to connect to target")
+		return "OK", nil
+	}
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+
+	// Send: CLUSTER MEET <myIP> <myPort> <myNodeID>
+	myNodeID := cc.cluster.Myself.ID
+	cmd := fmt.Sprintf("*5\r\n$7\r\nCLUSTER\r\n$4\r\nMEET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
+		len(myIP), myIP, len(myPort), myPort, len(myNodeID), myNodeID)
+	if _, err := conn.Write([]byte(cmd)); err != nil {
+		logger.Logger.Warn().Err(err).Str("target", addr).Msg("cluster MEET: handshake write failed")
+		return "OK", nil
+	}
+
+	// Read response: expect bulk string with target's node ID
+	reader := bufio.NewReader(conn)
+	resp, err := proto.ReadRESP(reader)
+	if err != nil {
+		logger.Logger.Warn().Err(err).Str("target", addr).Msg("cluster MEET: handshake read failed")
+		return "OK", nil
+	}
+
+	if len(resp.Args) >= 1 {
+		realNodeID := string(resp.Args[0])
+		if realNodeID != "" && realNodeID != nodeID {
+			// Update node table with the real node ID from the target
+			cc.cluster.mu.Lock()
+			delete(cc.cluster.Nodes, nodeID)
+			if existing, ok := cc.cluster.Nodes[realNodeID]; ok {
+				existing.PongRecv = time.Now().UnixMilli()
+			} else {
+				node := NewNode(realNodeID, addr)
+				node.Flags = append(node.Flags, FlagMaster)
+				node.PongRecv = time.Now().UnixMilli()
+				cc.cluster.Nodes[realNodeID] = node
+			}
+			cc.cluster.mu.Unlock()
+			if err := cc.cluster.SaveConfig(); err != nil {
+				logger.Logger.Warn().Err(err).Msg("cluster MEET: failed to persist config")
+			}
+			logger.Logger.Info().
+				Str("peer", realNodeID).
+				Str("addr", addr).
+				Msg("cluster MEET: handshake complete")
+		}
+	}
 
 	return "OK", nil
 }
