@@ -270,6 +270,7 @@ func (psm *PubSubManager) RemoveSubscriber(subscriber *Subscriber) {
 		return
 	}
 	subscriber.closed = true
+	close(subscriber.MessageCh)
 	subscriber.closeMu.Unlock()
 
 	// 取消所有频道订阅
@@ -288,7 +289,6 @@ func (psm *PubSubManager) RemoveSubscriber(subscriber *Subscriber) {
 	psm.punsubscribeLocked(subscriber, patterns...)
 
 	delete(psm.subscribers, subscriber)
-	close(subscriber.MessageCh)
 }
 
 // Clear 清空所有订阅状态，用于测试隔离
@@ -304,8 +304,8 @@ func (psm *PubSubManager) Clear() {
 			continue
 		}
 		sub.closed = true
-		sub.closeMu.Unlock()
 		close(sub.MessageCh)
+		sub.closeMu.Unlock()
 	}
 
 	// 重置所有映射

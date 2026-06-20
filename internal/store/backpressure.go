@@ -53,7 +53,10 @@ func (ws *writeSlot) Acquire() {
 }
 
 func (ws *writeSlot) Release() {
-	<-ws.ch
+	select {
+	case <-ws.ch:
+	default:
+	}
 }
 
 // l0Cache 缓存 BadgerDB L0 score，避免每次写入都查询 level manifest
@@ -108,11 +111,12 @@ func (s *BotreonStore) l0ScoreCached() float64 {
 // preDelay > 0 表示应等待后再写入
 // shouldReject == true 表示应拒绝本次写入
 func (s *BotreonStore) preWriteCheck() (time.Duration, bool) {
-	if s.backpressure == nil {
+	slot := s.backpressure.Load()
+	if slot == nil {
 		return 0, false
 	}
 
-	cfg := s.bpConfig
+	cfg := s.bpConfig.Load()
 	if !cfg.Enabled {
 		return 0, false
 	}

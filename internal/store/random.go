@@ -6,6 +6,7 @@ import (
 )
 
 // randomIntn 返回 [0, n) 范围内的随机整数
+// 当 crypto/rand 失败时返回 0
 func randomIntn(n int) int {
 	if n <= 0 {
 		return 0
@@ -18,6 +19,7 @@ func randomIntn(n int) int {
 }
 
 // randomShuffle 使用 crypto/rand 打乱切片
+// 当 crypto/rand 失败时不做任何操作
 func randomShuffle(n int, swap func(i, j int)) {
 	if n <= 1 {
 		return

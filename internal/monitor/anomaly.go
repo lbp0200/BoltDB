@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/lbp0200/BoltDB/internal/logger"
 )
 
 const (
@@ -570,8 +572,12 @@ func SaveAnomalyReport(dir, prefix string, report AnomalyReport) {
 	}
 
 	jpath := filepath.Join(dir, prefix+"-anomaly.json")
-	_ = os.WriteFile(jpath, jsonData, 0644)
+	if err := os.WriteFile(jpath, jsonData, 0644); err != nil {
+		logger.Warning("保存异常JSON报告失败: %v", err)
+	}
 
 	mdPath := filepath.Join(dir, prefix+"-anomaly.md")
-	_ = os.WriteFile(mdPath, []byte(report.FormatAnomalyReport()), 0644)
+	if err := os.WriteFile(mdPath, []byte(report.FormatAnomalyReport()), 0644); err != nil {
+		logger.Warning("保存异常Markdown报告失败: %v", err)
+	}
 }

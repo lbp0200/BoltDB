@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -79,8 +80,8 @@ type BotreonStore struct {
 	streamBlockingChans map[string][]chan StreamReadResult // key -> channels waiting for stream data
 
 	// 主动背压
-	backpressure *writeSlot
-	bpConfig     BackpressureConfig
+	backpressure atomic.Pointer[writeSlot]
+	bpConfig     atomic.Pointer[BackpressureConfig]
 	l0Cache      *l0Cache
 
 	// 重试指标
@@ -337,7 +338,8 @@ func NewBotreonStoreWithCompression(path string, compressionType CompressionType
 
 	bpConfig := DefaultBackpressureConfig()
 
-	return &BotreonStore{
+	p := newWriteSlot(bpConfig.MaxConcurrentWrites)
+	s := &BotreonStore{
 		db:                  db,
 		compressionType:     compressionType,
 		readCache:           readCache,
@@ -345,10 +347,12 @@ func NewBotreonStoreWithCompression(path string, compressionType CompressionType
 		blockingPopChans:    make(map[string][]chan BlockingResult),
 		blockingZPopChans:   make(map[string][]chan string),
 		streamBlockingChans: make(map[string][]chan StreamReadResult),
-		backpressure:        newWriteSlot(bpConfig.MaxConcurrentWrites),
-		bpConfig:            bpConfig,
 		l0Cache:             &l0Cache{},
-	}, nil
+	}
+	s.backpressure.Store(p)
+	cfg := bpConfig
+	s.bpConfig.Store(&cfg)
+	return s, nil
 }
 
 func (s *BotreonStore) Close() error {
@@ -382,15 +386,13 @@ func (s *BotreonStore) SetBackpressureConfig(cfg BackpressureConfig) {
 	if cfg.MaxConcurrentWrites <= 0 {
 		cfg.MaxConcurrentWrites = defaultMaxConcurrentWrites
 	}
-	s.backpressure = newWriteSlot(cfg.MaxConcurrentWrites)
-	s.bpConfig = cfg
+	s.backpressure.Store(newWriteSlot(cfg.MaxConcurrentWrites))
+	s.bpConfig.Store(&cfg)
 }
 
 // GetBackpressureConfig 返回当前背压配置
 func (s *BotreonStore) GetBackpressureConfig() BackpressureConfig {
-	s.retryMu.Lock()
-	defer s.retryMu.Unlock()
-	return s.bpConfig
+	return *s.bpConfig.Load()
 }
 
 // GetDB 获取BadgerDB实例（用于复制和备份）

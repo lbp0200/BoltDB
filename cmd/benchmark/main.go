@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -20,9 +22,6 @@ func main() {
 	dataSize := flag.Int("d", 100, "data size in bytes")
 	port := flag.String("port", "6388", "BoltDB server port")
 	flag.Parse()
-
-	_ = os.RemoveAll(*dbPath)
-	_ = os.MkdirAll(*dbPath, 0755)
 
 	fmt.Println("==============================================")
 	fmt.Println("BoltDB Benchmark Results")
@@ -55,6 +54,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	cleanup := func() {
+		if boltCmd.Process != nil {
+			_ = boltCmd.Process.Kill()
+		}
+	}
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		fmt.Println("\nInterrupt received, shutting down...")
+		cleanup()
+		os.Exit(1)
+	}()
+
 	time.Sleep(2 * time.Second)
 
 	cmd := exec.Command("redis-cli", "-p", *port, "PING")
@@ -62,7 +75,7 @@ func main() {
 		fmt.Printf("Failed to connect to BoltDB on port %s: %v\n", *port, err)
 		fmt.Printf("BoltDB stdout: %s\n", boltStdout.String())
 		fmt.Printf("BoltDB stderr: %s\n", boltStderr.String())
-		_ = boltCmd.Process.Kill()
+		cleanup()
 		os.Exit(1)
 	}
 
@@ -87,13 +100,14 @@ func main() {
 			"-n", strconv.Itoa(*requests),
 		)
 
-		var benchStdout bytes.Buffer
+		var benchStdout, benchStderr bytes.Buffer
 		benchmarkCmd.Stdout = &benchStdout
-		benchmarkCmd.Stderr = nil
+		benchmarkCmd.Stderr = &benchStderr
 
 		cmdStart := time.Now()
 		if err := benchmarkCmd.Run(); err != nil {
 			fmt.Printf("  %s test failed: %v\n", testCmd, err)
+			fmt.Printf("  redis-benchmark stderr: %s\n", benchStderr.String())
 			continue
 		}
 		cmdTime := time.Since(cmdStart)
@@ -112,8 +126,6 @@ func main() {
 					}
 				}
 			}
-		}
-		for _, line := range strings.Split(output, "\n") {
 			if strings.Contains(line, "completed") {
 				parts := strings.Fields(line)
 				for _, part := range parts {
@@ -121,7 +133,6 @@ func main() {
 						totalRequests += n
 					}
 				}
-				break
 			}
 		}
 		fmt.Println()
@@ -152,8 +163,6 @@ func main() {
 		fmt.Println("Server did not shut down gracefully, killing...")
 		_ = boltCmd.Process.Kill()
 	}
-
-	_ = os.RemoveAll(*dbPath)
 
 	fmt.Println("\n==============================================")
 	fmt.Println("Benchmark completed successfully!")

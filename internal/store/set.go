@@ -22,14 +22,15 @@ func randomFloat64() float64 {
 
 func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int) error {
 	// 主动背压：在进入 retry 循环前检查 L0 状态
-	if s.bpConfig.Enabled {
+	bpCfg := s.bpConfig.Load()
+	if bpCfg.Enabled {
 		delay, reject := s.preWriteCheck()
 		if reject {
 			s.retryMu.Lock()
 			s.retryMetrics.l0Rejected++
 			s.retryMu.Unlock()
 			return fmt.Errorf("write rejected: L0 score %.1f exceeds hard threshold %.0f",
-				s.l0ScoreCached(), s.bpConfig.L0HardThreshold)
+				s.l0ScoreCached(), bpCfg.L0HardThreshold)
 		}
 		if delay > 0 {
 			s.retryMu.Lock()
@@ -40,8 +41,9 @@ func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int) e
 	}
 
 	// 限流：防止 retry goroutine 雪崩
-	s.backpressure.Acquire()
-	defer s.backpressure.Release()
+	slot := s.backpressure.Load()
+	slot.Acquire()
+	defer slot.Release()
 
 	s.retryMu.Lock()
 	s.retryMetrics.activeRetries++

@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lbp0200/BoltDB/internal/logger"
 	"github.com/lbp0200/BoltDB/internal/replication"
 	"github.com/lbp0200/BoltDB/internal/store"
 )
@@ -258,7 +259,9 @@ func (pm *PressureMonitor) sample() {
 		line, err := json.Marshal(js)
 		if err == nil {
 			line = append(line, '\n')
-			_, _ = pm.jsonlFile.Write(line)
+			if _, err := pm.jsonlFile.Write(line); err != nil {
+				logger.Warning("记录压力量化采样失败: %v", err)
+			}
 		}
 	}
 }

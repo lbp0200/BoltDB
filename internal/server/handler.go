@@ -132,10 +132,12 @@ func (h *Handler) markDirtyKeys(state *connState, keys ...string) {
 	for _, key := range keys {
 		if watchers, exists := h.watchMonitors[key]; exists {
 			for watcher := range watchers {
+				watcher.mu.Lock()
 				if watcher.dirtyKeys == nil {
 					watcher.dirtyKeys = make(map[string]struct{})
 				}
 				watcher.dirtyKeys[key] = struct{}{}
+				watcher.mu.Unlock()
 			}
 		}
 	}
@@ -351,7 +353,12 @@ func (h *Handler) handleConnection(conn net.Conn) {
 		if len(state.watchedKeys) > 0 {
 			h.watchMu.Lock()
 			for key := range state.watchedKeys {
-				delete(h.watchMonitors, key)
+				if set, exists := h.watchMonitors[key]; exists {
+					delete(set, state)
+					if len(set) == 0 {
+						delete(h.watchMonitors, key)
+					}
+				}
 			}
 			h.watchMu.Unlock()
 		}
@@ -1284,7 +1291,15 @@ func (h *Handler) handleSlaveReplicationConnection(ctx context.Context, slave *r
 		if cmd == "REPLCONF" && len(req.Args) >= 3 {
 			if strings.ToUpper(string(req.Args[1])) == "ACK" {
 				// 解析偏移量
-				offset, _ := strconv.ParseInt(string(req.Args[2]), 10, 64)
+				offset, err := strconv.ParseInt(string(req.Args[2]), 10, 64)
+				if err != nil {
+					logger.Logger.Warn().
+						Str("slave_id", slave.ID).
+						Str("raw", string(req.Args[2])).
+						Err(err).
+						Msg("从节点 ACK 偏移量解析失败")
+					continue
+				}
 				slave.UpdateReplAck(offset)
 				h.Replication.UpdateSlaveAckOffset(slave.ID, offset)
 				continue
@@ -1679,13 +1694,13 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if opt == "EX" && len(args) > 2 {
 				s, err := strconv.Atoi(string(args[2]))
 				if err != nil {
-					return proto.NewError("ERR value is not an integer")
+					return proto.NewError("ERR value is not an integer or out of range")
 				}
 				gexSeconds = s
 			} else if opt == "PX" && len(args) > 2 {
 				s, err := strconv.Atoi(string(args[2]))
 				if err != nil {
-					return proto.NewError("ERR value is not an integer")
+					return proto.NewError("ERR value is not an integer or out of range")
 				}
 				gexSeconds = s / 1000
 			} else if opt == "PERSIST" {
@@ -5741,7 +5756,12 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if state.watchedKeys != nil {
 			h.watchMu.Lock()
 			for key := range state.watchedKeys {
-				delete(h.watchMonitors, key)
+				if set, exists := h.watchMonitors[key]; exists {
+					delete(set, state)
+					if len(set) == 0 {
+						delete(h.watchMonitors, key)
+					}
+				}
 			}
 			h.watchMu.Unlock()
 			state.watchedKeys = make(map[string]struct{})
@@ -8271,7 +8291,9 @@ func (h *Handler) copySortedSet(srcKey, dstKey string) bool {
 		return true
 	}
 	// 先删除目标
-	_, _ = h.Db.Del(dstKey)
+	if _, err := h.Db.Del(dstKey); err != nil {
+		return false
+	}
 	// 添加所有成员
 	zMembers := make([]store.ZSetMember, len(members))
 	for i, m := range members {
