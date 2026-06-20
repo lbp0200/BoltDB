@@ -161,10 +161,14 @@ func (sr *SlaveReconnector) reconnectLoop() {
 			Dur("backoff", backoff).
 			Msg("复制连接断开，准备重连")
 
+		timer := time.NewTimer(backoff)
 		select {
 		case <-sr.stopCh:
+			if !timer.Stop() {
+				<-timer.C
+			}
 			return
-		case <-time.After(backoff):
+		case <-timer.C:
 		}
 	}
 }

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -20,7 +21,6 @@ import (
 const CloseTimeout = 2 * time.Second
 
 const (
-	//UnderScore       = "_"
 	KeyTypeString      = "STRING"
 	KeyTypeList        = "LIST"
 	KeyTypeHash        = "HASH"
@@ -29,15 +29,18 @@ const (
 	KeyTypeTimeSeries  = "TIMESERIES"
 	KeyTypeStream      = "STREAM"
 	KeyTypeHyperLogLog = "hyperloglog"
-	//KeyTypeSortedSet = "SORTEDSET" - defined in sorted_set.go as "zset"
-	//
-	//sortedSetIndex = "_INDEX_"
-	//sortedSetData  = "_DATA_"
+)
+
+const HyperLogLogPrefix = "hll:"
+
+const (
+	batchSize   = 500
+	maxAttempts = 30
+	maxRetries  = 60
 )
 
 var (
-	prefixKeyTypeBytes = []byte("TYPE_")
-	//prefixKeySortedSetBytes = []byte("SORTEDSET_")
+	prefixKeyTypeBytes       = []byte("TYPE_")
 	prefixKeyJSONBytes       = []byte("JSON:")
 	prefixKeyTimeSeriesBytes = []byte("TS:")
 )
@@ -453,7 +456,6 @@ func (s *BotreonStore) clearAllDataIterative() error {
 	}
 
 	// 步骤2: 分批删除，每批独立重试
-	const batchSize = 500
 	for i := 0; i < len(keys); i += batchSize {
 		end := i + batchSize
 		if end > len(keys) {
@@ -471,7 +473,6 @@ func (s *BotreonStore) clearAllDataIterative() error {
 // waitForWritesReady 等待 Badger 的 doWrites 通道恢复，允许写操作
 // 通过发送一个空的 Update 事务来探测，遇到 "Writes are blocked" 时重试
 func (s *BotreonStore) waitForWritesReady() error {
-	const maxAttempts = 30
 	for i := 0; i < maxAttempts; i++ {
 		err := s.retryUpdate(func(txn *badger.Txn) error {
 			return nil // no-op
@@ -514,13 +515,11 @@ func (s *BotreonStore) collectAllKeys() ([][]byte, error) {
 
 // deleteBatchWithRetry 删除单个批次，遇到 "Writes are blocked" 时重试
 func (s *BotreonStore) deleteBatchWithRetry(keys [][]byte) error {
-	const maxRetries = 60
-
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		lastErr = s.retryUpdate(func(txn *badger.Txn) error {
 			for _, key := range keys {
-				if err := txn.Delete(key); err != nil && err != badger.ErrKeyNotFound {
+				if err := txn.Delete(key); err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
 					return err
 				}
 			}

@@ -3,6 +3,7 @@ package backup
 import (
 	"compress/gzip"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -49,11 +50,12 @@ func (rm *RestoreManager) RestoreFromRDB(rdbFile string) error {
 
 	// 读取前两个字节判断是否为 gzip 格式
 	header := make([]byte, 2)
-	if _, err := file.Read(header); err != nil {
-		_ = file.Close()
+	if _, err := io.ReadFull(file, header); err != nil {
 		return fmt.Errorf("read RDB file header failed: %w", err)
 	}
-	_ = file.Close()
+	if err := file.Close(); err != nil {
+		logger.Logger.Warn().Err(err).Msg("关闭RDB文件失败")
+	}
 
 	if header[0] == 0x1F && header[1] == 0x8B {
 		// gzip 压缩格式
@@ -109,8 +111,11 @@ func (rm *RestoreManager) readCompressedRDB(rdbFile string) ([]byte, error) {
 		if n > 0 {
 			decompressed = append(decompressed, buf[:n]...)
 		}
-		if err != nil {
+		if err == io.EOF {
 			break
+		}
+		if err != nil {
+			return decompressed, fmt.Errorf("read decompressed RDB failed: %w", err)
 		}
 	}
 

@@ -333,7 +333,7 @@ func (h *Handler) handleConnection(conn net.Conn) {
 	}
 	ctx, cancel := context.WithCancel(parentCtx)
 	state := &connState{ctx: ctx, cancel: cancel}
-	meta := h.registerConnection(state, conn, remoteAddr)
+	h.registerConnection(state, conn, remoteAddr)
 
 	defer func() {
 		state.mu.Lock()
@@ -355,7 +355,6 @@ func (h *Handler) handleConnection(conn net.Conn) {
 			}
 			h.watchMu.Unlock()
 		}
-		_ = meta
 	}()
 
 	// 检查关闭信号：如果在 registerConnection 之后但在进入 ReadRESP
@@ -2577,7 +2576,10 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewInteger(0) // 源键不存在
 		}
 		// 检查目标键是否存在
-		dstExists, _ := h.Db.Exists(dstKey)
+		dstExists, err := h.Db.Exists(dstKey)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		if dstExists && !replace {
 			return proto.NewInteger(0) // 目标存在且不替换
 		}
@@ -2622,8 +2624,8 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		count := int64(0)
 		for _, arg := range args {
 			key := string(arg)
-			exists, _ := h.Db.Exists(key)
-			if exists {
+			exists, err := h.Db.Exists(key)
+			if err == nil && exists {
 				count++
 			}
 		}
@@ -3151,6 +3153,49 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		// #nosec G115 - count is bounded by practical data size limits
 		return proto.NewInteger(int64(count))
+
+	case "HELLO":
+		protoLevel := 2
+		if len(args) >= 1 {
+			level, err := strconv.Atoi(string(args[0]))
+			if err != nil || level < 2 || level > 3 {
+				return proto.NewError("ERR Protocol version is not supported")
+			}
+			protoLevel = level
+			if protoLevel == 3 {
+				return proto.NewError("ERR RESP3 is not supported")
+			}
+		}
+		role := "master"
+		if h.Replication != nil {
+			role = h.Replication.GetRole()
+		}
+		mode := "standalone"
+		if h.Cluster != nil {
+			mode = "cluster"
+		}
+		id := int64(0)
+		if state.clientInfo != nil {
+			id = state.clientInfo.ID
+		}
+		return &proto.NestedArray{
+			Elems: []proto.RESP{
+				proto.NewBulkString([]byte("server")),
+				proto.NewBulkString([]byte("boltdb")),
+				proto.NewBulkString([]byte("version")),
+				proto.NewBulkString([]byte(Version)),
+				proto.NewBulkString([]byte("proto")),
+				proto.NewInteger(int64(protoLevel)),
+				proto.NewBulkString([]byte("id")),
+				proto.NewInteger(id),
+				proto.NewBulkString([]byte("mode")),
+				proto.NewBulkString([]byte(mode)),
+				proto.NewBulkString([]byte("role")),
+				proto.NewBulkString([]byte(role)),
+				proto.NewBulkString([]byte("modules")),
+				&proto.NestedArray{Elems: []proto.RESP{}},
+			},
+		}
 
 	case "HLEN":
 		if len(args) < 1 {
@@ -4155,8 +4200,14 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i := 3; i < len(args); i++ {
 			opt := strings.ToUpper(string(args[i]))
 			if opt == "LIMIT" && i+2 < len(args) {
-				offset, _ = strconv.Atoi(string(args[i+1]))
-				count, _ = strconv.Atoi(string(args[i+2]))
+				offset, err = strconv.Atoi(string(args[i+1]))
+				if err != nil {
+					return proto.NewError("ERR value is not an integer")
+				}
+				count, err = strconv.Atoi(string(args[i+2]))
+				if err != nil {
+					return proto.NewError("ERR value is not an integer")
+				}
 				break
 			}
 		}
@@ -4205,8 +4256,14 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i := 3; i < len(args); i++ {
 			opt := strings.ToUpper(string(args[i]))
 			if opt == "LIMIT" && i+2 < len(args) {
-				offset, _ = strconv.Atoi(string(args[i+1]))
-				count, _ = strconv.Atoi(string(args[i+2]))
+				offset, err = strconv.Atoi(string(args[i+1]))
+				if err != nil {
+					return proto.NewError("ERR value is not an integer")
+				}
+				count, err = strconv.Atoi(string(args[i+2]))
+				if err != nil {
+					return proto.NewError("ERR value is not an integer")
+				}
 				break
 			}
 		}
@@ -5368,7 +5425,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 
 		// Delete destination if it exists
-		_, _ = h.Db.Del(dstKey)
+		if _, err := h.Db.Del(dstKey); err != nil {
+			return wrapStoreError(err)
+		}
 
 		// Add members to destination
 		if len(members) > 0 {
@@ -6862,15 +6921,29 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				}
 				return proto.NewError(fmt.Sprintf("ERR %v", err))
 			}
+			groupsCount := int64(0)
+			if info.Groups != nil {
+				groupsCount = int64(len(info.Groups))
+			}
+			// first-entry and last-entry require full entry data (nested arrays),
+			// not just IDs. The store doesn't expose this directly, so we
+			// provide scalar fields only. Redis-compatible clients should use
+			// XRANGE for entry data.
 			response := [][]byte{
 				[]byte("length"),
 				[]byte(strconv.FormatInt(info.Length, 10)),
-				[]byte("first-entry-id"),
-				[]byte(info.FirstID),
-				[]byte("last-entry-id"),
+				[]byte("radix-tree-keys"),
+				[]byte(strconv.FormatInt(info.RadixTreeKeys, 10)),
+				[]byte("radix-tree-nodes"),
+				[]byte(strconv.FormatInt(info.RadixTreeNodes, 10)),
+				[]byte("last-generated-id"),
 				[]byte(info.LastID),
 				[]byte("max-deleted-entry-id"),
 				[]byte(info.MaxDeletedID),
+				[]byte("entries-added"),
+				[]byte(strconv.FormatInt(info.Length, 10)),
+				[]byte("groups"),
+				[]byte(strconv.FormatInt(groupsCount, 10)),
 			}
 			return &proto.Array{Args: response}
 		case "GROUPS":
@@ -6935,9 +7008,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		key := string(args[0])
 		var maxLen int64 = 0
 		var minID string
-		approximate := false
 
-		// Parse options
 		i := 1
 		for i < len(args) {
 			opt := strings.ToUpper(string(args[i]))
@@ -6946,10 +7017,8 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				if i+1 >= len(args) {
 					return proto.NewError("ERR syntax error")
 				}
-				// Handle ~ approximation option
 				nextArg := strings.ToUpper(string(args[i+1]))
 				if nextArg == "~" {
-					approximate = true
 					if i+2 >= len(args) {
 						return proto.NewError("ERR syntax error")
 					}
@@ -6974,9 +7043,6 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				minID = string(args[i+1])
 				i += 2
 			case "~":
-				// ~ can come before MAXLEN with its value
-				// e.g., XTRIM key ~ count (defaults to MAXLEN)
-				_ = approximate
 				if i+1 >= len(args) {
 					return proto.NewError("ERR syntax error")
 				}
@@ -7072,7 +7138,10 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 
 		// Get source type
-		keyType, _ := h.Db.Type(key)
+		keyType, err := h.Db.Type(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
 		var values []string
 		var scores []float64
 
@@ -7092,10 +7161,16 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				values = []string{}
 			}
 		case "string":
-			val, _ := h.Db.Get(key)
+			val, err := h.Db.Get(key)
+			if err != nil {
+				return wrapStoreError(err)
+			}
 			values = []string{val}
 		case "zset":
-			members, _ := h.Db.ZRange(key, 0, -1)
+			members, err := h.Db.ZRange(key, 0, -1)
+			if err != nil {
+				return wrapStoreError(err)
+			}
 			for _, m := range members {
 				values = append(values, m.Member)
 				scores = append(scores, m.Score)
@@ -7109,7 +7184,10 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			weights := make([]float64, len(values))
 			for idx, val := range values {
 				targetKey := strings.Replace(byPattern, "*", val, 1)
-				weightVal, _ := h.Db.Get(targetKey)
+				weightVal, err := h.Db.Get(targetKey)
+				if err != nil {
+					return wrapStoreError(err)
+				}
 				if weightVal != "" {
 					if f, err := strconv.ParseFloat(weightVal, 64); err == nil {
 						weights[idx] = f
@@ -7183,7 +7261,10 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			for _, pattern := range getPatterns {
 				for _, val := range values {
 					targetKey := strings.Replace(pattern, "*", val, 1)
-					targetVal, _ := h.Db.Get(targetKey)
+					targetVal, err := h.Db.Get(targetKey)
+					if err != nil {
+						return wrapStoreError(err)
+					}
 					finalValues = append(finalValues, targetVal)
 				}
 			}
@@ -7195,9 +7276,13 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			// Store as a list
 			for idx, v := range values {
 				if idx == 0 {
-					_, _ = h.Db.Del(destKey)
+					if _, err := h.Db.Del(destKey); err != nil {
+						return wrapStoreError(err)
+					}
 				}
-				_, _ = h.Db.RPush(destKey, v)
+				if _, err := h.Db.RPush(destKey, v); err != nil {
+					return wrapStoreError(err)
+				}
 			}
 			return proto.NewInteger(int64(len(values)))
 		}
@@ -7819,7 +7904,10 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		return proto.NewInteger(val)
 	case "INCRBY":
 		key := string(args[0])
-		delta, _ := strconv.ParseInt(string(args[1]), 10, 64)
+		delta, err := strconv.ParseInt(string(args[1]), 10, 64)
+		if err != nil {
+			return proto.NewError("ERR value is not an integer or out of range")
+		}
 		val, err := h.Db.INCRBY(key, delta)
 		if err != nil {
 			return wrapStoreError(err)
@@ -7827,7 +7915,10 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		return proto.NewInteger(val)
 	case "DECRBY":
 		key := string(args[0])
-		delta, _ := strconv.ParseInt(string(args[1]), 10, 64)
+		delta, err := strconv.ParseInt(string(args[1]), 10, 64)
+		if err != nil {
+			return proto.NewError("ERR value is not an integer or out of range")
+		}
 		val, err := h.Db.DECRBY(key, delta)
 		if err != nil {
 			return wrapStoreError(err)
@@ -7859,7 +7950,10 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		return proto.NewInteger(0)
 	case "EXPIRE":
 		key := string(args[0])
-		seconds, _ := strconv.Atoi(string(args[1]))
+		seconds, err := strconv.Atoi(string(args[1]))
+		if err != nil {
+			return proto.NewError("ERR value is not an integer or out of range")
+		}
 		success, err := h.Db.Expire(key, seconds)
 		if err != nil {
 			return wrapStoreError(err)
@@ -7943,8 +8037,14 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		return proto.NewInteger(int64(length))
 	case "LRANGE":
 		key := string(args[0])
-		start, _ := strconv.ParseInt(string(args[1]), 10, 64)
-		stop, _ := strconv.ParseInt(string(args[2]), 10, 64)
+		start, err := strconv.ParseInt(string(args[1]), 10, 64)
+		if err != nil {
+			return proto.NewError("ERR value is not an integer or out of range")
+		}
+		stop, err := strconv.ParseInt(string(args[2]), 10, 64)
+		if err != nil {
+			return proto.NewError("ERR value is not an integer or out of range")
+		}
 		items, err := h.Db.LRange(key, start, stop)
 		if err != nil {
 			return wrapStoreError(err)
@@ -8047,7 +8147,10 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		key := string(args[0])
 		members := make([]store.ZSetMember, 0)
 		for i := 1; i < len(args); i += 2 {
-			score, _ := strconv.ParseFloat(string(args[i]), 64)
+			score, err := strconv.ParseFloat(string(args[i]), 64)
+			if err != nil {
+				return proto.NewError("ERR value is not a valid float")
+			}
 			members = append(members, store.ZSetMember{Score: score, Member: string(args[i+1])})
 		}
 		if err := h.Db.ZAdd(key, members); err != nil {
@@ -8081,7 +8184,10 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		return proto.NewBulkString([]byte(strconv.FormatFloat(score, 'f', -1, 64)))
 	case "ZINCRBY":
 		key, member := string(args[0]), string(args[2])
-		delta, _ := strconv.ParseFloat(string(args[1]), 64)
+		delta, err := strconv.ParseFloat(string(args[1]), 64)
+		if err != nil {
+			return proto.NewError("ERR value is not a valid float")
+		}
 		newScore, err := h.Db.ZIncrBy(key, member, delta)
 		if err != nil {
 			return wrapStoreError(err)
@@ -8107,7 +8213,9 @@ func (h *Handler) copyList(srcKey, dstKey string) bool {
 		return false
 	}
 	// 先删除目标
-	_, _ = h.Db.Del(dstKey)
+	if _, err := h.Db.Del(dstKey); err != nil {
+		return false
+	}
 	// 添加到目标列表
 	_, err = h.Db.RPush(dstKey, items...)
 	return err == nil
@@ -8123,7 +8231,9 @@ func (h *Handler) copyHash(srcKey, dstKey string) bool {
 		return true
 	}
 	// 先删除目标
-	_, _ = h.Db.Del(dstKey)
+	if _, err := h.Db.Del(dstKey); err != nil {
+		return false
+	}
 	// 设置所有字段
 	for k, v := range data {
 		if err := h.Db.HSet(dstKey, k, v); err != nil {
@@ -8143,7 +8253,9 @@ func (h *Handler) copySet(srcKey, dstKey string) bool {
 		return true
 	}
 	// 先删除目标
-	_, _ = h.Db.Del(dstKey)
+	if _, err := h.Db.Del(dstKey); err != nil {
+		return false
+	}
 	// 添加所有成员
 	_, err = h.Db.SAdd(dstKey, members...)
 	return err == nil

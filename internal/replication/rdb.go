@@ -539,7 +539,7 @@ func readTTLFromValueTxn(txn *badger.Txn, key, keyType string) int64 {
 	case store.KeyTypeTimeSeries:
 		valueKey = []byte("TS:" + key + ":meta")
 	case store.KeyTypeHyperLogLog:
-		valueKey = []byte("hll:" + key)
+		valueKey = []byte(store.HyperLogLogPrefix + key)
 	}
 	if valueKey == nil {
 		return 0
@@ -786,7 +786,7 @@ func readTimeSeriesInTxn(txn *badger.Txn, key string) ([]store.TimeSeriesDataPoi
 
 // readHLLInTxn 从事务中读取 HyperLogLog 原始字节
 func readHLLInTxn(txn *badger.Txn, key string) ([]byte, error) {
-	hllKey := []byte("hll:" + key)
+	hllKey := []byte(store.HyperLogLogPrefix + key)
 	item, err := txn.Get(hllKey)
 	if err != nil {
 		return nil, err

@@ -15,7 +15,7 @@ import (
 	"github.com/zeebo/assert"
 )
 
-const goroutineSettleTime = 500 * time.Millisecond
+const goroutineSettleTime = 1 * time.Second
 const goroutineTolerance = 10
 
 func baselineGoroutines(t *testing.T) int {

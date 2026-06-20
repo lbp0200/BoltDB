@@ -845,7 +845,10 @@ func (s *BotreonStore) HScan(key string, cursor uint64, pattern string, count in
 			}
 			return err
 		}
-		val, _ := item.ValueCopy(nil)
+		val, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
 		if string(val) != "" && string(val) != KeyTypeHash {
 			return ErrWrongType
 		}
@@ -923,26 +926,23 @@ func (s *BotreonStore) HRandMember(key string, count int) ([]HRandMemberResult, 
 	prefix := fmt.Sprintf("%s:%s:", KeyTypeHash, key)
 
 	typeKey := TypeOfKeyGet(key)
-	var typeErr error
-	_ = s.db.View(func(txn *badger.Txn) error {
+	if err := s.db.View(func(txn *badger.Txn) error {
 		typeItem, err := txn.Get(typeKey)
 		if err == nil {
 			typeVal, err := typeItem.ValueCopy(nil)
 			if err != nil {
-				typeErr = err
 				return err
 			}
 			keyType := string(typeVal)
 			if keyType != "" && keyType != KeyTypeHash {
-				typeErr = ErrWrongType
+				return ErrWrongType
 			}
 		} else if !errors.Is(err, badger.ErrKeyNotFound) {
-			typeErr = err
+			return err
 		}
 		return nil
-	})
-	if typeErr != nil {
-		return nil, typeErr
+	}); err != nil {
+		return nil, err
 	}
 
 	err := s.db.View(func(txn *badger.Txn) error {

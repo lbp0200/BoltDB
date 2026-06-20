@@ -17,7 +17,9 @@ func AttachHTTP(mux *http.ServeMux, c *Collector) {
 		s := c.Snapshot()
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		_ = enc.Encode(s)
+		if err := enc.Encode(s); err != nil {
+			logger.Logger.Warn().Err(err).Msg("/debug/vars encoding failed")
+		}
 	})
 
 	mux.HandleFunc("/debug/metrics", func(w http.ResponseWriter, r *http.Request) {

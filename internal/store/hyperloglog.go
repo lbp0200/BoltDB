@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"math"
@@ -188,7 +189,7 @@ func (s *BotreonStore) PFAdd(key string, elements ...string) (int64, error) {
 
 // getOrCreateHLL 获取或创建 HyperLogLog
 func (s *BotreonStore) getOrCreateHLL(txn *badger.Txn, key string) (*HyperLogLog, error) {
-	hllKey := []byte(fmt.Sprintf("hll:%s", key))
+	hllKey := []byte(fmt.Sprintf("%s%s", HyperLogLogPrefix, key))
 
 	var hll *HyperLogLog
 	item, err := txn.Get(hllKey)
@@ -202,7 +203,7 @@ func (s *BotreonStore) getOrCreateHLL(txn *badger.Txn, key string) (*HyperLogLog
 			encoding:  val[0],
 			registers: val[1:],
 		}
-	} else if err != badger.ErrKeyNotFound {
+	} else if !errors.Is(err, badger.ErrKeyNotFound) {
 		return nil, err
 	} else {
 		// 不存在，创建新的
@@ -214,7 +215,7 @@ func (s *BotreonStore) getOrCreateHLL(txn *badger.Txn, key string) (*HyperLogLog
 
 // saveHLL 保存 HyperLogLog
 func (s *BotreonStore) saveHLL(txn *badger.Txn, key string, hll *HyperLogLog) error {
-	hllKey := []byte(fmt.Sprintf("hll:%s", key))
+	hllKey := []byte(fmt.Sprintf("%s%s", HyperLogLogPrefix, key))
 	data := make([]byte, 1+len(hll.registers))
 	data[0] = hll.encoding
 	copy(data[1:], hll.registers)
@@ -236,7 +237,7 @@ func (s *BotreonStore) pfCountOne(key string) (int64, error) {
 	err := s.db.View(func(txn *badger.Txn) error {
 		typeKey := TypeOfKeyGet(key)
 		_, err := txn.Get(typeKey)
-		if err == badger.ErrKeyNotFound {
+		if errors.Is(err, badger.ErrKeyNotFound) {
 			estimate = 0
 			return nil
 		}
@@ -245,9 +246,9 @@ func (s *BotreonStore) pfCountOne(key string) (int64, error) {
 		}
 
 		// 读取 HyperLogLog
-		hllKey := []byte(fmt.Sprintf("hll:%s", key))
+		hllKey := []byte(fmt.Sprintf("%s%s", HyperLogLogPrefix, key))
 		item, err := txn.Get(hllKey)
-		if err == badger.ErrKeyNotFound {
+		if errors.Is(err, badger.ErrKeyNotFound) {
 			estimate = 0
 			return nil
 		}
@@ -255,7 +256,10 @@ func (s *BotreonStore) pfCountOne(key string) (int64, error) {
 			return err
 		}
 
-		val, _ := item.ValueCopy(nil)
+		val, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
 		if len(val) == 0 {
 			estimate = 0
 			return nil
@@ -286,7 +290,7 @@ func (s *BotreonStore) pfCountMultiple(keys []string) (int64, error) {
 			// 检查键是否存在
 			typeKey := TypeOfKeyGet(key)
 			_, err := txn.Get(typeKey)
-			if err == badger.ErrKeyNotFound {
+			if errors.Is(err, badger.ErrKeyNotFound) {
 				continue
 			}
 			if err != nil {
@@ -294,16 +298,19 @@ func (s *BotreonStore) pfCountMultiple(keys []string) (int64, error) {
 			}
 
 			// 读取 HyperLogLog
-			hllKey := []byte(fmt.Sprintf("hll:%s", key))
+			hllKey := []byte(fmt.Sprintf("%s%s", HyperLogLogPrefix, key))
 			item, err := txn.Get(hllKey)
-			if err == badger.ErrKeyNotFound {
+			if errors.Is(err, badger.ErrKeyNotFound) {
 				continue
 			}
 			if err != nil {
 				return err
 			}
 
-			val, _ := item.ValueCopy(nil)
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
 			if len(val) == 0 {
 				continue
 			}
@@ -370,7 +377,7 @@ func (s *BotreonStore) RestoreHLL(key string, data []byte) error {
 		if err := txn.Set(typeKey, []byte(KeyTypeHyperLogLog)); err != nil {
 			return err
 		}
-		hllKey := []byte(fmt.Sprintf("hll:%s", key))
+		hllKey := []byte(fmt.Sprintf("%s%s", HyperLogLogPrefix, key))
 		return txn.Set(hllKey, data)
 	}, 30)
 }
@@ -383,7 +390,7 @@ func (s *BotreonStore) PFInfo(key string) (map[string]int64, error) {
 		// 检查键是否存在
 		typeKey := TypeOfKeyGet(key)
 		_, err := txn.Get(typeKey)
-		if err == badger.ErrKeyNotFound {
+		if errors.Is(err, badger.ErrKeyNotFound) {
 			return fmt.Errorf("key does not exist")
 		}
 		if err != nil {
@@ -391,16 +398,19 @@ func (s *BotreonStore) PFInfo(key string) (map[string]int64, error) {
 		}
 
 		// 读取 HyperLogLog
-		hllKey := []byte(fmt.Sprintf("hll:%s", key))
+		hllKey := []byte(fmt.Sprintf("%s%s", HyperLogLogPrefix, key))
 		item, err := txn.Get(hllKey)
-		if err == badger.ErrKeyNotFound {
+		if errors.Is(err, badger.ErrKeyNotFound) {
 			return fmt.Errorf("key does not exist")
 		}
 		if err != nil {
 			return err
 		}
 
-		val, _ := item.ValueCopy(nil)
+		val, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
 		if len(val) == 0 {
 			return nil
 		}

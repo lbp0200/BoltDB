@@ -148,7 +148,8 @@ func (rb *ReplicationBacklog) IsOffsetAvailable(offset int64) bool {
 
 const MibInBytes int64 = 1024 * 1024
 
-func ParseBacklogSize(s string) (int64, error) {
+//nolint:unused
+func parseBacklogSize(s string) (int64, error) {
 	if len(s) == 0 {
 		return DefaultBacklogSize, nil
 	}

@@ -94,7 +94,7 @@ jobs:
         run: |
           mkdir -p /tmp/soak-artifacts/report/history /tmp/soak-artifacts/jsonl
           go test -race -timeout 10m -v \
-            ./cmd/integration/ -run TestSoak 2>&1 | tee /tmp/soak-artifacts/soak-output.txt || true
+            ./cmd/integration/ -run TestSoak 2>&1 | tee /tmp/soak-artifacts/soak-output.txt || echo "::warning::soak test exited non-zero"
 
       - name: Evolution gate check (advisory, does not block CI)
         if: always()

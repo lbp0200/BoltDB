@@ -532,4 +532,32 @@ func TestRESPShape_TypeNonExistent(t *testing.T) {
 	assert.Equal(t, "none", string(*ss))
 }
 
+func TestRESPShape_HELLO(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+	resp := handler.executeCommand(state, "HELLO", nil, "127.0.0.1:12345")
+	na := shapeNestedArray(t, resp, 12)
+	assert.Equal(t, "server", string(*na.Elems[0].(*proto.BulkString)))
+	assert.Equal(t, "boltdb", string(*na.Elems[1].(*proto.BulkString)))
+	assert.Equal(t, "version", string(*na.Elems[2].(*proto.BulkString)))
+	assert.Equal(t, "proto", string(*na.Elems[4].(*proto.BulkString)))
+	assert.Equal(t, int64(2), int64(*na.Elems[5].(*proto.Integer)))
+	assert.Equal(t, "role", string(*na.Elems[10].(*proto.BulkString)))
+	modules, ok := na.Elems[13].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(modules.Elems))
+
+	// HELLO 3 should return error (RESP3 not supported)
+	resp = handler.executeCommand(state, "HELLO", [][]byte{[]byte("3")}, "127.0.0.1:12345")
+	err, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, len(string(*err)) > 0)
+
+	// HELLO with invalid proto version
+	resp = handler.executeCommand(state, "HELLO", [][]byte{[]byte("1")}, "127.0.0.1:12345")
+	err, ok = resp.(*proto.Error)
+	assert.True(t, ok)
+}
+
 

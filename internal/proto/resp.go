@@ -11,6 +11,9 @@ import (
 	"github.com/lbp0200/BoltDB/internal/logger"
 )
 
+const MaxBulkLen = 512 * 1024 * 1024 // 512MB — Redis convention
+const MaxArrayLen = 1024 * 1024      // 1M elements
+
 type RESP interface {
 	String() string
 }
@@ -94,6 +97,9 @@ func ReadRESP(r *bufio.Reader) (*Array, error) {
 		if err != nil || n < 0 {
 			return nil, fmt.Errorf("invalid array length: %s", line[1:])
 		}
+		if n > MaxArrayLen {
+			return nil, fmt.Errorf("array length too large: %d", n)
+		}
 		args := make([][]byte, n)
 		for i := 0; i < n; i++ {
 			line, err := readLine(r)
@@ -115,6 +121,9 @@ func ReadRESP(r *bufio.Reader) (*Array, error) {
 				if bulkLen == -1 {
 					args[i] = nil
 					continue
+				}
+				if bulkLen > MaxBulkLen {
+					return nil, fmt.Errorf("bulk string length too large: %d", bulkLen)
 				}
 				data := make([]byte, bulkLen+2)
 				_, err = io.ReadFull(r, data)
@@ -148,6 +157,9 @@ func ReadRESP(r *bufio.Reader) (*Array, error) {
 		}
 		if bulkLen == -1 {
 			return nil, fmt.Errorf("null bulk string not supported as command")
+		}
+		if bulkLen > MaxBulkLen {
+			return nil, fmt.Errorf("bulk string length too large: %d", bulkLen)
 		}
 		data := make([]byte, bulkLen+2)
 		_, err = io.ReadFull(r, data)
@@ -196,6 +208,10 @@ func parseInlineCommand(line []byte) (*Array, error) {
 }
 
 func WriteRESP(w io.Writer, resp RESP) error {
+	if resp == nil {
+		_, err := fmt.Fprint(w, "$-1\r\n")
+		return err
+	}
 	switch v := resp.(type) {
 	case *BulkString:
 		if v == nil || *v == nil {

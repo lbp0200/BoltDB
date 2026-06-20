@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/dgraph-io/badger/v4"
@@ -99,7 +100,7 @@ func (c *Cluster) LoadConfig() (bool, error) {
 		data, err = item.ValueCopy(nil)
 		return err
 	})
-	if err == badger.ErrKeyNotFound {
+	if errors.Is(err, badger.ErrKeyNotFound) {
 		return false, nil
 	}
 	if err != nil {

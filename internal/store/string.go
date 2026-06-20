@@ -1007,7 +1007,6 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 
 			// Calculate byte and bit positions
 			byteIndex := int(bitOffset) / 8
-			_ = byteIndex
 			numBytes := (int(bitOffset) + int(op.bits) + 7) / 8
 
 			// Ensure data is long enough
@@ -1108,14 +1107,19 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 				// Get the current TTL if any
 				typeKey := TypeOfKeyGet(key)
 				if item, err := txn.Get(typeKey); err == nil {
-					val, _ := item.ValueCopy(nil)
+					val, err := item.ValueCopy(nil)
+					if err != nil {
+						return err
+					}
 					if string(val) == KeyTypeString {
 						strKey := s.stringKey(key)
 						if strItem, err := txn.Get([]byte(strKey)); err == nil {
 							if expiresAt := strItem.ExpiresAt(); expiresAt > 0 {
 								ttl := time.Duration(int64(expiresAt) - time.Now().UnixNano())
 								if ttl > 0 {
-									_ = txn.Delete([]byte(strKey))
+									if err := txn.Delete([]byte(strKey)); err != nil {
+										return err
+									}
 								}
 							}
 						}

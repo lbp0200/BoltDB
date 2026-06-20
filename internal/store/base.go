@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
+	"github.com/lbp0200/BoltDB/internal/logger"
 )
 
 // Del 删除键，返回删除的数量
@@ -283,7 +284,9 @@ func (s *BotreonStore) ExpireAt(key string, timestamp int64) (bool, error) {
 	ttl := timestamp - now
 	if ttl <= 0 {
 		// 时间戳已过期，删除键
-		_, _ = s.Del(key)
+		if _, err := s.Del(key); err != nil {
+			logger.Logger.Warn().Err(err).Str("key", key).Msg("ExpireAt: error deleting expired key")
+		}
 		return false, nil
 	}
 	return s.Expire(key, int(ttl))
@@ -347,7 +350,9 @@ func (s *BotreonStore) PExpireAt(key string, timestampMillis int64) (bool, error
 	ttl := timestampMillis - now
 	if ttl <= 0 {
 		// 时间戳已过期，删除键
-		_, _ = s.Del(key)
+		if _, err := s.Del(key); err != nil {
+			logger.Logger.Warn().Err(err).Str("key", key).Msg("PExpireAt: error deleting expired key")
+		}
 		return false, nil
 	}
 	return s.PExpire(key, ttl)
@@ -572,30 +577,44 @@ func (s *BotreonStore) Rename(key, newKey string) error {
 			// 删除新键的所有相关数据
 			switch newKeyType {
 			case KeyTypeString:
-				_ = txn.Delete(newTypeKey)
-				_ = txn.Delete([]byte(s.stringKey(newKey)))
+				if err := txn.Delete(newTypeKey); err != nil {
+					return err
+				}
+				if err := txn.Delete([]byte(s.stringKey(newKey))); err != nil {
+					return err
+				}
 			case KeyTypeList:
 				if err := deleteByPrefix(txn, []byte(fmt.Sprintf("%s:%s:", KeyTypeList, newKey))); err != nil {
 					return err
 				}
-				_ = txn.Delete(newTypeKey)
+				if err := txn.Delete(newTypeKey); err != nil {
+					return err
+				}
 			case KeyTypeHash:
 				if err := deleteByPrefix(txn, []byte(fmt.Sprintf("%s:%s:", KeyTypeHash, newKey))); err != nil {
 					return err
 				}
-				_ = txn.Delete(newTypeKey)
+				if err := txn.Delete(newTypeKey); err != nil {
+					return err
+				}
 			case KeyTypeSet:
 				if err := deleteByPrefix(txn, []byte(fmt.Sprintf("%s:%s:", KeyTypeSet, newKey))); err != nil {
 					return err
 				}
-				_ = txn.Delete(newTypeKey)
+				if err := txn.Delete(newTypeKey); err != nil {
+					return err
+				}
 			case KeyTypeSortedSet:
 				if err := deleteByPrefix(txn, []byte(fmt.Sprintf("%s%s:", prefixKeySortedSetBytes, newKey))); err != nil {
 					return err
 				}
-				_ = txn.Delete(newTypeKey)
+				if err := txn.Delete(newTypeKey); err != nil {
+					return err
+				}
 			default:
-				_ = txn.Delete(newTypeKey)
+				if err := txn.Delete(newTypeKey); err != nil {
+					return err
+				}
 			}
 		} else if !errors.Is(err, badger.ErrKeyNotFound) {
 			return err
@@ -640,9 +659,10 @@ func (s *BotreonStore) Rename(key, newKey string) error {
 				}
 			}
 			// 删除旧键
-			_ = txn.Delete(typeKey)
-			_ = txn.Delete(oldValueKey)
-			return nil
+			if err := txn.Delete(typeKey); err != nil {
+				return err
+			}
+			return txn.Delete(oldValueKey)
 		case KeyTypeList:
 			// 复制所有LIST键
 			prefix := []byte(fmt.Sprintf("%s:%s:", KeyTypeList, key))
@@ -1084,7 +1104,10 @@ func (s *BotreonStore) Dump(key string) ([]byte, error) {
 		if err != nil {
 			return err
 		}
-		valCopy, _ := item.ValueCopy(nil)
+		valCopy, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
 		keyType := string(valCopy)
 
 		// 获取 TTL（毫秒）— 从值键的 ExpiresAt 读取
@@ -1124,7 +1147,10 @@ func (s *BotreonStore) Dump(key string) ([]byte, error) {
 			if err != nil {
 				return err
 			}
-			val, _ := valItem.ValueCopy(nil)
+			val, err := valItem.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
 			buf.WriteByte(0) // STRING type
 			writeRDBString(buf, key)
 			writeRDBBytes(buf, val)
@@ -1157,7 +1183,10 @@ func (s *BotreonStore) Dump(key string) ([]byte, error) {
 				if err != nil {
 					return err
 				}
-				val, _ := valItem.ValueCopy(nil)
+				val, err := valItem.ValueCopy(nil)
+				if err != nil {
+					return err
+				}
 				writeRDBBytes(buf, val)
 			}
 
@@ -1294,7 +1323,9 @@ func (s *BotreonStore) Restore(key string, serializedData []byte, ttl time.Durat
 
 	// 删除已存在的键
 	if exists {
-		_, _ = s.Del(key)
+		if _, err := s.Del(key); err != nil {
+			return err
+		}
 	}
 
 	// 使用 RDB 解码器解析数据
@@ -1378,7 +1409,9 @@ func (s *BotreonStore) Restore(key string, serializedData []byte, ttl time.Durat
 			}
 		}
 		if finalTTL > 0 {
-			_, _ = s.PExpire(key, int64(finalTTL.Milliseconds()))
+			if _, err := s.PExpire(key, int64(finalTTL.Milliseconds())); err != nil {
+				return err
+			}
 		}
 		return nil
 
@@ -1401,7 +1434,9 @@ func (s *BotreonStore) Restore(key string, serializedData []byte, ttl time.Durat
 			}
 		}
 		if finalTTL > 0 {
-			_, _ = s.PExpire(key, int64(finalTTL.Milliseconds()))
+			if _, err := s.PExpire(key, int64(finalTTL.Milliseconds())); err != nil {
+				return err
+			}
 		}
 		return nil
 
@@ -1428,7 +1463,9 @@ func (s *BotreonStore) Restore(key string, serializedData []byte, ttl time.Durat
 			}
 		}
 		if finalTTL > 0 {
-			_, _ = s.PExpire(key, int64(finalTTL.Milliseconds()))
+			if _, err := s.PExpire(key, int64(finalTTL.Milliseconds())); err != nil {
+				return err
+			}
 		}
 		return nil
 
@@ -1460,7 +1497,9 @@ func (s *BotreonStore) Restore(key string, serializedData []byte, ttl time.Durat
 			}
 		}
 		if finalTTL > 0 {
-			_, _ = s.PExpire(key, int64(finalTTL.Milliseconds()))
+			if _, err := s.PExpire(key, int64(finalTTL.Milliseconds())); err != nil {
+				return err
+			}
 		}
 		return nil
 
@@ -1592,22 +1631,12 @@ func (s *BotreonStore) NextStartup() error {
 		}
 
 		// 2. 清理孤立数据（没有TYPE_键的数据）
-		// String: string:key
-		if err := cleanupOrphanedData(txn, []byte("string:")); err != nil {
-			_ = err
-		}
-		if err := cleanupOrphanedListData(txn); err != nil {
-			_ = err
-		}
-		if err := cleanupOrphanedHashData(txn); err != nil {
-			_ = err
-		}
-		if err := cleanupOrphanedSetData(txn); err != nil {
-			_ = err
-		}
-		if err := cleanupOrphanedZSetData(txn); err != nil {
-			_ = err
-		}
+		// cleanupOrphaned*Data functions always return nil (internal errors use 'continue')
+		_ = cleanupOrphanedData(txn, []byte("string:"))
+		_ = cleanupOrphanedListData(txn)
+		_ = cleanupOrphanedHashData(txn)
+		_ = cleanupOrphanedSetData(txn)
+		_ = cleanupOrphanedZSetData(txn)
 
 		return nil
 	}, 30)
@@ -1889,7 +1918,10 @@ func (s *BotreonStore) MemoryUsage(key string) (int64, error) {
 			for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
 				item := iter.Item()
 				size += int64(len(item.KeyCopy(nil)))
-				valCopy, _ := item.ValueCopy(nil)
+				valCopy, err := item.ValueCopy(nil)
+				if err != nil {
+					return err
+				}
 				size += int64(len(valCopy))
 			}
 		case KeyTypeHash:
@@ -1900,7 +1932,10 @@ func (s *BotreonStore) MemoryUsage(key string) (int64, error) {
 			for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
 				item := iter.Item()
 				size += int64(len(item.KeyCopy(nil)))
-				valCopy, _ := item.ValueCopy(nil)
+				valCopy, err := item.ValueCopy(nil)
+				if err != nil {
+					return err
+				}
 				size += int64(len(valCopy))
 			}
 		case KeyTypeSet:
@@ -1911,7 +1946,10 @@ func (s *BotreonStore) MemoryUsage(key string) (int64, error) {
 			for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
 				item := iter.Item()
 				size += int64(len(item.KeyCopy(nil)))
-				valCopy, _ := item.ValueCopy(nil)
+				valCopy, err := item.ValueCopy(nil)
+				if err != nil {
+					return err
+				}
 				size += int64(len(valCopy))
 			}
 		case KeyTypeSortedSet:
@@ -1922,7 +1960,10 @@ func (s *BotreonStore) MemoryUsage(key string) (int64, error) {
 			for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
 				item := iter.Item()
 				size += int64(len(item.KeyCopy(nil)))
-				valCopy, _ := item.ValueCopy(nil)
+				valCopy, err := item.ValueCopy(nil)
+				if err != nil {
+					return err
+				}
 				size += int64(len(valCopy))
 			}
 		}

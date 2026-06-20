@@ -45,7 +45,11 @@ func NewCluster(store *store.BotreonStore, nodeID, addr string) (*Cluster, error
 	cluster.Nodes[nodeID] = myself
 
 	// 从持久化配置恢复（如果存在）
-	if found, _ := cluster.LoadConfig(); found {
+	found, err := cluster.LoadConfig()
+	if err != nil {
+		logger.Logger.Warn().Err(err).Msg("NewCluster: failed to load persisted config, starting fresh")
+	}
+	if found {
 		// 恢复完持久化配置后，确保当前节点始终在节点表中
 		if _, exists := cluster.Nodes[nodeID]; !exists {
 			cluster.Nodes[nodeID] = myself

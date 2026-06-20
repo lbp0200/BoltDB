@@ -424,26 +424,23 @@ func (s *BotreonStore) ZRem(zSetName, member string) (int64, error) {
 func (s *BotreonStore) ZScore(zSetName, member string) (float64, bool, error) {
 	// Check if key exists with wrong type
 	typeKey := TypeOfKeyGet(zSetName)
-	var typeErr error
-	_ = s.db.View(func(txn *badger.Txn) error {
+	if err := s.db.View(func(txn *badger.Txn) error {
 		typeItem, err := txn.Get(typeKey)
 		if err == nil {
 			typeVal, err := typeItem.ValueCopy(nil)
 			if err != nil {
-				typeErr = err
 				return err
 			}
 			keyType := string(typeVal)
 			if keyType != "" && keyType != KeyTypeSortedSet {
-				typeErr = ErrWrongType
+				return ErrWrongType
 			}
 		} else if !errors.Is(err, badger.ErrKeyNotFound) {
-			typeErr = err
+			return err
 		}
 		return nil
-	})
-	if typeErr != nil {
-		return 0, false, typeErr
+	}); err != nil {
+		return 0, false, err
 	}
 
 	var score float64
@@ -473,26 +470,23 @@ func (s *BotreonStore) ZScore(zSetName, member string) (float64, bool, error) {
 func (s *BotreonStore) ZRange(zSetName string, start, stop int64) ([]*ZSetMember, error) {
 	// Check if key exists with wrong type
 	typeKey := TypeOfKeyGet(zSetName)
-	var typeErr error
-	_ = s.db.View(func(txn *badger.Txn) error {
+	if err := s.db.View(func(txn *badger.Txn) error {
 		typeItem, err := txn.Get(typeKey)
 		if err == nil {
 			typeVal, err := typeItem.ValueCopy(nil)
 			if err != nil {
-				typeErr = err
 				return err
 			}
 			keyType := string(typeVal)
 			if keyType != "" && keyType != KeyTypeSortedSet {
-				typeErr = ErrWrongType
+				return ErrWrongType
 			}
 		} else if !errors.Is(err, badger.ErrKeyNotFound) {
-			typeErr = err
+			return err
 		}
 		return nil
-	})
-	if typeErr != nil {
-		return nil, typeErr
+	}); err != nil {
+		return nil, err
 	}
 
 	var results []*ZSetMember
@@ -622,26 +616,23 @@ func (s *BotreonStore) ZSetDel(zSetName string) error {
 func (s *BotreonStore) ZCard(zSetName string) (int64, error) {
 	// Check if key exists with wrong type
 	typeKey := TypeOfKeyGet(zSetName)
-	var typeErr error
-	_ = s.db.View(func(txn *badger.Txn) error {
+	if err := s.db.View(func(txn *badger.Txn) error {
 		typeItem, err := txn.Get(typeKey)
 		if err == nil {
 			typeVal, err := typeItem.ValueCopy(nil)
 			if err != nil {
-				typeErr = err
 				return err
 			}
 			keyType := string(typeVal)
 			if keyType != "" && keyType != KeyTypeSortedSet {
-				typeErr = ErrWrongType
+				return ErrWrongType
 			}
 		} else if !errors.Is(err, badger.ErrKeyNotFound) {
-			typeErr = err
+			return err
 		}
 		return nil
-	})
-	if typeErr != nil {
-		return 0, typeErr
+	}); err != nil {
+		return 0, err
 	}
 
 	var card int64
@@ -1022,24 +1013,23 @@ func (s *BotreonStore) ZPopMin(zSetName string, count int) ([]ZSetMember, error)
 func (s *BotreonStore) ZMPop(keys []string, modifier string, count int) (string, []ZSetMember, error) {
 	for _, key := range keys {
 		typeKey := TypeOfKeyGet(key)
-		var typeErr error
-		_ = s.db.View(func(txn *badger.Txn) error {
+		if err := s.db.View(func(txn *badger.Txn) error {
 			typeItem, err := txn.Get(typeKey)
 			if err == nil {
 				typeVal, err := typeItem.ValueCopy(nil)
 				if err != nil {
-					typeErr = err
 					return err
 				}
 				keyType := string(typeVal)
 				if keyType != "" && keyType != KeyTypeSortedSet {
-					typeErr = ErrWrongType
+					return ErrWrongType
 				}
+			} else if !errors.Is(err, badger.ErrKeyNotFound) {
+				return err
 			}
 			return nil
-		})
-		if typeErr != nil {
-			return "", nil, typeErr
+		}); err != nil {
+			return "", nil, err
 		}
 
 		var members []ZSetMember
@@ -1752,26 +1742,23 @@ func (s *BotreonStore) ZRandMember(zSetName string, count int) ([]ZSetMember, er
 	var members []ZSetMember
 
 	typeKey := TypeOfKeyGet(zSetName)
-	var typeErr error
-	_ = s.db.View(func(txn *badger.Txn) error {
+	if err := s.db.View(func(txn *badger.Txn) error {
 		typeItem, err := txn.Get(typeKey)
 		if err == nil {
 			typeVal, err := typeItem.ValueCopy(nil)
 			if err != nil {
-				typeErr = err
 				return err
 			}
 			keyType := string(typeVal)
 			if keyType != "" && keyType != KeyTypeSortedSet {
-				typeErr = ErrWrongType
+				return ErrWrongType
 			}
 		} else if !errors.Is(err, badger.ErrKeyNotFound) {
-			typeErr = err
+			return err
 		}
 		return nil
-	})
-	if typeErr != nil {
-		return nil, typeErr
+	}); err != nil {
+		return nil, err
 	}
 
 	err := s.db.View(func(txn *badger.Txn) error {

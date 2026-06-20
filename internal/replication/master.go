@@ -160,9 +160,13 @@ func (mc *MasterConnection) ReadBulkString() ([]byte, error) {
 		return nil, nil // NULL bulk string
 	}
 
+	if length > proto.MaxBulkLen {
+		return nil, fmt.Errorf("bulk string length too large: %d", length)
+	}
+
 	// 读取数据
 	data := make([]byte, length+2) // +2 for \r\n
-	if _, err := reader.Read(data); err != nil {
+	if _, err := io.ReadFull(reader, data); err != nil {
 		return nil, fmt.Errorf("read bulk string data failed: %w", err)
 	}
 

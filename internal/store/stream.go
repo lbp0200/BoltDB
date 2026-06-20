@@ -226,7 +226,10 @@ func (s *BotreonStore) XAdd(key string, opts StreamXAddOptions, id string, field
 		typeKey := TypeOfKeyGet(key)
 		typeItem, typeErr := txn.Get(typeKey)
 		if typeErr == nil {
-			typeVal, _ := typeItem.ValueCopy(nil)
+			typeVal, copyErr := typeItem.ValueCopy(nil)
+			if copyErr != nil {
+				return copyErr
+			}
 			if string(typeVal) != "" && string(typeVal) != KeyTypeStream {
 				return ErrWrongType
 			}
@@ -332,7 +335,9 @@ func (s *BotreonStore) XAdd(key string, opts StreamXAddOptions, id string, field
 				currentSeq := meta.FirstSeq
 				for it.Seek(prefix); it.ValidForPrefix(prefix) && count < entriesToRemove; it.Next() {
 					item := it.Item()
-					_ = txn.Delete(item.Key())
+					if err := txn.Delete(item.Key()); err != nil {
+						return err
+					}
 					count++
 					// Move to next ID
 					currentSeq++
@@ -1058,7 +1063,10 @@ func (s *BotreonStore) XGroupCreate(key, group, startID string) error {
 		// Check type first before checking meta key
 		typeItem, err := txn.Get(typeKey)
 		if err == nil {
-			typeVal, _ := typeItem.ValueCopy(nil)
+			typeVal, copyErr := typeItem.ValueCopy(nil)
+			if copyErr != nil {
+				return copyErr
+			}
 			if string(typeVal) != "" && string(typeVal) != KeyTypeStream {
 				return ErrWrongType
 			}
@@ -1068,8 +1076,12 @@ func (s *BotreonStore) XGroupCreate(key, group, startID string) error {
 
 		_, err = txn.Get(metaKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
-			_ = txn.Set(typeKey, []byte(KeyTypeStream))
-			_ = txn.Set(metaKey, encodeStreamMeta(&streamMetaData{}))
+			if err := txn.Set(typeKey, []byte(KeyTypeStream)); err != nil {
+				return err
+			}
+			if err := txn.Set(metaKey, encodeStreamMeta(&streamMetaData{})); err != nil {
+				return err
+			}
 		} else if err != nil {
 			return err
 		}

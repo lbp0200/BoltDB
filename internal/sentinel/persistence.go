@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/lbp0200/BoltDB/internal/logger"
 )
 
 const configFileName = "sentinel.conf.json"
@@ -105,7 +107,9 @@ func (cm *configManager) Load() (bool, error) {
 
 	// Re-register masters from config
 	for _, mc := range state.Masters {
-		_ = cm.sentinel.AddMaster(mc.Name, mc.Addr, mc.Quorum)
+		if err := cm.sentinel.AddMaster(mc.Name, mc.Addr, mc.Quorum); err != nil {
+			logger.Logger.Warn().Str("master", mc.Name).Err(err).Msg("failed to re-add master from config")
+		}
 	}
 
 	return true, nil

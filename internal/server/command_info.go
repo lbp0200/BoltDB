@@ -80,6 +80,7 @@ func init() {
 		{name: "GETRANGE", arity: 4, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "GETSET", arity: 3, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "HDEL", arity: -3, flags: []commandFlag{flagWrite}, firstKey: 1, lastKey: 1, step: 1},
+		{name: "HELLO", arity: -1, flags: []commandFlag{flagReadonly}, firstKey: 0, lastKey: 0, step: 0},
 		{name: "HEXISTS", arity: 3, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "HGET", arity: 3, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "HGETALL", arity: 2, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},

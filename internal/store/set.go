@@ -130,11 +130,14 @@ func (s *BotreonStore) SAdd(key string, members ...string) (int, error) {
 
 		// 获取当前计数器值
 		item, err = txn.Get([]byte(countKey))
-		if err != badger.ErrKeyNotFound {
+		if !errors.Is(err, badger.ErrKeyNotFound) {
 			if err != nil {
 				return err
 			}
-			countBytes, _ := item.ValueCopy(nil)
+			countBytes, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
 			count = helper.BytesToUint64(countBytes)
 		}
 
@@ -143,7 +146,7 @@ func (s *BotreonStore) SAdd(key string, members ...string) (int, error) {
 			memberKey := s.setKey(key, "member", member)
 
 			// 检查成员是否存在
-			if _, err := txn.Get([]byte(memberKey)); err == badger.ErrKeyNotFound {
+			if _, err := txn.Get([]byte(memberKey)); errors.Is(err, badger.ErrKeyNotFound) {
 				// 新成员：写入成员键并增加计数器
 				if err := txn.Set([]byte(memberKey), []byte{}); err != nil {
 					return err
@@ -191,7 +194,10 @@ func (s *BotreonStore) SRem(key string, members ...string) (int, error) {
 			if err != nil {
 				return err
 			}
-			countBytes, _ := item.ValueCopy(nil)
+			countBytes, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
 			count = helper.BytesToUint64(countBytes)
 		}
 
@@ -246,7 +252,10 @@ func (s *BotreonStore) SCard(key string) (uint64, error) {
 		if err != nil {
 			return err
 		}
-		countBytes, _ := item.ValueCopy(nil)
+		countBytes, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
 		count = helper.BytesToUint64(countBytes)
 		return nil
 	})
@@ -349,7 +358,10 @@ func (s *BotreonStore) SPop(key string) (string, error) {
 		if err != nil {
 			return err
 		}
-		countBytes, _ := item.ValueCopy(nil)
+		countBytes, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
 		count := helper.BytesToUint64(countBytes)
 		if count == 0 {
 			return nil // 集合为空
@@ -435,7 +447,10 @@ func (s *BotreonStore) SPopN(key string, count int) ([]string, error) {
 			countKey := s.setKey(key, "count")
 			item, err := txn.Get([]byte(countKey))
 			if err == nil {
-				countBytes, _ := item.ValueCopy(nil)
+				countBytes, err := item.ValueCopy(nil)
+				if err != nil {
+					return err
+				}
 				currentCount := helper.BytesToUint64(countBytes)
 				// #nosec G115 - count is bounded by practical set size limits
 				if currentCount >= uint64(count) {
@@ -532,7 +547,10 @@ func (s *BotreonStore) SMove(source, destination, member string) (bool, error) {
 		sourceCountKey := s.setKey(source, "count")
 		item, err := txn.Get([]byte(sourceCountKey))
 		if err == nil {
-			countBytes, _ := item.ValueCopy(nil)
+			countBytes, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
 			count := helper.BytesToUint64(countBytes)
 			if count > 0 {
 				count--
@@ -556,7 +574,10 @@ func (s *BotreonStore) SMove(source, destination, member string) (bool, error) {
 			item, err = txn.Get([]byte(destCountKey))
 			var destCount uint64
 			if err == nil {
-				countBytes, _ := item.ValueCopy(nil)
+				countBytes, err := item.ValueCopy(nil)
+				if err != nil {
+					return err
+				}
 				destCount = helper.BytesToUint64(countBytes)
 			}
 			destCount++
@@ -708,7 +729,9 @@ func (s *BotreonStore) SInterStore(destination string, keys ...string) (int, err
 		if err == nil {
 			for _, member := range existingMembers {
 				memberKey := s.setKey(destination, "member", member)
-				_ = txn.Delete([]byte(memberKey))
+				if err := txn.Delete([]byte(memberKey)); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -759,7 +782,9 @@ func (s *BotreonStore) SUnionStore(destination string, keys ...string) (int, err
 		if err == nil {
 			for _, member := range existingMembers {
 				memberKey := s.setKey(destination, "member", member)
-				_ = txn.Delete([]byte(memberKey))
+				if err := txn.Delete([]byte(memberKey)); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -823,7 +848,9 @@ func (s *BotreonStore) SDiffStore(destination string, keys ...string) (int, erro
 		if err == nil {
 			for _, member := range existingMembers {
 				memberKey := s.setKey(destination, "member", member)
-				_ = txn.Delete([]byte(memberKey))
+				if err := txn.Delete([]byte(memberKey)); err != nil {
+					return err
+				}
 			}
 		}
 

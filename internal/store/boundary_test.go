@@ -81,12 +81,12 @@ func TestBoundary_LargeString100MB(t *testing.T) {
 	}
 }
 
-const batchSize = 1000
+const insertBatchSize = 1000
 
 func batchInsertList(s *BotreonStore, key string, n int) error {
-	vals := make([]string, batchSize)
-	for i := 0; i < n; i += batchSize {
-		end := i + batchSize
+	vals := make([]string, insertBatchSize)
+	for i := 0; i < n; i += insertBatchSize {
+		end := i + insertBatchSize
 		if end > n {
 			end = n
 		}
@@ -101,9 +101,9 @@ func batchInsertList(s *BotreonStore, key string, n int) error {
 }
 
 func batchInsertSet(s *BotreonStore, key string, n int) error {
-	members := make([]string, batchSize)
-	for i := 0; i < n; i += batchSize {
-		end := i + batchSize
+	members := make([]string, insertBatchSize)
+	for i := 0; i < n; i += insertBatchSize {
+		end := i + insertBatchSize
 		if end > n {
 			end = n
 		}
@@ -118,9 +118,9 @@ func batchInsertSet(s *BotreonStore, key string, n int) error {
 }
 
 func batchInsertZSet(s *BotreonStore, key string, n int) error {
-	members := make([]ZSetMember, batchSize)
-	for i := 0; i < n; i += batchSize {
-		end := i + batchSize
+	members := make([]ZSetMember, insertBatchSize)
+	for i := 0; i < n; i += insertBatchSize {
+		end := i + insertBatchSize
 		if end > n {
 			end = n
 		}
@@ -145,7 +145,7 @@ func TestBoundary_LargeList100K(t *testing.T) {
 	s := setupBoundaryStore(t)
 	const n = 100000
 
-	t.Logf("inserting %d list elements (batch=%d)...", n, batchSize)
+	t.Logf("inserting %d list elements (batch=%d)...", n, insertBatchSize)
 	if err := batchInsertList(s, "biglist", n); err != nil {
 		t.Fatalf("batch insert failed: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestBoundary_LargeSet100K(t *testing.T) {
 	s := setupBoundaryStore(t)
 	const n = 100000
 
-	t.Logf("inserting %d set members (batch=%d)...", n, batchSize)
+	t.Logf("inserting %d set members (batch=%d)...", n, insertBatchSize)
 	if err := batchInsertSet(s, "bigset", n); err != nil {
 		t.Fatalf("batch insert failed: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestBoundary_LargeZSet100K(t *testing.T) {
 	s := setupBoundaryStore(t)
 	const n = 100000
 
-	t.Logf("inserting %d zset members (batch=%d)...", n, batchSize)
+	t.Logf("inserting %d zset members (batch=%d)...", n, insertBatchSize)
 	if err := batchInsertZSet(s, "bigzset", n); err != nil {
 		t.Fatalf("batch insert failed: %v", err)
 	}

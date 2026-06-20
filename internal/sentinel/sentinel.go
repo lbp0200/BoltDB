@@ -64,7 +64,9 @@ func NewSentinelWithDataDir(quorum int, downAfter time.Duration, dataDir string)
 	}
 	if dataDir != "" {
 		s.ConfigManager = newConfigManager(s, dataDir)
-		_, _ = s.ConfigManager.Load()
+		if _, err := s.ConfigManager.Load(); err != nil {
+			logger.Logger.Warn().Err(err).Msg("failed to load sentinel config")
+		}
 	}
 	return s
 }
@@ -99,7 +101,9 @@ func (s *Sentinel) AddMaster(name, addr string, quorum int) error {
 		Msg("添加主节点监控")
 
 	if s.ConfigManager != nil {
-		_ = s.ConfigManager.Save()
+		if err := s.ConfigManager.Save(); err != nil {
+			logger.Logger.Warn().Err(err).Msg("AddMaster: failed to persist config")
+		}
 	}
 	return nil
 }

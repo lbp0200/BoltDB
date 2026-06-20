@@ -367,19 +367,16 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream长度失败，跳过")
 				continue
 			}
-			firstID, err := dec.readString()
+			_, err = dec.readString()
 			if err != nil {
 				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream firstID失败，跳过")
 				continue
 			}
-			lastID, err := dec.readString()
+			_, err = dec.readString()
 			if err != nil {
 				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream lastID失败，跳过")
 				continue
 			}
-			_ = firstID
-			_ = lastID
-
 			numEntries, err := dec.readLength()
 			if err != nil {
 				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream条目数失败，跳过")
