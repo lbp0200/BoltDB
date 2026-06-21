@@ -8,71 +8,103 @@ Phase 2: L0、PSYNC、FULLRESYNC、goroutine、shutdown                     ✅
 Phase 3: health、basin、evolution、nightly、docs                         ✅
 Phase 4: 技术债收敛                                                      ✅
 P0–P2 新功能：RESP3 / CLUSTER MEET / Sentinel gossip                    ✅
+2026-06-21 代码审计 + 修复                                               ✅
 ```
 
 ---
 
-## 待定缺口
+## 当前状态
 
-### 已知架构边界（不会做，需文档化）— 已文档化于 `docs/arch-boundaries.md`
+| 指标 | 值 |
+|------|----|
+| RESP3 Null 覆盖 | 32/34 命令（~95%） |
+| redis-py compat | 153/153 (100%) |
+| node-redis compat | 110/110 (100%) |
+| redis-cli compat | 77/77 (100%) |
+| timer 泄漏 | 8/8 已修复 |
+| isWriteCommand | 91/91 完整 |
+| goroutine leak test | 通过 |
+
+---
+
+## P1：剩余 RESP3 空值（2个）
+
+| 命令 | 行号 | 原因 | 修复难度 |
+|------|------|------|---------|
+| CLIENT GETNAME | handler.go:1504 | 客户端名未设置时返回 nil；edge case，无数据语义 | 易（加 `respVersion==3` guard） |
+| GEOPOS per-element | handler.go:5954 | 数组内 nil 元素；需改 RESP3 Array 中嵌入 Null | 中（需改数组元素类型） |
+
+---
+
+## P2：代码质量（6项）
+
+| 项 | 位置 | 问题 | 建议 |
+|----|------|------|------|
+| MasterConnection.Reader 未锁定使用 | `replication/master.go:78-80` | 先 RLock 取 reader 指针，解锁后用 | 改用读写锁 + 本地 copy |
+| SlaveConnection.Reader 同模式 | `replication/slave.go:164-168` | 同上 | 同上 |
+| gossip test 不尊重 `-short` | `cluster/gossip_test.go:140` | `TestGossip_CheckFailures_MarksPFAIL` 硬编码 120s 超时 | 加 `t.Skip` when `testing.Short()` |
+| BGSAVE 无取消机制 | `backup/backup.go:49-59` | `db.View()` 可能被 shutdown 阻塞 | 加 context 参数 + select |
+| gossip.go `context.Background()` | `cluster/gossip.go:31` | 应继承应用生命周期 | 从 server root context 派生 |
+| `readUntilEOF` 无大小上限 | `replication/master.go:246-248` | 仅 warn，不限 buffer | 加硬上限（如 256MB）后报错断开 |
+
+---
+
+## P3：架构边界（已决策：不做）
 
 | 边界 | 原因 |
 |------|------|
-| commit-seq ↔ repl-offset 映射 | 架构级改造，牵动写路径/Badger MVCC/backlog/PSYNC 语义。当前 bounded duplicate window (µs) 可接受 |
-| 完全线性化 FULLRESYNC | 等价于上一条。当前保证：无丢失写、无结构性损坏、bounded duplicate window |
-
-### 已决策：不做
-
-| 项 | 原因 |
-|----|------|
+| commit-seq ↔ repl-offset 映射 | 架构级改造。当前 bounded duplicate window (µs) 可接受 |
+| 完全线性化 FULLRESYNC | 等价于上一条。当前保证：无丢失写、无结构性损坏 |
 | EVAL / SCRIPT (Lua) | Lua 沙箱逃逸风险 + 维护成本，非定位 |
 | Lock Sharding / Lock-Free | 复杂度指数级，有明确瓶颈时再碰 |
 | ACL / FUNCTION / MIGRATE | P2，按需补充 |
 
 ---
 
-## 附录 A：Nightly Soak 运行参考
+## P4：CI / 发布
 
-Nightly soak 在 GitHub Actions 上运行（`.github/workflows/nightly-soak.yml`），UTC 每日 02:00 触发。
+| 项 | 状态 |
+|----|------|
+| v8.26.0 发布 | 🔴 未推（待 commit） |
+| v8.27.0 发布 | 🔴 未推（待 commit） |
+| v8.28.0 发布 | 🔴 未推（待 commit） |
+| 工作树有 22 文件未提交改动 | 🔴 需 commit |
+| github actions CI 通过 | 🟡 待验证 |
 
-**调度：** cron `0 2 * * *`（UTC）
-**工作流：** `Nightly Soak` → Standalone Soak（1h） + Replication Soak（1h）并行执行
-**观测指标：** evolution gate（health/basin/drift）通过 `go run cmd/evolution/main.go` 检查
-**数据持久化：** evolution history 通过 `actions/cache@v4` 存储，跨 run 累计趋势数据
-**历史日志：** JSONL 轨迹数据上传至 Actions Artifacts（保留 30 天）
-**回查命令：**
+---
+
+## 审计结果（仅存档，不需修复）
+
+| 审计 | 结果 |
+|------|------|
+| isWriteCommand | 91 条完整，0 缺失 |
+| timer 模式 | 8 处 production `time.After()` 全部修复 |
+| TODO/FIXME/BUG 注释 | 代码库中 0 处 |
+| SlaveInstance data race | 已修复（sync.RWMutex + getter） |
+| 3× double close(stopCh) | 已修复（sync.Once） |
+| CLUSTER ADDSLOTS/DELSLOTS | 已修复 |
+| RDB write error 吞没 | 已修复（9 处加日志） |
+| ReplAckOffset data race | 已修复（atomic.Int64） |
+
+---
+
+## 附录：Verification Commands
 
 ```bash
-gh run list --workflow "Nightly Soak" -L 1 --json databaseId \
-  | jq -r '.[0].databaseId' \
-  | xargs gh run view --log
-gh run download <run-id> -n soak-standalone-<run-id> -D /tmp/soak-data
+# All unit tests
+bash scripts/remote-test.sh -race -short ./internal/...
+
+# RESP shape suite
+bash scripts/remote-test.sh -race -timeout 30s -run TestRESPShape ./internal/server/...
+
+# Goroutine leak
+bash scripts/remote-test.sh -race -timeout 120s -run TestGoroutineLeak ./cmd/integration/...
+
+# Compatibility
+python3 scripts/redis_py_compat.py
+node scripts/redis_node_compat.mjs
+bash scripts/redis_cli_compat.sh
+
+# Linter
+golangci-lint run --timeout 5m
 ```
-
-## 附录 B：Monitoring Infrastructure（Completed / Frozen）
-
-| 组件 | 状态 | 说明 |
-|------|------|------|
-| Health decomposition | COMPLETE | S/R/C 三维分解，11 因子评分 |
-| Temporal analysis | COMPLETE | 窗口 slope → trajectory 分类 |
-| Basin analysis | COMPLETE | phase space → stable/stressed/degraded |
-| Evolution gate | COMPLETE | cross-run trend + drift + anomaly |
-| Anomaly engine | COMPLETE | regime shift / escalation 检测 |
-| Nightly visualization | COMPLETE | JSONL → trajectory 5-panel chart |
-| Evolution report | COMPLETE | cross-run drift + basin + oscillation |
-| Nightly summary | COMPLETE | markdown + JSON 双格式 |
-
-> No further development planned. Component freeze effective 2026-06-09.
-
-## 归档索引
-
-已完成的计划文档在 `docs/plans/archive/`：
-
-| 文件 | 说明 |
-|------|------|
-| `2026-05-15.md` | P0/P1 工程护城河（fuzz/chaos/compat/benchmark） |
-| `2026-05-17.md` | 系统正式化（invariants.md、soak test、state fuzz） |
-| `2026-03-10-test-coverage-improvement.md` | 测试覆盖率提升计划 |
-| `test-audit-report.md` | 测试体系审计 |
-| `test-effectiveness-audit.md` | 测试有效性审计（Phase 1） |
-| `phase-1-4-complete.md` | 所有已完成的 P 级项详细日志（2026-05 至 2026-06-20） |

@@ -408,7 +408,9 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取字符串值失败")
 					continue
 				}
-				_ = enc.WriteStringKeyValue(key, value, ttl)
+				if err := enc.WriteStringKeyValue(key, value, ttl); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入字符串值到RDB失败")
+				}
 
 			case store.KeyTypeList:
 				values, err := readListInTxn(txn, key)
@@ -416,7 +418,9 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取列表值失败")
 					continue
 				}
-				_ = enc.WriteListKeyValue(key, values, ttl)
+				if err := enc.WriteListKeyValue(key, values, ttl); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入列表值到RDB失败")
+				}
 
 			case store.KeyTypeHash:
 				fields, err := readHashInTxn(txn, key)
@@ -424,7 +428,9 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取哈希值失败")
 					continue
 				}
-				_ = enc.WriteHashKeyValue(key, fields, ttl)
+				if err := enc.WriteHashKeyValue(key, fields, ttl); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入哈希值到RDB失败")
+				}
 
 			case store.KeyTypeSet:
 				members, err := readSetInTxn(txn, key)
@@ -432,7 +438,9 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取集合值失败")
 					continue
 				}
-				_ = enc.WriteSetKeyValue(key, members, ttl)
+				if err := enc.WriteSetKeyValue(key, members, ttl); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入集合值到RDB失败")
+				}
 
 			case store.KeyTypeSortedSet:
 				members, err := readZSetInTxn(txn, key)
@@ -462,7 +470,9 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取stream值失败")
 					continue
 				}
-				_ = enc.WriteStreamKeyValue(key, entries)
+				if err := enc.WriteStreamKeyValue(key, entries); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入stream值到RDB失败")
+				}
 
 			case store.KeyTypeJSON:
 				value, err := readJSONInTxn(txn, key)
@@ -470,7 +480,9 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取JSON值失败")
 					continue
 				}
-				_ = enc.WriteJSONKeyValue(key, value)
+				if err := enc.WriteJSONKeyValue(key, value); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入JSON值到RDB失败")
+				}
 
 			case store.KeyTypeTimeSeries:
 				points, err := readTimeSeriesInTxn(txn, key)
@@ -478,7 +490,9 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取time series值失败")
 					continue
 				}
-				_ = enc.WriteTimeSeriesKeyValue(key, points)
+				if err := enc.WriteTimeSeriesKeyValue(key, points); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入time series值到RDB失败")
+				}
 
 			case store.KeyTypeGeo:
 				members, err := readGeoInTxn(txn, key)
@@ -486,7 +500,9 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取geo值失败")
 					continue
 				}
-				_ = enc.WriteGeoKeyValue(key, members, ttl)
+				if err := enc.WriteGeoKeyValue(key, members, ttl); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入geo值到RDB失败")
+				}
 
 			case store.KeyTypeHyperLogLog:
 				data, err := readHLLInTxn(txn, key)
@@ -494,7 +510,9 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取HLL值失败")
 					continue
 				}
-				_ = enc.WriteHLLKeyValue(key, data)
+				if err := enc.WriteHLLKeyValue(key, data); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入HLL值到RDB失败")
+				}
 
 			default:
 				logger.Logger.Debug().Str("key", key).Str("type", keyType).Msg("跳过不支持的RDB键类型")

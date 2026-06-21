@@ -66,8 +66,9 @@ func rawReadWire(t *testing.T, conn net.Conn) []byte {
 func rawWatchOK(t *testing.T, conn net.Conn) {
 	t.Helper()
 	v := rawArg(t, conn)
-	if !strings.HasPrefix(v, ":") {
-		t.Errorf("WATCH should return integer count, got: %s", v)
+	// Redis WATCH returns +OK (SimpleString), not an integer
+	if v != "OK" {
+		t.Errorf("WATCH should return OK, got: %s", v)
 	}
 }
 

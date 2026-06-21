@@ -90,10 +90,10 @@ func (fm *FailoverManager) selectNewMaster(oldMaster *MasterInstance) *SlaveInst
 	}
 	var candidates []candidate
 	for _, slave := range slaves {
-		if slave.State != "online" {
+		if slave.GetState() != "online" {
 			continue
 		}
-		candidates = append(candidates, candidate{slave: slave, score: slave.Offset})
+		candidates = append(candidates, candidate{slave: slave, score: slave.GetOffset()})
 	}
 
 	// 按偏移量降序排列
@@ -107,19 +107,19 @@ func (fm *FailoverManager) selectNewMaster(oldMaster *MasterInstance) *SlaveInst
 
 	// 遍历候选集，尝试存活探测，返回第一个可达的
 	for _, c := range candidates {
-		conn, err := net.DialTimeout("tcp", c.slave.Addr, 3*time.Second)
+		conn, err := net.DialTimeout("tcp", c.slave.GetAddr(), 3*time.Second)
 		if err != nil {
 			logger.Logger.Warn().
-				Str("slave_addr", c.slave.Addr).
-				Int64("offset", c.slave.Offset).
+				Str("slave_addr", c.slave.GetAddr()).
+				Int64("offset", c.slave.GetOffset()).
 				Err(err).
 				Msg("候选从节点不可达，跳过")
 			continue
 		}
 		_ = conn.Close()
 		logger.Logger.Info().
-			Str("slave_addr", c.slave.Addr).
-			Int64("offset", c.slave.Offset).
+			Str("slave_addr", c.slave.GetAddr()).
+			Int64("offset", c.slave.GetOffset()).
 			Msg("选中从节点作为新主节点")
 		return c.slave
 	}
@@ -162,15 +162,15 @@ func (fm *FailoverManager) executeFailover(oldMaster *MasterInstance, newMaster 
 	// 4. 将其他从节点重新配置为复制新主节点
 	slaves := oldMaster.GetSlaves()
 	for _, slave := range slaves {
-		if slave.ID != newMaster.ID && slave.State == "online" {
+		if slave.ID != newMaster.ID && slave.GetState() == "online" {
 			logger.Logger.Info().
-				Str("slave_addr", slave.Addr).
-				Str("new_master", newMaster.Addr).
+				Str("slave_addr", slave.GetAddr()).
+				Str("new_master", newMaster.GetAddr()).
 				Msg("重新配置从节点")
 
-			if err := SendReplicaOf(slave.Addr, newMaster.Addr); err != nil {
+			if err := SendReplicaOf(slave.GetAddr(), newMaster.GetAddr()); err != nil {
 				logger.Logger.Warn().
-					Str("slave", slave.Addr).
+					Str("slave", slave.GetAddr()).
 					Err(err).
 					Msg("重新配置从节点失败")
 			}

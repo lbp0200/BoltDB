@@ -575,9 +575,15 @@ func TestGoroutineLeak_BRPopLPUSHBlockingTimeout(t *testing.T) {
 	baseline := baselineGoroutines(t)
 
 	for i := 0; i < 5; i++ {
-		ctx := context.Background()
-		_, err := sharedClient.BRPopLPush(ctx, "leak:brlempty", "leak:brldst", 1*time.Second).Result()
-		assert.Equal(t, redis.Nil, err)
+		conn := dialConn(t)
+		r := bufio.NewReader(conn)
+		rawCmd(t, conn, "BRPOPLPUSH", "leak:brlempty", "leak:brldst", "1")
+		line, err := r.ReadString('\n')
+		assert.NoError(t, err)
+		// Expect $-1\r\n (nil bulk string) after timeout
+		assert.Equal(t, "$-1\r\n", line)
+		conn.Close()
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	time.Sleep(goroutineSettleTime)

@@ -1578,10 +1578,15 @@ func (s *BotreonStore) BZPopMaxBlocking(ctx context.Context, keys []string, time
 	}
 
 	resultCh := make(chan string, 1)
-	var timeoutCh <-chan time.Time
-	if timeout > 0 {
-		timeoutCh = time.After(time.Duration(timeout) * time.Second)
-	}
+	timer := time.NewTimer(time.Duration(timeout) * time.Second)
+	defer func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}()
 
 	if key, member, ok := s.registerAndRecheckZMax(keys, resultCh); ok {
 		return key, member, nil
@@ -1594,7 +1599,7 @@ func (s *BotreonStore) BZPopMaxBlocking(ctx context.Context, keys []string, time
 			return "", nil, nil
 		}
 		return key, &members[0], nil
-	case <-timeoutCh:
+	case <-timer.C:
 		s.unregisterBlockingZPop(resultCh, keys)
 		return "", nil, nil
 	case <-ctx.Done():
@@ -1624,10 +1629,15 @@ func (s *BotreonStore) BZPopMinBlocking(ctx context.Context, keys []string, time
 	}
 
 	resultCh := make(chan string, 1)
-	var timeoutCh <-chan time.Time
-	if timeout > 0 {
-		timeoutCh = time.After(time.Duration(timeout) * time.Second)
-	}
+	timer := time.NewTimer(time.Duration(timeout) * time.Second)
+	defer func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}()
 
 	if key, member, ok := s.registerAndRecheckZMin(keys, resultCh); ok {
 		return key, member, nil
@@ -1640,7 +1650,7 @@ func (s *BotreonStore) BZPopMinBlocking(ctx context.Context, keys []string, time
 			return "", nil, nil
 		}
 		return key, &members[0], nil
-	case <-timeoutCh:
+	case <-timer.C:
 		s.unregisterBlockingZPop(resultCh, keys)
 		return "", nil, nil
 	case <-ctx.Done():

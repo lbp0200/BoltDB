@@ -1672,13 +1672,15 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR wrong number of arguments for 'GET' command")
 		}
 		key := string(args[0])
-		// 检查集群重定向
 		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 			return resp
 		}
 		value, err := h.Db.Get(key)
 		if err != nil {
 			if errors.Is(err, store.ErrKeyNotFound) {
+				if state.respVersion == 3 {
+					return &proto.Null{}
+				}
 				return proto.NewBulkString(nil)
 			}
 			if errors.Is(err, store.ErrWrongType) {
@@ -1699,6 +1701,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		gdValue, gdErr := h.Db.Get(gdKey)
 		if gdErr != nil {
 			if errors.Is(gdErr, store.ErrKeyNotFound) {
+				if state.respVersion == 3 {
+					return &proto.Null{}
+				}
 				return proto.NewBulkString(nil)
 			}
 			if errors.Is(gdErr, store.ErrWrongType) {
@@ -1747,6 +1752,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		gexValue, gexErr := h.Db.Get(gexKey)
 		if gexErr != nil {
 			if errors.Is(gexErr, store.ErrKeyNotFound) {
+				if state.respVersion == 3 {
+					return &proto.Null{}
+				}
 				return proto.NewBulkString(nil)
 			}
 			if errors.Is(gexErr, store.ErrWrongType) {
@@ -2228,9 +2236,10 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for _, arg := range args {
 			key := string(arg)
 			deleted, err := h.Db.Del(key)
-			if err == nil {
-				count += deleted
+			if err != nil {
+				return wrapStoreError(err)
 			}
+			count += deleted
 		}
 		// #nosec G115 - count is bounded by practical data size limits
 		return proto.NewInteger(count)
@@ -2251,7 +2260,10 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for _, arg := range args {
 			key := string(arg)
 			exists, err := h.Db.Exists(key)
-			if err == nil && exists {
+			if err != nil {
+				return wrapStoreError(err)
+			}
+			if exists {
 				count++
 			}
 		}
@@ -2358,6 +2370,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		key := string(args[0])
 		data, err := h.Db.Dump(key)
 		if err != nil {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString(data)
@@ -2435,6 +2450,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				return wrapStoreError(err)
 			}
 			if refcount == 0 {
+				if state.respVersion == 3 {
+					return &proto.Null{}
+				}
 				return proto.NewBulkString(nil)
 			}
 			return proto.NewInteger(refcount)
@@ -2444,6 +2462,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				return wrapStoreError(err)
 			}
 			if encoding == "" {
+				if state.respVersion == 3 {
+					return &proto.Null{}
+				}
 				return proto.NewBulkString(nil)
 			}
 			return proto.NewBulkString([]byte(encoding))
@@ -2667,12 +2688,14 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if len(args) < 1 {
 			return proto.NewError("ERR wrong number of arguments for 'TOUCH' command")
 		}
-		// TOUCH 返回键的数量（BadgerDB 不维护访问时间，所以只是 EXIST 的变体）
 		count := int64(0)
 		for _, arg := range args {
 			key := string(arg)
 			exists, err := h.Db.Exists(key)
-			if err == nil && exists {
+			if err != nil {
+				return wrapStoreError(err)
+			}
+			if exists {
 				count++
 			}
 		}
@@ -2728,6 +2751,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	case "RANDOMKEY":
 		key, err := h.Db.RandomKey()
 		if err != nil || key == "" {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString([]byte(key))
@@ -2783,9 +2809,15 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		if value == "" {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString([]byte(value))
@@ -2800,9 +2832,15 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		if value == "" {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString([]byte(value))
@@ -2836,9 +2874,15 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		if value == "" {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString([]byte(value))
@@ -2951,6 +2995,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 
 		if len(positions) == 0 {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 
@@ -2993,9 +3040,15 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		if value == "" {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString([]byte(value))
@@ -3014,6 +3067,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return wrapStoreError(err)
 		}
 		if value == "" {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString([]byte(value))
@@ -3036,6 +3092,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return wrapStoreError(err)
 		}
 		if value == "" {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString([]byte(value))
@@ -3136,9 +3195,15 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		if value == "" {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString([]byte(value))
@@ -3177,6 +3242,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
 		if err != nil || value == nil {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString(value)
@@ -3568,8 +3636,11 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				return proto.NewError("ERR value is not an integer or out of range")
 			}
 			members, err := h.Db.SPopN(key, count)
-			if err != nil || len(members) == 0 {
-				return proto.NewBulkString(nil)
+			if err != nil {
+				return wrapStoreError(err)
+			}
+			if len(members) == 0 {
+				return &proto.Array{Args: [][]byte{}}
 			}
 			h.markDirtyKeys(state, key)
 			if h.Replication != nil && h.Replication.IsMaster() {
@@ -3589,7 +3660,13 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 
 		member, err := h.Db.SPop(key)
-		if err != nil || member == "" {
+		if err != nil {
+			return wrapStoreError(err)
+		}
+		if member == "" {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		h.markDirtyKeys(state, key)
@@ -3603,7 +3680,13 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if len(args) == 1 {
 			// SRANDMEMBER key - return single member
 			member, err := h.Db.SRandMember(key)
-			if err != nil || member == "" {
+			if err != nil {
+				return wrapStoreError(err)
+			}
+			if member == "" {
+				if state.respVersion == 3 {
+					return &proto.Null{}
+				}
 				return proto.NewBulkString(nil)
 			}
 			return proto.NewBulkString([]byte(member))
@@ -3615,7 +3698,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		members, err := h.Db.SRandMemberN(key, count)
 		if err != nil {
-			return proto.NewBulkString(nil)
+			return wrapStoreError(err)
 		}
 		results := make([][]byte, len(members))
 		for i, m := range members {
@@ -4078,6 +4161,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		if !exists {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		return proto.NewBulkString([]byte(strconv.FormatFloat(score, 'f', -1, 64)))
@@ -4089,10 +4175,13 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		key, member := string(args[0]), string(args[1])
 		rank, err := h.Db.ZRank(key, member)
 		if err != nil {
-			if errors.Is(err, store.ErrKeyNotFound) || errors.Is(err, store.ErrMemberNotFound) {
-				return proto.NewBulkString(nil)
-			}
 			return wrapStoreError(err)
+		}
+		if rank < 0 {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
+			return proto.NewBulkString(nil)
 		}
 		return proto.NewInteger(rank)
 
@@ -4103,10 +4192,13 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		key, member := string(args[0]), string(args[1])
 		rank, err := h.Db.ZRevRank(key, member)
 		if err != nil {
-			if errors.Is(err, store.ErrKeyNotFound) || errors.Is(err, store.ErrMemberNotFound) {
-				return proto.NewBulkString(nil)
-			}
 			return wrapStoreError(err)
+		}
+		if rank < 0 {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
+			return proto.NewBulkString(nil)
 		}
 		return proto.NewInteger(rank)
 
@@ -4388,6 +4480,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		if len(entries) == 0 {
 			if count == 0 {
+				if state.respVersion == 3 {
+					return &proto.Null{}
+				}
 				return proto.NewBulkString(nil)
 			}
 			return &proto.Array{Args: [][]byte{}}
@@ -4445,6 +4540,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		if len(members) == 0 {
 			if count == 0 {
+				if state.respVersion == 3 {
+					return &proto.Null{}
+				}
 				return proto.NewBulkString(nil)
 			}
 			return &proto.Array{Args: [][]byte{}}
@@ -5254,6 +5352,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			size, err := h.Db.MemoryUsage(key)
 			if err != nil {
 				if errors.Is(err, store.ErrKeyNotFound) {
+					if state.respVersion == 3 {
+						return &proto.Null{}
+					}
 					return proto.NewBulkString(nil)
 				}
 				return wrapStoreError(err)
@@ -5730,7 +5831,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		results := make([]proto.RESP, len(state.commands))
 		for i, tc := range state.commands {
-			results[i] = h.executeQueuedCommand(tc.Command, tc.Args)
+			results[i] = h.executeQueuedCommand(tc.Command, tc.Args, state.respVersion)
 		}
 
 		// 传播事务中的写命令到从节点
@@ -6218,6 +6319,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			}
 		}
 
+		h.markDirtyKeys(state, dstKey)
 		stored, err := h.Db.GeoSearchStore(dstKey, srcKey, centerLon, centerLat, radius, unit, count, storeDist)
 		if err != nil {
 			return wrapStoreError(err)
@@ -6282,6 +6384,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			i += 2
 		}
 
+		h.markDirtyKeys(state, key)
 		resultID, err := h.Db.XAdd(key, opts, id, fields)
 		if err != nil {
 			if errors.Is(err, store.ErrWrongType) {
@@ -6376,6 +6479,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 		// Format response
 		if len(results) == 0 {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		streamResults := make([]proto.RESP, 0, len(results))
@@ -6526,6 +6632,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i := 1; i < len(args); i++ {
 			ids[i-1] = string(args[i])
 		}
+		h.markDirtyKeys(state, key)
 		deleted, err := h.Db.XDel(key, ids...)
 		if err != nil {
 			if errors.Is(err, store.ErrWrongType) {
@@ -6567,7 +6674,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			key := string(args[1])
 			group := string(args[2])
 			startID := string(args[3])
-			// Skip MKSTREAM option for now
+			h.markDirtyKeys(state, key)
 			err := h.Db.XGroupCreate(key, group, startID)
 			if err != nil {
 				if errors.Is(err, store.ErrWrongType) {
@@ -6582,6 +6689,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			}
 			key := string(args[1])
 			group := string(args[2])
+			h.markDirtyKeys(state, key)
 			err := h.Db.XGroupDestroy(key, group)
 			if err != nil {
 				if errors.Is(err, store.ErrWrongType) {
@@ -6597,6 +6705,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			key := string(args[1])
 			group := string(args[2])
 			id := string(args[3])
+			h.markDirtyKeys(state, key)
 			err := h.Db.XGroupSetID(key, group, id)
 			if err != nil {
 				if errors.Is(err, store.ErrWrongType) {
@@ -6612,6 +6721,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			key := string(args[1])
 			group := string(args[2])
 			consumer := string(args[3])
+			h.markDirtyKeys(state, key)
 			removed, err := h.Db.XGroupDelConsumer(key, group, consumer)
 			if err != nil {
 				if errors.Is(err, store.ErrWrongType) {
@@ -6772,6 +6882,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			}
 		}
 		if len(response) == 0 {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			return proto.NewBulkString(nil)
 		}
 		return &proto.NestedArray{Elems: response}
@@ -6792,6 +6905,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		for i := 4; i < len(args); i++ {
 			ids[i-4] = string(args[i])
 		}
+		h.markDirtyKeys(state, key)
 		claimed, err := h.Db.XClaim(key, group, consumer, minIdleTime, ids...)
 		if err != nil {
 			if errors.Is(err, store.ErrWrongType) {
@@ -6844,6 +6958,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			}
 		}
 
+		h.markDirtyKeys(state, key)
 		result, err := h.Db.XAutoClaim(key, group, consumer, minIdleTime, start, opts)
 		if err != nil {
 			if errors.Is(err, store.ErrWrongType) {
@@ -7115,6 +7230,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			}
 		}
 
+		h.markDirtyKeys(state, key)
 		trimmed, err := h.Db.XTrim(key, maxLen, minID)
 		if err != nil {
 			if errors.Is(err, store.ErrWrongType) {
@@ -7200,18 +7316,16 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		switch keyType {
 		case "list":
 			listValues, err := h.Db.LRange(key, 0, -1)
-			if err == nil {
-				values = listValues
-			} else {
-				values = []string{}
+			if err != nil {
+				return wrapStoreError(err)
 			}
+			values = listValues
 		case "set":
 			setValues, err := h.Db.SMembers(key)
-			if err == nil {
-				values = setValues
-			} else {
-				values = []string{}
+			if err != nil {
+				return wrapStoreError(err)
 			}
+			values = setValues
 		case "string":
 			val, err := h.Db.Get(key)
 			if err != nil {
@@ -7325,6 +7439,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 		// STORE
 		if destKey != "" {
+			h.markDirtyKeys(state, destKey)
 			// Store as a list
 			for idx, v := range values {
 				if idx == 0 {
@@ -7335,6 +7450,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				if _, err := h.Db.RPush(destKey, v); err != nil {
 					return wrapStoreError(err)
 				}
+			}
+			if h.Replication != nil && h.Replication.IsMaster() {
+				h.Replication.PropagateCommand(args)
 			}
 			return proto.NewInteger(int64(len(values)))
 		}
@@ -7409,6 +7527,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		result, err := h.Db.JSONGet(key, paths...)
 		if err != nil {
 			if errors.Is(err, store.ErrKeyNotFound) {
+				if state.respVersion == 3 {
+					return &proto.Null{}
+				}
 				return proto.NewBulkString(nil)
 			}
 			if errors.Is(err, store.ErrWrongType) {
@@ -7457,6 +7578,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		result, err := h.Db.JSONType(key, path)
 		if err != nil {
 			if errors.Is(err, store.ErrKeyNotFound) {
+				if state.respVersion == 3 {
+					return &proto.Null{}
+				}
 				return proto.NewBulkString(nil)
 			}
 			if errors.Is(err, store.ErrWrongType) {
@@ -7624,6 +7748,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		memory, err := h.Db.JSONDebugMemory(key, path)
 		if err != nil {
 			if errors.Is(err, store.ErrKeyNotFound) {
+				if state.respVersion == 3 {
+					return &proto.Null{}
+				}
 				return proto.NewBulkString(nil)
 			}
 			if errors.Is(err, store.ErrWrongType) {
@@ -7720,6 +7847,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		dp, err := h.Db.TSGet(key)
 		if err != nil {
 			if errors.Is(err, store.ErrKeyNotFound) {
+				if state.respVersion == 3 {
+					return &proto.Null{}
+				}
 				return proto.NewBulkString(nil)
 			}
 			if errors.Is(err, store.ErrWrongType) {
@@ -7792,6 +7922,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		info, err := h.Db.TSInfo(key)
 		if err != nil {
 			if errors.Is(err, store.ErrKeyNotFound) {
+				if state.respVersion == 3 {
+					return &proto.Null{}
+				}
 				return proto.NewBulkString(nil)
 			}
 			if errors.Is(err, store.ErrWrongType) {
@@ -7820,6 +7953,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		length, err := h.Db.TSLen(key)
 		if err != nil {
 			if errors.Is(err, store.ErrKeyNotFound) {
+				if state.respVersion == 3 {
+					return &proto.Null{}
+				}
 				return proto.NewBulkString(nil)
 			}
 			if errors.Is(err, store.ErrWrongType) {
@@ -7912,7 +8048,13 @@ func parseScoreExclusive(s string) (float64, bool, error) {
 }
 
 // executeQueuedCommand 执行事务队列中的命令
-func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
+func (h *Handler) executeQueuedCommand(cmd string, args [][]byte, respVersion int) proto.RESP {
+	nilBulk := func() proto.RESP {
+		if respVersion == 3 {
+			return &proto.Null{}
+		}
+		return proto.NewBulkString(nil)
+	}
 	switch cmd {
 	case "SET":
 		key, value := string(args[0]), string(args[1])
@@ -7925,7 +8067,7 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 		value, err := h.Db.Get(key)
 		if err != nil {
 			if errors.Is(err, store.ErrKeyNotFound) {
-				return proto.NewBulkString(nil)
+				return nilBulk()
 			}
 			return wrapStoreError(err)
 		}
@@ -8067,7 +8209,7 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 			return wrapStoreError(err)
 		}
 		if val == "" {
-			return proto.NewBulkString(nil)
+			return nilBulk()
 		}
 		return proto.NewBulkString([]byte(val))
 	case "RPOP":
@@ -8077,7 +8219,7 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 			return wrapStoreError(err)
 		}
 		if val == "" {
-			return proto.NewBulkString(nil)
+			return nilBulk()
 		}
 		return proto.NewBulkString([]byte(val))
 	case "LLEN":
@@ -8120,7 +8262,7 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
 		if err != nil || val == nil {
-			return proto.NewBulkString(nil)
+			return nilBulk()
 		}
 		return proto.NewBulkString(val)
 	case "HGETALL":
@@ -8231,7 +8373,7 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 			return wrapStoreError(err)
 		}
 		if !exists {
-			return proto.NewBulkString(nil)
+			return nilBulk()
 		}
 		return proto.NewBulkString([]byte(strconv.FormatFloat(score, 'f', -1, 64)))
 	case "ZINCRBY":
@@ -8245,6 +8387,34 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte) proto.RESP {
 			return wrapStoreError(err)
 		}
 		return proto.NewBulkString([]byte(strconv.FormatFloat(newScore, 'f', -1, 64)))
+	case "SPOP":
+		key := string(args[0])
+		if len(args) >= 2 {
+			count, err := strconv.Atoi(string(args[1]))
+			if err != nil {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			members, err := h.Db.SPopN(key, count)
+			if err != nil {
+				return wrapStoreError(err)
+			}
+			if len(members) == 0 {
+				return &proto.Array{Args: [][]byte{}}
+			}
+			results := make([][]byte, len(members))
+			for i, m := range members {
+				results[i] = []byte(m)
+			}
+			return &proto.Array{Args: results}
+		}
+		member, err := h.Db.SPop(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
+		if member == "" {
+			return nilBulk()
+		}
+		return proto.NewBulkString([]byte(member))
 	default:
 		return proto.NewError(fmt.Sprintf("ERR command '%s' not supported in transaction", cmd))
 	}

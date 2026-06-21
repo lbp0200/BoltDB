@@ -568,4 +568,337 @@ func TestRESPShape_HELLO(t *testing.T) {
 	assert.True(t, ok)
 }
 
+// setupRESP3 helper: creates handler + state, executes HELLO 3, returns RESP3-mode state
+func setupRESP3(t *testing.T) (*Handler, *connState) {
+	t.Helper()
+	h, s := setupTestHandler(t)
+	resp := h.executeCommand(s, "HELLO", [][]byte{[]byte("3")}, "127.0.0.1:12345")
+	m, ok := resp.(*proto.Map)
+	assert.True(t, ok)
+	assert.Equal(t, 14, len(m.Elems))
+	assert.Equal(t, 3, s.respVersion)
+	return h, s
+}
+
+func shapeNull(t *testing.T, resp proto.RESP) {
+	t.Helper()
+	_, ok := resp.(*proto.Null)
+	assert.True(t, ok)
+}
+
+func TestRESP3Shape_GetMissingKeyReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "GET", [][]byte{[]byte("nonexistent")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_GetExistingReturnsBulkString(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "SET", [][]byte{[]byte("rk1"), []byte("v1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(state, "GET", [][]byte{[]byte("rk1")}, "127.0.0.1:12345")
+	shapeBulkString(t, resp, 1)
+}
+
+func TestRESP3Shape_ZScoreMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "ZADD", [][]byte{[]byte("zs2"), []byte("1.0"), []byte("m1")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(state, "ZSCORE", [][]byte{[]byte("zs2"), []byte("nonexistent")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_GetDelMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "GETDEL", [][]byte{[]byte("nonexistent")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_GetExMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "GETEX", [][]byte{[]byte("nonexistent")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_HELLO2BackToRESP2(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	// Switching back to RESP2
+	resp := handler.executeCommand(state, "HELLO", [][]byte{[]byte("2")}, "127.0.0.1:12345")
+	na, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.True(t, len(na.Elems) >= 12)
+	assert.Equal(t, 2, state.respVersion)
+
+	// After switching back, EXISTS should return Integer (not Boolean)
+	resp = handler.executeCommand(state, "EXISTS", [][]byte{[]byte("nonexistent")}, "127.0.0.1:12345")
+	shapeInteger(t, resp)
+}
+
+func shapeEmptyArray(t *testing.T, resp proto.RESP) {
+	t.Helper()
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(arr.Args))
+}
+
+func shapeArrayWithNils(t *testing.T, resp proto.RESP, count int) {
+	t.Helper()
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, count, len(arr.Args))
+}
+
+func TestRESP3Shape_HGetMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "HGET", [][]byte{[]byte("nosuchkey"), []byte("f")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_LIndexMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "LINDEX", [][]byte{[]byte("nosuchkey"), []byte("0")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+
+	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("lk"), []byte("a")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(state, "LINDEX", [][]byte{[]byte("lk"), []byte("5")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_ZRankMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "ZRANK", [][]byte{[]byte("nosuchkey"), []byte("m")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_ZRevRankMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "ZREVRANK", [][]byte{[]byte("nosuchkey"), []byte("m")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_LPopMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "LPOP", [][]byte{[]byte("nosuchkey")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_RPopMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "RPOP", [][]byte{[]byte("nosuchkey")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_SRandMemberMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "SRANDMEMBER", [][]byte{[]byte("nosuchkey")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestSPopNEmptyReturnsEmptyArray(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "SPOP", [][]byte{[]byte("nosuchkey"), []byte("2")}, "127.0.0.1:12345")
+	shapeEmptyArray(t, resp)
+}
+
+func TestSPopNEmptyReturnsEmptyArray_RESP3(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "SPOP", [][]byte{[]byte("nosuchkey"), []byte("2")}, "127.0.0.1:12345")
+	shapeEmptyArray(t, resp)
+}
+
+func TestSPopSingleMissingReturnsNull_RESP3(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "SPOP", [][]byte{[]byte("nosuchkey")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestSPopSingleMissingReturnsNil_RESP2(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "SPOP", [][]byte{[]byte("nosuchkey")}, "127.0.0.1:12345")
+	shapeIsNilBulk(t, resp)
+}
+
+func TestRESP3Shape_LPosMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "LPOS", [][]byte{[]byte("nosuchkey"), []byte("x")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_RandomKeyMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "RANDOMKEY", [][]byte{}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_DumpMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "DUMP", [][]byte{[]byte("nosuchkey")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_MemoryUsageMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "MEMORY", [][]byte{[]byte("USAGE"), []byte("nosuchkey")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_BLMoveMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "BLMOVE", [][]byte{[]byte("nosuchkey"), []byte("dst"), []byte("LEFT"), []byte("LEFT"), []byte("0")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_RPopLPushMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "RPOPLPUSH", [][]byte{[]byte("nosuchkey"), []byte("dst")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_LMoveMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "LMOVE", [][]byte{[]byte("nosuchkey"), []byte("dst"), []byte("LEFT"), []byte("LEFT")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_BRPopLPushMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "BRPOPLPUSH", [][]byte{[]byte("nosuchkey"), []byte("dst"), []byte("0")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_ObjectRefCountMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "OBJECT", [][]byte{[]byte("REFCOUNT"), []byte("nosuchkey")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestRESP3Shape_ObjectEncodingMissingReturnsNull(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "OBJECT", [][]byte{[]byte("ENCODING"), []byte("nosuchkey")}, "127.0.0.1:12345")
+	shapeNull(t, resp)
+}
+
+func TestSPopNInTransactionReturnsEmptyArray(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "MULTI", [][]byte{}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SPOP", [][]byte{[]byte("nosuchkey"), []byte("2")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(state, "EXEC", [][]byte{}, "127.0.0.1:12345")
+	na, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(na.Elems))
+	arr, ok := na.Elems[0].(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(arr.Args))
+}
+
+func TestSPopSingleInTransactionMissingReturnsNil(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "MULTI", [][]byte{}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SPOP", [][]byte{[]byte("nosuchkey")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(state, "EXEC", [][]byte{}, "127.0.0.1:12345")
+	na, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(na.Elems))
+	shapeIsNilBulk(t, na.Elems[0])
+}
+
+func TestSPopSingleInTransactionMissingReturnsNull_RESP3(t *testing.T) {
+	t.Parallel()
+	handler, state := setupRESP3(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "MULTI", [][]byte{}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SPOP", [][]byte{[]byte("nosuchkey")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(state, "EXEC", [][]byte{}, "127.0.0.1:12345")
+	na, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(na.Elems))
+	shapeNull(t, na.Elems[0])
+}
+
 

@@ -166,6 +166,46 @@ func (c *Cluster) AssignSlotRange(start, end uint32, nodeID string) error {
 	return c.SaveConfig()
 }
 
+// RemoveSlot 移除槽位分配
+func (c *Cluster) RemoveSlot(slot uint32) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if slot >= SlotCount {
+		return fmt.Errorf("slot %d out of range", slot)
+	}
+
+	owner := c.Slots[slot]
+	if owner == nil {
+		return nil
+	}
+
+	c.Slots[slot] = nil
+
+	if owner.ID == c.Myself.ID {
+		// Remove this slot from Myself's slot ranges
+		var updated []SlotRange
+		for _, r := range c.Myself.Slots {
+			if slot < r.Start || slot > r.End {
+				updated = append(updated, r)
+			} else if slot == r.Start && slot == r.End {
+				// Range of length 1, completely removed
+				continue
+			} else if slot == r.Start {
+				updated = append(updated, SlotRange{Start: slot + 1, End: r.End})
+			} else if slot == r.End {
+				updated = append(updated, SlotRange{Start: r.Start, End: slot - 1})
+			} else {
+				updated = append(updated, SlotRange{Start: r.Start, End: slot - 1})
+				updated = append(updated, SlotRange{Start: slot + 1, End: r.End})
+			}
+		}
+		c.Myself.Slots = updated
+	}
+
+	return c.SaveConfig()
+}
+
 // GetSlotOwner 获取槽位的所有者节点
 func (c *Cluster) GetSlotOwner(slot uint32) *Node {
 	return c.GetNodeBySlot(slot)

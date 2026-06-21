@@ -804,10 +804,10 @@ func TestTransaction(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "OK", result)
 
-	// 测试 WATCH - 监控键（无论键是否存在都返回监控的键数量）
+	// 测试 WATCH - 监控键
 	result, err = sharedClient.Do(ctx, "WATCH", "watchkey").Result()
 	assert.NoError(t, err)
-	assert.Equal(t, int64(1), result)
+	assert.Equal(t, "OK", result)
 
 	// 测试 MULTI - 开始事务
 	result, err = sharedClient.Do(ctx, "MULTI").Result()
@@ -835,7 +835,7 @@ func TestTransaction(t *testing.T) {
 	// 测试 WATCH 多个键
 	result, err = sharedClient.Do(ctx, "WATCH", "key1", "key2", "key3").Result()
 	assert.NoError(t, err)
-	assert.Equal(t, int64(3), result)
+	assert.Equal(t, "OK", result)
 }
 
 // TestTransactionExtended 扩展事务命令测试 - 测试修复后的 WATCH/MULTI/EXEC 行为
@@ -880,7 +880,7 @@ func TestTransactionExtended(t *testing.T) {
 	// ========== WATCH with multiple keys ==========
 	result, err := sharedClient.Do(ctx, "WATCH", "key1", "key2", "key3").Result()
 	assert.NoError(t, err)
-	assert.Equal(t, int64(3), result)
+	assert.Equal(t, "OK", result)
 }
 
 // TestCOPY 测试COPY命令

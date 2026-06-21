@@ -20,7 +20,7 @@ type SlaveConnection struct {
 	Reader        *bufio.Reader
 	Writer        *bufio.Writer
 	ReplOffset    atomic.Int64 // 从节点的复制偏移量
-	ReplAckOffset int64        // 从节点确认的偏移量
+	ReplAckOffset atomic.Int64 // 从节点确认的偏移量
 	Ready         atomic.Bool  // 是否准备好接收命令
 	LastAckTime   int64        // 最后一次ACK时间
 	mu            sync.RWMutex
@@ -37,13 +37,12 @@ func NewSlaveConnection(conn net.Conn) *SlaveConnection {
 	addr := conn.RemoteAddr().String()
 	slaveID := generateSlaveID(addr)
 	sc := &SlaveConnection{
-		ID:            slaveID,
-		Addr:          addr,
-		Conn:          conn,
-		Reader:        bufio.NewReader(conn),
-		Writer:        bufio.NewWriter(conn),
-		ReplAckOffset: 0,
-		LastAckTime:   time.Now().Unix(),
+		ID:          slaveID,
+		Addr:        addr,
+		Conn:        conn,
+		Reader:      bufio.NewReader(conn),
+		Writer:      bufio.NewWriter(conn),
+		LastAckTime: time.Now().Unix(),
 	}
 	sc.Ready.Store(false)
 	sc.ReplOffset.Store(0)
@@ -79,8 +78,13 @@ func (sc *SlaveConnection) GetReplOffset() int64 {
 func (sc *SlaveConnection) UpdateReplAck(offset int64) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
-	sc.ReplAckOffset = offset
+	sc.ReplAckOffset.Store(offset)
 	sc.LastAckTime = time.Now().Unix()
+}
+
+// GetReplAckOffset 获取确认偏移量
+func (sc *SlaveConnection) GetReplAckOffset() int64 {
+	return sc.ReplAckOffset.Load()
 }
 
 // SendCommand 发送命令到从节点

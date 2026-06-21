@@ -11,6 +11,7 @@ import (
 // MasterInstance 主节点实例
 type MasterInstance struct {
 	mu           sync.RWMutex
+	closeOnce    sync.Once
 	name         string
 	addr         string
 	quorum       int
@@ -295,7 +296,7 @@ func (mi *MasterInstance) SetODown() {
 
 // Stop 停止监控
 func (mi *MasterInstance) Stop() {
-	close(mi.stopCh)
+	mi.closeOnce.Do(func() { close(mi.stopCh) })
 }
 
 // CanFailover 检查是否允许触发故障转移（冷却期内不允许）
@@ -327,8 +328,8 @@ func (mi *MasterInstance) UpdateSlaveOffset(slaveAddr string, offset int64) {
 	mi.mu.RLock()
 	defer mi.mu.RUnlock()
 	for _, slave := range mi.slaves {
-		if slave.Addr == slaveAddr {
-			slave.Offset = offset
+		if slave.GetAddr() == slaveAddr {
+			slave.SetOffset(offset)
 			break
 		}
 	}
@@ -343,8 +344,8 @@ func (mi *MasterInstance) GetBestSlave() *SlaveInstance {
 	var bestOffset int64 = -1
 
 	for _, slave := range mi.slaves {
-		if slave.State == "online" && slave.Offset > bestOffset {
-			bestOffset = slave.Offset
+		if slave.GetState() == "online" && slave.GetOffset() > bestOffset {
+			bestOffset = slave.GetOffset()
 			best = slave
 		}
 	}

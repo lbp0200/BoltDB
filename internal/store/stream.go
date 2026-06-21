@@ -543,12 +543,6 @@ func (s *BotreonStore) xReadBlocking(ctx context.Context, count int64, block int
 	resultCh := make(chan StreamReadResult, 1)
 	keys := streamKeys(args)
 
-	// Set up timeout
-	var timeoutCh <-chan time.Time
-	if block > 0 {
-		timeoutCh = time.After(time.Duration(block) * time.Millisecond)
-	}
-
 	// Register this channel for each key BEFORE trying immediate read
 	s.streamBlockingMu.Lock()
 	for _, key := range keys {
@@ -594,6 +588,15 @@ func (s *BotreonStore) xReadBlocking(ctx context.Context, count int64, block int
 	}
 
 	// Wait for data or timeout
+	timer := time.NewTimer(time.Duration(block) * time.Millisecond)
+	defer func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}()
 	select {
 	case <-ctx.Done():
 		s.unregisterStreamBlocking(resultCh, keys)
@@ -603,7 +606,7 @@ func (s *BotreonStore) xReadBlocking(ctx context.Context, count int64, block int
 			s.unregisterStreamBlocking(resultCh, keys)
 			return []map[string][]StreamEntry{{streamResult.Key: streamResult.Entries}}, nil
 		}
-	case <-timeoutCh:
+	case <-timer.C:
 	}
 
 	s.unregisterStreamBlocking(resultCh, keys)
@@ -1309,10 +1312,6 @@ func (s *BotreonStore) XReadGroup(ctx context.Context, group, consumer string, c
 // xReadGroupBlocking implements blocking XREADGROUP
 func (s *BotreonStore) xReadGroupBlocking(ctx context.Context, group, consumer string, count int64, block int64, keys []string) ([]map[string][]StreamEntry, error) {
 	resultCh := make(chan StreamReadResult, 1)
-	var timeoutCh <-chan time.Time
-	if block > 0 {
-		timeoutCh = time.After(time.Duration(block) * time.Millisecond)
-	}
 
 	s.streamBlockingMu.Lock()
 	for _, key := range keys {
@@ -1355,6 +1354,15 @@ func (s *BotreonStore) xReadGroupBlocking(ctx context.Context, group, consumer s
 		}
 	}
 
+	timer := time.NewTimer(time.Duration(block) * time.Millisecond)
+	defer func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}()
 	select {
 	case <-ctx.Done():
 		s.unregisterStreamBlocking(resultCh, keys)
@@ -1371,7 +1379,7 @@ func (s *BotreonStore) xReadGroupBlocking(ctx context.Context, group, consumer s
 		}
 		s.unregisterStreamBlocking(resultCh, keys)
 		return nil, nil
-	case <-timeoutCh:
+	case <-timer.C:
 		s.unregisterStreamBlocking(resultCh, keys)
 		return nil, nil
 	}

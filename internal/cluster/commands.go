@@ -384,9 +384,6 @@ func (cc *ClusterCommands) handleAddSlots(args []string) (string, error) {
 		return "", fmt.Errorf("ERR wrong number of arguments for 'CLUSTER ADDSLOTS' command")
 	}
 
-	cc.cluster.mu.Lock()
-	defer cc.cluster.mu.Unlock()
-
 	for _, arg := range args {
 		slot, err := strconv.ParseUint(arg, 10, 32)
 		if err != nil {
@@ -397,12 +394,9 @@ func (cc *ClusterCommands) handleAddSlots(args []string) (string, error) {
 			return "", fmt.Errorf("ERR slot %d out of range", slot)
 		}
 
-		currentOwner := cc.cluster.Slots[slot]
-		if currentOwner != nil && currentOwner.ID != cc.cluster.Myself.ID {
-			return "", fmt.Errorf("ERR Slot %d is already busy", slot)
+		if err := cc.cluster.AssignSlot(uint32(slot), cc.cluster.Myself.ID); err != nil {
+			return "", err
 		}
-
-		cc.cluster.Slots[slot] = cc.cluster.Myself
 	}
 
 	return "OK", nil
@@ -424,8 +418,9 @@ func (cc *ClusterCommands) handleDelSlots(args []string) (string, error) {
 			return "", fmt.Errorf("ERR slot %d out of range", slot)
 		}
 
-		// 移除槽位分配（设置为nil或重新分配）
-		// 简化实现：不删除，只是标记
+		if err := cc.cluster.RemoveSlot(uint32(slot)); err != nil {
+			return "", err
+		}
 	}
 
 	return "OK", nil

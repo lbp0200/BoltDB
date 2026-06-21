@@ -43,13 +43,14 @@ type GossipPeer struct {
 
 // GossipProtocol gossip协议管理器
 type GossipProtocol struct {
-	mu       sync.RWMutex
-	sentinel *Sentinel
-	config   *GossipConfig
-	listener net.Listener
-	peers    map[string]*GossipPeer
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
+	mu        sync.RWMutex
+	sentinel  *Sentinel
+	config    *GossipConfig
+	listener  net.Listener
+	peers     map[string]*GossipPeer
+	closeOnce sync.Once
+	stopCh    chan struct{}
+	wg        sync.WaitGroup
 }
 
 // NewGossipProtocol 创建gossip协议管理器
@@ -96,7 +97,7 @@ func (gp *GossipProtocol) Start() error {
 }
 
 func (gp *GossipProtocol) Stop() {
-	close(gp.stopCh)
+	gp.closeOnce.Do(func() { close(gp.stopCh) })
 
 	if gp.listener != nil {
 		if err := gp.listener.Close(); err != nil {

@@ -74,8 +74,8 @@ func (cp *ConfigProvider) GetSlaves(masterName string) []map[string]string {
 	for _, slave := range slaves {
 		info := map[string]string{
 			"name":                    slave.ID,
-			"ip":                      strings.Split(slave.Addr, ":")[0],
-			"port":                    strings.Split(slave.Addr, ":")[1],
+			"ip":                      strings.Split(slave.GetAddr(), ":")[0],
+			"port":                    strings.Split(slave.GetAddr(), ":")[1],
 			"runid":                   "",
 			"flags":                   strings.Join(slave.Flags, ","),
 			"link-pending-commands":   "0",
@@ -92,7 +92,7 @@ func (cp *ConfigProvider) GetSlaves(masterName string) []map[string]string {
 			"master-host":             strings.Split(master.GetAddr(), ":")[0],
 			"master-port":             strings.Split(master.GetAddr(), ":")[1],
 			"slave-priority":          "100",
-			"slave-repl-offset":       fmt.Sprintf("%d", slave.Offset),
+			"slave-repl-offset":       fmt.Sprintf("%d", slave.GetOffset()),
 		}
 		result = append(result, info)
 	}

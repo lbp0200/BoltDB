@@ -20,7 +20,7 @@ func isWriteCommand(cmd string) bool {
 		"BLPOP": true, "BRPOP": true,
 		"HSET": true, "HDEL": true, "HMSET": true, "HSETNX": true,
 		"HINCRBY": true, "HINCRBYFLOAT": true,
-		"SADD": true, "SREM": true, "SMOVE": true,
+		"SADD": true, "SREM": true, "SMOVE": true, "SPOP": true,
 		"SINTERSTORE": true, "SUNIONSTORE": true, "SDIFFSTORE": true,
 		"ZADD": true, "ZREM": true, "ZINCRBY": true,
 		"ZPOPMAX": true, "ZPOPMIN": true, "ZMPOP": true, "LMPOP": true,

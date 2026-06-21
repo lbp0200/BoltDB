@@ -34,9 +34,17 @@ func setupClusterTestServer(t *testing.T) {
 		t.Fatalf("Failed to create store: %v", err)
 	}
 
-	// 创建集群
-	c, err := cluster.NewCluster(clusterDB, "", "")
+	// 启动服务器（使用随机端口）
+	clusterListener, err = net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
+		clusterDB.Close()
+		t.Fatalf("Failed to listen: %v", err)
+	}
+
+	// 创建集群（使用实际的监听地址）
+	c, err := cluster.NewCluster(clusterDB, "", clusterListener.Addr().String())
+	if err != nil {
+		clusterListener.Close()
 		clusterDB.Close()
 		t.Fatalf("Failed to create cluster: %v", err)
 	}
@@ -45,13 +53,6 @@ func setupClusterTestServer(t *testing.T) {
 	clusterServer = &server.Handler{
 		Db:      clusterDB,
 		Cluster: c,
-	}
-
-	// 启动服务器（使用随机端口）
-	clusterListener, err = net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		clusterDB.Close()
-		t.Fatalf("Failed to listen: %v", err)
 	}
 
 	// 在goroutine中运行服务器

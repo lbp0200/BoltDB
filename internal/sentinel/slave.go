@@ -1,9 +1,13 @@
 package sentinel
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 // SlaveInstance 从节点实例
 type SlaveInstance struct {
+	mu            sync.RWMutex
 	ID            string
 	Addr          string
 	Master        *MasterInstance
@@ -30,13 +34,45 @@ func NewSlaveInstance(id, addr string) *SlaveInstance {
 	}
 }
 
+// GetState returns the slave state
+func (si *SlaveInstance) GetState() string {
+	si.mu.RLock()
+	defer si.mu.RUnlock()
+	return si.State
+}
+
+// GetOffset returns the slave replication offset
+func (si *SlaveInstance) GetOffset() int64 {
+	si.mu.RLock()
+	defer si.mu.RUnlock()
+	return si.Offset
+}
+
+// GetAddr returns the slave address
+func (si *SlaveInstance) GetAddr() string {
+	si.mu.RLock()
+	defer si.mu.RUnlock()
+	return si.Addr
+}
+
+// SetOffset sets the slave replication offset
+func (si *SlaveInstance) SetOffset(offset int64) {
+	si.mu.Lock()
+	defer si.mu.Unlock()
+	si.Offset = offset
+}
+
 // IsOnline returns true if the slave was seen within the last 30 seconds.
 func (si *SlaveInstance) IsOnline() bool {
+	si.mu.RLock()
+	defer si.mu.RUnlock()
 	return si.State == "online" && time.Since(si.LastSeen) < 30*time.Second
 }
 
 // RecordHeartbeat updates the last seen timestamp and marks the slave online.
 func (si *SlaveInstance) RecordHeartbeat(offset int64) {
+	si.mu.Lock()
+	defer si.mu.Unlock()
 	si.LastSeen = time.Now()
 	si.Offset = offset
 	if si.State == "offline" {
@@ -47,13 +83,24 @@ func (si *SlaveInstance) RecordHeartbeat(offset int64) {
 
 // MarkOffline marks the slave as offline.
 func (si *SlaveInstance) MarkOffline() {
+	si.mu.Lock()
+	defer si.mu.Unlock()
 	si.State = "offline"
 }
 
 // RecordInfoError increments the info error counter.
 func (si *SlaveInstance) RecordInfoError() {
+	si.mu.Lock()
+	defer si.mu.Unlock()
 	si.InfoErrors++
 	if si.InfoErrors > 3 {
 		si.State = "offline"
 	}
+}
+
+// GetLastSeen returns the last seen timestamp
+func (si *SlaveInstance) GetLastSeen() time.Time {
+	si.mu.RLock()
+	defer si.mu.RUnlock()
+	return si.LastSeen
 }

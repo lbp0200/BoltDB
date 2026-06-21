@@ -1761,7 +1761,15 @@ func (s *BotreonStore) BLPOPBlocking(ctx context.Context, keys []string, timeout
 
 	// Create result channel
 	resultCh := make(chan BlockingResult, 1)
-	timeoutCh := time.After(time.Duration(timeout) * time.Second)
+	timer := time.NewTimer(time.Duration(timeout) * time.Second)
+	defer func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}()
 
 	// Register + re-check to close the TOCTOU race window
 	if key, value, ok := s.registerAndRecheck(keys, resultCh, s.LPop); ok {
@@ -1772,7 +1780,7 @@ func (s *BotreonStore) BLPOPBlocking(ctx context.Context, keys []string, timeout
 	select {
 	case result := <-resultCh:
 		return result.Key, result.Value, nil
-	case <-timeoutCh:
+	case <-timer.C:
 		s.unregisterBlockingPop(resultCh, keys)
 		return "", "", nil
 	case <-ctx.Done():
@@ -1801,7 +1809,15 @@ func (s *BotreonStore) BRPOPBlocking(ctx context.Context, keys []string, timeout
 
 	// Create result channel
 	resultCh := make(chan BlockingResult, 1)
-	timeoutCh := time.After(time.Duration(timeout) * time.Second)
+	timer := time.NewTimer(time.Duration(timeout) * time.Second)
+	defer func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}()
 
 	// Register + re-check to close the TOCTOU race window
 	if key, value, ok := s.registerAndRecheck(keys, resultCh, s.RPop); ok {
@@ -1812,7 +1828,7 @@ func (s *BotreonStore) BRPOPBlocking(ctx context.Context, keys []string, timeout
 	select {
 	case result := <-resultCh:
 		return result.Key, result.Value, nil
-	case <-timeoutCh:
+	case <-timer.C:
 		s.unregisterBlockingPop(resultCh, keys)
 		return "", "", nil
 	case <-ctx.Done():
@@ -1857,7 +1873,10 @@ func (s *BotreonStore) BRPOPLPUSHBlocking(ctx context.Context, source, destinati
 	timer := time.NewTimer(timeoutDur)
 	defer func() {
 		if !timer.Stop() {
-			<-timer.C
+			select {
+			case <-timer.C:
+			default:
+			}
 		}
 	}()
 
@@ -1911,7 +1930,10 @@ func (s *BotreonStore) BLMoveBlocking(ctx context.Context, source, destination, 
 	timer := time.NewTimer(timeoutDur)
 	defer func() {
 		if !timer.Stop() {
-			<-timer.C
+			select {
+			case <-timer.C:
+			default:
+			}
 		}
 	}()
 

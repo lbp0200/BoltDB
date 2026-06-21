@@ -2007,7 +2007,7 @@ func TestExecuteQueuedCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeQueuedCommand(tt.cmd, tt.args)
+			resp := handler.executeQueuedCommand(tt.cmd, tt.args, 2)
 			tt.validate(t, resp)
 		})
 	}

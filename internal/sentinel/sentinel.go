@@ -13,6 +13,7 @@ import (
 // Sentinel 哨兵实例
 type Sentinel struct {
 	mu           sync.RWMutex
+	closeOnce    sync.Once
 	masters      map[string]*MasterInstance
 	quorum       int
 	downAfter    time.Duration
@@ -199,7 +200,7 @@ func (s *Sentinel) Start() {
 // Stop 停止哨兵
 func (s *Sentinel) Stop() {
 	s.mu.Lock()
-	close(s.stopCh)
+	s.closeOnce.Do(func() { close(s.stopCh) })
 
 	for _, master := range s.masters {
 		master.Stop()
