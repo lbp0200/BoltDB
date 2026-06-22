@@ -5239,7 +5239,11 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if h.Backup == nil {
 			return proto.NewError("ERR backup not enabled")
 		}
-		if err := h.Backup.BGSave(h.Ctx); err != nil {
+		bgCtx := h.Ctx
+		if bgCtx == nil {
+			bgCtx = context.Background()
+		}
+		if err := h.Backup.BGSave(bgCtx); err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewSimpleString("Background saving started")

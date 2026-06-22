@@ -18,6 +18,7 @@ usage() {
 HOST_CONFIGS=(
     "10.1.2.16:elex-gm0135:$HOME/.ssh/google_compute_engine:/home/elex-gm0135/projects/bolt:/usr/local/go/bin"
     "192.168.1.251:lbp:$HOME/.ssh/id_rsa:/media/hdd4t/projects/boltdb:/usr/local/go/bin"
+    "10.1.15.22:elex:$HOME/.ssh/id_rsa.test:/Users/elex/Projects/boltDB:/Users/elex/go/go/bin"
 )
 
 # Auto-detect reachable remote host

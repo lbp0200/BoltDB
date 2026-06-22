@@ -2535,10 +2535,11 @@ func setupSharedServer() {
 
 	// 创建服务器处理器
 	sharedServer = &server.Handler{
-		Db:         sharedDB,
-		PubSub:     pubsubMgr,
-		Backup:     backupMgr,
+		Db:          sharedDB,
+		PubSub:      pubsubMgr,
+		Backup:      backupMgr,
 		Replication: replMgr,
+		Ctx:         context.Background(),
 	}
 
 	// 启动监听

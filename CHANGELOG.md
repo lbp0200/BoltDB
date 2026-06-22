@@ -1,5 +1,19 @@
 # Changelog
 
+## v8.30.0 (2026-06-22) — CI Stability, BGSave nil context fix
+
+> **修复 CI 集成测试中 BGSAVE 因 nil context 导致的 nil pointer panic，Homebrew formula 安装路径修复，远程测试服务器新增 fallback。**
+
+### Bug 修复
+
+- **BGSAVE nil context crash**（`internal/server/handler.go:5242`）：`h.Ctx` 未设置时直接传入 `BGSave` 导致 `ctx.Done()` nil pointer dereference，加 nil 防御 fallback 到 `context.Background()`
+- **集成测试共享服务器**（`cmd/integration/integration_test.go:2537`）：补上 `Ctx: context.Background()`，消除所有依赖 `h.Ctx` 路径的 nil pointer 风险
+- **Homebrew formula 安装路径**（`01be3c3`）：`data_dir` 改用运行时 `$HOME` 而非安装时写入的硬编码路径
+
+### CI / 基础设施
+
+- **远程测试服务器**（`scripts/remote-test.sh`）：新增 `10.1.15.22`（Intel Mac x86_64）作为最低优先级 fallback，支持 3 台冗余主机自动探测
+
 ## v8.29.0 (2026-06-22) — RESP3 Full Coverage, Code Quality Hardening
 
 > **RESP3 Null 覆盖达到 34/34 命令（100%），P2 全部 6 项代码质量债清理完毕。** 最后两个 RESP3 Null 缺口（CLIENT GETNAME、GEOPOS per-element）填补完成；MasterConnection/SlaveConnection 读锁竞争修复；BGSAVE 支持 shutdown 取消；readUntilEOF 256MB 硬上限防 OOM；gossip context 继承服务器生命周期；SaveConfig RLock 死锁消除。
