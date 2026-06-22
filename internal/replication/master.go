@@ -14,6 +14,10 @@ import (
 	"github.com/lbp0200/BoltDB/internal/proto"
 )
 
+// maxRDBBufferSize 是 readUntilEOF 读取 RDB 数据的最大缓冲区大小（256 MB）。
+// 超过此上限时断开连接，防止恶意/异常大 RDB 导致 OOM。
+const maxRDBBufferSize = 256 * 1024 * 1024
+
 // MasterConnection 表示到主节点的连接
 type MasterConnection struct {
 	Addr       string
@@ -76,8 +80,8 @@ func (mc *MasterConnection) SendCommand(cmd [][]byte) error {
 func (mc *MasterConnection) ReadResponse() (proto.RESP, error) {
 	logger.Logger.Debug().Str("addr", mc.Addr).Msg("ReadResponse called")
 	mc.mu.RLock()
+	defer mc.mu.RUnlock()
 	reader := mc.Reader
-	mc.mu.RUnlock()
 
 	// 读取响应类型
 	line, err := reader.ReadBytes('\n')
@@ -246,6 +250,11 @@ func (mc *MasterConnection) readUntilEOF() ([]byte, error) {
 		if buffer.Len() > 10*1024*1024 {
 			logger.Logger.Warn().Int("buffer_size", buffer.Len()).Msg("Buffer growing large in readUntilEOF")
 		}
+
+		// 硬上限：超过 256MB 时报错断开，防止 OOM
+		if buffer.Len() > maxRDBBufferSize {
+			return nil, fmt.Errorf("RDB data too large: %d bytes (max %d)", buffer.Len(), maxRDBBufferSize)
+		}
 	}
 }
 
@@ -283,13 +292,20 @@ func (mc *MasterConnection) Close() error {
 		close(mc.stopCh)
 	})
 
-	mc.mu.Lock()
-	defer mc.mu.Unlock()
-
-	if mc.Conn != nil {
-		return mc.Conn.Close()
+	// Close the connection first to unblock any readers holding RLock.
+	var err error
+	mc.mu.RLock()
+	conn := mc.Conn
+	mc.mu.RUnlock()
+	if conn != nil {
+		err = conn.Close()
 	}
-	return nil
+
+	// Memory barrier: ensure no goroutine is still using the connection.
+	mc.mu.Lock()
+	//nolint:staticcheck // SA2001: empty critical section intentional — memory barrier
+	mc.mu.Unlock()
+	return err
 }
 
 // IsClosed 检查连接是否已关闭

@@ -17,7 +17,7 @@ P0–P2 新功能：RESP3 / CLUSTER MEET / Sentinel gossip                    �
 
 | 指标 | 值 |
 |------|----|
-| RESP3 Null 覆盖 | 32/34 命令（~95%） |
+| RESP3 Null 覆盖 | 34/34 命令（100%） |
 | redis-py compat | 153/153 (100%) |
 | node-redis compat | 110/110 (100%) |
 | redis-cli compat | 77/77 (100%) |
@@ -27,25 +27,27 @@ P0–P2 新功能：RESP3 / CLUSTER MEET / Sentinel gossip                    �
 
 ---
 
-## P1：剩余 RESP3 空值（2个）
+## P1：剩余 RESP3 空值（2个 → 已全部修复 ✅）
 
-| 命令 | 行号 | 原因 | 修复难度 |
-|------|------|------|---------|
-| CLIENT GETNAME | handler.go:1504 | 客户端名未设置时返回 nil；edge case，无数据语义 | 易（加 `respVersion==3` guard） |
-| GEOPOS per-element | handler.go:5954 | 数组内 nil 元素；需改 RESP3 Array 中嵌入 Null | 中（需改数组元素类型） |
+| 命令 | 行号 | 原因 | 修复难度 | 状态 |
+|------|------|------|---------|------|
+| CLIENT GETNAME | handler.go:1504 | 客户端名未设置时返回 nil；edge case，无数据语义 | 易（加 `respVersion==3` guard） | ✅ 已修复 |
+| GEOPOS per-element | handler.go:5954 | 数组内 nil 元素；需改 RESP3 Array 中嵌入 Null | 中（需改数组元素类型） | ✅ 已修复 |
+
+**RESP3 Null 覆盖：34/34 命令（100%）**
 
 ---
 
-## P2：代码质量（6项）
+## P2：代码质量（6项 → 已全部修复 ✅）
 
-| 项 | 位置 | 问题 | 建议 |
-|----|------|------|------|
-| MasterConnection.Reader 未锁定使用 | `replication/master.go:78-80` | 先 RLock 取 reader 指针，解锁后用 | 改用读写锁 + 本地 copy |
-| SlaveConnection.Reader 同模式 | `replication/slave.go:164-168` | 同上 | 同上 |
-| gossip test 不尊重 `-short` | `cluster/gossip_test.go:140` | `TestGossip_CheckFailures_MarksPFAIL` 硬编码 120s 超时 | 加 `t.Skip` when `testing.Short()` |
-| BGSAVE 无取消机制 | `backup/backup.go:49-59` | `db.View()` 可能被 shutdown 阻塞 | 加 context 参数 + select |
-| gossip.go `context.Background()` | `cluster/gossip.go:31` | 应继承应用生命周期 | 从 server root context 派生 |
-| `readUntilEOF` 无大小上限 | `replication/master.go:246-248` | 仅 warn，不限 buffer | 加硬上限（如 256MB）后报错断开 |
+| 项 | 位置 | 问题 | 修复 | 状态 |
+|----|------|------|-----|------|
+| MasterConnection.Reader 未锁定使用 | `replication/master.go:78-80` | 先 RLock 取 reader 指针，解锁后用 | 全程持 RLock；Close() 先关连接再锁做 barrier | ✅ |
+| SlaveConnection.Reader 同模式 | `replication/slave.go:167-170` | 同上 | 全程持 RLock（slave Close 已正确先关连接） | ✅ |
+| gossip test 不尊重 `-short` | `cluster/gossip_test.go:140` | `TestGossip_CheckFailures_MarksPFAIL` 硬编码 120s 超时 | 加 `t.Skip` when `testing.Short()` | ✅ |
+| gossip.go `context.Background()` | `cluster/gossip.go:31` | 应继承应用生命周期 | 从 server root context 派生 | ✅ |
+| `readUntilEOF` 无大小上限 | `replication/master.go:246-248` | 仅 warn，不限 buffer | 加硬上限（256MB）后报错断开 | ✅ |
+| BGSAVE 无取消机制 | `backup/backup.go:49-59` | `db.View()` 可能被 shutdown 阻塞 | BGSave 接收 ctx，shutdown 时监控 goroutine 退出让 Wait() 返回 | ✅ |
 
 ---
 
@@ -85,6 +87,7 @@ P0–P2 新功能：RESP3 / CLUSTER MEET / Sentinel gossip                    �
 | CLUSTER ADDSLOTS/DELSLOTS | 已修复 |
 | RDB write error 吞没 | 已修复（9 处加日志） |
 | ReplAckOffset data race | 已修复（atomic.Int64） |
+| SaveConfig RLock deadlock | 已修复（分拆 saveConfigLocked） |
 
 ---
 

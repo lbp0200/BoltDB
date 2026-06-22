@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -62,8 +63,8 @@ func NewCluster(store *store.BotreonStore, nodeID, addr string) (*Cluster, error
 		myself.AddSlotRange(0, SlotCount-1)
 	}
 
-	// 初始化 gossip
-	cluster.Gossip = NewGossiper(cluster)
+	// 初始化 gossip（使用 background context；生产环境由 main.go 通过 SetGossipContext 替换）
+	cluster.Gossip = NewGossiper(context.Background(), cluster)
 
 	return cluster, nil
 }
@@ -203,7 +204,7 @@ func (c *Cluster) RemoveSlot(slot uint32) error {
 		c.Myself.Slots = updated
 	}
 
-	return c.SaveConfig()
+	return c.saveConfigLocked()
 }
 
 // GetSlotOwner 获取槽位的所有者节点

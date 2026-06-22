@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"context"
 	"testing"
 
 	"github.com/lbp0200/BoltDB/internal/store"
@@ -85,7 +86,7 @@ func TestBackupManager_BGSave(t *testing.T) {
 	// Set some data
 	db.Set("key1", "value1")
 
-	err = bm.BGSave()
+	err = bm.BGSave(context.Background())
 	assert.NoError(t, err)
 	bm.Wait()
 }

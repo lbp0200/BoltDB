@@ -1501,6 +1501,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			if state.clientInfo != nil && state.clientInfo.Name != "" {
 				return proto.NewBulkString([]byte(state.clientInfo.Name))
 			}
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
 			nilResp := proto.NewBulkString(nil)
 			return nilResp
 		case "SETNAME":
@@ -5236,7 +5239,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if h.Backup == nil {
 			return proto.NewError("ERR backup not enabled")
 		}
-		if err := h.Backup.BGSave(); err != nil {
+		if err := h.Backup.BGSave(h.Ctx); err != nil {
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.NewSimpleString("Background saving started")
@@ -5951,7 +5954,11 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		results := make([]proto.RESP, len(positions))
 		for i, pos := range positions {
 			if pos[0] == 0 && pos[1] == 0 {
-				results[i] = proto.NewBulkString(nil)
+				if state.respVersion == 3 {
+					results[i] = &proto.Null{}
+				} else {
+					results[i] = proto.NewBulkString(nil)
+				}
 			} else {
 				results[i] = &proto.NestedArray{
 					Elems: []proto.RESP{

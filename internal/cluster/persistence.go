@@ -34,12 +34,9 @@ type persistedSlotOwner struct {
 	NodeID string `json:"node_id"`
 }
 
-// SaveConfig persists cluster state (nodes, slots, epoch) to BadgerDB.
-// Called by CLUSTER SAVECONFIG and automatically on slot changes.
-func (c *Cluster) SaveConfig() error {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
+// saveConfigLocked 写入集群配置到数据库。
+// 调用者必须保证至少持有 c.mu 的读锁（RLock）。
+func (c *Cluster) saveConfigLocked() error {
 	state := persistedClusterState{
 		NodeID: c.Myself.ID,
 		Addr:   c.Myself.Addr,
@@ -67,6 +64,15 @@ func (c *Cluster) SaveConfig() error {
 	return c.Store.GetDB().Update(func(txn *badger.Txn) error {
 		return txn.Set([]byte(configKey), data)
 	})
+}
+
+// SaveConfig persists cluster state (nodes, slots, epoch) to BadgerDB.
+// Called by CLUSTER SAVECONFIG and automatically on slot changes.
+// 线程安全：自动获取读锁。
+func (c *Cluster) SaveConfig() error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.saveConfigLocked()
 }
 
 func mergeSlotOwners(slots [SlotCount]*Node, state *persistedClusterState) {

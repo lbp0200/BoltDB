@@ -126,6 +126,8 @@ func main() {
 			logger.Logger.Fatal().Err(err).Msg("Failed to create cluster")
 		}
 		handler.Cluster = c
+		// 替换为服务器生命周期 context，使 gossip 随 shutdown 自动停止
+		c.Gossip = cluster.NewGossiper(ctx, c)
 		// 启动 gossip 循环
 		c.Gossip.Start()
 		logger.Logger.Info().Msg("Cluster mode enabled")

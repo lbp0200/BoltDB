@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -12,7 +13,7 @@ func TestGossip_StartStop(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	g := NewGossiper(cluster)
+	g := NewGossiper(context.Background(), cluster)
 	g.Start()
 	assert.True(t, g.started)
 
@@ -25,7 +26,7 @@ func TestGossip_DoubleStart(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	g := NewGossiper(cluster)
+	g := NewGossiper(context.Background(), cluster)
 	g.Start()
 	g.Start()
 	assert.True(t, g.started)
@@ -37,7 +38,7 @@ func TestGossip_DoubleStop(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	g := NewGossiper(cluster)
+	g := NewGossiper(context.Background(), cluster)
 	g.Start()
 	g.Stop()
 	g.Stop()
@@ -49,7 +50,7 @@ func TestGossip_StopWithoutStart(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	g := NewGossiper(cluster)
+	g := NewGossiper(context.Background(), cluster)
 	g.Stop()
 	assert.False(t, g.started)
 }
@@ -59,7 +60,7 @@ func TestGossip_PingNoPeers(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	g := NewGossiper(cluster)
+	g := NewGossiper(context.Background(), cluster)
 	g.pingRandomPeers()
 }
 
@@ -75,7 +76,7 @@ func TestGossip_PingWithPeers(t *testing.T) {
 	cluster.Nodes["peer2"] = peer2
 	cluster.mu.Unlock()
 
-	g := NewGossiper(cluster)
+	g := NewGossiper(context.Background(), cluster)
 	g.pingRandomPeers()
 
 	cluster.mu.RLock()
@@ -96,7 +97,7 @@ func TestGossip_PingManyPeersRespectsFanout(t *testing.T) {
 	}
 	cluster.mu.Unlock()
 
-	g := NewGossiper(cluster)
+	g := NewGossiper(context.Background(), cluster)
 	g.pingRandomPeers()
 }
 
@@ -110,7 +111,7 @@ func TestGossip_CheckFailures_SkipsSelf(t *testing.T) {
 	cluster.Myself.PongRecv = time.Now().Add(-10 * time.Second).UnixMilli()
 	cluster.mu.Unlock()
 
-	g := NewGossiper(cluster)
+	g := NewGossiper(context.Background(), cluster)
 	g.checkFailures()
 
 	cluster.mu.RLock()
@@ -129,7 +130,7 @@ func TestGossip_CheckFailures_SkipsNeverContacted(t *testing.T) {
 	cluster.Nodes["peer1"] = peer
 	cluster.mu.Unlock()
 
-	g := NewGossiper(cluster)
+	g := NewGossiper(context.Background(), cluster)
 	g.checkFailures()
 
 	cluster.mu.RLock()
@@ -149,7 +150,7 @@ func TestGossip_CheckFailures_MarksPFAIL(t *testing.T) {
 	cluster.Nodes["peer1"] = peer
 	cluster.mu.Unlock()
 
-	g := NewGossiper(cluster)
+	g := NewGossiper(context.Background(), cluster)
 	g.checkFailures()
 
 	cluster.mu.RLock()
@@ -166,6 +167,9 @@ func TestGossip_CheckFailures_MarksPFAIL(t *testing.T) {
 
 func TestGossip_CheckFailures_RemovesStaleNode(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping stale node gossip test in short mode")
+	}
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -176,7 +180,7 @@ func TestGossip_CheckFailures_RemovesStaleNode(t *testing.T) {
 	cluster.Nodes["peer1"] = peer
 	cluster.mu.Unlock()
 
-	g := NewGossiper(cluster)
+	g := NewGossiper(context.Background(), cluster)
 	g.checkFailures()
 
 	cluster.mu.RLock()
@@ -187,6 +191,9 @@ func TestGossip_CheckFailures_RemovesStaleNode(t *testing.T) {
 
 func TestGossip_CheckFailures_StaleNodeSlotReassigned(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping stale node gossip test in short mode")
+	}
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
@@ -200,7 +207,7 @@ func TestGossip_CheckFailures_StaleNodeSlotReassigned(t *testing.T) {
 	}
 	cluster.mu.Unlock()
 
-	g := NewGossiper(cluster)
+	g := NewGossiper(context.Background(), cluster)
 	g.checkFailures()
 
 	cluster.mu.RLock()
@@ -215,7 +222,7 @@ func TestGossip_ContextCancellation(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	g := NewGossiper(cluster)
+	g := NewGossiper(context.Background(), cluster)
 	g.Start()
 	g.Stop()
 	assert.False(t, g.started)

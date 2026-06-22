@@ -166,10 +166,8 @@ func (sc *SlaveConnection) SendResponse(resp proto.RESP) error {
 // ReadCommand 从连接读取命令(用于REPLCONF ACK)
 func (sc *SlaveConnection) ReadCommand() (*proto.Array, error) {
 	sc.mu.RLock()
-	reader := sc.Reader
-	sc.mu.RUnlock()
-
-	return proto.ReadRESP(reader)
+	defer sc.mu.RUnlock()
+	return proto.ReadRESP(sc.Reader)
 }
 
 // Close 关闭连接。

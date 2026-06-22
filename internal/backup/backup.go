@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -45,16 +46,30 @@ func (bm *BackupManager) Save() error {
 	return nil
 }
 
-// BGSave 后台保存RDB
-func (bm *BackupManager) BGSave() error {
+// BGSave 后台保存RDB。
+// ctx 控制后台保存的生命周期；当 ctx 被取消时（如服务器关闭），
+// BGSave 会立即返回，不等待 Save 完成，避免 shutdown 被阻塞。
+// 调用者应在 ctx 取消后调用 Wait()，Wait() 会在所有监控 goroutine
+// 退出后返回（而非等 Save 实际完成）。
+func (bm *BackupManager) BGSave(ctx context.Context) error {
 	bm.wg.Add(1)
 	go func() {
 		defer bm.wg.Done()
-		if err := bm.Save(); err != nil {
-			logger.Logger.Error().Err(err).Msg("BGSAVE failed")
+
+		done := make(chan struct{})
+		go func() {
+			if err := bm.Save(); err != nil {
+				logger.Logger.Error().Err(err).Msg("BGSAVE failed")
+			}
+			close(done)
+		}()
+
+		select {
+		case <-done:
+		case <-ctx.Done():
+			logger.Logger.Warn().Msg("BGSAVE cancelled during shutdown")
 		}
 	}()
-
 	return nil
 }
 

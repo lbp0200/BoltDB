@@ -27,8 +27,10 @@ type Gossiper struct {
 }
 
 // NewGossiper creates a new Gossiper for the given cluster.
-func NewGossiper(c *Cluster) *Gossiper {
-	ctx, cancel := context.WithCancel(context.Background())
+// The ctx controls the gossip loop lifecycle; it should be derived from the
+// server's root context so gossip stops when the server shuts down.
+func NewGossiper(ctx context.Context, c *Cluster) *Gossiper {
+	ctx, cancel := context.WithCancel(ctx)
 	return &Gossiper{
 		cluster: c,
 		ctx:     ctx,

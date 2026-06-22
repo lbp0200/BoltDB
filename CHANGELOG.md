@@ -1,5 +1,30 @@
 # Changelog
 
+## v8.29.0 (2026-06-22) — RESP3 Full Coverage, Code Quality Hardening
+
+> **RESP3 Null 覆盖达到 34/34 命令（100%），P2 全部 6 项代码质量债清理完毕。** 最后两个 RESP3 Null 缺口（CLIENT GETNAME、GEOPOS per-element）填补完成；MasterConnection/SlaveConnection 读锁竞争修复；BGSAVE 支持 shutdown 取消；readUntilEOF 256MB 硬上限防 OOM；gossip context 继承服务器生命周期；SaveConfig RLock 死锁消除。
+
+### RESP3 兼容
+
+- **CLIENT GETNAME**（`handler.go:1500`）：客户端名未设置时 RESP3 返回 `&proto.Null{}`
+- **GEOPOS per-element**（`handler.go:5952`）：数组内不存在的成员元素 RESP3 返回 `&proto.Null{}`
+- **RESP3 Null 覆盖率**：34/34 命令 → **100%**
+
+### 代码质量（P2×6 → 全部修复）
+
+- **MasterConnection.ReadResponse**（`replication/master.go:76-121`）：全程持 RLock；Close() 先关连接再 Lock 做 memory barrier，消除 TOCTOU 竞争
+- **SlaveConnection.ReadCommand**（`replication/slave.go:167-173`）：全程持 RLock，同步关闭模式
+- **BGSAVE 取消机制**（`backup/backup.go:48-73`）：`BGSave(ctx)` 接收 context，shutdown 时监控 goroutine 退出让 `Wait()` 返回，不阻塞 db.Close()
+- **readUntilEOF 硬上限**（`replication/master.go:177-254`）：256MB 硬上限，超限报错断开，防止恶意/异常大 RDB 导致 OOM
+- **gossip context 继承**（`cluster/gossip.go:30-38`）：`NewGossiper` 接收 `context.Context`，生产环境从服务器 root context 派生
+- **gossip test `-short`**（`cluster/gossip_test.go`）：2 个 stale-node 测试在 `-short` 模式下跳过
+
+### Bug 修复
+
+- **SaveConfig RLock 死锁**（`cluster/cluster.go:207`）：`RemoveSlot` 持写锁中调用 `SaveConfig` 又拿读锁 → 分拆 `saveConfigLocked()` 内部无锁版本，加锁由调用者负责
+
+---
+
 ## v8.25.0 (2026-06-17) — CI Pipeline Stability
 
 > **修复 CI 流水线系统性超时问题。** 单元测试超时 30s→60s（解决 GHA runner 上 internal/replication/server/store 三包同时超时），nightly soak 超时 120m→180m（26 天连续 cancellation 根因），对齐 nightly-soak.yml 与 go.yml 的 actions 版本，清理 TODO.md 中幽灵远程服务器记录。
