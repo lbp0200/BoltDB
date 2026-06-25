@@ -778,10 +778,19 @@ func TestExecuteCommand_SLOWLOG_LEN_Coverage(t *testing.T) {
 	assert.True(t, int64(*integer) >= 0)
 }
 
-// TestExecuteCommand_DEBUG_SLEEP tests DEBUG SLEEP command (if exists)
+// TestExecuteCommand_DEBUG_SLEEP tests DEBUG SLEEP command
 func TestExecuteCommand_DEBUG_SLEEP_Coverage(t *testing.T) {
 	t.Parallel()
-	t.Skip("DEBUG SLEEP may not be implemented")
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	start := time.Now()
+	resp := handler.executeCommand(state, "DEBUG", [][]byte{[]byte("SLEEP"), []byte("0.05")}, "127.0.0.1:12345")
+	elapsed := time.Since(start)
+	assert.GreaterOrEqual(t, elapsed, 45*time.Millisecond)
+	ss, ok := resp.(*proto.SimpleString)
+	assert.True(t, ok)
+	assert.Equal(t, "OK", string(*ss))
 }
 
 // TestExecuteCommand_LOLWUT tests LOLWUT command

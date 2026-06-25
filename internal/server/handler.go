@@ -8196,6 +8196,49 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		return proto.OK
 
+	case "DEBUG":
+		if len(args) < 1 {
+			return proto.NewError("ERR wrong number of arguments for 'DEBUG' command")
+		}
+		subcommand := strings.ToUpper(string(args[0]))
+		switch subcommand {
+		case "SLEEP":
+			if len(args) < 2 {
+				return proto.NewError("ERR wrong number of arguments for 'DEBUG SLEEP' command")
+			}
+			duration, err := strconv.ParseFloat(string(args[1]), 64)
+			if err != nil || duration < 0 {
+				return proto.NewError("ERR invalid sleep duration")
+			}
+			time.Sleep(time.Duration(duration * float64(time.Second)))
+			return proto.OK
+		case "OBJECT":
+			if len(args) < 2 {
+				return proto.NewError("ERR wrong number of arguments for 'DEBUG OBJECT' command")
+			}
+			key := string(args[1])
+			keyType, err := h.Db.Type(key)
+			if err != nil {
+				return wrapStoreError(err)
+			}
+			ttl, err := h.Db.TTL(key)
+			if err != nil {
+				return wrapStoreError(err)
+			}
+			info := fmt.Sprintf("Key: %s; Type: %s; TTL: %ds", key, keyType, ttl)
+			return proto.NewBulkString([]byte(info))
+		case "SEGFAULT":
+			return proto.NewError("ERR DEBUG SEGFAULT requested (simulated)")
+		case "ERROR":
+			if len(args) < 2 {
+				return proto.NewError("ERR wrong number of arguments for 'DEBUG ERROR' command")
+			}
+			message := string(args[1])
+			return proto.NewError(fmt.Sprintf("ERR %s", message))
+		default:
+			return proto.NewError(fmt.Sprintf("ERR unknown DEBUG subcommand '%s'", subcommand))
+		}
+
 	case "MONITOR":
 		if len(args) > 0 {
 			return proto.NewError("ERR wrong number of arguments for 'MONITOR' command")

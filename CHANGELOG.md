@@ -1,6 +1,35 @@
 # Changelog
 
-## v8.30.0 (2026-06-22) — CI Stability, BGSave nil context fix
+## v8.31.0 (2026-06-25) — Cluster Bus, Sentinel AUTH, DEBUG Commands
+
+> **Cluster Bus 真实 TCP Gossip 全功能完成（PFAIL 传播、FAIL 晋升、槽位视图同步、SETSLOT/MIGRATE/ASK 全链路）。Sentinel 新增 AUTH 支持、PING 健康检查。DEBUG 命令实现。全库 boltreon 遗留命名清理。**
+
+### 新增功能
+
+- **DEBUG 命令**（`internal/server/handler.go`）：新增 `DEBUG SLEEP`/`DEBUG OBJECT`/`DEBUG SEGFAULT`/`DEBUG ERROR` 四个子命令，补齐 Redis 兼容性缺口
+- **Sentinel AUTH**（`internal/sentinel/network.go`）：支持 `BOLTDB_PASSWORD` 环境变量，sentinel 连接 master/slave 时自动发送 AUTH
+- **Sentinel PING 健康检查**（`internal/sentinel/master.go`、`failover.go`）：`checkMaster`/`selectNewMaster` 从裸 TCP dial 改为 PING 协议握手验证
+
+### Bug 修复
+
+- **Cluster Bus: checkFailures**（`eea620d`）：`PongRecv==0` 节点处理——使用 `DiscoveredAt` 而非 `LastPong` 计算 PFAIL 超时
+- **测试套件挂起**（`bf7ee61`）：`BLPOP timeout=0` 导致集成测试无限阻塞；regression 测试在 short 模式下跳过正确性验证
+- **`debug` 构建产物误提交**（`.gitignore`）：4.6MB `cmd/debug` 可执行文件被 git 跟踪，已清除并加入 `.gitignore`
+- **Logger 环境变量**（`internal/logger/logger.go`）：`BOLTREON_LOG_FILE`/`BOLTREON_LOG_LEVEL` → `BOLTDB_LOG_FILE`/`BOLTDB_LOG_LEVEL`（文档声明但代码未生效）
+- **`main.go` 环境变量 fallback**（`cmd/boltDB/main.go`）：补上 `BOLTDB_ADDR`/`BOLTDB_DIR` 读取（文档已声明但代码缺失）
+- **`isWriteCommand` 缺失**（`internal/server/replication_helper.go`）：`MOVE`/`PUBLISH`/`SWAPDB` 未标记为写命令，导致不向 slave 传播（94/94 → 完整）
+- **Docker 构建上下文**（`deploy/docker/docker-compose.yml`）：`context: ./deploy/docker/` → `context: .`（指向错误目录）
+- **文档/BENCHMARK/LGGING 端口**（`cmd/boltDB/*.md`、`scripts/*.sh`）：`6379` → `6337`、`boltreon` → `boltDB`
+
+### CI / 基础设施
+
+- **Tier A 超时**（`.github/workflows/go.yml`、`bb37449`）：单元测试超时 60s → 120s（对齐 `test-tier-a.sh`）
+- **Cluster Bus 真实 Gossip**（`2d8d7d2`）：`internal/cluster/bus.go`——独立端口 data+10000、持久 TCP 连接管理、真实 PING/PONG 传输、Gossip Payload（epoch/slot_owners/PFAIL/FAIL）、槽位视图同步、SETSLOT/MIGRATE/IMPORTING/ASK 全链路、持久化
+
+### 测试
+
+- **`TestServerDebugCommands`**（`internal/server/handler_more_server_test.go`）：从空断言重写为真实行为验证（sleep 时长、object 类型、error 内容、unknown subcommand）
+- **`TestExecuteCommand_DEBUG_SLEEP_Coverage`**（`internal/server/handler_coverage_test.go`）：取消 skip，实际运行 DEBUG SLEEP 验证
 
 > **修复 CI 集成测试中 BGSAVE 因 nil context 导致的 nil pointer panic，Homebrew formula 安装路径修复，远程测试服务器新增 fallback。**
 

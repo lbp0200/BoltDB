@@ -252,61 +252,59 @@ func TestServerDebugCommands(t *testing.T) {
 	// Set up a key for testing
 	handler.executeCommand(state, "SET", [][]byte{[]byte("debugkey"), []byte("debugvalue")}, "127.0.0.1:12345")
 
-	tests := []struct {
-		name  string
-		cmd   string
-		args  [][]byte
-		check func(t *testing.T, resp proto.RESP)
-	}{
-		// DEBUG OBJECT
-		{
-			name: "DEBUG OBJECT",
-			cmd:  "DEBUG",
-			args: [][]byte{[]byte("OBJECT"), []byte("debugkey")},
-			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
-				assert.True(t, ok)
-			},
-		},
-		// DEBUG SLEEP
-		{
-			name: "DEBUG SLEEP",
-			cmd:  "DEBUG",
-			args: [][]byte{[]byte("SLEEP"), []byte("0.1")},
-			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
-				assert.True(t, ok)
-			},
-		},
-		// DEBUG SEGFAULT
-		{
-			name: "DEBUG SEGFAULT",
-			cmd:  "DEBUG",
-			args: [][]byte{[]byte("SEGFAULT")},
-			check: func(t *testing.T, resp proto.RESP) {
-				// This should cause an error or crash
-				_, ok := resp.(proto.RESP)
-				assert.True(t, ok)
-			},
-		},
-		// DEBUG ERROR
-		{
-			name: "DEBUG ERROR",
-			cmd:  "DEBUG",
-			args: [][]byte{[]byte("ERROR")},
-			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
-				assert.True(t, ok)
-			},
-		},
-	}
+	t.Run("DEBUG SLEEP", func(t *testing.T) {
+		start := time.Now()
+		resp := handler.executeCommand(state, "DEBUG", [][]byte{[]byte("SLEEP"), []byte("0.05")}, "127.0.0.1:12345")
+		elapsed := time.Since(start)
+		// Should have slept at least 50ms
+		assert.GreaterOrEqual(t, elapsed, 45*time.Millisecond)
+		// Should return OK
+		ss, ok := resp.(*proto.SimpleString)
+		assert.True(t, ok)
+		assert.Equal(t, "OK", string(*ss))
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
-			tt.check(t, resp)
-		})
-	}
+	t.Run("DEBUG OBJECT", func(t *testing.T) {
+		resp := handler.executeCommand(state, "DEBUG", [][]byte{[]byte("OBJECT"), []byte("debugkey")}, "127.0.0.1:12345")
+		bs, ok := resp.(*proto.BulkString)
+		assert.True(t, ok)
+		assert.Contains(t, string(*bs), "Type: string")
+	})
+
+	t.Run("DEBUG OBJECT nonexistent", func(t *testing.T) {
+		resp := handler.executeCommand(state, "DEBUG", [][]byte{[]byte("OBJECT"), []byte("nosuchkey")}, "127.0.0.1:12345")
+		bs, ok := resp.(*proto.BulkString)
+		assert.True(t, ok)
+		assert.Contains(t, string(*bs), "Type: none")
+	})
+
+	t.Run("DEBUG SEGFAULT", func(t *testing.T) {
+		resp := handler.executeCommand(state, "DEBUG", [][]byte{[]byte("SEGFAULT")}, "127.0.0.1:12345")
+		errResp, ok := resp.(*proto.Error)
+		assert.True(t, ok)
+		assert.Contains(t, string(*errResp), "simulated")
+	})
+
+	t.Run("DEBUG ERROR", func(t *testing.T) {
+		resp := handler.executeCommand(state, "DEBUG", [][]byte{[]byte("ERROR"), []byte("test error message")}, "127.0.0.1:12345")
+		errResp, ok := resp.(*proto.Error)
+		assert.True(t, ok)
+		assert.Contains(t, string(*errResp), "test error message")
+	})
+
+	t.Run("DEBUG unknown subcommand", func(t *testing.T) {
+		resp := handler.executeCommand(state, "DEBUG", [][]byte{[]byte("NOSUCH")}, "127.0.0.1:12345")
+		errResp, ok := resp.(*proto.Error)
+		assert.True(t, ok)
+		assert.Contains(t, string(*errResp), "unknown DEBUG subcommand")
+	})
+
+	t.Run("DEBUG no args", func(t *testing.T) {
+		resp := handler.executeCommand(state, "DEBUG", nil, "127.0.0.1:12345")
+		errResp, ok := resp.(*proto.Error)
+		assert.True(t, ok)
+		assert.Contains(t, string(*errResp), "wrong number of arguments")
+	})
 }
 
 // TestServerRoleCommand tests ROLE command
