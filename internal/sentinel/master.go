@@ -14,6 +14,7 @@ type MasterInstance struct {
 	name         string
 	addr         string
 	quorum       int
+	authPass     string // optional AUTH password for this master
 	slaves       []*SlaveInstance
 	sentinels    []*SentinelInstance
 	state        string // "ok" | "odown" | "sdown" | "failover"
@@ -79,7 +80,7 @@ func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
 	mi.mu.RUnlock()
 
 	// Use PING-based health check with AUTH support (connects, sends PING, closes).
-	err := pingCheck(addr)
+	err := pingCheck(addr, mi.GetAuthPass())
 
 	var shouldBroadcast bool
 	var shouldTriggerFailover bool
@@ -212,6 +213,21 @@ func (mi *MasterInstance) GetName() string {
 	return mi.name
 }
 
+// SetAuthPass 设置此主节点的 AUTH 密码（对应 sentinel auth-pass 指令）
+func (mi *MasterInstance) SetAuthPass(password string) {
+	mi.mu.Lock()
+	defer mi.mu.Unlock()
+	mi.authPass = password
+}
+
+// GetAuthPass 获取此主节点的 AUTH 密码
+func (mi *MasterInstance) GetAuthPass() string {
+	mi.mu.RLock()
+	defer mi.mu.RUnlock()
+	return mi.authPass
+}
+
+// GetAddr 获取地址
 func (mi *MasterInstance) GetAddr() string {
 	mi.mu.RLock()
 	defer mi.mu.RUnlock()

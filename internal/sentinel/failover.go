@@ -106,7 +106,7 @@ func (fm *FailoverManager) selectNewMaster(oldMaster *MasterInstance) *SlaveInst
 
 	// 遍历候选集，尝试存活探测，返回第一个可达的
 	for _, c := range candidates {
-		if err := pingCheck(c.slave.GetAddr()); err != nil {
+		if err := pingCheck(c.slave.GetAddr(), oldMaster.GetAuthPass()); err != nil {
 			logger.Logger.Warn().
 				Str("slave_addr", c.slave.GetAddr()).
 				Int64("offset", c.slave.GetOffset()).

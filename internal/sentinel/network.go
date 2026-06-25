@@ -19,6 +19,12 @@ func init() {
 	sentinelPassword = os.Getenv("BOLTDB_PASSWORD")
 }
 
+// SetSentinelPassword overrides the global sentinel AUTH password.
+// Used by cmd/sentinel when --password flag is provided.
+func SetSentinelPassword(password string) {
+	sentinelPassword = password
+}
+
 // SentinelConnection 哨兵连接
 type SentinelConnection struct {
 	conn   net.Conn
@@ -210,9 +216,9 @@ func GetRole(addr string) (string, error) {
 	return resp, nil
 }
 
-// pingCheck connects to addr (with AUTH if password is set), sends PING,
+// pingCheck connects to addr, optionally sends AUTH if password is non-empty, sends PING,
 // and returns nil on +PONG. Used by checkMaster for proper health checks.
-func pingCheck(addr string) error {
+func pingCheck(addr, password string) error {
 	sc, err := NewSentinelConnection(addr)
 	if err != nil {
 		return err
@@ -222,5 +228,21 @@ func pingCheck(addr string) error {
 			logger.Logger.Debug().Err(err).Msg("Failed to close pingCheck connection")
 		}
 	}()
+
+	// If a per-master password is provided, send AUTH (overrides global sentinelPassword)
+	if password != "" {
+		authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
+		if err := sc.SendCommand(authCmd); err != nil {
+			return fmt.Errorf("send AUTH failed: %w", err)
+		}
+		resp, err := sc.ReadResponse()
+		if err != nil {
+			return fmt.Errorf("read AUTH response failed: %w", err)
+		}
+		if resp != "+OK" {
+			return fmt.Errorf("AUTH failed: %s", resp)
+		}
+	}
+
 	return sc.Ping()
 }

@@ -19,11 +19,16 @@ var (
 	addrFlag       = flag.String("addr", ":26379", "sentinel listen addr")
 	configFlag     = flag.String("config", "", "sentinel config file (redis sentinel.conf format)")
 	gossipPortFlag = flag.Int("gossip-port", 0, "sentinel gossip port (0 = random)")
+	passwordFlag   = flag.String("password", "", "AUTH password for connecting to monitored masters/slaves (or BOLTDB_PASSWORD env)")
 	logLevelFlag   = flag.String("log-level", "", "log level: DEBUG, INFO, WARNING, ERROR (default: WARNING, or BOLTDB_LOG_LEVEL env)")
 )
 
 func main() {
 	flag.Parse()
+
+	if *passwordFlag != "" {
+		sentinel.SetSentinelPassword(*passwordFlag)
+	}
 
 	if *logLevelFlag != "" {
 		logger.SetLevelFromString(*logLevelFlag)
@@ -149,6 +154,26 @@ func parseSentinelDirective(s *sentinel.Sentinel, args []string) error {
 		}
 		s.AddSentinel(args[2])
 		return nil
+
+	case "auth-pass":
+		if len(args) < 3 {
+			return fmt.Errorf("sentinel auth-pass requires <master-name> <password>")
+		}
+		masterName := args[1]
+		password := args[2]
+		// Find the master instance and set its password
+		masters := s.GetAllMasters()
+		for _, m := range masters {
+			if m.GetName() == masterName {
+				m.SetAuthPass(password)
+				logger.Logger.Info().
+					Str("master_name", masterName).
+					Str("password_length", fmt.Sprintf("%d", len(password))).
+					Msg("set AUTH password for master")
+				return nil
+			}
+		}
+		return fmt.Errorf("master %s not found for auth-pass", masterName)
 	}
 	return nil
 }
