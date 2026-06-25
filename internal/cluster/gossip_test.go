@@ -174,6 +174,7 @@ func TestGossip_CheckFailures_RemovesStaleNode(t *testing.T) {
 	defer cleanup()
 
 	peer := NewNode("peer1", "127.0.0.1:6380")
+	peer.DiscoveredAt = time.Now().Add(-120 * time.Second).UnixMilli()
 	peer.PongRecv = time.Now().Add(-120 * time.Second).UnixMilli()
 
 	cluster.mu.Lock()
@@ -198,6 +199,7 @@ func TestGossip_CheckFailures_StaleNodeSlotReassigned(t *testing.T) {
 	defer cleanup()
 
 	peer := NewNode("peer1", "127.0.0.1:6380")
+	peer.DiscoveredAt = time.Now().Add(-120 * time.Second).UnixMilli()
 	peer.PongRecv = time.Now().Add(-120 * time.Second).UnixMilli()
 
 	cluster.mu.Lock()

@@ -27,6 +27,8 @@ type Node struct {
 	Epoch    int64       // 配置纪元（config epoch）
 	Slots    []SlotRange // 该节点负责的槽位范围
 	mu       sync.RWMutex
+	// 发现时间（首次加入集群的时间戳，毫秒），用于判定无响应节点的清理
+	DiscoveredAt int64
 	// 槽位迁移状态
 	importingSlots map[uint32]string // 正在导入的槽 -> 源节点地址
 	migratingSlots map[uint32]string // 正在迁移的槽 -> 目标节点地址
@@ -48,6 +50,7 @@ func NewNode(id, addr string) *Node {
 		PingSent:       0,
 		PongRecv:       0,
 		Epoch:          0,
+		DiscoveredAt:   time.Now().UnixMilli(),
 		importingSlots: make(map[uint32]string),
 		migratingSlots: make(map[uint32]string),
 	}

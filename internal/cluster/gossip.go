@@ -154,7 +154,8 @@ func (g *Gossiper) pingRandomPeers() {
 	}
 }
 
-// checkFailures marks nodes as failed if they haven't responded in time.
+// checkFailures marks nodes as failed if they haven't responded in time,
+// and removes nodes that have been unreachable beyond the stale timeout.
 func (g *Gossiper) checkFailures() {
 	now := time.Now().UnixMilli()
 
@@ -162,22 +163,26 @@ func (g *Gossiper) checkFailures() {
 	defer g.cluster.mu.Unlock()
 
 	for _, node := range g.cluster.Nodes {
-		if node.ID == g.cluster.Myself.ID {
+		if node.ID == g.cluster.Myself.ID || node.hasFailFlag() {
 			continue
 		}
-		if node.PongRecv == 0 {
-			continue // never received pong, skip
+
+		var elapsed int64
+		if node.PongRecv > 0 {
+			elapsed = now - node.PongRecv
+		} else if node.DiscoveredAt > 0 {
+			elapsed = now - node.DiscoveredAt
+		} else {
+			continue
 		}
-		elapsed := now - node.PongRecv
+
 		if elapsed > failTimeout.Milliseconds() {
-			if !node.hasFailFlag() {
-				node.Flags = append(node.Flags, FlagPFail)
-				logger.Logger.Warn().
-					Str("node", node.ID).
-					Str("addr", node.Addr).
-					Dur("elapsed", time.Duration(elapsed)*time.Millisecond).
-					Msg("cluster gossip: node marked PFAIL")
-			}
+			node.Flags = append(node.Flags, FlagPFail)
+			logger.Logger.Warn().
+				Str("node", node.ID).
+				Str("addr", node.Addr).
+				Dur("elapsed", time.Duration(elapsed)*time.Millisecond).
+				Msg("cluster gossip: node marked PFAIL")
 		}
 	}
 
@@ -186,17 +191,23 @@ func (g *Gossiper) checkFailures() {
 		if node.ID == g.cluster.Myself.ID {
 			continue
 		}
-		if node.PongRecv > 0 && now-node.PongRecv > staleNodeTimeout.Milliseconds() {
-			logger.Logger.Warn().
-				Str("node", id).
-				Str("addr", node.Addr).
-				Msg("cluster gossip: removing stale node")
-			delete(g.cluster.Nodes, id)
-			for i := uint32(0); i < SlotCount; i++ {
-				if g.cluster.Slots[i] != nil && g.cluster.Slots[i].ID == id {
-					g.cluster.Slots[i] = g.cluster.Myself
-					g.cluster.Myself.AddSlotRange(i, i)
-				}
+		age := now - node.DiscoveredAt
+		if age < staleNodeTimeout.Milliseconds() {
+			continue
+		}
+		if node.PongRecv > 0 && now-node.PongRecv <= staleNodeTimeout.Milliseconds() {
+			continue
+		}
+		logger.Logger.Warn().
+			Str("node", id).
+			Str("addr", node.Addr).
+			Dur("age", time.Duration(age)*time.Millisecond).
+			Msg("cluster gossip: removing stale node")
+		delete(g.cluster.Nodes, id)
+		for i := uint32(0); i < SlotCount; i++ {
+			if g.cluster.Slots[i] != nil && g.cluster.Slots[i].ID == id {
+				g.cluster.Slots[i] = g.cluster.Myself
+				g.cluster.Myself.AddSlotRange(i, i)
 			}
 		}
 	}
