@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 
@@ -115,10 +116,51 @@ func (mc *MasterConnection) ReadResponse() (proto.RESP, error) {
 		// 简化处理，实际应该解析整数
 		return proto.NewSimpleString(string(line[1:])), nil
 	case '$': // Bulk String
-		// 需要读取长度和数据
-		return proto.ReadRESP(reader)
+		// 解析长度
+		lengthStr := string(line[1:])
+		n, err := strconv.Atoi(lengthStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid bulk string length: %s", lengthStr)
+		}
+		if n == -1 {
+			return proto.NewBulkString(nil), nil
+		}
+		if n > proto.MaxBulkLen {
+			return nil, fmt.Errorf("bulk string length too large: %d", n)
+		}
+		data := make([]byte, n+2) // +2 for \r\n
+		if _, err := io.ReadFull(reader, data); err != nil {
+			return nil, fmt.Errorf("read bulk string data failed: %w", err)
+		}
+		return proto.NewBulkString(data[:n]), nil
 	case '*': // Array
-		return proto.ReadRESP(reader)
+		// 解析数组长度
+		arrLenStr := string(line[1:])
+		arrLen, err := strconv.Atoi(arrLenStr)
+		if err != nil || arrLen < 0 {
+			return nil, fmt.Errorf("invalid array length: %s", arrLenStr)
+		}
+		if arrLen > proto.MaxArrayLen {
+			return nil, fmt.Errorf("array length too large: %d", arrLen)
+		}
+		args := make([][]byte, 0, arrLen)
+		for i := 0; i < arrLen; i++ {
+			// 读取子元素（统一用 ReadRESP 解析每一行）
+			subResp, err := proto.ReadRESP(reader)
+			if err != nil {
+				return nil, fmt.Errorf("read array element %d failed: %w", i, err)
+			}
+			if len(subResp.Args) > 0 {
+				if subResp.Args[0] == nil {
+					args = append(args, nil)
+				} else {
+					arg := make([]byte, len(subResp.Args[0]))
+					copy(arg, subResp.Args[0])
+					args = append(args, arg)
+				}
+			}
+		}
+		return &proto.Array{Args: args}, nil
 	default:
 		return proto.NewSimpleString(string(line)), nil
 	}

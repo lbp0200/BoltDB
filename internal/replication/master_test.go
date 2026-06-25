@@ -328,8 +328,18 @@ func TestMasterConnection_ReadBulkString_Null(t *testing.T) {
 
 func TestMasterConnection_ReadBulkString_EOF(t *testing.T) {
 	t.Parallel()
-	// Skip this test as it requires a more complex mock
-	t.Skip("EOF test requires more complex mock setup")
+	// Header says 10 bytes, but only 3 bytes available → io.ReadFull returns io.ErrUnexpectedEOF
+	partialData := append([]byte("$10\r\n"), []byte("hel")...)
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   &net.TCPConn{}, // not used, Reader is set directly
+		Reader: bufio.NewReader(bytes.NewReader(partialData)),
+		Writer: bufio.NewWriter(&bytes.Buffer{}),
+		stopCh: make(chan struct{}),
+	}
+	_, err := mc.ReadBulkString()
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "failed") || strings.Contains(err.Error(), "unexpected EOF"))
 }
 
 func TestMasterConnection_readUntilEOF_WithHexMarker(t *testing.T) {
@@ -401,8 +411,20 @@ func TestMasterConnection_readUntilEOF_ReadError(t *testing.T) {
 
 func TestMasterConnection_ReadResponse_BulkString(t *testing.T) {
 	t.Parallel()
-	// Skip this test - the implementation doesn't parse nested arrays correctly
-	t.Skip("Array response parsing needs more work")
+	mock := newMockMasterConn()
+	mock.readBuffer = []byte("$5\r\nhello\r\n")
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   mock,
+		Reader: bufio.NewReader(mock),
+		Writer: bufio.NewWriter(mock),
+		stopCh: make(chan struct{}),
+	}
+	resp, err := mc.ReadResponse()
+	assert.NoError(t, err)
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "hello", string(*bs))
 }
 
 func TestMasterConnection_SendCommand_MultipleArgs(t *testing.T) {
