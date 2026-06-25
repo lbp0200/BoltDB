@@ -136,55 +136,59 @@ func (s *BotreonStore) ZAdd(zSetName string, members []ZSetMember) error {
 	return err
 }
 
+// zRangeMembersByScoreInTxn returns members with scores in the inclusive score range.
+func zRangeMembersByScoreInTxn(txn *badger.Txn, zSetName string, minScore, maxScore float64, minExclusive, maxExclusive bool) ([]ZSetMember, error) {
+	prefix := keyBadgerGet(prefixKeySortedSetBytes, []byte(zSetName+sortedSetIndex))
+	opts := badger.DefaultIteratorOptions
+	opts.Prefix = prefix
+	opts.PrefetchValues = false
+
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	startKey := append(prefix, encodeScore(minScore)...)
+	var results []ZSetMember
+	for it.Seek(startKey); it.ValidForPrefix(prefix); it.Next() {
+		score, member, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
+		if !ok {
+			continue
+		}
+		if maxExclusive {
+			if score >= maxScore {
+				break
+			}
+		} else if score > maxScore {
+			break
+		}
+		if minExclusive && score <= minScore {
+			continue
+		}
+		results = append(results, ZSetMember{Member: member, Score: score})
+	}
+	return results, nil
+}
+
+func applyZSetScoreOffsetCount(members []ZSetMember, offset, count int) []ZSetMember {
+	if offset > 0 && offset < len(members) {
+		members = members[offset:]
+	} else if offset >= len(members) {
+		return nil
+	}
+	if count > 0 && count < len(members) {
+		members = members[:count]
+	}
+	return members
+}
+
 // ZRangeByScore 获取分数范围内的成员
 func (s *BotreonStore) ZRangeByScore(zSetName string, minScore, maxScore float64, offset, count int, minExclusive, maxExclusive bool) ([]ZSetMember, error) {
 	var results []ZSetMember
 	err := s.db.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		prefix := keyBadgerGet(prefixKeySortedSetBytes, []byte(zSetName+sortedSetIndex)) // e.g., "zset:myset:index:"
-		opts.Prefix = prefix
-		opts.PrefetchValues = false
-
-		it := txn.NewIterator(opts)
-		defer it.Close()
-
-		startKey := append(prefix, encodeScore(minScore)...)
-		current := 0
-		for it.Seek(startKey); it.ValidForPrefix(prefix); it.Next() {
-			item := it.Item()
-			score, member, _, ok := parseZSetIndexKey(item.Key(), prefix)
-			if !ok {
-				logger.Logger.Debug().Str("key", string(item.Key())).Msg("ZRangeByScore: Invalid key format")
-				continue
-			}
-
-			// Check max boundary
-			if maxExclusive {
-				if score >= maxScore {
-					break
-				}
-			} else {
-				if score > maxScore {
-					break
-				}
-			}
-
-			// Check min boundary
-			if minExclusive && score <= minScore {
-				continue
-			}
-
-			if current < offset {
-				current++
-				continue
-			}
-			if count > 0 && len(results) >= count {
-				break
-			}
-
-			results = append(results, ZSetMember{Member: member, Score: score})
+		members, err := zRangeMembersByScoreInTxn(txn, zSetName, minScore, maxScore, minExclusive, maxExclusive)
+		if err != nil {
+			return err
 		}
-		// 成功路径不记录日志，避免性能影响
+		results = applyZSetScoreOffsetCount(members, offset, count)
 		logger.Logger.Debug().
 			Int("members_count", len(results)).
 			Str("zset_name", zSetName).
@@ -1204,70 +1208,41 @@ func (s *BotreonStore) ZRevRank(zSetName, member string) (int64, error) {
 
 // ZRevRange 实现 Redis ZREVRANGE 命令，返回有序集中指定区间内的成员，通过索引，分数从高到低
 func (s *BotreonStore) ZRevRange(zSetName string, start, stop int64) ([]*ZSetMember, error) {
-	// 先获取正向范围
-	forwardResults, err := s.ZRange(zSetName, 0, -1)
+	var members []ZSetMember
+	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, zSetName, KeyTypeSortedSet); err != nil {
+			return err
+		}
+		var err error
+		members, err = zRevRangeMembersByRankInTxn(txn, zSetName, start, stop)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	// 反转结果
-	totalCount := int64(len(forwardResults))
-	if totalCount == 0 {
-		return []*ZSetMember{}, nil
+	results := make([]*ZSetMember, len(members))
+	for i := range members {
+		m := members[i]
+		results[i] = &ZSetMember{Member: m.Member, Score: m.Score}
 	}
-
-	// 处理负索引
-	if start < 0 {
-		start = totalCount + start
-	}
-	if stop < 0 {
-		stop = totalCount + stop
-	}
-	if start < 0 {
-		start = 0
-	}
-	if stop >= totalCount {
-		stop = totalCount - 1
-	}
-	if start > stop {
-		return []*ZSetMember{}, nil
-	}
-
-	// 反转并提取范围
-	reversed := make([]*ZSetMember, totalCount)
-	for i := int64(0); i < totalCount; i++ {
-		reversed[i] = forwardResults[totalCount-1-i]
-	}
-
-	return reversed[start : stop+1], nil
+	return results, nil
 }
 
 // ZRevRangeByScore 实现 Redis ZREVRANGEBYSCORE 命令，返回有序集中指定分数区间内的成员，分数从高到低排序
 func (s *BotreonStore) ZRevRangeByScore(zSetName string, maxScore, minScore float64, offset, count int, minExclusive, maxExclusive bool) ([]ZSetMember, error) {
-	// 先获取正向范围
-	forwardResults, err := s.ZRangeByScore(zSetName, minScore, maxScore, 0, 0, minExclusive, maxExclusive)
-	if err != nil {
-		return nil, err
-	}
-
-	// 反转结果
 	var results []ZSetMember
-	for i := len(forwardResults) - 1; i >= 0; i-- {
-		results = append(results, forwardResults[i])
-	}
-
-	// 应用offset和count
-	if offset > 0 && offset < len(results) {
-		results = results[offset:]
-	} else if offset >= len(results) {
-		results = []ZSetMember{}
-	}
-
-	if count > 0 && count < len(results) {
-		results = results[:count]
-	}
-
-	return results, nil
+	err := s.db.View(func(txn *badger.Txn) error {
+		members, err := zRangeMembersByScoreInTxn(txn, zSetName, minScore, maxScore, minExclusive, maxExclusive)
+		if err != nil {
+			return err
+		}
+		for i := len(members) - 1; i >= 0; i-- {
+			results = append(results, members[i])
+		}
+		results = applyZSetScoreOffsetCount(results, offset, count)
+		return nil
+	})
+	return results, err
 }
 
 // ZRemRangeByRank 实现 Redis ZREMRANGEBYRANK 命令，移除有序集中指定排名区间的所有成员

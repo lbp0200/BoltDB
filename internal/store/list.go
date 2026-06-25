@@ -1510,105 +1510,21 @@ func (s *BotreonStore) LMPop(keys []string, modifier string, count int) (string,
 
 // RPOPLPUSH 实现 Redis RPOPLPUSH 命令
 func (s *BotreonStore) RPopLPush(source, destination string) (string, error) {
+	unlock := s.lockListKeysOrdered(source, destination)
+	defer unlock()
+
 	var value string
 	err := s.retryUpdate(func(txn *badger.Txn) error {
-		// 从源列表弹出
-		sourceLength, sourceStart, sourceEnd, err := s.listGetMetaTxn(txn, source)
-		if err != nil || sourceLength == 0 {
-			return nil // 源列表不存在或为空
-		}
-
-		// 获取源列表尾节点值
-		endNodeKey := s.listKey(source, sourceEnd)
-		item, err := txn.Get([]byte(endNodeKey))
+		value = "" // reset each attempt; stale value must not survive conflict retry
+		popped, err := s.listPopInTxn(txn, source, false)
 		if err != nil {
 			return err
 		}
-		valueBytes, err := item.ValueCopy(nil)
-		if err != nil {
-			return err
+		if popped == "" {
+			return nil
 		}
-		value = string(valueBytes)
-
-		// 获取新的源列表尾节点
-		var newSourceEnd string
-		if sourceLength > 1 {
-			newEndKey := s.listKey(source, sourceEnd, "prev")
-			item, err = txn.Get([]byte(newEndKey))
-			if err != nil {
-				return err
-			}
-			newEndVal, err := item.ValueCopy(nil)
-			if err != nil {
-				return err
-			}
-			newSourceEnd = string(newEndVal)
-		} else {
-			newSourceEnd = ""
-			sourceStart = ""
-		}
-
-		// 更新源列表
-		if sourceLength > 1 {
-			if err := s.linkNodes(txn, source, newSourceEnd, sourceStart); err != nil {
-				return err
-			}
-		}
-		if err := s.deleteNode(txn, source, sourceEnd); err != nil {
-			return err
-		}
-		if err := s.listUpdateMeta(txn, source, sourceLength-1, sourceStart, newSourceEnd); err != nil {
-			return err
-		}
-
-		// 推入目标列表头部
-		// Check if destination key already exists with a different type
-		item, err = txn.Get(TypeOfKeyGet(destination))
-		if err == nil {
-			val, err := item.ValueCopy(nil)
-			if err != nil {
-				return err
-			}
-			keyType := string(val)
-			if keyType != "" && keyType != KeyTypeList {
-				return ErrWrongType
-			}
-		} else if !errors.Is(err, badger.ErrKeyNotFound) {
-			return err
-		}
-		if err := txn.Set(TypeOfKeyGet(destination), []byte(KeyTypeList)); err != nil {
-			return err
-		}
-		destLength, destStart, destEnd, metaErr := s.listGetMetaTxn(txn, destination)
-		if metaErr != nil {
-			return metaErr
-		}
-
-		// 创建新节点
-		newNodeID, err := s.createNode(txn, destination, []byte(value))
-		if err != nil {
-			return err
-		}
-
-		// 链接节点
-		if destLength == 0 {
-			destStart = newNodeID
-			destEnd = newNodeID
-			if err := s.linkNodes(txn, destination, newNodeID, newNodeID); err != nil {
-				return err
-			}
-		} else {
-			if err := s.linkNodes(txn, destination, newNodeID, destStart); err != nil {
-				return err
-			}
-			if err := txn.Set([]byte(s.listKey(destination, destStart, "prev")), []byte(newNodeID)); err != nil {
-				return err
-			}
-			destStart = newNodeID
-		}
-
-		// 更新目标列表元数据
-		return s.listUpdateMeta(txn, destination, destLength+1, destStart, destEnd)
+		value = popped
+		return s.listPushInTxn(txn, destination, value, true)
 	}, 30)
 	return value, err
 }

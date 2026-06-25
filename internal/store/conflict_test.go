@@ -1323,6 +1323,60 @@ func TestDeterministicConflict_LMoveWithSourceConflict(t *testing.T) {
 	}
 }
 
+// TestDeterministicConflict_RPopLPushWithSourceConflict verifies RPOPLPUSH stays
+// correct while concurrent RPUSH on the source list causes txn conflicts.
+func TestDeterministicConflict_RPopLPushWithSourceConflict(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	const writers = 4
+
+	if _, err := s.RPush("rpl:src", "a", "b", "c"); err != nil {
+		t.Fatalf("RPush rpl:src: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	var moveErr error
+	var moved string
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		moved, moveErr = s.RPopLPush("rpl:src", "rpl:dst")
+	}()
+
+	for i := range writers {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, _ = s.RPush("rpl:src", fmt.Sprintf("extra%d", idx))
+		}(i)
+	}
+	wg.Wait()
+
+	if moveErr != nil {
+		t.Fatalf("RPopLPush: %v", moveErr)
+	}
+	if moved == "" {
+		t.Fatal("RPopLPush: expected a moved value")
+	}
+
+	length, err := s.LLen("rpl:dst")
+	if err != nil {
+		t.Fatalf("LLen rpl:dst: %v", err)
+	}
+	if length != 1 {
+		t.Errorf("LLen rpl:dst: got %d, want 1", length)
+	}
+
+	val, err := s.LIndex("rpl:dst", 0)
+	if err != nil {
+		t.Fatalf("LIndex rpl:dst: %v", err)
+	}
+	if val != moved {
+		t.Errorf("LIndex rpl:dst: got %q, want %q", val, moved)
+	}
+}
+
 // TestDeterministicConflict_XDelConcurrent verifies concurrent XDEL of distinct
 // stream entries drains the stream exactly once.
 func TestDeterministicConflict_XDelConcurrent(t *testing.T) {
