@@ -460,8 +460,8 @@ func normalizeRankRange(totalCount, start, stop int64) (int64, int64, bool) {
 	return start, stop, true
 }
 
-// zRangeByRankInTxn returns member names in the inclusive rank range inside an update txn.
-func zRangeByRankInTxn(txn *badger.Txn, zSetName string, start, stop int64) ([]string, error) {
+// zRangeMembersByRankInTxn returns members with scores in the inclusive rank range.
+func zRangeMembersByRankInTxn(txn *badger.Txn, zSetName string, start, stop int64) ([]ZSetMember, error) {
 	metaKey := sortedSetKeyMeta(zSetName)
 	item, err := txn.Get(metaKey)
 	if errors.Is(err, badger.ErrKeyNotFound) {
@@ -493,7 +493,7 @@ func zRangeByRankInTxn(txn *badger.Txn, zSetName string, start, stop int64) ([]s
 	it := txn.NewIterator(opts)
 	defer it.Close()
 
-	var results []string
+	var results []ZSetMember
 	currentIndex := int64(0)
 	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 		if currentIndex < start {
@@ -503,15 +503,65 @@ func zRangeByRankInTxn(txn *badger.Txn, zSetName string, start, stop int64) ([]s
 		if currentIndex > stop {
 			break
 		}
-		_, member, _, memberOK := parseZSetIndexKey(it.Item().Key(), prefix)
+		score, member, _, memberOK := parseZSetIndexKey(it.Item().Key(), prefix)
 		if !memberOK {
 			currentIndex++
 			continue
 		}
-		results = append(results, member)
+		results = append(results, ZSetMember{Member: member, Score: score})
 		currentIndex++
 	}
 	return results, nil
+}
+
+// zRangeByRankInTxn returns member names in the inclusive rank range inside an update txn.
+func zRangeByRankInTxn(txn *badger.Txn, zSetName string, start, stop int64) ([]string, error) {
+	members, err := zRangeMembersByRankInTxn(txn, zSetName, start, stop)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(members))
+	for i, m := range members {
+		names[i] = m.Member
+	}
+	return names, nil
+}
+
+// zRevRangeMembersByRankInTxn returns members highest-score-first for reverse rank range.
+func zRevRangeMembersByRankInTxn(txn *badger.Txn, zSetName string, revStart, revStop int64) ([]ZSetMember, error) {
+	metaKey := sortedSetKeyMeta(zSetName)
+	item, err := txn.Get(metaKey)
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var meta ZSetsMetaValue
+	err = item.Value(func(val []byte) error {
+		meta, err = decodeMeta(val)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	revStart, revStop, ok := normalizeRankRange(meta.Card, revStart, revStop)
+	if !ok {
+		return nil, nil
+	}
+
+	forwardStart := meta.Card - 1 - revStop
+	forwardStop := meta.Card - 1 - revStart
+	members, err := zRangeMembersByRankInTxn(txn, zSetName, forwardStart, forwardStop)
+	if err != nil {
+		return nil, err
+	}
+	for i, j := 0, len(members)-1; i < j; i, j = i+1, j-1 {
+		members[i], members[j] = members[j], members[i]
+	}
+	return members, nil
 }
 
 // zRangeByScoreInTxn returns member names in the score range inside an update txn.
@@ -1120,40 +1170,54 @@ func (s *BotreonStore) ZRemRangeByScore(zSetName string, minScore, maxScore floa
 
 // ZPopMax 实现 Redis ZPOPMAX 命令，移除并返回有序集合中分数最高的成员
 func (s *BotreonStore) ZPopMax(zSetName string, count int) ([]ZSetMember, error) {
-	// 先获取最后count个成员（分数最高的）
-	members, err := s.ZRevRange(zSetName, 0, int64(count-1))
-	if err != nil {
-		return nil, err
+	if count <= 0 {
+		return nil, nil
 	}
-
-	// 删除并返回
 	var results []ZSetMember
-	for _, member := range members {
-		if _, err := s.ZRem(zSetName, member.Member); err != nil {
-			return results, err
+	err := s.retryUpdate(func(txn *badger.Txn) error {
+		results = nil
+		members, err := zRevRangeMembersByRankInTxn(txn, zSetName, 0, int64(count-1))
+		if err != nil {
+			return err
 		}
-		results = append(results, ZSetMember{Member: member.Member, Score: member.Score})
-	}
-	return results, nil
+		for _, member := range members {
+			n, err := zRemMemberInTxn(txn, zSetName, member.Member)
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				results = append(results, member)
+			}
+		}
+		return nil
+	}, 20)
+	return results, err
 }
 
 // ZPopMin 实现 Redis ZPOPMIN 命令，移除并返回有序集合中分数最低的成员
 func (s *BotreonStore) ZPopMin(zSetName string, count int) ([]ZSetMember, error) {
-	// 先获取前count个成员（分数最低的）
-	members, err := s.ZRange(zSetName, 0, int64(count-1))
-	if err != nil {
-		return nil, err
+	if count <= 0 {
+		return nil, nil
 	}
-
-	// 删除并返回
 	var results []ZSetMember
-	for _, member := range members {
-		if _, err := s.ZRem(zSetName, member.Member); err != nil {
-			return results, err
+	err := s.retryUpdate(func(txn *badger.Txn) error {
+		results = nil
+		members, err := zRangeMembersByRankInTxn(txn, zSetName, 0, int64(count-1))
+		if err != nil {
+			return err
 		}
-		results = append(results, ZSetMember{Member: member.Member, Score: member.Score})
-	}
-	return results, nil
+		for _, member := range members {
+			n, err := zRemMemberInTxn(txn, zSetName, member.Member)
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				results = append(results, member)
+			}
+		}
+		return nil
+	}, 20)
+	return results, err
 }
 
 // ZMPop 实现 Redis ZMPOP 命令，从多个有序集合中弹出元素

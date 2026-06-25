@@ -728,6 +728,126 @@ func TestDeterministicConflict_ZRemRangeByScoreConcurrent(t *testing.T) {
 	}
 }
 
+// TestDeterministicConflict_ZPopMaxConcurrent verifies concurrent ZPOPMAX(count=1)
+// drains the zset without duplicate pops.
+func TestDeterministicConflict_ZPopMaxConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	zSetName := "zset:zpopmax:conflict"
+	const members = 4
+
+	if err := s.ZAdd(zSetName, []ZSetMember{
+		{Member: "m1", Score: 1.0},
+		{Member: "m2", Score: 2.0},
+		{Member: "m3", Score: 3.0},
+		{Member: "m4", Score: 4.0},
+	}); err != nil {
+		t.Fatalf("ZAdd: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, members)
+	popped := make([][]ZSetMember, members)
+	for i := range members {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			got, err := s.ZPopMax(zSetName, 1)
+			popped[idx] = got
+			errs[idx] = err
+		}(i)
+	}
+	wg.Wait()
+
+	seen := make(map[string]bool, members)
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d ZPopMax: %v", i, err)
+			continue
+		}
+		if len(popped[i]) != 1 {
+			t.Errorf("goroutine %d ZPopMax: got %d members, want 1", i, len(popped[i]))
+			continue
+		}
+		name := popped[i][0].Member
+		if seen[name] {
+			t.Errorf("duplicate popped member: %q", name)
+		}
+		seen[name] = true
+	}
+	if len(seen) != members {
+		t.Errorf("unique popped: got %d, want %d", len(seen), members)
+	}
+
+	card, err := s.ZCard(zSetName)
+	if err != nil {
+		t.Fatalf("ZCard: %v", err)
+	}
+	if card != 0 {
+		t.Errorf("ZCard: got %d, want 0", card)
+	}
+}
+
+// TestDeterministicConflict_ZPopMinConcurrent verifies concurrent ZPOPMIN(count=1)
+// drains the zset without duplicate pops.
+func TestDeterministicConflict_ZPopMinConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	zSetName := "zset:zpopmin:conflict"
+	const members = 4
+
+	if err := s.ZAdd(zSetName, []ZSetMember{
+		{Member: "m1", Score: 1.0},
+		{Member: "m2", Score: 2.0},
+		{Member: "m3", Score: 3.0},
+		{Member: "m4", Score: 4.0},
+	}); err != nil {
+		t.Fatalf("ZAdd: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, members)
+	popped := make([][]ZSetMember, members)
+	for i := range members {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			got, err := s.ZPopMin(zSetName, 1)
+			popped[idx] = got
+			errs[idx] = err
+		}(i)
+	}
+	wg.Wait()
+
+	seen := make(map[string]bool, members)
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d ZPopMin: %v", i, err)
+			continue
+		}
+		if len(popped[i]) != 1 {
+			t.Errorf("goroutine %d ZPopMin: got %d members, want 1", i, len(popped[i]))
+			continue
+		}
+		name := popped[i][0].Member
+		if seen[name] {
+			t.Errorf("duplicate popped member: %q", name)
+		}
+		seen[name] = true
+	}
+	if len(seen) != members {
+		t.Errorf("unique popped: got %d, want %d", len(seen), members)
+	}
+
+	card, err := s.ZCard(zSetName)
+	if err != nil {
+		t.Fatalf("ZCard: %v", err)
+	}
+	if card != 0 {
+		t.Errorf("ZCard: got %d, want 0", card)
+	}
+}
+
 // TestDeterministicConflict_RetryUpdateSuccessAfterConflict verifies that
 // retryUpdate correctly retries on TransactionConflict and eventually succeeds.
 func TestDeterministicConflict_RetryUpdateSuccessAfterConflict(t *testing.T) {
