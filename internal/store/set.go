@@ -527,6 +527,7 @@ func (s *BotreonStore) SRandMemberN(key string, count int) ([]string, error) {
 func (s *BotreonStore) SMove(source, destination, member string) (bool, error) {
 	moved := false
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		moved = false // reset each attempt; stale value must not survive conflict retry
 		// 检查成员是否在源集合中
 		sourceMemberKey := s.setKey(source, "member", member)
 		_, err := txn.Get([]byte(sourceMemberKey))

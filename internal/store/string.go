@@ -94,6 +94,7 @@ func (s *BotreonStore) PSETEX(key string, value string, milliseconds int64) erro
 func (s *BotreonStore) SetNX(key string, value string) (bool, error) {
 	success := false
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		success = false // reset each attempt; stale value must not survive conflict retry
 		strKey := s.stringKey(key)
 		_, err := txn.Get([]byte(strKey))
 		if err == nil {
@@ -221,6 +222,7 @@ func (s *BotreonStore) MSetNX(keyValues ...string) (bool, error) {
 	}
 	success := false
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		success = false // reset each attempt; stale value must not survive conflict retry
 		// 先检查所有键是否都不存在
 		for i := 0; i < len(keyValues); i += 2 {
 			key := keyValues[i]

@@ -793,6 +793,7 @@ func (s *BotreonStore) XDel(key string, ids ...string) (int64, error) {
 	var deleted int64
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		deleted = 0 // reset each attempt; stale value must not survive conflict retry
 		if err := checkKeyType(txn, key, KeyTypeStream); err != nil {
 			return err
 		}
@@ -1108,6 +1109,7 @@ func (s *BotreonStore) XGroupCreate(key, group, startID string) error {
 func (s *BotreonStore) XGroupDelConsumer(key, group, consumer string) (int64, error) {
 	var removed int64
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		removed = 0 // reset each attempt; stale value must not survive conflict retry
 		groupKey := streamGroupDataKey(key, group)
 		item, err := txn.Get(groupKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {

@@ -848,6 +848,167 @@ func TestDeterministicConflict_ZPopMinConcurrent(t *testing.T) {
 	}
 }
 
+// TestDeterministicConflict_SMoveConcurrent verifies concurrent SMOVE of distinct
+// members drains the source set into the destination.
+func TestDeterministicConflict_SMoveConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	source := "set:smove:src"
+	dest := "set:smove:dst"
+	const members = 4
+
+	names := make([]string, members)
+	for i := range members {
+		names[i] = fmt.Sprintf("m%d", i)
+	}
+	if _, err := s.SAdd(source, names...); err != nil {
+		t.Fatalf("SAdd: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, members)
+	moved := make([]bool, members)
+	for i := range members {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			ok, err := s.SMove(source, dest, names[idx])
+			moved[idx] = ok
+			errs[idx] = err
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d SMove: %v", i, err)
+		}
+		if !moved[i] {
+			t.Errorf("goroutine %d SMove: got moved=false, want true", i)
+		}
+	}
+
+	srcCard, err := s.SCard(source)
+	if err != nil {
+		t.Fatalf("SCard(source): %v", err)
+	}
+	if srcCard != 0 {
+		t.Errorf("SCard(source): got %d, want 0", srcCard)
+	}
+
+	dstCard, err := s.SCard(dest)
+	if err != nil {
+		t.Fatalf("SCard(dest): %v", err)
+	}
+	if dstCard != members {
+		t.Errorf("SCard(dest): got %d, want %d", dstCard, members)
+	}
+}
+
+// TestDeterministicConflict_ZMPopConcurrent verifies concurrent ZMPOP(MAX,1)
+// drains the zset without duplicate pops.
+func TestDeterministicConflict_ZMPopConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	zSetName := "zset:zmpop:conflict"
+	const members = 4
+
+	if err := s.ZAdd(zSetName, []ZSetMember{
+		{Member: "m1", Score: 1.0},
+		{Member: "m2", Score: 2.0},
+		{Member: "m3", Score: 3.0},
+		{Member: "m4", Score: 4.0},
+	}); err != nil {
+		t.Fatalf("ZAdd: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, members)
+	popped := make([][]ZSetMember, members)
+	for i := range members {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, got, err := s.ZMPop([]string{zSetName}, "MAX", 1)
+			popped[idx] = got
+			errs[idx] = err
+		}(i)
+	}
+	wg.Wait()
+
+	seen := make(map[string]bool, members)
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d ZMPop: %v", i, err)
+			continue
+		}
+		if len(popped[i]) != 1 {
+			t.Errorf("goroutine %d ZMPop: got %d members, want 1", i, len(popped[i]))
+			continue
+		}
+		name := popped[i][0].Member
+		if seen[name] {
+			t.Errorf("duplicate popped member: %q", name)
+		}
+		seen[name] = true
+	}
+	if len(seen) != members {
+		t.Errorf("unique popped: got %d, want %d", len(seen), members)
+	}
+
+	card, err := s.ZCard(zSetName)
+	if err != nil {
+		t.Fatalf("ZCard: %v", err)
+	}
+	if card != 0 {
+		t.Errorf("ZCard: got %d, want 0", card)
+	}
+}
+
+// TestDeterministicConflict_SetNXConcurrent verifies exactly one SETNX wins
+// under concurrent attempts on the same key.
+func TestDeterministicConflict_SetNXConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "string:setnx:conflict"
+	const goroutines = 20
+
+	var wg sync.WaitGroup
+	errs := make([]error, goroutines)
+	wins := make([]bool, goroutines)
+	for i := range goroutines {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			ok, err := s.SetNX(key, fmt.Sprintf("v%d", idx))
+			wins[idx] = ok
+			errs[idx] = err
+		}(i)
+	}
+	wg.Wait()
+
+	var winCount int
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d SetNX: %v", i, err)
+		}
+		if wins[i] {
+			winCount++
+		}
+	}
+	if winCount != 1 {
+		t.Errorf("SetNX wins: got %d, want 1", winCount)
+	}
+
+	val, err := s.Get(key)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if val == "" {
+		t.Fatal("Get: expected value to be set")
+	}
+}
+
 // TestDeterministicConflict_RetryUpdateSuccessAfterConflict verifies that
 // retryUpdate correctly retries on TransactionConflict and eventually succeeds.
 func TestDeterministicConflict_RetryUpdateSuccessAfterConflict(t *testing.T) {
