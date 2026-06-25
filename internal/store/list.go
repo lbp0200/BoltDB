@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -887,6 +888,160 @@ func (s *BotreonStore) deleteNode(txn *badger.Txn, key, nodeID string) error {
 	return nil
 }
 
+func (s *BotreonStore) lockListKeysOrdered(keys ...string) func() {
+	unique := make([]string, 0, len(keys))
+	seen := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		unique = append(unique, key)
+	}
+	sort.Strings(unique)
+	for _, key := range unique {
+		s.keyLockMgr.Lock(key)
+	}
+	return func() {
+		for i := len(unique) - 1; i >= 0; i-- {
+			s.keyLockMgr.Unlock(unique[i])
+		}
+	}
+}
+
+// listPopInTxn pops one element from the head (fromLeft=true) or tail of a list.
+func (s *BotreonStore) listPopInTxn(txn *badger.Txn, key string, fromLeft bool) (string, error) {
+	length, start, end, err := s.listGetMetaTxn(txn, key)
+	if err != nil || length == 0 {
+		return "", nil
+	}
+
+	var nodeID, neighborID string
+	if fromLeft {
+		nodeID = start
+		if length > 1 {
+			item, err := txn.Get([]byte(s.listKey(key, nodeID, "next")))
+			if err != nil {
+				return "", err
+			}
+			nextVal, err := item.ValueCopy(nil)
+			if err != nil {
+				return "", err
+			}
+			neighborID = string(nextVal)
+		}
+	} else {
+		nodeID = end
+		if length > 1 {
+			item, err := txn.Get([]byte(s.listKey(key, nodeID, "prev")))
+			if err != nil {
+				return "", err
+			}
+			prevVal, err := item.ValueCopy(nil)
+			if err != nil {
+				return "", err
+			}
+			neighborID = string(prevVal)
+		}
+	}
+
+	item, err := txn.Get([]byte(s.listKey(key, nodeID)))
+	if err != nil {
+		return "", err
+	}
+	valueBytes, err := item.ValueCopy(nil)
+	if err != nil {
+		return "", err
+	}
+	value := string(valueBytes)
+
+	if fromLeft {
+		if length > 1 {
+			if err := s.linkNodes(txn, key, end, neighborID); err != nil {
+				return "", err
+			}
+			start = neighborID
+		} else {
+			start = ""
+			end = ""
+		}
+	} else {
+		if length > 1 {
+			if err := s.linkNodes(txn, key, neighborID, start); err != nil {
+				return "", err
+			}
+			end = neighborID
+		} else {
+			start = ""
+			end = ""
+		}
+	}
+
+	if err := s.deleteNode(txn, key, nodeID); err != nil {
+		return "", err
+	}
+	if err := s.listUpdateMeta(txn, key, length-1, start, end); err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+// listPushInTxn pushes one element to the head (toLeft=true) or tail of a list.
+func (s *BotreonStore) listPushInTxn(txn *badger.Txn, key, value string, toLeft bool) error {
+	item, err := txn.Get(TypeOfKeyGet(key))
+	if err == nil {
+		val, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		keyType := string(val)
+		if keyType != "" && keyType != KeyTypeList {
+			return ErrWrongType
+		}
+	} else if !errors.Is(err, badger.ErrKeyNotFound) {
+		return err
+	}
+	if err := txn.Set(TypeOfKeyGet(key), []byte(KeyTypeList)); err != nil {
+		return err
+	}
+
+	length, start, end, err := s.listGetMetaTxn(txn, key)
+	if err != nil {
+		return err
+	}
+
+	newNodeID, err := s.createNode(txn, key, []byte(value))
+	if err != nil {
+		return err
+	}
+
+	if length == 0 {
+		if err := s.linkNodes(txn, key, newNodeID, newNodeID); err != nil {
+			return err
+		}
+		return s.listUpdateMeta(txn, key, 1, newNodeID, newNodeID)
+	}
+
+	if toLeft {
+		if err := s.linkNodes(txn, key, newNodeID, start); err != nil {
+			return err
+		}
+		if err := txn.Set([]byte(s.listKey(key, start, "prev")), []byte(newNodeID)); err != nil {
+			return err
+		}
+		start = newNodeID
+	} else {
+		if err := s.linkNodes(txn, key, end, newNodeID); err != nil {
+			return err
+		}
+		if err := txn.Set([]byte(s.listKey(key, end, "next")), []byte(newNodeID)); err != nil {
+			return err
+		}
+		end = newNodeID
+	}
+	return s.listUpdateMeta(txn, key, length+1, start, end)
+}
+
 // deleteList 删除整个列表
 func (s *BotreonStore) deleteList(txn *badger.Txn, key string) error {
 	_, start, _, metaErr := s.listGetMetaTxn(txn, key)
@@ -1575,93 +1730,46 @@ func (s *BotreonStore) BRPOPLPUSH(source, destination string, timeout int) (stri
 // sourceDirection: "LEFT" 或 "RIGHT"
 // destinationDirection: "LEFT" 或 "RIGHT"
 func (s *BotreonStore) LMove(source, destination, sourceDirection, destinationDirection string) (string, error) {
-	// 检查source键是否存在且是List类型
-	var sourceIsList bool
-	var sourceKeyExists bool
-	err := s.db.View(func(txn *badger.Txn) error {
-		typeKey := TypeOfKeyGet(source)
-		item, err := txn.Get(typeKey)
-		if errors.Is(err, badger.ErrKeyNotFound) {
-			return nil // 键不存在
-		}
-		if err != nil {
-			return err
-		}
-		sourceKeyExists = true
-		val, err := item.ValueCopy(nil)
-		if err != nil {
-			return err
-		}
-		keyType := string(val)
-		if keyType != KeyTypeList {
-			return ErrWrongType // 不是List类型，返回WRONGTYPE错误
-		}
-		sourceIsList = true
-		return nil
-	})
-	if err != nil {
-		return "", err
-	}
-	if sourceKeyExists && !sourceIsList {
-		return "", ErrWrongType
-	}
-
-	// 同样检查destination键的类型（如果它已存在）
-	var destIsList bool
-	var destKeyExists bool
-	err = s.db.View(func(txn *badger.Txn) error {
-		typeKey := TypeOfKeyGet(destination)
-		item, err := txn.Get(typeKey)
-		if errors.Is(err, badger.ErrKeyNotFound) {
-			return nil // 键不存在
-		}
-		if err != nil {
-			return err
-		}
-		destKeyExists = true
-		val, err := item.ValueCopy(nil)
-		if err != nil {
-			return err
-		}
-		keyType := string(val)
-		if keyType != KeyTypeList && keyType != "" {
-			return ErrWrongType // 不是List类型，返回WRONGTYPE错误
-		}
-		if keyType == KeyTypeList {
-			destIsList = true
-		}
-		return nil
-	})
-	if err != nil {
-		return "", err
-	}
-	if destKeyExists && !destIsList {
-		return "", ErrWrongType
-	}
-
-	var value string
+	var fromLeft, toLeft bool
 	switch sourceDirection {
 	case "LEFT":
-		value, err = s.LPop(source)
+		fromLeft = true
 	case "RIGHT":
-		value, err = s.RPop(source)
+		fromLeft = false
 	default:
 		return "", fmt.Errorf("ERR wrong source direction argument")
 	}
-
-	if err != nil || value == "" {
-		return "", err
-	}
-
 	switch destinationDirection {
 	case "LEFT":
-		_, err = s.LPush(destination, value)
+		toLeft = true
 	case "RIGHT":
-		_, err = s.RPush(destination, value)
+		toLeft = false
 	default:
 		return "", fmt.Errorf("ERR wrong destination direction argument")
 	}
 
+	unlock := s.lockListKeysOrdered(source, destination)
+	defer unlock()
+
+	var value string
+	err := s.retryUpdate(func(txn *badger.Txn) error {
+		value = "" // reset each attempt; stale value must not survive conflict retry
+		if err := checkKeyType(txn, source, KeyTypeList); err != nil {
+			return err
+		}
+		popped, err := s.listPopInTxn(txn, source, fromLeft)
+		if err != nil {
+			return err
+		}
+		if popped == "" {
+			return nil
+		}
+		value = popped
+		return s.listPushInTxn(txn, destination, value, toLeft)
+	}, 30)
+	if err == nil && value != "" {
+		s.notifyBlockingPop(destination, value)
+	}
 	return value, err
 }
 

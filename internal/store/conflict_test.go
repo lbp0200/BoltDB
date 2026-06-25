@@ -1269,6 +1269,60 @@ func TestDeterministicConflict_GeoSearchStoreWithSourceConflict(t *testing.T) {
 	}
 }
 
+// TestDeterministicConflict_LMoveWithSourceConflict verifies LMOVE stays
+// correct while concurrent LPUSH on the source list causes txn conflicts.
+func TestDeterministicConflict_LMoveWithSourceConflict(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	const writers = 4
+
+	if _, err := s.RPush("lm:src", "a", "b", "c"); err != nil {
+		t.Fatalf("RPush lm:src: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	var moveErr error
+	var moved string
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		moved, moveErr = s.LMove("lm:src", "lm:dst", "LEFT", "RIGHT")
+	}()
+
+	for i := range writers {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, _ = s.LPush("lm:src", fmt.Sprintf("extra%d", idx))
+		}(i)
+	}
+	wg.Wait()
+
+	if moveErr != nil {
+		t.Fatalf("LMove: %v", moveErr)
+	}
+	if moved == "" {
+		t.Fatal("LMove: expected a moved value")
+	}
+
+	length, err := s.LLen("lm:dst")
+	if err != nil {
+		t.Fatalf("LLen lm:dst: %v", err)
+	}
+	if length != 1 {
+		t.Errorf("LLen lm:dst: got %d, want 1", length)
+	}
+
+	val, err := s.LIndex("lm:dst", 0)
+	if err != nil {
+		t.Fatalf("LIndex lm:dst: %v", err)
+	}
+	if val != moved {
+		t.Errorf("LIndex lm:dst: got %q, want %q", val, moved)
+	}
+}
+
 // TestDeterministicConflict_XDelConcurrent verifies concurrent XDEL of distinct
 // stream entries drains the stream exactly once.
 func TestDeterministicConflict_XDelConcurrent(t *testing.T) {
