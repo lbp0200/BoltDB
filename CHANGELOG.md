@@ -1,47 +1,61 @@
 # Changelog
 
-## v8.31.0 (2026-06-25) — Cluster Bus, Sentinel AUTH, DEBUG Commands
+## v8.31.0 (2026-06-25) — Store Atomicity, Cluster Race Fixes, Sentinel AUTH
 
-> **Cluster Bus 真实 TCP Gossip 全功能完成（PFAIL 传播、FAIL 晋升、槽位视图同步、SETSLOT/MIGRATE/ASK 全链路）。Sentinel 新增 AUTH 支持、PING 健康检查。DEBUG 命令实现。全库 boltreon 遗留命名清理。**
+> **Store 层大规模 TOCTOU/嵌套事务修复，配套并发冲突测试套件。Cluster gossip 数据竞争全部消除。Cluster Bus 真实 TCP Gossip、Sentinel AUTH、DEBUG 命令、遗留命名清理。**
+
+### Store 原子性 / TOCTOU 修复
+
+- **单事务写路径**：SPop/SPopN、ZIncrBy/ZRem/ZSetDel、ZRemRange*、ZPopMax/Min、SMove、ZMPop、SetNX、ZUnion/Inter/DiffStore、GeoAdd/Del/Remove/SearchStore、LMove、RPopLPush、LPUSHX/RPUSHX、HDel/LRem/TSDel、INCRBY/SAdd/SRem/HSetNX/GetSet、JSON.SET/DEL/ARRAPPEND/NUMINCRBY 等全部改为 `retryUpdate` 单事务读写
+- **单视图读路径**：zset/geo 排名与范围查询消除跨事务 TOCTOU；`ZRevRank` 事务 bug 修复
+- **重试状态重置**：并发冲突时 closure 返回值/计数器不再跨重试累积（SPopN、HDel、LRem、TSDel 等）
+- **JSON 标量 NUMINCRBY**：修复持久化路径遗漏
+
+### Cluster 并发安全
+
+- **Gossip 数据竞争**（`8dafb74`）：`MergeGossipState`/`MarkPFail`/`PromotePFailToFail` 封装；`ApplyGossipPayloadFrom` 不再无锁写 `PongRecv`/`Flags`/`Epoch`
+- **Node 字段访问**（`4bda63a`）：`SetRoleAsSlave`/`SetRoleAsMaster`/`ClearSlots`/`SetSlots`/`PersistSnapshot`；REPLICATE/RESET/FLUSHSLOTS/RemoveSlot/persistence/gossip slot reconciliation 全部走 mutex 辅助方法
 
 ### 新增功能
 
-- **DEBUG 命令**（`internal/server/handler.go`）：新增 `DEBUG SLEEP`/`DEBUG OBJECT`/`DEBUG SEGFAULT`/`DEBUG ERROR` 四个子命令，补齐 Redis 兼容性缺口
-- **Sentinel AUTH**（`internal/sentinel/network.go`）：支持 `BOLTDB_PASSWORD` 环境变量，sentinel 连接 master/slave 时自动发送 AUTH
-- **Sentinel PING 健康检查**（`internal/sentinel/master.go`、`failover.go`）：`checkMaster`/`selectNewMaster` 从裸 TCP dial 改为 PING 协议握手验证
+- **DEBUG 命令**（`internal/server/handler.go`）：`DEBUG SLEEP`/`DEBUG OBJECT`/`DEBUG SEGFAULT`/`DEBUG ERROR`
+- **Sentinel AUTH**（`internal/sentinel/network.go`）：`BOLTDB_PASSWORD` 环境变量，连接 master/slave 自动 AUTH
+- **Sentinel PING 健康检查**（`internal/sentinel/master.go`、`failover.go`）：`checkMaster`/`selectNewMaster` 改为 PING 协议握手
+- **可配置复制 backlog**（`f86cc60`）：`--repl-backlog-size` CLI 参数
+- **Cluster Bus 真实 Gossip**（`2d8d7d2`）：独立端口 data+10000、持久 TCP、PING/PONG、Gossip Payload（epoch/slot_owners/PFAIL/FAIL）、SETSLOT/MIGRATE/IMPORTING/ASK 全链路
 
 ### Bug 修复
 
-- **Cluster Bus: checkFailures**（`eea620d`）：`PongRecv==0` 节点处理——使用 `DiscoveredAt` 而非 `LastPong` 计算 PFAIL 超时
-- **测试套件挂起**（`bf7ee61`）：`BLPOP timeout=0` 导致集成测试无限阻塞；regression 测试在 short 模式下跳过正确性验证
-- **`debug` 构建产物误提交**（`.gitignore`）：4.6MB `cmd/debug` 可执行文件被 git 跟踪，已清除并加入 `.gitignore`
-- **Logger 环境变量**（`internal/logger/logger.go`）：`BOLTREON_LOG_FILE`/`BOLTREON_LOG_LEVEL` → `BOLTDB_LOG_FILE`/`BOLTDB_LOG_LEVEL`（文档声明但代码未生效）
-- **`main.go` 环境变量 fallback**（`cmd/boltDB/main.go`）：补上 `BOLTDB_ADDR`/`BOLTDB_DIR` 读取（文档已声明但代码缺失）
-- **`isWriteCommand` 缺失**（`internal/server/replication_helper.go`）：`MOVE`/`PUBLISH`/`SWAPDB` 未标记为写命令，导致不向 slave 传播（94/94 → 完整）
-- **Docker 构建上下文**（`deploy/docker/docker-compose.yml`）：`context: ./deploy/docker/` → `context: .`（指向错误目录）
-- **文档/BENCHMARK/LGGING 端口**（`cmd/boltDB/*.md`、`scripts/*.sh`）：`6379` → `6337`、`boltreon` → `boltDB`
-
-### CI / 基础设施
-
-- **Tier A 超时**（`.github/workflows/go.yml`、`bb37449`）：单元测试超时 60s → 120s（对齐 `test-tier-a.sh`）
-- **Cluster Bus 真实 Gossip**（`2d8d7d2`）：`internal/cluster/bus.go`——独立端口 data+10000、持久 TCP 连接管理、真实 PING/PONG 传输、Gossip Payload（epoch/slot_owners/PFAIL/FAIL）、槽位视图同步、SETSLOT/MIGRATE/IMPORTING/ASK 全链路、持久化
+- **Cluster Bus: checkFailures**（`eea620d`）：`PongRecv==0` 节点使用 `DiscoveredAt` 计算 PFAIL 超时
+- **测试套件挂起**（`bf7ee61`）：`BLPOP timeout=0` 无限阻塞；regression 在 short 模式跳过
+- **集成测试 `-short` 超时**（`5b12150`）：sentinel/shutdown/split_brain/chaos/soak 等重测试在 `-short` 下跳过
+- **Logger 环境变量**（`internal/logger/logger.go`）：`BOLTREON_*` → `BOLTDB_*`
+- **`main.go` 环境变量**（`cmd/boltDB/main.go`）：补上 `BOLTDB_ADDR`/`BOLTDB_DIR`
+- **`isWriteCommand` 缺失**（`internal/server/replication_helper.go`）：`MOVE`/`PUBLISH`/`SWAPDB` 补标记
+- **Docker 构建上下文**（`deploy/docker/docker-compose.yml`）：`context: .`
+- **GeoCard WRONGTYPE**（`8cc0798`）
 
 ### 测试
 
-- **`TestServerDebugCommands`**（`internal/server/handler_more_server_test.go`）：从空断言重写为真实行为验证（sleep 时长、object 类型、error 内容、unknown subcommand）
-- **`TestExecuteCommand_DEBUG_SLEEP_Coverage`**（`internal/server/handler_coverage_test.go`）：取消 skip，实际运行 DEBUG SLEEP 验证
-
-> **修复 CI 集成测试中 BGSAVE 因 nil context 导致的 nil pointer panic，Homebrew formula 安装路径修复，远程测试服务器新增 fallback。**
-
-### Bug 修复
-
-- **BGSAVE nil context crash**（`internal/server/handler.go:5242`）：`h.Ctx` 未设置时直接传入 `BGSave` 导致 `ctx.Done()` nil pointer dereference，加 nil 防御 fallback 到 `context.Background()`
-- **集成测试共享服务器**（`cmd/integration/integration_test.go:2537`）：补上 `Ctx: context.Background()`，消除所有依赖 `h.Ctx` 路径的 nil pointer 风险
-- **Homebrew formula 安装路径**（`01be3c3`）：`data_dir` 改用运行时 `$HOME` 而非安装时写入的硬编码路径
+- **`internal/store/conflict_test.go`**：并发冲突测试套件（30+ 命令族覆盖）
+- **`TestServerDebugCommands`** / **`TestExecuteCommand_DEBUG_SLEEP_Coverage`**：DEBUG 命令真实行为验证
+- **flag coverage tests**：`repl-backlog-size`、`client-output-buffer-limit`
 
 ### CI / 基础设施
 
-- **远程测试服务器**（`scripts/remote-test.sh`）：新增 `10.1.15.22`（Intel Mac x86_64）作为最低优先级 fallback，支持 3 台冗余主机自动探测
+- **Tier A 超时**（`.github/workflows/go.yml`）：60s → 120s
+- **远程测试服务器**（`scripts/remote-test.sh`）：3 台冗余主机自动探测
+- **遗留命名清理**：`boltreon` → `boltDB`，文档端口 `6379` → `6337`
+
+## v8.30.0 (2026-06-22) — BGSave nil context fix
+
+> **修复 CI 集成测试中 BGSAVE 因 nil context 导致的 nil pointer panic，Homebrew formula 安装路径修复。**
+
+### Bug 修复
+
+- **BGSAVE nil context crash**（`internal/server/handler.go`）：`h.Ctx` 未设置时 fallback 到 `context.Background()`
+- **集成测试共享服务器**（`cmd/integration/integration_test.go`）：补上 `Ctx: context.Background()`
+- **Homebrew formula 安装路径**：`data_dir` 改用运行时 `$HOME`
 
 ## v8.29.0 (2026-06-22) — RESP3 Full Coverage, Code Quality Hardening
 
