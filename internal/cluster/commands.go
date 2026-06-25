@@ -305,7 +305,7 @@ func (cc *ClusterCommands) handleMeet(args []string) (string, error) {
 			cc.cluster.mu.Lock()
 			delete(cc.cluster.Nodes, nodeID)
 			if existing, ok := cc.cluster.Nodes[realNodeID]; ok {
-				existing.PongRecv = time.Now().UnixMilli()
+				existing.UpdatePong()
 			} else {
 				node := NewNode(realNodeID, addr)
 				node.Flags = append(node.Flags, FlagMaster)

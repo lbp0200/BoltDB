@@ -166,6 +166,46 @@ func (n *Node) UpdatePong() {
 	n.PongRecv = time.Now().UnixMilli()
 }
 
+// MergeGossipState updates epoch/pong from gossip when the payload is newer.
+func (n *Node) MergeGossipState(epoch, pongRecv int64) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if epoch > n.Epoch {
+		n.Epoch = epoch
+	}
+	if pongRecv > n.PongRecv {
+		n.PongRecv = pongRecv
+	}
+}
+
+// MarkPFail adds the PFAIL flag when the node is not already marked failed.
+func (n *Node) MarkPFail() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.hasFailFlag() {
+		return
+	}
+	n.Flags = append(n.Flags, FlagPFail)
+}
+
+// PromotePFailToFail promotes PFAIL to FAIL. Returns true when promotion happened.
+func (n *Node) PromotePFailToFail() bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.hasFailFlag() {
+		return false
+	}
+	n.Flags = append(n.Flags, FlagFail)
+	cleaned := make([]string, 0, len(n.Flags))
+	for _, f := range n.Flags {
+		if f != FlagPFail {
+			cleaned = append(cleaned, f)
+		}
+	}
+	n.Flags = cleaned
+	return true
+}
+
 // UpdatePing 更新ping发送时间
 func (n *Node) UpdatePing() {
 	n.mu.Lock()

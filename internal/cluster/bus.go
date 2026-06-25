@@ -378,12 +378,7 @@ func (b *ClusterBus) ApplyGossipPayloadFrom(reporterID string, payload *GossipPa
 			continue
 		}
 		if existing, ok := b.cluster.Nodes[gi.ID]; ok {
-			if gi.Epoch > existing.Epoch {
-				existing.Epoch = gi.Epoch
-			}
-			if gi.PongRecv > existing.PongRecv {
-				existing.PongRecv = gi.PongRecv
-			}
+			existing.MergeGossipState(gi.Epoch, gi.PongRecv)
 		} else {
 			node := NewNode(gi.ID, gi.Addr)
 			node.Flags = gi.Flags
@@ -453,16 +448,7 @@ func (b *ClusterBus) ApplyGossipPayloadFrom(reporterID string, payload *GossipPa
 
 			if reportCount >= threshold {
 				node := b.cluster.Nodes[pfailID]
-				if node != nil && !node.hasFailFlag() {
-					node.Flags = append(node.Flags, FlagFail)
-					// Remove PFAIL flag if present
-					var cleaned []string
-					for _, f := range node.Flags {
-						if f != FlagPFail {
-							cleaned = append(cleaned, f)
-						}
-					}
-					node.Flags = cleaned
+				if node != nil && node.PromotePFailToFail() {
 					logger.Logger.Warn().Str("node", pfailID).
 						Int("reports", reportCount).
 						Int("threshold", threshold).

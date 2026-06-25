@@ -163,13 +163,14 @@ func (g *Gossiper) checkFailures() {
 	defer g.cluster.mu.Unlock()
 
 	for _, node := range g.cluster.Nodes {
-		if node.ID == g.cluster.Myself.ID || node.hasFailFlag() {
+		if node.ID == g.cluster.Myself.ID || node.HasFailFlag() {
 			continue
 		}
 
+		pongRecv := node.GetPongRecv()
 		var elapsed int64
-		if node.PongRecv > 0 {
-			elapsed = now - node.PongRecv
+		if pongRecv > 0 {
+			elapsed = now - pongRecv
 		} else if node.DiscoveredAt > 0 {
 			elapsed = now - node.DiscoveredAt
 		} else {
@@ -177,7 +178,7 @@ func (g *Gossiper) checkFailures() {
 		}
 
 		if elapsed > failTimeout.Milliseconds() {
-			node.Flags = append(node.Flags, FlagPFail)
+			node.MarkPFail()
 			logger.Logger.Warn().
 				Str("node", node.ID).
 				Str("addr", node.Addr).
@@ -195,7 +196,8 @@ func (g *Gossiper) checkFailures() {
 		if age < staleNodeTimeout.Milliseconds() {
 			continue
 		}
-		if node.PongRecv > 0 && now-node.PongRecv <= staleNodeTimeout.Milliseconds() {
+		pongRecv := node.GetPongRecv()
+		if pongRecv > 0 && now-pongRecv <= staleNodeTimeout.Milliseconds() {
 			continue
 		}
 		logger.Logger.Warn().
