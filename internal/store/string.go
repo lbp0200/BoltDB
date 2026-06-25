@@ -124,6 +124,7 @@ func (s *BotreonStore) GetSet(key string, value string) (string, error) {
 
 	var oldValue string
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		oldValue = "" // reset each attempt; stale value must not survive conflict retry
 		strKey := s.stringKey(key)
 		item, err := txn.Get([]byte(strKey))
 		if err == nil {
@@ -354,6 +355,7 @@ func (s *BotreonStore) INCRBY(key string, increment int64) (int64, error) {
 
 	var newValue int64
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		newValue = 0 // reset each attempt; stale value must not survive conflict retry
 		// Check if key exists with a different type before overwriting
 		typeKey := TypeOfKeyGet(key)
 		item, err := txn.Get(typeKey)
@@ -405,6 +407,8 @@ func (s *BotreonStore) INCRBYFLOAT(key string, increment float64) (float64, erro
 	var newValue float64
 	var newValueStr string
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		newValue = 0
+		newValueStr = "" // reset each attempt; stale value must not survive conflict retry
 		strKey := s.stringKey(key)
 		item, err := txn.Get([]byte(strKey))
 		var oldFloat float64

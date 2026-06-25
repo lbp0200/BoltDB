@@ -106,6 +106,7 @@ func (s *BotreonStore) setKey(key string, parts ...string) string {
 func (s *BotreonStore) SAdd(key string, members ...string) (int, error) {
 	added := 0
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		added = 0 // reset each attempt; stale value must not survive conflict retry
 		badgerTypeKey := TypeOfKeyGet(key)
 
 		// Check if key already exists with a different type
@@ -143,7 +144,6 @@ func (s *BotreonStore) SAdd(key string, members ...string) (int, error) {
 			count = helper.BytesToUint64(countBytes)
 		}
 
-		added = 0
 		for _, member := range members {
 			memberKey := s.setKey(key, "member", member)
 
@@ -171,6 +171,7 @@ func (s *BotreonStore) SAdd(key string, members ...string) (int, error) {
 func (s *BotreonStore) SRem(key string, members ...string) (int, error) {
 	removed := 0
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		removed = 0 // reset each attempt; stale value must not survive conflict retry
 		// Check if key already exists with a different type
 		typeKey := TypeOfKeyGet(key)
 		typeItem, typeErr := txn.Get(typeKey)
@@ -203,7 +204,6 @@ func (s *BotreonStore) SRem(key string, members ...string) (int, error) {
 			count = helper.BytesToUint64(countBytes)
 		}
 
-		removed = 0
 		for _, member := range members {
 			memberKey := s.setKey(key, "member", member)
 
@@ -700,6 +700,7 @@ func (s *BotreonStore) SDiff(keys ...string) ([]string, error) {
 func (s *BotreonStore) SInterStore(destination string, keys ...string) (int, error) {
 	var count int
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		count = 0 // reset each attempt; stale value must not survive conflict retry
 		// 在事务中计算交集
 		var result []string
 		if len(keys) > 0 {
@@ -766,6 +767,7 @@ func (s *BotreonStore) SInterStore(destination string, keys ...string) (int, err
 func (s *BotreonStore) SUnionStore(destination string, keys ...string) (int, error) {
 	var count int
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		count = 0 // reset each attempt; stale value must not survive conflict retry
 		// 在事务中计算并集
 		var result []string
 		seen := make(map[string]bool)
@@ -819,6 +821,7 @@ func (s *BotreonStore) SUnionStore(destination string, keys ...string) (int, err
 func (s *BotreonStore) SDiffStore(destination string, keys ...string) (int, error) {
 	var count int
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		count = 0 // reset each attempt; stale value must not survive conflict retry
 		// 在事务中计算差集
 		var result []string
 		if len(keys) > 0 {

@@ -1593,6 +1593,131 @@ func TestDeterministicConflict_XDelConcurrent(t *testing.T) {
 	}
 }
 
+// TestDeterministicConflict_INCRBYConcurrent verifies concurrent INCRBY on the
+// same string key converges to the exact accumulated value.
+func TestDeterministicConflict_INCRBYConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "string:incrby:conflict"
+	const goroutines = 20
+
+	if err := s.Set(key, "0"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, goroutines)
+	for i := range goroutines {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, errs[idx] = s.INCRBY(key, 1)
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d INCRBY: %v", i, err)
+		}
+	}
+
+	val, err := s.Get(key)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	want := strconv.FormatInt(int64(goroutines), 10)
+	if val != want {
+		t.Errorf("Get: got %q, want %q", val, want)
+	}
+}
+
+// TestDeterministicConflict_SAddConcurrent verifies concurrent SADD of distinct
+// members on the same key reports the correct added count.
+func TestDeterministicConflict_SAddConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "set:sadd:conflict"
+	const members = 20
+
+	var wg sync.WaitGroup
+	errs := make([]error, members)
+	added := make([]int, members)
+	for i := range members {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			n, err := s.SAdd(key, fmt.Sprintf("m%d", idx))
+			added[idx] = n
+			errs[idx] = err
+		}(i)
+	}
+	wg.Wait()
+
+	totalAdded := 0
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d SAdd: %v", i, err)
+		}
+		totalAdded += added[i]
+	}
+	if totalAdded != members {
+		t.Errorf("total added: got %d, want %d", totalAdded, members)
+	}
+
+	card, err := s.SCard(key)
+	if err != nil {
+		t.Fatalf("SCard: %v", err)
+	}
+	if card != members {
+		t.Errorf("SCard: got %d, want %d", card, members)
+	}
+}
+
+// TestDeterministicConflict_HSetNXConcurrent verifies exactly one HSETNX wins
+// under concurrent attempts on the same hash field.
+func TestDeterministicConflict_HSetNXConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "hash:hsetnx:conflict"
+	const goroutines = 20
+
+	var wg sync.WaitGroup
+	errs := make([]error, goroutines)
+	wins := make([]bool, goroutines)
+	for i := range goroutines {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			ok, err := s.HSetNX(key, "field", fmt.Sprintf("v%d", idx))
+			wins[idx] = ok
+			errs[idx] = err
+		}(i)
+	}
+	wg.Wait()
+
+	var winCount int
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d HSetNX: %v", i, err)
+		}
+		if wins[i] {
+			winCount++
+		}
+	}
+	if winCount != 1 {
+		t.Errorf("HSetNX wins: got %d, want 1", winCount)
+	}
+
+	n, err := s.HLen(key)
+	if err != nil {
+		t.Fatalf("HLen: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("HLen: got %d, want 1", n)
+	}
+}
+
 // TestDeterministicConflict_HIncrByConcurrent verifies concurrent HINCRBY on the
 // same field converges to the exact accumulated value.
 func TestDeterministicConflict_HIncrByConcurrent(t *testing.T) {

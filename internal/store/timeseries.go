@@ -149,6 +149,7 @@ func (s *BotreonStore) TSAdd(key string, timestamp int64, value float64, opts TS
 	var addedTimestamp int64
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		addedTimestamp = 0 // reset each attempt; stale value must not survive conflict retry
 		// Set type key if not exists
 		typeKey := TypeOfKeyGet(key)
 		typeItem, err := txn.Get(typeKey)

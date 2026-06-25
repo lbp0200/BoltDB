@@ -505,6 +505,7 @@ func (s *BotreonStore) HSetNX(key, field string, value interface{}) (bool, error
 	}
 	hkey := s.hashKey(key, field)
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		success = false // reset each attempt; stale value must not survive conflict retry
 		// 检查字段是否存在
 		_, getErr := txn.Get(hkey)
 		if getErr == nil {
