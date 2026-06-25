@@ -44,6 +44,9 @@ type RegressionServer struct {
 // StartRegression 启动一个独立的 BoltDB 服务器用于回归测试
 func StartRegression(t *testing.T) *RegressionServer {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping regression test in short mode (see scripts/test-tier-b.sh)")
+	}
 
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
@@ -69,6 +72,9 @@ func StartRegression(t *testing.T) *RegressionServer {
 // StartRegressionWithStore 在已有 store 上启动服务器（用于 RDB load 后验证）
 func StartRegressionWithStore(t *testing.T, db *store.BotreonStore) *RegressionServer {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping regression test in short mode (see scripts/test-tier-b.sh)")
+	}
 	return startRegressionWithDB(t, db, t.TempDir()+"/backup")
 }
 

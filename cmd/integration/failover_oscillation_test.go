@@ -282,6 +282,8 @@ func (ot *oscillationTracker) logMetrics(t *testing.T) {
 //   - temporal (agreement trajectory time-series)
 //   - basin (convergence to stable state after failover)
 func TestRegressionFailoverOscillation(t *testing.T) {
+	skipHeavyIntegrationInShort(t)
+
 	// ========================================================================
 	// SETUP: 1 master + 2 slaves + 3 sentinels (quorum=2) + gossip mesh
 	// ========================================================================
@@ -686,6 +688,7 @@ func TestRegressionFailoverOscillation(t *testing.T) {
 // with a background writer, verifying that oscillation does not accumulate
 // across cycles and health recovers after each kill.
 func TestRegressionFailoverOscillationScenarioC(t *testing.T) {
+	skipHeavyIntegrationInShort(t)
 	t.Logf("\n========== SCENARIO C: Write load + repeated failover cycling ==========")
 
 	master := startBoltNode(t)
@@ -826,6 +829,7 @@ func TestRegressionFailoverOscillationScenarioC(t *testing.T) {
 // This test kills the high-offset slave BEFORE the master, verifying that
 // the sentinel correctly falls back to the lower-offset live slave.
 func TestRegressionFailoverOscillationScenarioD(t *testing.T) {
+	skipHeavyIntegrationInShort(t)
 	t.Logf("\n========== SCENARIO D: Dead slave selection + failover cooldown ==========")
 
 	master := startBoltNode(t)

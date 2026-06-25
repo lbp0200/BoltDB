@@ -23,6 +23,7 @@ import (
 // Note: Full cluster mode (CLUSTER MEET between BoltDB and Redis) requires complex setup
 // and is tested manually. This test verifies basic standalone operations.
 func TestMixedClusterBoltDBAndRedis(t *testing.T) {
+	skipHeavyIntegrationInShort(t)
 	// Check if redis-server is available
 	if err := exec.Command("redis-server", "--version").Run(); err != nil {
 		t.Skip("redis-server not installed, skipping mixed cluster test")
@@ -146,6 +147,7 @@ dir %s
 
 // TestMixedClusterReplication tests replication from Redis to BoltDB
 func TestMixedClusterReplication(t *testing.T) {
+	skipHeavyIntegrationInShort(t)
 	// Check if redis-server is available
 	if err := exec.Command("redis-server", "--version").Run(); err != nil {
 		t.Skip("redis-server not installed, skipping replication test")
@@ -289,6 +291,7 @@ func TestMixedClusterReplication(t *testing.T) {
 
 // TestMixedClusterRoleSwitch tests role switching between BoltDB and Redis
 func TestMixedClusterRoleSwitch(t *testing.T) {
+	skipHeavyIntegrationInShort(t)
 	// Check if redis-server is available
 	if err := exec.Command("redis-server", "--version").Run(); err != nil {
 		t.Skip("redis-server not installed, skipping role switch test")
@@ -390,6 +393,7 @@ func TestMixedClusterRoleSwitch(t *testing.T) {
 
 // TestMixedClusterDataIsolation tests that BoltDB and Redis maintain separate data
 func TestMixedClusterDataIsolation(t *testing.T) {
+	skipHeavyIntegrationInShort(t)
 	// Check if redis-server is available
 	if err := exec.Command("redis-server", "--version").Run(); err != nil {
 		t.Skip("redis-server not installed, skipping data isolation test")

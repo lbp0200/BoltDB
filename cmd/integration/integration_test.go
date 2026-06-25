@@ -20,6 +20,35 @@ import (
 	"github.com/zeebo/assert"
 )
 
+// skipHeavyIntegrationInShort skips multi-node / failover tests when -short is set.
+// Tier A uses -skip; Tier B runs these without -short.
+func skipHeavyIntegrationInShort(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping heavy integration test in short mode (see scripts/test-tier-b.sh)")
+	}
+}
+
+// heavyIntegrationTestPrefixes are skipped via setupTest when -short is set.
+var heavyIntegrationTestPrefixes = []string{
+	"TestGoroutineLeak",
+	"TestChaos",
+	"TestFuzzServer",
+}
+
+func skipHeavyTestNameInShort(t *testing.T) {
+	t.Helper()
+	if !testing.Short() {
+		return
+	}
+	name := t.Name()
+	for _, prefix := range heavyIntegrationTestPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			t.Skip("skipping heavy integration test in short mode (see scripts/test-tier-b.sh)")
+		}
+	}
+}
+
 // TestConnection 测试连接命令
 func TestConnection(t *testing.T) {
 	setupTest(t)
@@ -2600,6 +2629,7 @@ func teardownSharedServer() {
 // 替代旧的 setupTestServer，不重启服务器，仅清理数据
 func setupTest(t *testing.T) {
 	t.Helper()
+	skipHeavyTestNameInShort(t)
 
 	sharedServerOnce.Do(func() {
 		// 确保服务器已启动（兼容性检查）

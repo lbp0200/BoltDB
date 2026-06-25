@@ -23,6 +23,9 @@ import (
 // Failure doc: docs/failures/shutdown-race.md
 // Invariant: goroutine delta ≤ 10, all operations unblock within timeout.
 func TestRegressionShutdownRace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping regression test in short mode (see scripts/test-tier-b.sh)")
+	}
 	db, err := store.NewBotreonStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)

@@ -146,6 +146,7 @@ func (ct *convergenceTracker) logMetrics(t *testing.T) {
 }
 
 func TestSplitBrainConvergenceReplay(t *testing.T) {
+	skipHeavyIntegrationInShort(t)
 	// ========================================================================
 	// SETUP: 1 master + 1 slave + 3 sentinels + partition proxy + PressureMonitor
 	// ========================================================================

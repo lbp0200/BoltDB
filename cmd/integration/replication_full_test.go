@@ -29,6 +29,10 @@ func containsString(slice []string, item string) bool {
 
 // setupMasterSlaveServer 创建一个主从复制测试环境
 func setupMasterSlaveServer(t *testing.T) (masterClient, slaveClient *redis.Client, cleanup func()) {
+	if testing.Short() {
+		t.Skip("skipping master-slave replication in short mode (run via test-tier-b.sh)")
+	}
+
 	var err error
 
 	// 创建主节点

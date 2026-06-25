@@ -24,6 +24,8 @@ import (
 //
 // Failure doc: docs/failures/split-brain-convergence.md
 func TestRegressionSplitBrainConvergenceHarden(t *testing.T) {
+	skipHeavyIntegrationInShort(t)
+
 	// ========================================================================
 	// SETUP: 1 master + 1 slave + 3 sentinels (quorum=2) + partition proxy
 	// ========================================================================
