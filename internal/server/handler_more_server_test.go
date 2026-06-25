@@ -1,7 +1,9 @@
 package server
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/zeebo/assert"
@@ -257,7 +259,7 @@ func TestServerDebugCommands(t *testing.T) {
 		resp := handler.executeCommand(state, "DEBUG", [][]byte{[]byte("SLEEP"), []byte("0.05")}, "127.0.0.1:12345")
 		elapsed := time.Since(start)
 		// Should have slept at least 50ms
-		assert.GreaterOrEqual(t, elapsed, 45*time.Millisecond)
+		assert.True(t, elapsed >= 45*time.Millisecond)
 		// Should return OK
 		ss, ok := resp.(*proto.SimpleString)
 		assert.True(t, ok)
@@ -268,42 +270,42 @@ func TestServerDebugCommands(t *testing.T) {
 		resp := handler.executeCommand(state, "DEBUG", [][]byte{[]byte("OBJECT"), []byte("debugkey")}, "127.0.0.1:12345")
 		bs, ok := resp.(*proto.BulkString)
 		assert.True(t, ok)
-		assert.Contains(t, string(*bs), "Type: string")
+		assert.True(t, strings.Contains(string(*bs), "Type: string"))
 	})
 
 	t.Run("DEBUG OBJECT nonexistent", func(t *testing.T) {
 		resp := handler.executeCommand(state, "DEBUG", [][]byte{[]byte("OBJECT"), []byte("nosuchkey")}, "127.0.0.1:12345")
 		bs, ok := resp.(*proto.BulkString)
 		assert.True(t, ok)
-		assert.Contains(t, string(*bs), "Type: none")
+		assert.True(t, strings.Contains(string(*bs), "Type: none"))
 	})
 
 	t.Run("DEBUG SEGFAULT", func(t *testing.T) {
 		resp := handler.executeCommand(state, "DEBUG", [][]byte{[]byte("SEGFAULT")}, "127.0.0.1:12345")
 		errResp, ok := resp.(*proto.Error)
 		assert.True(t, ok)
-		assert.Contains(t, string(*errResp), "simulated")
+		assert.True(t, strings.Contains(string(*errResp), "simulated"))
 	})
 
 	t.Run("DEBUG ERROR", func(t *testing.T) {
 		resp := handler.executeCommand(state, "DEBUG", [][]byte{[]byte("ERROR"), []byte("test error message")}, "127.0.0.1:12345")
 		errResp, ok := resp.(*proto.Error)
 		assert.True(t, ok)
-		assert.Contains(t, string(*errResp), "test error message")
+		assert.True(t, strings.Contains(string(*errResp), "test error message"))
 	})
 
 	t.Run("DEBUG unknown subcommand", func(t *testing.T) {
 		resp := handler.executeCommand(state, "DEBUG", [][]byte{[]byte("NOSUCH")}, "127.0.0.1:12345")
 		errResp, ok := resp.(*proto.Error)
 		assert.True(t, ok)
-		assert.Contains(t, string(*errResp), "unknown DEBUG subcommand")
+		assert.True(t, strings.Contains(string(*errResp), "unknown DEBUG subcommand"))
 	})
 
 	t.Run("DEBUG no args", func(t *testing.T) {
 		resp := handler.executeCommand(state, "DEBUG", nil, "127.0.0.1:12345")
 		errResp, ok := resp.(*proto.Error)
 		assert.True(t, ok)
-		assert.Contains(t, string(*errResp), "wrong number of arguments")
+		assert.True(t, strings.Contains(string(*errResp), "wrong number of arguments"))
 	})
 }
 

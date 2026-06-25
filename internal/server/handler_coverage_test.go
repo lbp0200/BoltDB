@@ -3,6 +3,7 @@ package server
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/zeebo/assert"
@@ -787,7 +788,7 @@ func TestExecuteCommand_DEBUG_SLEEP_Coverage(t *testing.T) {
 	start := time.Now()
 	resp := handler.executeCommand(state, "DEBUG", [][]byte{[]byte("SLEEP"), []byte("0.05")}, "127.0.0.1:12345")
 	elapsed := time.Since(start)
-	assert.GreaterOrEqual(t, elapsed, 45*time.Millisecond)
+	assert.True(t, elapsed >= 45*time.Millisecond)
 	ss, ok := resp.(*proto.SimpleString)
 	assert.True(t, ok)
 	assert.Equal(t, "OK", string(*ss))
