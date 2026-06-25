@@ -38,7 +38,7 @@ func NewCluster(store *store.BotreonStore, nodeID, addr string) (*Cluster, error
 
 	myself := NewNode(nodeID, addr)
 	myself.SetMyself()
-	myself.Flags = append(myself.Flags, FlagMaster)
+	myself.EnsureMasterFlag()
 
 	cluster := &Cluster{
 		Myself:       myself,
@@ -147,7 +147,7 @@ func (c *Cluster) AssignSlot(slot uint32, nodeID string) error {
 	c.Slots[slot] = node
 	node.AddSlotRange(slot, slot)
 	c.Epoch++
-	node.Epoch = c.Epoch
+	node.SetEpoch(c.Epoch)
 	c.mu.Unlock()
 
 	return c.SaveConfig()
@@ -172,7 +172,7 @@ func (c *Cluster) AssignSlotRange(start, end uint32, nodeID string) error {
 		c.Slots[i] = node
 	}
 	c.Epoch++
-	node.Epoch = c.Epoch
+	node.SetEpoch(c.Epoch)
 	node.AddSlotRange(start, end)
 	c.mu.Unlock()
 
@@ -196,13 +196,11 @@ func (c *Cluster) RemoveSlot(slot uint32) error {
 	c.Slots[slot] = nil
 
 	if owner.ID == c.Myself.ID {
-		// Remove this slot from Myself's slot ranges
 		var updated []SlotRange
-		for _, r := range c.Myself.Slots {
+		for _, r := range c.Myself.GetSlotRanges() {
 			if slot < r.Start || slot > r.End {
 				updated = append(updated, r)
 			} else if slot == r.Start && slot == r.End {
-				// Range of length 1, completely removed
 				continue
 			} else if slot == r.Start {
 				updated = append(updated, SlotRange{Start: slot + 1, End: r.End})
@@ -213,7 +211,7 @@ func (c *Cluster) RemoveSlot(slot uint32) error {
 				updated = append(updated, SlotRange{Start: slot + 1, End: r.End})
 			}
 		}
-		c.Myself.Slots = updated
+		c.Myself.SetSlots(updated)
 	}
 
 	return c.saveConfigLocked()
@@ -391,7 +389,7 @@ func (c *Cluster) UpdateNodeEpoch(nodeID string, epoch int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if node, exists := c.Nodes[nodeID]; exists {
-		node.Epoch = epoch
+		node.SetEpoch(epoch)
 		if epoch > c.Epoch {
 			c.Epoch = epoch
 		}
@@ -481,9 +479,7 @@ func (c *Cluster) MarkNodePFail(nodeID string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if n, ok := c.Nodes[nodeID]; ok && n.ID != c.Myself.ID {
-		if !n.hasFailFlag() {
-			n.Flags = append(n.Flags, FlagPFail)
-		}
+		n.MarkPFail()
 	}
 }
 

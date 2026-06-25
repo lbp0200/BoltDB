@@ -45,12 +45,13 @@ func (c *Cluster) saveConfigLocked() error {
 	}
 
 	for id, node := range c.Nodes {
+		flags, masterID, epoch := node.PersistSnapshot()
 		state.Nodes[id] = &persistedNode{
 			ID:       node.ID,
 			Addr:     node.Addr,
-			Flags:    copyFlags(node.Flags),
-			MasterID: node.MasterID,
-			Epoch:    node.Epoch,
+			Flags:    flags,
+			MasterID: masterID,
+			Epoch:    epoch,
 		}
 	}
 
@@ -130,14 +131,10 @@ func (c *Cluster) loadState(state persistedClusterState) {
 
 	for id, pn := range state.Nodes {
 		if node, exists := c.Nodes[id]; exists {
-			node.Flags = copyFlags(pn.Flags)
-			node.MasterID = pn.MasterID
-			node.Epoch = pn.Epoch
+			node.LoadFromPersisted(pn.Flags, pn.MasterID, pn.Epoch)
 		} else {
 			n := NewNode(pn.ID, pn.Addr)
-			n.Flags = copyFlags(pn.Flags)
-			n.MasterID = pn.MasterID
-			n.Epoch = pn.Epoch
+			n.LoadFromPersisted(pn.Flags, pn.MasterID, pn.Epoch)
 			c.Nodes[id] = n
 		}
 	}

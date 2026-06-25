@@ -236,7 +236,7 @@ func (cc *ClusterCommands) handleMeet(args []string) (string, error) {
 	if len(args) >= 3 {
 		peerNodeID := args[2]
 		node := NewNode(peerNodeID, addr)
-		node.Flags = append(node.Flags, FlagMaster)
+		node.EnsureMasterFlag()
 		cc.cluster.AddNode(node)
 		logger.Logger.Info().
 			Str("peer", peerNodeID).
@@ -262,7 +262,7 @@ func (cc *ClusterCommands) handleMeet(args []string) (string, error) {
 		return "", err
 	}
 	placeholder := NewNode(nodeID, addr)
-	placeholder.Flags = append(placeholder.Flags, FlagMaster)
+	placeholder.EnsureMasterFlag()
 	cc.cluster.AddNode(placeholder)
 
 	// Connect to the target and send handshake
@@ -308,8 +308,8 @@ func (cc *ClusterCommands) handleMeet(args []string) (string, error) {
 				existing.UpdatePong()
 			} else {
 				node := NewNode(realNodeID, addr)
-				node.Flags = append(node.Flags, FlagMaster)
-				node.PongRecv = time.Now().UnixMilli()
+				node.EnsureMasterFlag()
+				node.UpdatePong()
 				cc.cluster.Nodes[realNodeID] = node
 			}
 			cc.cluster.mu.Unlock()
@@ -383,8 +383,7 @@ func (cc *ClusterCommands) handleReplicate(args []string) (string, error) {
 		return "", fmt.Errorf("ERR unknown node %s", masterID)
 	}
 
-	cc.cluster.Myself.MasterID = masterID
-	cc.cluster.Myself.Flags = []string{FlagSlave, FlagMyself}
+	cc.cluster.Myself.SetRoleAsSlave(masterID)
 
 	for i := uint32(0); i < SlotCount; i++ {
 		if cc.cluster.Slots[i] == cc.cluster.Myself {
@@ -392,7 +391,7 @@ func (cc *ClusterCommands) handleReplicate(args []string) (string, error) {
 			master.AddSlotRange(i, i)
 		}
 	}
-	cc.cluster.Myself.Slots = []SlotRange{}
+	cc.cluster.Myself.ClearSlots()
 	cc.cluster.mu.Unlock()
 
 	if err := cc.cluster.SaveConfig(); err != nil {
@@ -467,7 +466,7 @@ func (cc *ClusterCommands) handleFlushSlots(args []string) (string, error) {
 			cc.cluster.Slots[i] = nil
 		}
 	}
-	cc.cluster.Myself.Slots = []SlotRange{}
+	cc.cluster.Myself.ClearSlots()
 
 	return "OK", nil
 }
@@ -529,7 +528,7 @@ func (cc *ClusterCommands) handleSlaves(args []string) ([]string, error) {
 
 	var slaves []string
 	for _, node := range cc.cluster.Nodes {
-		if node.MasterID == nodeID {
+		if node.GetMasterID() == nodeID {
 			slaves = append(slaves, cc.cluster.formatNodeLine(node))
 		}
 	}
@@ -560,7 +559,7 @@ func (cc *ClusterCommands) handleReset(args []string) (string, error) {
 		for i := uint32(0); i < SlotCount; i++ {
 			cc.cluster.Slots[i] = nil
 		}
-		cc.cluster.Myself.Slots = []SlotRange{}
+		cc.cluster.Myself.ClearSlots()
 	} else {
 		// SOFT: 保留当前节点的槽位
 		for i := uint32(0); i < SlotCount; i++ {
@@ -576,12 +575,10 @@ func (cc *ClusterCommands) handleReset(args []string) (string, error) {
 			}
 		}
 		ranges := mergeConsecutiveSlots(mySlots)
-		cc.cluster.Myself.Slots = ranges
+		cc.cluster.Myself.SetSlots(ranges)
 	}
 
-	// 重置节点状态
-	cc.cluster.Myself.MasterID = ""
-	cc.cluster.Myself.Flags = []string{FlagMaster, FlagMyself}
+	cc.cluster.Myself.SetRoleAsMaster()
 
 	// 增加纪元
 	cc.cluster.Epoch++

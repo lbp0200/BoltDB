@@ -295,8 +295,11 @@ func (b *ClusterBus) BuildGossipPayload() *GossipPayload {
 	}
 
 	// Slot range summary (self)
-	if b.cluster.Myself != nil && len(b.cluster.Myself.Slots) > 0 {
-		payload.Slots = formatSlotsBrief(b.cluster.Myself.Slots)
+	if b.cluster.Myself != nil {
+		mySlots := b.cluster.Myself.GetSlotRanges()
+		if len(mySlots) > 0 {
+			payload.Slots = formatSlotsBrief(mySlots)
+		}
 	}
 
 	// Slot owners: collect every known node's slot ranges
@@ -380,11 +383,7 @@ func (b *ClusterBus) ApplyGossipPayloadFrom(reporterID string, payload *GossipPa
 		if existing, ok := b.cluster.Nodes[gi.ID]; ok {
 			existing.MergeGossipState(gi.Epoch, gi.PongRecv)
 		} else {
-			node := NewNode(gi.ID, gi.Addr)
-			node.Flags = gi.Flags
-			node.Epoch = gi.Epoch
-			node.PingSent = gi.PingSent
-			node.PongRecv = gi.PongRecv
+			node := NewNodeFromGossip(gi.ID, gi.Addr, gi.Flags, gi.Epoch, gi.PingSent, gi.PongRecv)
 			b.cluster.Nodes[gi.ID] = node
 			logger.Logger.Info().Str("peer", gi.ID).Str("addr", gi.Addr).Msg("cluster gossip: learned new node")
 		}
@@ -398,7 +397,11 @@ func (b *ClusterBus) ApplyGossipPayloadFrom(reporterID string, payload *GossipPa
 		for _, r := range entry.Ranges {
 			for slot := r.Start; slot <= r.End; slot++ {
 				currentOwner := b.cluster.Slots[slot]
-				if currentOwner == nil || currentOwner.Epoch < entry.Epoch {
+				ownerEpoch := int64(0)
+				if currentOwner != nil {
+					ownerEpoch = currentOwner.GetEpoch()
+				}
+				if currentOwner == nil || ownerEpoch < entry.Epoch {
 					if peerNode, ok := b.cluster.Nodes[entry.NodeID]; ok {
 						if b.cluster.Slots[slot] != peerNode {
 							b.cluster.Slots[slot] = peerNode

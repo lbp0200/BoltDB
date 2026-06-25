@@ -188,6 +188,98 @@ func (n *Node) MarkPFail() {
 	n.Flags = append(n.Flags, FlagPFail)
 }
 
+// GetEpoch returns the node config epoch.
+func (n *Node) GetEpoch() int64 {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.Epoch
+}
+
+// GetMasterID returns the master node ID when this node is a replica.
+func (n *Node) GetMasterID() string {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.MasterID
+}
+
+// SetEpoch sets the node config epoch.
+func (n *Node) SetEpoch(epoch int64) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.Epoch = epoch
+}
+
+// SetRoleAsSlave configures the node as a replica of masterID.
+func (n *Node) SetRoleAsSlave(masterID string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.MasterID = masterID
+	n.Flags = []string{FlagSlave, FlagMyself}
+}
+
+// SetRoleAsMaster clears replica state and marks the node as master.
+func (n *Node) SetRoleAsMaster() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.MasterID = ""
+	n.Flags = []string{FlagMaster, FlagMyself}
+}
+
+// ClearSlots removes all slot ranges owned by the node.
+func (n *Node) ClearSlots() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.Slots = []SlotRange{}
+}
+
+// SetSlots replaces all slot ranges owned by the node.
+func (n *Node) SetSlots(ranges []SlotRange) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.Slots = make([]SlotRange, len(ranges))
+	copy(n.Slots, ranges)
+}
+
+// PersistSnapshot returns a copy of node metadata for config persistence.
+func (n *Node) PersistSnapshot() (flags []string, masterID string, epoch int64) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return copyFlags(n.Flags), n.MasterID, n.Epoch
+}
+
+// EnsureMasterFlag adds the master flag when absent.
+func (n *Node) EnsureMasterFlag() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for _, flag := range n.Flags {
+		if flag == FlagMaster {
+			return
+		}
+	}
+	n.Flags = append(n.Flags, FlagMaster)
+}
+
+// LoadFromPersisted restores node metadata from persisted cluster state.
+func (n *Node) LoadFromPersisted(flags []string, masterID string, epoch int64) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.Flags = copyFlags(flags)
+	n.MasterID = masterID
+	n.Epoch = epoch
+}
+
+// NewNodeFromGossip builds a node from a gossip section entry.
+func NewNodeFromGossip(id, addr string, flags []string, epoch, pingSent, pongRecv int64) *Node {
+	node := NewNode(id, addr)
+	node.mu.Lock()
+	node.Flags = copyFlags(flags)
+	node.Epoch = epoch
+	node.PingSent = pingSent
+	node.PongRecv = pongRecv
+	node.mu.Unlock()
+	return node
+}
+
 // PromotePFailToFail promotes PFAIL to FAIL. Returns true when promotion happened.
 func (n *Node) PromotePFailToFail() bool {
 	n.mu.Lock()
