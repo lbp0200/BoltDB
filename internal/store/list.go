@@ -1229,6 +1229,7 @@ func (s *BotreonStore) LRem(key string, count int64, value string) (int, error) 
 	s.keyLockMgr.Lock(key)
 	defer s.keyLockMgr.Unlock(key)
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		removed = 0 // reset each attempt; stale value must not survive conflict retry
 		length, start, _, err := s.listGetMetaTxn(txn, key)
 		if err != nil || length == 0 {
 			return nil

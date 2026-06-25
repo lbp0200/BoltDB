@@ -148,6 +148,7 @@ func (s *BotreonStore) hashCountKey(key string) []byte {
 func (s *BotreonStore) HDel(key string, fields ...string) (int, error) {
 	deletedCount := 0
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		deletedCount = 0 // reset each attempt; stale value must not survive conflict retry
 		// Check if key already exists with a different type
 		typeKey := TypeOfKeyGet(key)
 		typeItem, typeErr := txn.Get(typeKey)

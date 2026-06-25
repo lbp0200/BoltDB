@@ -418,6 +418,7 @@ func (s *BotreonStore) TSDel(key string, start, stop string) (int64, error) {
 	var deleted int64
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		deleted = 0 // reset each attempt; stale value must not survive conflict retry
 		if err := checkKeyType(txn, key, KeyTypeTimeSeries); err != nil {
 			return err
 		}

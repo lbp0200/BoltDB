@@ -199,6 +199,103 @@ func TestDeterministicConflict_ConflictThenNonConflictError(t *testing.T) {
 	}
 }
 
+// TestDeterministicConflict_HDelConcurrent verifies concurrent HDEL on distinct
+// fields drains the hash without inflating the deleted count.
+func TestDeterministicConflict_HDelConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "hash:hdel:conflict"
+	const fields = 20
+
+	for i := range fields {
+		if err := s.HSet(key, fmt.Sprintf("f%d", i), fmt.Sprintf("v%d", i)); err != nil {
+			t.Fatalf("HSet f%d: %v", i, err)
+		}
+	}
+
+	var wg sync.WaitGroup
+	deleted := make([]int, fields)
+	errs := make([]error, fields)
+	for i := range fields {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			n, err := s.HDel(key, fmt.Sprintf("f%d", idx))
+			deleted[idx] = n
+			errs[idx] = err
+		}(i)
+	}
+	wg.Wait()
+
+	totalDeleted := 0
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d HDel: %v", i, err)
+		}
+		totalDeleted += deleted[i]
+	}
+	if totalDeleted != fields {
+		t.Errorf("total deleted: got %d, want %d", totalDeleted, fields)
+	}
+
+	n, err := s.HLen(key)
+	if err != nil {
+		t.Fatalf("HLen: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("HLen: got %d, want 0", n)
+	}
+}
+
+// TestDeterministicConflict_LRemWithSourceConflict verifies LREM stays correct
+// while concurrent LPUSH causes txn conflicts.
+func TestDeterministicConflict_LRemWithSourceConflict(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "list:lrem:conflict"
+	const writers = 4
+
+	for i := range 6 {
+		if _, err := s.RPush(key, fmt.Sprintf("dup%d", i%2)); err != nil {
+			t.Fatalf("RPush: %v", err)
+		}
+	}
+
+	var wg sync.WaitGroup
+	var remErr error
+	var removed int
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		removed, remErr = s.LRem(key, 2, "dup0")
+	}()
+
+	for i := range writers {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, _ = s.LPush(key, fmt.Sprintf("extra%d", idx))
+		}(i)
+	}
+	wg.Wait()
+
+	if remErr != nil {
+		t.Fatalf("LRem: %v", remErr)
+	}
+	if removed != 2 {
+		t.Errorf("LRem: got %d removed, want 2", removed)
+	}
+
+	length, err := s.LLen(key)
+	if err != nil {
+		t.Fatalf("LLen: %v", err)
+	}
+	if length < 4 {
+		t.Errorf("LLen: got %d, want at least 4", length)
+	}
+}
+
 // TestDeterministicConflict_HSetSameField creates conflicts via HSet on the
 // same hash field, which uses retryUpdate without key-level locking.
 func TestDeterministicConflict_HSetSameField(t *testing.T) {
