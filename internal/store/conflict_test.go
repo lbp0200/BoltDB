@@ -1074,6 +1074,201 @@ func TestDeterministicConflict_ZUnionStoreWithSourceConflict(t *testing.T) {
 	}
 }
 
+// TestDeterministicConflict_ZInterStoreWithSourceConflict verifies ZINTERSTORE
+// stays correct while concurrent ZADD on source keys causes txn conflicts.
+func TestDeterministicConflict_ZInterStoreWithSourceConflict(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	const writers = 4
+
+	if err := s.ZAdd("zis:1", []ZSetMember{
+		{Member: "a", Score: 2.0},
+		{Member: "b", Score: 4.0},
+	}); err != nil {
+		t.Fatalf("ZAdd zis:1: %v", err)
+	}
+	if err := s.ZAdd("zis:2", []ZSetMember{
+		{Member: "b", Score: 3.0},
+		{Member: "c", Score: 5.0},
+	}); err != nil {
+		t.Fatalf("ZAdd zis:2: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	var interErr error
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, interErr = s.ZInterStore("zis:dest", []string{"zis:1", "zis:2"}, nil, "")
+	}()
+
+	for i := range writers {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_ = s.ZAdd("zis:2", []ZSetMember{{
+				Member: fmt.Sprintf("extra%d", idx),
+				Score:  10.0 + float64(idx),
+			}})
+		}(i)
+	}
+	wg.Wait()
+
+	if interErr != nil {
+		t.Fatalf("ZInterStore: %v", interErr)
+	}
+
+	score, exists, err := s.ZScore("zis:dest", "b")
+	if err != nil {
+		t.Fatalf("ZScore(b): %v", err)
+	}
+	if !exists {
+		t.Fatal("member b should exist in destination")
+	}
+	if score != 7.0 {
+		t.Errorf("score(b): got %v, want 7.0", score)
+	}
+
+	card, err := s.ZCard("zis:dest")
+	if err != nil {
+		t.Fatalf("ZCard: %v", err)
+	}
+	if card != 1 {
+		t.Errorf("ZCard: got %d, want 1", card)
+	}
+}
+
+// TestDeterministicConflict_ZDiffStoreWithSourceConflict verifies ZDIFFSTORE
+// stays correct while concurrent ZADD on source keys causes txn conflicts.
+func TestDeterministicConflict_ZDiffStoreWithSourceConflict(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	const writers = 4
+
+	if err := s.ZAdd("zds:1", []ZSetMember{
+		{Member: "a", Score: 1.0},
+		{Member: "b", Score: 2.0},
+		{Member: "c", Score: 3.0},
+	}); err != nil {
+		t.Fatalf("ZAdd zds:1: %v", err)
+	}
+	if err := s.ZAdd("zds:2", []ZSetMember{
+		{Member: "b", Score: 4.0},
+		{Member: "d", Score: 5.0},
+	}); err != nil {
+		t.Fatalf("ZAdd zds:2: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	var diffErr error
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, diffErr = s.ZDiffStore("zds:dest", []string{"zds:1", "zds:2"})
+	}()
+
+	for i := range writers {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_ = s.ZAdd("zds:1", []ZSetMember{{
+				Member: fmt.Sprintf("extra%d", idx),
+				Score:  10.0 + float64(idx),
+			}})
+		}(i)
+	}
+	wg.Wait()
+
+	if diffErr != nil {
+		t.Fatalf("ZDiffStore: %v", diffErr)
+	}
+
+	for _, member := range []string{"a", "c"} {
+		_, exists, err := s.ZScore("zds:dest", member)
+		if err != nil {
+			t.Fatalf("ZScore(%s): %v", member, err)
+		}
+		if !exists {
+			t.Errorf("member %s should exist in destination", member)
+		}
+	}
+
+	_, exists, err := s.ZScore("zds:dest", "b")
+	if err != nil {
+		t.Fatalf("ZScore(b): %v", err)
+	}
+	if exists {
+		t.Error("member b should not exist in destination")
+	}
+
+	card, err := s.ZCard("zds:dest")
+	if err != nil {
+		t.Fatalf("ZCard: %v", err)
+	}
+	if card < 2 {
+		t.Errorf("ZCard: got %d, want at least 2", card)
+	}
+}
+
+// TestDeterministicConflict_GeoSearchStoreWithSourceConflict verifies
+// GEOSEARCHSTORE stays correct while concurrent GEOADD causes txn conflicts.
+func TestDeterministicConflict_GeoSearchStoreWithSourceConflict(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	const writers = 4
+
+	if _, err := s.GeoAdd("gss:src", []GeoMember{
+		{Member: "beijing", Lat: 39.9, Lon: 116.4},
+		{Member: "shanghai", Lat: 31.2, Lon: 121.5},
+	}); err != nil {
+		t.Fatalf("GeoAdd gss:src: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	var storeErr error
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, storeErr = s.GeoSearchStore("gss:dest", "gss:src", 116.4, 39.9, 500, "km", 10, false)
+	}()
+
+	for i := range writers {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, _ = s.GeoAdd("gss:src", []GeoMember{{
+				Member: fmt.Sprintf("extra%d", idx),
+				Lat:    39.9 + float64(idx)*0.01,
+				Lon:    116.4 + float64(idx)*0.01,
+			}})
+		}(i)
+	}
+	wg.Wait()
+
+	if storeErr != nil {
+		t.Fatalf("GeoSearchStore: %v", storeErr)
+	}
+
+	_, exists, err := s.ZScore("gss:dest", "beijing")
+	if err != nil {
+		t.Fatalf("ZScore(beijing): %v", err)
+	}
+	if !exists {
+		t.Fatal("beijing should exist in destination")
+	}
+
+	card, err := s.ZCard("gss:dest")
+	if err != nil {
+		t.Fatalf("ZCard: %v", err)
+	}
+	if card < 1 {
+		t.Errorf("ZCard: got %d, want at least 1", card)
+	}
+}
+
 // TestDeterministicConflict_XDelConcurrent verifies concurrent XDEL of distinct
 // stream entries drains the stream exactly once.
 func TestDeterministicConflict_XDelConcurrent(t *testing.T) {

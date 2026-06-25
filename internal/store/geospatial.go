@@ -435,11 +435,7 @@ func expandBoundingBox(minLat, maxLat, minLon, maxLon float64, radiusMeters floa
 	return
 }
 
-// GeoRadius searches for members within a radius
-func (s *BotreonStore) GeoRadius(key string, lon, lat, radius float64, unit string, count int, withDist, withHash, withCoord bool) ([]GeoSearchResult, error) {
-	var results []GeoSearchResult
-
-	// Convert radius to meters
+func convertGeoRadiusToMeters(radius float64, unit string) float64 {
 	radiusM := radius
 	switch strings.ToUpper(unit) {
 	case "M", "":
@@ -451,81 +447,92 @@ func (s *BotreonStore) GeoRadius(key string, lon, lat, radius float64, unit stri
 	case "FT":
 		radiusM *= 0.3048
 	}
+	return radiusM
+}
 
-	// Get center hash
+func formatGeoDistance(distM float64, unit string) float64 {
+	switch strings.ToUpper(unit) {
+	case "M", "":
+		return distM
+	case "KM":
+		return distM / 1000
+	case "MI":
+		return distM / 1609.344
+	case "FT":
+		return distM * 3.28084
+	default:
+		return distM
+	}
+}
+
+// geoRadiusInTxn searches geo members within radius inside an open transaction.
+func geoRadiusInTxn(txn *badger.Txn, key string, lon, lat, radiusM float64, unit string, count int, withDist, withHash, withCoord bool) ([]GeoSearchResult, error) {
+	if err := checkKeyType(txn, key, KeyTypeGeo); err != nil {
+		return nil, err
+	}
+
 	centerHash := encodeGeoHash(lat, lon)
-
-	// Get bounding box with expansion
 	minLat, _, minLon, _ := geoHashToBoundingBox(centerHash)
 	minLat, minLon, _, _ = expandBoundingBox(minLat, minLat, minLon, minLon, radiusM)
-
-	// Convert to score range (geohash)
 	minScore := float64(encodeGeoHash(minLat, minLon))
 
+	opts := badger.DefaultIteratorOptions
+	prefix := keyBadgerGet(prefixKeySortedSetBytes, []byte(key+sortedSetIndex))
+	opts.Prefix = prefix
+	opts.PrefetchValues = false
+
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	var results []GeoSearchResult
+	startKey := append(prefix, encodeScore(minScore)...)
+	for it.Seek(startKey); it.ValidForPrefix(prefix); it.Next() {
+		score, member, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
+		if !ok {
+			continue
+		}
+		memberHash := score
+		memberLat, memberLon := decodeGeoHash(uint64(memberHash))
+
+		dist := calculateDistance(lat, lon, memberLat, memberLon)
+		if dist > radiusM {
+			continue
+		}
+
+		result := GeoSearchResult{
+			Member: member,
+			Lat:    memberLat,
+			Lon:    memberLon,
+		}
+
+		if withDist {
+			result.Dist = formatGeoDistance(dist, unit)
+		}
+		if withHash {
+			result.Hash = geoHashToString(uint64(memberHash))
+		}
+		if withCoord {
+			result.Lat = memberLat
+			result.Lon = memberLon
+		}
+
+		results = append(results, result)
+		if count > 0 && len(results) >= count {
+			break
+		}
+	}
+	return results, nil
+}
+
+// GeoRadius searches for members within a radius
+func (s *BotreonStore) GeoRadius(key string, lon, lat, radius float64, unit string, count int, withDist, withHash, withCoord bool) ([]GeoSearchResult, error) {
+	radiusM := convertGeoRadiusToMeters(radius, unit)
+	var results []GeoSearchResult
 	err := s.db.View(func(txn *badger.Txn) error {
-		if err := checkKeyType(txn, key, KeyTypeGeo); err != nil {
-			return err
-		}
-		opts := badger.DefaultIteratorOptions
-		prefix := keyBadgerGet(prefixKeySortedSetBytes, []byte(key+sortedSetIndex))
-		opts.Prefix = prefix
-		opts.PrefetchValues = false
-
-		it := txn.NewIterator(opts)
-		defer it.Close()
-
-		startKey := append(prefix, encodeScore(minScore)...)
-		for it.Seek(startKey); it.ValidForPrefix(prefix); it.Next() {
-			score, member, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
-			if !ok {
-				continue
-			}
-			memberHash := score
-			memberLat, memberLon := decodeGeoHash(uint64(memberHash))
-
-			// Check if within actual radius (Haversine)
-			dist := calculateDistance(lat, lon, memberLat, memberLon)
-			if dist > radiusM {
-				continue
-			}
-
-			result := GeoSearchResult{
-				Member: member,
-				Lat:    memberLat,
-				Lon:    memberLon,
-			}
-
-			if withDist {
-				switch strings.ToUpper(unit) {
-				case "M", "":
-					result.Dist = dist
-				case "KM":
-					result.Dist = dist / 1000
-				case "MI":
-					result.Dist = dist / 1609.344
-				case "FT":
-					result.Dist = dist * 3.28084
-				}
-			}
-
-			if withHash {
-				result.Hash = geoHashToString(uint64(memberHash))
-			}
-
-			if withCoord {
-				result.Lat = memberLat
-				result.Lon = memberLon
-			}
-
-			results = append(results, result)
-
-			if count > 0 && len(results) >= count {
-				break
-			}
-		}
-		return nil
+		var err error
+		results, err = geoRadiusInTxn(txn, key, lon, lat, radiusM, unit, count, withDist, withHash, withCoord)
+		return err
 	})
-
 	return results, err
 }
 
@@ -536,63 +543,46 @@ func (s *BotreonStore) GeoSearch(key string, centerLon, centerLat float64, radiu
 
 // GeoSearchStore searches and stores results to a destination key
 func (s *BotreonStore) GeoSearchStore(dstKey, srcKey string, centerLon, centerLat float64, radius float64, unit string, count int, storeDist bool) (int64, error) {
-	// Search for members
-	results, err := s.GeoSearch(srcKey, centerLon, centerLat, radius, unit, count, false, false, false)
-	if err != nil {
-		return 0, err
-	}
-
-	if len(results) == 0 {
-		return 0, nil
-	}
-
-	// Get positions for all members
-	positions, err := s.GeoPos(srcKey, extractMembers(results)...)
-	if err != nil {
-		return 0, err
-	}
-
-	// Add members to destination as sorted set with their original geohash scores
-	var members []ZSetMember
-	for i, result := range results {
-		hash := encodeGeoHash(positions[i][0], positions[i][1])
-		members = append(members, ZSetMember{
-			Member: result.Member,
-			Score:  float64(hash),
-		})
-	}
-
-	if storeDist {
-		// Store as sorted set with distance as score
-		members = nil
-		for _, result := range results {
-			var dist float64
-			switch strings.ToUpper(unit) {
-			case "M", "":
-				dist = result.Dist
-			case "KM":
-				dist = result.Dist / 1000
-			case "MI":
-				dist = result.Dist / 1609.344
-			case "FT":
-				dist = result.Dist * 0.3048
-			}
-			members = append(members, ZSetMember{
-				Member: result.Member,
-				Score:  dist,
-			})
+	radiusM := convertGeoRadiusToMeters(radius, unit)
+	var added int64
+	var addedNewMember bool
+	err := s.retryUpdate(func(txn *badger.Txn) error {
+		added = 0
+		addedNewMember = false
+		results, err := geoRadiusInTxn(txn, srcKey, centerLon, centerLat, radiusM, unit, count, storeDist, false, false)
+		if err != nil {
+			return err
 		}
-	}
+		if len(results) == 0 {
+			return nil
+		}
 
-	err = s.ZAdd(dstKey, members)
-	if err != nil {
-		return 0, err
-	}
+		members := make([]ZSetMember, 0, len(results))
+		for _, result := range results {
+			if storeDist {
+				members = append(members, ZSetMember{Member: result.Member, Score: result.Dist})
+				continue
+			}
+			hash := encodeGeoHash(result.Lat, result.Lon)
+			members = append(members, ZSetMember{Member: result.Member, Score: float64(hash)})
+		}
 
-	return int64(len(members)), nil
+		addedNewMember, err = zAddMembersInTxn(txn, dstKey, members)
+		if err != nil {
+			return err
+		}
+		added = int64(len(members))
+		return nil
+	}, 20)
+	if err == nil && addedNewMember {
+		s.notifyBlockingZPop(dstKey)
+	}
+	return added, err
 }
 
-// extractMembers extracts member names from results
+// extractMembers extracts member names from results.
+//
+//nolint:unused // used by geospatial_helper_test.go; linter skips _test.go
 func extractMembers(results []GeoSearchResult) []string {
 	members := make([]string, len(results))
 	for i, r := range results {

@@ -1492,29 +1492,13 @@ func (s *BotreonStore) ZDiff(keys []string) ([]ZSetMember, error) {
 		return nil, nil
 	}
 
-	firstMembers, err := s.ZRange(keys[0], 0, -1)
-	if err != nil {
-		return nil, err
-	}
-
-	otherMembers := make(map[string]bool)
-	for i := 1; i < len(keys); i++ {
-		members, err := s.ZRange(keys[i], 0, -1)
-		if err != nil {
-			return nil, err
-		}
-		for _, member := range members {
-			otherMembers[member.Member] = true
-		}
-	}
-
-	result := make([]ZSetMember, 0)
-	for _, member := range firstMembers {
-		if !otherMembers[member.Member] {
-			result = append(result, ZSetMember{Member: member.Member, Score: member.Score})
-		}
-	}
-	return result, nil
+	var result []ZSetMember
+	err := s.db.View(func(txn *badger.Txn) error {
+		var err error
+		result, err = zDiffMembersInTxn(txn, keys)
+		return err
+	})
+	return result, err
 }
 
 // ZLexCount 实现 Redis ZLEXCOUNT 命令，计算有序集合中成员值介于min和max之间的成员数量（字典序）
