@@ -84,6 +84,7 @@ func startRegressionWithDB(t *testing.T, db *store.BotreonStore, backupDir strin
 		Replication: replMgr,
 		Backup:      backupMgr,
 		PubSub:      pubsubMgr,
+		Ctx:         context.Background(),
 	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
