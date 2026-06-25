@@ -441,6 +441,111 @@ func memberInLexRange(memberStr, min, max string) bool {
 	return minOK && maxOK
 }
 
+func normalizeRankRange(totalCount, start, stop int64) (int64, int64, bool) {
+	if start < 0 {
+		start = totalCount + start
+	}
+	if stop < 0 {
+		stop = totalCount + stop
+	}
+	if start < 0 {
+		start = 0
+	}
+	if stop >= totalCount {
+		stop = totalCount - 1
+	}
+	if start > stop || totalCount == 0 {
+		return 0, 0, false
+	}
+	return start, stop, true
+}
+
+// zRangeByRankInTxn returns member names in the inclusive rank range inside an update txn.
+func zRangeByRankInTxn(txn *badger.Txn, zSetName string, start, stop int64) ([]string, error) {
+	metaKey := sortedSetKeyMeta(zSetName)
+	item, err := txn.Get(metaKey)
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var meta ZSetsMetaValue
+	err = item.Value(func(val []byte) error {
+		meta, err = decodeMeta(val)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	start, stop, ok := normalizeRankRange(meta.Card, start, stop)
+	if !ok {
+		return nil, nil
+	}
+
+	prefix := keyBadgerGet(prefixKeySortedSetBytes, []byte(zSetName+sortedSetIndex))
+	opts := badger.DefaultIteratorOptions
+	opts.Prefix = prefix
+	opts.PrefetchValues = false
+
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	var results []string
+	currentIndex := int64(0)
+	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+		if currentIndex < start {
+			currentIndex++
+			continue
+		}
+		if currentIndex > stop {
+			break
+		}
+		_, member, _, memberOK := parseZSetIndexKey(it.Item().Key(), prefix)
+		if !memberOK {
+			currentIndex++
+			continue
+		}
+		results = append(results, member)
+		currentIndex++
+	}
+	return results, nil
+}
+
+// zRangeByScoreInTxn returns member names in the score range inside an update txn.
+func zRangeByScoreInTxn(txn *badger.Txn, zSetName string, minScore, maxScore float64, minExclusive, maxExclusive bool) ([]string, error) {
+	prefix := keyBadgerGet(prefixKeySortedSetBytes, []byte(zSetName+sortedSetIndex))
+	opts := badger.DefaultIteratorOptions
+	opts.Prefix = prefix
+	opts.PrefetchValues = false
+
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	startKey := append(prefix, encodeScore(minScore)...)
+	var results []string
+	for it.Seek(startKey); it.ValidForPrefix(prefix); it.Next() {
+		score, member, _, memberOK := parseZSetIndexKey(it.Item().Key(), prefix)
+		if !memberOK {
+			continue
+		}
+		if maxExclusive {
+			if score >= maxScore {
+				break
+			}
+		} else if score > maxScore {
+			break
+		}
+		if minExclusive && score <= minScore {
+			continue
+		}
+		results = append(results, member)
+	}
+	return results, nil
+}
+
 // ZRem 删除成员
 func (s *BotreonStore) ZRem(zSetName, member string) (int64, error) {
 	var deleted int64 = 0
@@ -973,40 +1078,44 @@ func (s *BotreonStore) ZRevRangeByScore(zSetName string, maxScore, minScore floa
 
 // ZRemRangeByRank 实现 Redis ZREMRANGEBYRANK 命令，移除有序集中指定排名区间的所有成员
 func (s *BotreonStore) ZRemRangeByRank(zSetName string, start, stop int64) (int64, error) {
-	// 先获取范围内的成员
-	members, err := s.ZRange(zSetName, start, stop)
-	if err != nil {
-		return 0, err
-	}
-
-	// 删除每个成员
 	var removed int64
-	for _, member := range members {
-		if _, err := s.ZRem(zSetName, member.Member); err != nil {
-			return removed, err
+	err := s.retryUpdate(func(txn *badger.Txn) error {
+		removed = 0
+		members, err := zRangeByRankInTxn(txn, zSetName, start, stop)
+		if err != nil {
+			return err
 		}
-		removed++
-	}
-	return removed, nil
+		for _, member := range members {
+			n, err := zRemMemberInTxn(txn, zSetName, member)
+			if err != nil {
+				return err
+			}
+			removed += n
+		}
+		return nil
+	}, 20)
+	return removed, err
 }
 
 // ZRemRangeByScore 实现 Redis ZREMRANGEBYSCORE 命令，移除有序集中指定分数区间的所有成员
 func (s *BotreonStore) ZRemRangeByScore(zSetName string, minScore, maxScore float64, minExclusive, maxExclusive bool) (int64, error) {
-	// 先获取范围内的成员
-	members, err := s.ZRangeByScore(zSetName, minScore, maxScore, 0, 0, minExclusive, maxExclusive)
-	if err != nil {
-		return 0, err
-	}
-
-	// 删除每个成员
 	var removed int64
-	for _, member := range members {
-		if _, err := s.ZRem(zSetName, member.Member); err != nil {
-			return removed, err
+	err := s.retryUpdate(func(txn *badger.Txn) error {
+		removed = 0
+		members, err := zRangeByScoreInTxn(txn, zSetName, minScore, maxScore, minExclusive, maxExclusive)
+		if err != nil {
+			return err
 		}
-		removed++
-	}
-	return removed, nil
+		for _, member := range members {
+			n, err := zRemMemberInTxn(txn, zSetName, member)
+			if err != nil {
+				return err
+			}
+			removed += n
+		}
+		return nil
+	}, 20)
+	return removed, err
 }
 
 // ZPopMax 实现 Redis ZPOPMAX 命令，移除并返回有序集合中分数最高的成员

@@ -612,6 +612,122 @@ func TestDeterministicConflict_ZRemRangeByLexConcurrent(t *testing.T) {
 	}
 }
 
+// TestDeterministicConflict_ZRemRangeByRankWithMetaConflict verifies
+// ZREMRANGEBYRANK stays correct while concurrent ZADD causes txn conflicts.
+// Rank indices shift after removal, so this does not duplicate rank-range calls.
+func TestDeterministicConflict_ZRemRangeByRankWithMetaConflict(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	zSetName := "zset:zremrangebyrank:conflict"
+	const writers = 8
+
+	if err := s.ZAdd(zSetName, []ZSetMember{
+		{Member: "m1", Score: 1.0},
+		{Member: "m2", Score: 2.0},
+		{Member: "m3", Score: 3.0},
+		{Member: "m4", Score: 4.0},
+	}); err != nil {
+		t.Fatalf("ZAdd: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	var removed int64
+	var remErr error
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		removed, remErr = s.ZRemRangeByRank(zSetName, 1, 2)
+	}()
+
+	for i := range writers {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_ = s.ZAdd(zSetName, []ZSetMember{{
+				Member: fmt.Sprintf("extra%d", idx),
+				Score:  100.0 + float64(idx),
+			}})
+		}(i)
+	}
+	wg.Wait()
+
+	if remErr != nil {
+		t.Fatalf("ZRemRangeByRank: %v", remErr)
+	}
+	if removed != 2 {
+		t.Errorf("removed: got %d, want 2", removed)
+	}
+
+	for _, name := range []string{"m2", "m3"} {
+		_, exists, err := s.ZScore(zSetName, name)
+		if err != nil {
+			t.Fatalf("ZScore(%s): %v", name, err)
+		}
+		if exists {
+			t.Errorf("member %s should be removed", name)
+		}
+	}
+	_, exists, err := s.ZScore(zSetName, "m1")
+	if err != nil {
+		t.Fatalf("ZScore(m1): %v", err)
+	}
+	if !exists {
+		t.Error("m1 should remain")
+	}
+}
+
+// TestDeterministicConflict_ZRemRangeByScoreConcurrent verifies concurrent
+// ZREMRANGEBYSCORE calls remove the score range exactly once in total.
+func TestDeterministicConflict_ZRemRangeByScoreConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	zSetName := "zset:zremrangebyscore:conflict"
+	const goroutines = 8
+
+	if err := s.ZAdd(zSetName, []ZSetMember{
+		{Member: "m1", Score: 1.0},
+		{Member: "m2", Score: 2.0},
+		{Member: "m3", Score: 3.0},
+		{Member: "m4", Score: 4.0},
+	}); err != nil {
+		t.Fatalf("ZAdd: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, goroutines)
+	removed := make([]int64, goroutines)
+	for i := range goroutines {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			n, err := s.ZRemRangeByScore(zSetName, 2.0, 3.0, false, false)
+			removed[idx] = n
+			errs[idx] = err
+		}(i)
+	}
+	wg.Wait()
+
+	var totalRemoved int64
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d ZRemRangeByScore: %v", i, err)
+		}
+		totalRemoved += removed[i]
+	}
+	if totalRemoved != 2 {
+		t.Errorf("total removed: got %d, want 2", totalRemoved)
+	}
+
+	card, err := s.ZCard(zSetName)
+	if err != nil {
+		t.Fatalf("ZCard: %v", err)
+	}
+	if card != 2 {
+		t.Errorf("ZCard: got %d, want 2", card)
+	}
+}
+
 // TestDeterministicConflict_RetryUpdateSuccessAfterConflict verifies that
 // retryUpdate correctly retries on TransactionConflict and eventually succeeds.
 func TestDeterministicConflict_RetryUpdateSuccessAfterConflict(t *testing.T) {
