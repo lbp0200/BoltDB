@@ -1593,6 +1593,44 @@ func TestDeterministicConflict_XDelConcurrent(t *testing.T) {
 	}
 }
 
+// TestDeterministicConflict_JSONArrAppendConcurrent verifies concurrent
+// JSON.ARRAPPEND appends all elements under txn conflicts.
+func TestDeterministicConflict_JSONArrAppendConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "json:arrappend:conflict"
+	const goroutines = 20
+
+	if _, err := s.JSONSet(key, "$", `[]`, false, false); err != nil {
+		t.Fatalf("JSONSet: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, goroutines)
+	for i := range goroutines {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, errs[idx] = s.JSONArrAppend(key, "$", fmt.Sprintf(`"%d"`, idx))
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d JSONArrAppend: %v", i, err)
+		}
+	}
+
+	length, err := s.JSONArrLen(key, "$")
+	if err != nil {
+		t.Fatalf("JSONArrLen: %v", err)
+	}
+	if length != goroutines {
+		t.Errorf("JSONArrLen: got %d, want %d", length, goroutines)
+	}
+}
+
 // TestDeterministicConflict_INCRBYConcurrent verifies concurrent INCRBY on the
 // same string key converges to the exact accumulated value.
 func TestDeterministicConflict_INCRBYConcurrent(t *testing.T) {
