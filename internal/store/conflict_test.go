@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -228,6 +229,118 @@ func TestDeterministicConflict_HSetSameField(t *testing.T) {
 		t.Fatalf("HGet: %v", err)
 	}
 	t.Logf("final HGet value: %s (expected one of 0..%d)", val, goroutines-1)
+}
+
+// TestDeterministicConflict_SPopConcurrent verifies that concurrent SPop calls
+// on the same set all succeed via retryUpdate and drain the set exactly once.
+func TestDeterministicConflict_SPopConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "set:spop:conflict"
+	const members = 20
+
+	memberNames := make([]string, members)
+	for i := range members {
+		memberNames[i] = fmt.Sprintf("m%d", i)
+	}
+	if _, err := s.SAdd(key, memberNames...); err != nil {
+		t.Fatalf("SAdd: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, members)
+	popped := make([]string, members)
+	for i := range members {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			member, err := s.SPop(key)
+			errs[idx] = err
+			popped[idx] = member
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d SPop: %v", i, err)
+		}
+		if popped[i] == "" {
+			t.Errorf("goroutine %d SPop: got empty member", i)
+		}
+	}
+
+	seen := make(map[string]bool, members)
+	for _, m := range popped {
+		if seen[m] {
+			t.Errorf("duplicate popped member: %q", m)
+		}
+		seen[m] = true
+	}
+
+	count, err := s.SCard(key)
+	if err != nil {
+		t.Fatalf("SCard: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("SCard: got %d, want 0", count)
+	}
+}
+
+// TestDeterministicConflict_SPopNConcurrent verifies concurrent SPopN(key, 1)
+// drains the set without errors or duplicate pops.
+func TestDeterministicConflict_SPopNConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "set:spopn:conflict"
+	const members = 30
+
+	memberNames := make([]string, members)
+	for i := range members {
+		memberNames[i] = fmt.Sprintf("n%d", i)
+	}
+	if _, err := s.SAdd(key, memberNames...); err != nil {
+		t.Fatalf("SAdd: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, members)
+	popped := make([][]string, members)
+	for i := range members {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			got, err := s.SPopN(key, 1)
+			errs[idx] = err
+			popped[idx] = got
+		}(i)
+	}
+	wg.Wait()
+
+	seen := make(map[string]bool, members)
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d SPopN: %v", i, err)
+			continue
+		}
+		if len(popped[i]) != 1 {
+			t.Errorf("goroutine %d SPopN: got %d members, want 1", i, len(popped[i]))
+			continue
+		}
+		m := popped[i][0]
+		if seen[m] {
+			t.Errorf("duplicate popped member: %q", m)
+		}
+		seen[m] = true
+	}
+
+	count, err := s.SCard(key)
+	if err != nil {
+		t.Fatalf("SCard: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("SCard: got %d, want 0", count)
+	}
 }
 
 // TestDeterministicConflict_RetryUpdateSuccessAfterConflict verifies that

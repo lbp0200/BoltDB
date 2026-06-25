@@ -351,6 +351,7 @@ func (s *BotreonStore) SMembers(key string) ([]string, error) {
 func (s *BotreonStore) SPop(key string) (string, error) {
 	var member string
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		member = "" // reset each attempt; stale value must not survive conflict retry
 		// 先获取集合大小
 		countKey := s.setKey(key, "count")
 		item, err := txn.Get([]byte(countKey))
@@ -413,6 +414,7 @@ func (s *BotreonStore) SPop(key string) (string, error) {
 func (s *BotreonStore) SPopN(key string, count int) ([]string, error) {
 	var members []string
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		members = nil // reset each attempt; stale slice must not survive conflict retry
 		allMembers, err := s.getAllMembers(txn, key)
 		if err != nil {
 			return err
@@ -421,12 +423,12 @@ func (s *BotreonStore) SPopN(key string, count int) ([]string, error) {
 			return nil
 		}
 
-		// 限制count不超过集合大小
-		if count > len(allMembers) {
-			count = len(allMembers)
+		popCount := count
+		if popCount > len(allMembers) {
+			popCount = len(allMembers)
 		}
-		if count < 0 {
-			count = 0
+		if popCount < 0 {
+			popCount = 0
 		}
 
 		// 随机选择成员
@@ -435,7 +437,7 @@ func (s *BotreonStore) SPopN(key string, count int) ([]string, error) {
 		})
 
 		// 删除选中的成员
-		for i := 0; i < count; i++ {
+		for i := 0; i < popCount; i++ {
 			member := allMembers[i]
 			memberKey := s.setKey(key, "member", member)
 			if err := txn.Delete([]byte(memberKey)); err != nil {
@@ -445,7 +447,7 @@ func (s *BotreonStore) SPopN(key string, count int) ([]string, error) {
 		}
 
 		// 更新计数器
-		if count > 0 {
+		if popCount > 0 {
 			countKey := s.setKey(key, "count")
 			item, err := txn.Get([]byte(countKey))
 			if err == nil {
@@ -454,9 +456,9 @@ func (s *BotreonStore) SPopN(key string, count int) ([]string, error) {
 					return err
 				}
 				currentCount := helper.BytesToUint64(countBytes)
-				// #nosec G115 - count is bounded by practical set size limits
-				if currentCount >= uint64(count) {
-					currentCount -= uint64(count)
+				// #nosec G115 - popCount is bounded by practical set size limits
+				if currentCount >= uint64(popCount) {
+					currentCount -= uint64(popCount)
 					return txn.Set([]byte(countKey), helper.Uint64ToBytes(currentCount))
 				}
 			}
