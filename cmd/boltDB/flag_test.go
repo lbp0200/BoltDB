@@ -31,3 +31,27 @@ func TestSkipStartupCleanupFlagUsage(t *testing.T) {
 		t.Error("expected flag usage to be defined")
 	}
 }
+
+// TestReplBacklogSizeFlag tests that the -repl-backlog-size flag is defined
+func TestReplBacklogSizeFlag(t *testing.T) {
+	t.Parallel()
+	f := flag.Lookup("repl-backlog-size")
+	if f == nil {
+		t.Error("expected -repl-backlog-size flag to be defined, but it was not found")
+	}
+	if f.DefValue != "" {
+		t.Errorf("expected default value '', got '%s'", f.DefValue)
+	}
+}
+
+// TestClientOutputBufferLimitFlag tests that the -client-output-buffer-limit flag is defined
+func TestClientOutputBufferLimitFlag(t *testing.T) {
+	t.Parallel()
+	f := flag.Lookup("client-output-buffer-limit")
+	if f == nil {
+		t.Error("expected -client-output-buffer-limit flag to be defined, but it was not found")
+	}
+	if f.DefValue != "0" {
+		t.Errorf("expected default value '0', got '%s'", f.DefValue)
+	}
+}
