@@ -1042,6 +1042,66 @@ func (s *BotreonStore) listPushInTxn(txn *badger.Txn, key, value string, toLeft 
 	return s.listUpdateMeta(txn, key, length+1, start, end)
 }
 
+// listPushXInTxn pushes values only when the key already exists as a list.
+// Returns (0, nil) when the key is absent.
+func (s *BotreonStore) listPushXInTxn(txn *badger.Txn, key string, values []string, toLeft bool) (uint64, error) {
+	typeKey := TypeOfKeyGet(key)
+	item, err := txn.Get(typeKey)
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	val, err := item.ValueCopy(nil)
+	if err != nil {
+		return 0, err
+	}
+	if string(val) != KeyTypeList {
+		return 0, ErrWrongType
+	}
+
+	length, start, end, err := s.listGetMetaTxn(txn, key)
+	if err != nil {
+		return 0, err
+	}
+
+	for _, value := range values {
+		nodeID, err := s.createNode(txn, key, []byte(value))
+		if err != nil {
+			return 0, err
+		}
+		if length == 0 {
+			start = nodeID
+			end = nodeID
+			if err := s.linkNodes(txn, key, nodeID, nodeID); err != nil {
+				return 0, err
+			}
+		} else if toLeft {
+			if err := s.linkNodes(txn, key, nodeID, start); err != nil {
+				return 0, err
+			}
+			if err := txn.Set([]byte(s.listKey(key, start, "prev")), []byte(nodeID)); err != nil {
+				return 0, err
+			}
+			start = nodeID
+		} else {
+			if err := s.linkNodes(txn, key, end, nodeID); err != nil {
+				return 0, err
+			}
+			if err := txn.Set([]byte(s.listKey(key, end, "next")), []byte(nodeID)); err != nil {
+				return 0, err
+			}
+			end = nodeID
+		}
+		length++
+	}
+	if err := s.listUpdateMeta(txn, key, length, start, end); err != nil {
+		return 0, err
+	}
+	return length, nil
+}
+
 // deleteList 删除整个列表
 func (s *BotreonStore) deleteList(txn *badger.Txn, key string) error {
 	_, start, _, metaErr := s.listGetMetaTxn(txn, key)
@@ -1532,82 +1592,44 @@ func (s *BotreonStore) RPopLPush(source, destination string) (string, error) {
 
 // LPUSHX 实现 Redis LPUSHX 命令，仅当键存在时左推入
 func (s *BotreonStore) LPUSHX(key string, values ...string) (int, error) {
-	// 先检查键是否存在且是List类型（在 View 事务中）
-	var isList bool
-	var keyExists bool
-	err := s.db.View(func(txn *badger.Txn) error {
-		typeKey := TypeOfKeyGet(key)
-		item, err := txn.Get(typeKey)
-		if errors.Is(err, badger.ErrKeyNotFound) {
-			return nil // 键不存在
-		}
-		if err != nil {
-			return err
-		}
-		keyExists = true
-		val, err := item.ValueCopy(nil)
-		if err != nil {
-			return err
-		}
-		keyType := string(val)
-		if keyType != KeyTypeList {
-			return ErrWrongType // 不是List类型，返回WRONGTYPE错误
-		}
-		isList = true
-		return nil
-	})
-	if err != nil {
-		return 0, err
-	}
-	if keyExists && !isList {
-		return 0, ErrWrongType
-	}
-	if !isList {
-		return 0, nil
-	}
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 
-	// 然后执行LPUSH（在 Update 事务中）
-	return s.LPush(key, values...)
+	var finalLength uint64
+	err := s.retryUpdate(func(txn *badger.Txn) error {
+		finalLength = 0
+		length, pushErr := s.listPushXInTxn(txn, key, values, true)
+		if pushErr != nil {
+			return pushErr
+		}
+		finalLength = length
+		return nil
+	}, 30)
+	if err == nil && finalLength > 0 && len(values) > 0 {
+		s.notifyBlockingPop(key, values[0])
+	}
+	return int(finalLength), err
 }
 
 // RPUSHX 实现 Redis RPUSHX 命令，仅当键存在时右推入
 func (s *BotreonStore) RPUSHX(key string, values ...string) (int, error) {
-	// 先检查键是否存在且是List类型（在 View 事务中）
-	var isList bool
-	var keyExists bool
-	err := s.db.View(func(txn *badger.Txn) error {
-		typeKey := TypeOfKeyGet(key)
-		item, err := txn.Get(typeKey)
-		if errors.Is(err, badger.ErrKeyNotFound) {
-			return nil // 键不存在
-		}
-		if err != nil {
-			return err
-		}
-		keyExists = true
-		val, err := item.ValueCopy(nil)
-		if err != nil {
-			return err
-		}
-		keyType := string(val)
-		if keyType != KeyTypeList {
-			return ErrWrongType // 不是List类型，返回WRONGTYPE错误
-		}
-		isList = true
-		return nil
-	})
-	if err != nil {
-		return 0, err
-	}
-	if keyExists && !isList {
-		return 0, ErrWrongType
-	}
-	if !isList {
-		return 0, nil
-	}
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 
-	// 然后执行RPUSH（在 Update 事务中）
-	return s.RPush(key, values...)
+	var finalLength uint64
+	err := s.retryUpdate(func(txn *badger.Txn) error {
+		finalLength = 0
+		length, pushErr := s.listPushXInTxn(txn, key, values, false)
+		if pushErr != nil {
+			return pushErr
+		}
+		finalLength = length
+		return nil
+	}, 30)
+	if err == nil && finalLength > 0 && len(values) > 0 {
+		s.notifyBlockingPop(key, values[len(values)-1])
+	}
+	return int(finalLength), err
 }
 
 // BLPOP 实现 Redis BLPOP 命令，阻塞式左弹出（简化版本：非阻塞）

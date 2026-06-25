@@ -553,6 +553,7 @@ func (s *BotreonStore) HIncrBy(key, field string, increment int64) (int64, error
 	var result int64
 	typeKey := TypeOfKeyGet(key)
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		result = 0 // reset each attempt; stale value must not survive conflict retry
 		// Check if key already exists with a different type
 		typeItem, typeErr := txn.Get(typeKey)
 		if typeErr == nil {
@@ -632,6 +633,7 @@ func (s *BotreonStore) HIncrByFloat(key, field string, increment float64) (float
 	var result float64
 	typeKey := TypeOfKeyGet(key)
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		result = 0 // reset each attempt; stale value must not survive conflict retry
 		// Check if key already exists with a different type
 		typeItem, typeErr := txn.Get(typeKey)
 		if typeErr == nil {

@@ -4,8 +4,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dgraph-io/badger/v4"
 )
@@ -1588,6 +1590,199 @@ func TestDeterministicConflict_XDelConcurrent(t *testing.T) {
 	}
 	if length != 0 {
 		t.Errorf("XLen: got %d, want 0", length)
+	}
+}
+
+// TestDeterministicConflict_HIncrByConcurrent verifies concurrent HINCRBY on the
+// same field converges to the exact accumulated value.
+func TestDeterministicConflict_HIncrByConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "hash:hincrby:conflict"
+	const goroutines = 20
+
+	var wg sync.WaitGroup
+	errs := make([]error, goroutines)
+	for i := range goroutines {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, errs[idx] = s.HIncrBy(key, "counter", 1)
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d HIncrBy: %v", i, err)
+		}
+	}
+
+	val, err := s.HGet(key, "counter")
+	if err != nil {
+		t.Fatalf("HGet: %v", err)
+	}
+	want := strconv.FormatInt(int64(goroutines), 10)
+	if string(val) != want {
+		t.Errorf("HGet: got %q, want %q", string(val), want)
+	}
+}
+
+// TestDeterministicConflict_SRemConcurrent verifies concurrent SREM on distinct
+// members drains the set without inflating the removed count.
+func TestDeterministicConflict_SRemConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "set:srem:conflict"
+	const members = 20
+
+	names := make([]string, members)
+	for i := range members {
+		names[i] = fmt.Sprintf("m%d", i)
+	}
+	if _, err := s.SAdd(key, names...); err != nil {
+		t.Fatalf("SAdd: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, members)
+	removed := make([]int, members)
+	for i := range members {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			n, err := s.SRem(key, names[idx])
+			removed[idx] = n
+			errs[idx] = err
+		}(i)
+	}
+	wg.Wait()
+
+	totalRemoved := 0
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d SRem: %v", i, err)
+		}
+		totalRemoved += removed[i]
+	}
+	if totalRemoved != members {
+		t.Errorf("total removed: got %d, want %d", totalRemoved, members)
+	}
+
+	card, err := s.SCard(key)
+	if err != nil {
+		t.Fatalf("SCard: %v", err)
+	}
+	if card != 0 {
+		t.Errorf("SCard: got %d, want 0", card)
+	}
+}
+
+// TestDeterministicConflict_TSDelWithAddConflict verifies TSDEL stays correct
+// while concurrent TSADD causes txn conflicts on the same series.
+func TestDeterministicConflict_TSDelWithAddConflict(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "ts:del:conflict"
+	const writers = 4
+	const points = 4
+
+	base := time.Now().UnixNano() / int64(time.Millisecond)
+	timestamps := make([]int64, points)
+	for i := range points {
+		timestamps[i] = base + int64(i)*1000
+		if _, err := s.TSAdd(key, timestamps[i], float64(i), TSAddOptions{}); err != nil {
+			t.Fatalf("TSAdd %d: %v", i, err)
+		}
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, points)
+	deleted := make([]int64, points)
+	for i := range points {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			ts := strconv.FormatInt(timestamps[idx], 10)
+			n, err := s.TSDel(key, ts, ts)
+			deleted[idx] = n
+			errs[idx] = err
+		}(i)
+	}
+
+	for i := range writers {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, _ = s.TSAdd(key, base+10000+int64(idx), float64(100+idx), TSAddOptions{})
+		}(i)
+	}
+	wg.Wait()
+
+	var totalDeleted int64
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d TSDel: %v", i, err)
+		}
+		totalDeleted += deleted[i]
+	}
+	if totalDeleted != points {
+		t.Errorf("total deleted: got %d, want %d", totalDeleted, points)
+	}
+
+	results, err := s.TSRange(key, "-", "+", -1)
+	if err != nil {
+		t.Fatalf("TSRange: %v", err)
+	}
+	if len(results) != writers {
+		t.Errorf("TSRange: got %d points, want %d (only concurrent adds remain)", len(results), writers)
+	}
+}
+
+// TestDeterministicConflict_LPushXWithSourceConflict verifies LPUSHX stays
+// correct while concurrent LPUSH on the same list causes txn conflicts.
+func TestDeterministicConflict_LPushXWithSourceConflict(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "list:lpushx:conflict"
+	const writers = 4
+
+	if _, err := s.LPush(key, "seed"); err != nil {
+		t.Fatalf("LPush: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	var pushErr error
+	var length int
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		length, pushErr = s.LPUSHX(key, "xval")
+	}()
+
+	for i := range writers {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, _ = s.LPush(key, fmt.Sprintf("extra%d", idx))
+		}(i)
+	}
+	wg.Wait()
+
+	if pushErr != nil {
+		t.Fatalf("LPUSHX: %v", pushErr)
+	}
+	if length < 2 {
+		t.Errorf("LPUSHX length: got %d, want at least 2", length)
+	}
+
+	listLen, err := s.LLen(key)
+	if err != nil {
+		t.Fatalf("LLen: %v", err)
+	}
+	if listLen < uint64(length) {
+		t.Errorf("LLen: got %d, want at least %d", listLen, length)
 	}
 }
 
