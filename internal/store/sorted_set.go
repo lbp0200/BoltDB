@@ -1503,21 +1503,20 @@ func (s *BotreonStore) ZDiff(keys []string) ([]ZSetMember, error) {
 
 // ZLexCount 实现 Redis ZLEXCOUNT 命令，计算有序集合中成员值介于min和max之间的成员数量（字典序）
 func (s *BotreonStore) ZLexCount(zSetName, min, max string) (int64, error) {
-	// 获取所有成员（按分数排序）
-	members, err := s.ZRange(zSetName, 0, -1)
-	if err != nil {
-		return 0, err
-	}
-
-	// 按字典序过滤
 	var count int64
-	for _, member := range members {
-		memberStr := member.Member
-		if compareLex(min, memberStr, true) && compareLex(memberStr, max, false) {
-			count++
+	err := s.db.View(func(txn *badger.Txn) error {
+		members, err := zReadZSetMembersInTxn(txn, zSetName)
+		if err != nil {
+			return err
 		}
-	}
-	return count, nil
+		for _, member := range members {
+			if compareLex(min, member.Member, true) && compareLex(member.Member, max, false) {
+				count++
+			}
+		}
+		return nil
+	})
+	return count, err
 }
 
 // compareLex 比较两个字符串（字典序），支持开区间和闭区间
@@ -1592,37 +1591,35 @@ func compareLex(a, b string, inclusive bool) bool {
 
 // ZRangeByLex 实现 Redis ZRANGEBYLEX 命令，返回有序集合中成员值介于min和max之间的成员（字典序）
 func (s *BotreonStore) ZRangeByLex(zSetName, min, max string, offset, count int) ([]string, error) {
-	// 获取所有成员（按分数排序，相同分数按字典序）
-	members, err := s.ZRange(zSetName, 0, -1)
+	var filtered []string
+	err := s.db.View(func(txn *badger.Txn) error {
+		members, err := zReadZSetMembersInTxn(txn, zSetName)
+		if err != nil {
+			return err
+		}
+		for _, member := range members {
+			memberStr := member.Member
+			minOK := compareLex(min, memberStr, true)
+			var maxOK bool
+			if max == "+" {
+				maxOK = true
+			} else if len(max) > 0 && max[0] == '(' {
+				maxOK = memberStr < max[1:]
+			} else if len(max) > 0 && max[0] == '[' {
+				maxOK = memberStr <= max[1:]
+			} else {
+				maxOK = memberStr <= max
+			}
+			if minOK && maxOK {
+				filtered = append(filtered, memberStr)
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	// 按字典序过滤和排序
-	var filtered []string
-	for _, member := range members {
-		memberStr := member.Member
-		// min <= member <= max
-		minOK := compareLex(min, memberStr, true)
-		// 对于max，需要检查member <= max（如果max是闭区间）或member < max（如果max是开区间）
-		var maxOK bool
-		if max == "+" {
-			maxOK = true
-		} else if len(max) > 0 && max[0] == '(' {
-			// 开区间
-			maxOK = memberStr < max[1:]
-		} else if len(max) > 0 && max[0] == '[' {
-			// 闭区间
-			maxOK = memberStr <= max[1:]
-		} else {
-			maxOK = memberStr <= max
-		}
-		if minOK && maxOK {
-			filtered = append(filtered, memberStr)
-		}
-	}
-
-	// 应用offset和count
 	var results []string
 	if offset < 0 {
 		offset = 0

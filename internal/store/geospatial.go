@@ -657,16 +657,32 @@ func (s *BotreonStore) GeoDel(key, member string) error {
 
 // GeoRadiusByMember searches for members near a member
 func (s *BotreonStore) GeoRadiusByMember(key, member string, radius float64, unit string, count int, withDist, withHash, withCoord bool) ([]GeoSearchResult, error) {
-	// Get member position
-	positions, err := s.GeoPos(key, member)
-	if err != nil {
-		return nil, err
-	}
-	if len(positions) == 0 || (positions[0][0] == 0 && positions[0][1] == 0) {
-		return nil, fmt.Errorf("member not found: %s", member)
-	}
-
-	return s.GeoRadius(key, positions[0][1], positions[0][0], radius, unit, count, withDist, withHash, withCoord)
+	radiusM := convertGeoRadiusToMeters(radius, unit)
+	var results []GeoSearchResult
+	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeGeo); err != nil {
+			return err
+		}
+		hashKey := geoIndexKey(key, member)
+		item, err := txn.Get(hashKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return fmt.Errorf("member not found: %s", member)
+		}
+		if err != nil {
+			return err
+		}
+		var hash uint64
+		if err := item.Value(func(val []byte) error {
+			hash = binary.BigEndian.Uint64(val)
+			return nil
+		}); err != nil {
+			return err
+		}
+		lat, lon := decodeGeoHash(hash)
+		results, err = geoRadiusInTxn(txn, key, lon, lat, radiusM, unit, count, withDist, withHash, withCoord)
+		return err
+	})
+	return results, err
 }
 
 // GeoMembers returns all members in a geo set
