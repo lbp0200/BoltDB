@@ -36,12 +36,25 @@ func NewReplicationManager(store *store.BotreonStore) *ReplicationManager {
 	rm := &ReplicationManager{
 		role:             RoleMaster,
 		slaves:           make(map[string]*SlaveConnection),
-		backlog:          NewReplicationBacklog(1024 * 1024), // 1MB backlog
+		backlog:          NewReplicationBacklog(DefaultBacklogSize),
 		masterReplOffset: 0,
 		replId:           replId,
 		store:            store,
 	}
 	return rm
+}
+
+// SetBacklogSize 设置复制积压缓冲区大小（必须在新连接建立前调用）
+func (rm *ReplicationManager) SetBacklogSize(size int64) {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+	if size <= 0 {
+		size = DefaultBacklogSize
+	}
+	if size > MaxBacklogSize {
+		size = MaxBacklogSize
+	}
+	rm.backlog = NewReplicationBacklog(size)
 }
 
 // generateReplicationID 生成40字符的十六进制复制ID

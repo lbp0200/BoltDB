@@ -54,6 +54,7 @@ func init() {
 		{name: "CONFIG", arity: -2, flags: []commandFlag{flagAdmin, flagReadonly}},
 		{name: "COPY", arity: -3, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: 2, step: 1},
 		{name: "DBSIZE", arity: 1, flags: []commandFlag{flagReadonly}},
+		{name: "DEBUG", arity: -2, flags: []commandFlag{flagAdmin}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "DECR", arity: 2, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "DECRBY", arity: 3, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "DEL", arity: -2, flags: []commandFlag{flagWrite}, firstKey: 1, lastKey: -1, step: 1},

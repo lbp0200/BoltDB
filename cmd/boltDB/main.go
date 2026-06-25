@@ -28,6 +28,7 @@ var (
 	replicaofFlag           = flag.String("replicaof", "", "replicaof master host:port")
 	skipStartupCleanup      = flag.Bool("skip-startup-cleanup", false, "skip startup cleanup (data integrity check)")
 	clientOutputBufferLimit = flag.Int64("client-output-buffer-limit", 0, "per-client output buffer hard limit in bytes (0 = unlimited)")
+	replBacklogSizeFlag     = flag.String("repl-backlog-size", "", "replication backlog size (e.g. 100mb, 1gb, default 1mb)")
 	metricsAddrFlag         = flag.String("metrics-addr", "", "metrics HTTP listen addr (e.g. :6338, empty = disabled)")
 )
 
@@ -69,6 +70,16 @@ func main() {
 
 	// 初始化复制管理器
 	replMgr := replication.NewReplicationManager(db)
+
+	// 如果指定了 -repl-backlog-size 参数，设置积压缓冲区大小
+	if *replBacklogSizeFlag != "" {
+		size, err := replication.ParseBacklogSize(*replBacklogSizeFlag)
+		if err != nil {
+			logger.Logger.Fatal().Err(err).Str("size", *replBacklogSizeFlag).Msg("Invalid backlog size")
+		}
+		replMgr.SetBacklogSize(size)
+		logger.Logger.Info().Int64("size", size).Msg("Replication backlog size set")
+	}
 
 	// 如果指定了 -replicaof 参数，启动从复制
 	if *replicaofFlag != "" {
