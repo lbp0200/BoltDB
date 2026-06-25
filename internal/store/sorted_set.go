@@ -126,126 +126,9 @@ func (s *BotreonStore) ZAdd(zSetName string, members []ZSetMember) error {
 	}
 	var addedNewMember bool
 	err := s.retryUpdate(func(txn *badger.Txn) error {
-		badgerTypeKey := TypeOfKeyGet(zSetName)
-
-		// Check if key already exists with a different type
-		item, err := txn.Get(badgerTypeKey)
-		if err == nil {
-			val, err := item.ValueCopy(nil)
-			if err != nil {
-				return err
-			}
-			keyType := string(val)
-			if keyType != "" && keyType != KeyTypeSortedSet {
-				return ErrWrongType
-			}
-		} else if !errors.Is(err, badger.ErrKeyNotFound) {
-			return err
-		}
-
-		if err := txn.Set(badgerTypeKey, []byte(KeyTypeSortedSet)); err != nil {
-			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to set type key")
-			return err
-		}
-
-		// 获取元数据
-		metaKey := sortedSetKeyMeta(zSetName)
-		var meta ZSetsMetaValue
-		item, err = txn.Get(metaKey)
-		if err == nil {
-			err = item.Value(func(val []byte) error {
-				meta, err = decodeMeta(val)
-				return err
-			})
-			if err != nil {
-				logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to decode meta")
-				return err
-			}
-		} else if !errors.Is(err, badger.ErrKeyNotFound) {
-			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to get meta")
-			return err
-		}
-		newMembers := int64(len(members))
-		meta.Version++
-
-		// 批量收集操作
-		type operation struct {
-			dataKey     []byte
-			indexKey    []byte
-			oldIndexKey []byte
-			score       []byte
-		}
-		ops := make([]operation, 0, len(members))
-
-		for _, m := range members {
-			member := m.Member
-			score := m.Score
-			dataKey := sortedSetKeyMember(zSetName, member)
-
-			// 检查旧分数
-			var oldScore float64
-			item, err := txn.Get(dataKey)
-			if err == nil {
-				var oldScoreBytes []byte
-				err = item.Value(func(val []byte) error {
-					oldScoreBytes = val
-					return nil
-				})
-				if err != nil {
-					logger.Logger.Error().Err(err).Str("zset_name", zSetName).Str("member", member).Msg("ZAdd: Failed to get old score")
-					return err
-				}
-				oldScore = decodeScore(oldScoreBytes)
-				newMembers-- // 替换现有成员，计数不变
-			} else if !errors.Is(err, badger.ErrKeyNotFound) {
-				logger.Logger.Error().Err(err).Str("zset_name", zSetName).Str("member", member).Msg("ZAdd: Failed to check member")
-				return err
-			}
-
-			// 准备操作
-			op := operation{
-				dataKey:  dataKey,
-				indexKey: sortedSetKeyIndex(zSetName, score, member, meta.Version),
-				score:    encodeScore(score),
-			}
-			if err == nil {
-				op.oldIndexKey = sortedSetKeyIndex(zSetName, oldScore, member, meta.Version-1)
-			}
-			ops = append(ops, op)
-		}
-
-		// 更新元数据计数
-		meta.Card += newMembers
-		if err := txn.Set(metaKey, encodeMeta(meta)); err != nil {
-			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to set meta")
-			return err
-		}
-
-		// 批量执行操作
-		for _, op := range ops {
-			if op.oldIndexKey != nil {
-				if err := txn.Delete(op.oldIndexKey); err != nil {
-					logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to delete old index")
-					return err
-				}
-			}
-			if err := txn.Set(op.dataKey, op.score); err != nil {
-				logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to set data key")
-				return err
-			}
-			if err := txn.Set(op.indexKey, nil); err != nil {
-				logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to set index key")
-				return err
-			}
-		}
-
-		addedNewMember = newMembers > 0
-		logger.Logger.Debug().
-			Int("members_count", len(members)).
-			Str("zset_name", zSetName).
-			Int64("card", meta.Card).
-			Msg("ZAdd: Successfully added members")
-		return nil
+		var err error
+		addedNewMember, err = zAddMembersInTxn(txn, zSetName, members)
+		return err
 	}, 20)
 	if err == nil && addedNewMember {
 		s.notifyBlockingZPop(zSetName)
@@ -596,6 +479,306 @@ func zRangeByScoreInTxn(txn *badger.Txn, zSetName string, minScore, maxScore flo
 	return results, nil
 }
 
+func applyAggregateScore(existing float64, exists bool, score float64, aggregate string) float64 {
+	if !exists {
+		return score
+	}
+	switch aggregate {
+	case "MIN":
+		if score < existing {
+			return score
+		}
+		return existing
+	case "MAX":
+		if score > existing {
+			return score
+		}
+		return existing
+	default:
+		return existing + score
+	}
+}
+
+func zReadZSetMembersInTxn(txn *badger.Txn, zSetName string) ([]ZSetMember, error) {
+	if err := checkKeyType(txn, zSetName, KeyTypeSortedSet); err != nil {
+		return nil, err
+	}
+	return zRangeMembersByRankInTxn(txn, zSetName, 0, -1)
+}
+
+// zSetDelInTxn deletes an entire sorted set inside an open update transaction.
+func zSetDelInTxn(txn *badger.Txn, zSetName string) error {
+	dataPrefix := []byte(zSetName + sortedSetData)
+	indexPrefix := []byte(zSetName + sortedSetIndex)
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = false
+
+	it := txn.NewIterator(opts)
+	for it.Rewind(); it.ValidForPrefix(dataPrefix); it.Next() {
+		if err := txn.Delete(it.Item().Key()); err != nil {
+			it.Close()
+			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZSetDel: Failed to delete data key")
+			return err
+		}
+	}
+	it.Close()
+
+	it = txn.NewIterator(opts)
+	for it.Rewind(); it.ValidForPrefix(indexPrefix); it.Next() {
+		if err := txn.Delete(it.Item().Key()); err != nil {
+			it.Close()
+			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZSetDel: Failed to delete index key")
+			return err
+		}
+	}
+	it.Close()
+
+	if err := txn.Delete(sortedSetKeyMeta(zSetName)); err != nil {
+		logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZSetDel: Failed to delete meta")
+		return err
+	}
+	if err := txn.Delete(TypeOfKeyGet(zSetName)); err != nil {
+		logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZSetDel: Failed to delete type key")
+		return err
+	}
+	return nil
+}
+
+// zAddMembersInTxn adds or updates members inside an open update transaction.
+func zAddMembersInTxn(txn *badger.Txn, zSetName string, members []ZSetMember) (bool, error) {
+	if len(members) == 0 {
+		return false, nil
+	}
+
+	badgerTypeKey := TypeOfKeyGet(zSetName)
+	item, err := txn.Get(badgerTypeKey)
+	if err == nil {
+		val, err := item.ValueCopy(nil)
+		if err != nil {
+			return false, err
+		}
+		keyType := string(val)
+		if keyType != "" && keyType != KeyTypeSortedSet {
+			return false, ErrWrongType
+		}
+	} else if !errors.Is(err, badger.ErrKeyNotFound) {
+		return false, err
+	}
+
+	if err := txn.Set(badgerTypeKey, []byte(KeyTypeSortedSet)); err != nil {
+		logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to set type key")
+		return false, err
+	}
+
+	metaKey := sortedSetKeyMeta(zSetName)
+	var meta ZSetsMetaValue
+	item, err = txn.Get(metaKey)
+	if err == nil {
+		err = item.Value(func(val []byte) error {
+			meta, err = decodeMeta(val)
+			return err
+		})
+		if err != nil {
+			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to decode meta")
+			return false, err
+		}
+	} else if !errors.Is(err, badger.ErrKeyNotFound) {
+		logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to get meta")
+		return false, err
+	}
+
+	newMembers := int64(len(members))
+	meta.Version++
+
+	type operation struct {
+		dataKey     []byte
+		indexKey    []byte
+		oldIndexKey []byte
+		score       []byte
+	}
+	ops := make([]operation, 0, len(members))
+
+	for _, m := range members {
+		member := m.Member
+		score := m.Score
+		dataKey := sortedSetKeyMember(zSetName, member)
+
+		var oldScore float64
+		item, err = txn.Get(dataKey)
+		if err == nil {
+			var oldScoreBytes []byte
+			err = item.Value(func(val []byte) error {
+				oldScoreBytes = val
+				return nil
+			})
+			if err != nil {
+				logger.Logger.Error().Err(err).Str("zset_name", zSetName).Str("member", member).Msg("ZAdd: Failed to get old score")
+				return false, err
+			}
+			oldScore = decodeScore(oldScoreBytes)
+			newMembers--
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Str("member", member).Msg("ZAdd: Failed to check member")
+			return false, err
+		}
+
+		op := operation{
+			dataKey:  dataKey,
+			indexKey: sortedSetKeyIndex(zSetName, score, member, meta.Version),
+			score:    encodeScore(score),
+		}
+		if err == nil {
+			op.oldIndexKey = sortedSetKeyIndex(zSetName, oldScore, member, meta.Version-1)
+		}
+		ops = append(ops, op)
+	}
+
+	meta.Card += newMembers
+	if err := txn.Set(metaKey, encodeMeta(meta)); err != nil {
+		logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to set meta")
+		return false, err
+	}
+
+	for _, op := range ops {
+		if op.oldIndexKey != nil {
+			if err := txn.Delete(op.oldIndexKey); err != nil {
+				logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to delete old index")
+				return false, err
+			}
+		}
+		if err := txn.Set(op.dataKey, op.score); err != nil {
+			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to set data key")
+			return false, err
+		}
+		if err := txn.Set(op.indexKey, nil); err != nil {
+			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to set index key")
+			return false, err
+		}
+	}
+
+	return newMembers > 0, nil
+}
+
+func zUnionScoresInTxn(txn *badger.Txn, keys []string, weights []float64, aggregate string) (map[string]float64, error) {
+	memberScores := make(map[string]float64)
+	for i, key := range keys {
+		weight := 1.0
+		if i < len(weights) && weights[i] != 0 {
+			weight = weights[i]
+		}
+		members, err := zReadZSetMembersInTxn(txn, key)
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range members {
+			score := m.Score * weight
+			existing, exists := memberScores[m.Member]
+			memberScores[m.Member] = applyAggregateScore(existing, exists, score, aggregate)
+		}
+	}
+	return memberScores, nil
+}
+
+func zInterScoresInTxn(txn *badger.Txn, keys []string, weights []float64, aggregate string) (map[string]float64, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+
+	firstWeight := 1.0
+	if len(weights) > 0 && weights[0] != 0 {
+		firstWeight = weights[0]
+	}
+	firstMembers, err := zReadZSetMembersInTxn(txn, keys[0])
+	if err != nil {
+		return nil, err
+	}
+
+	memberScores := make(map[string]float64)
+	for _, m := range firstMembers {
+		memberScores[m.Member] = m.Score * firstWeight
+	}
+
+	for i := 1; i < len(keys); i++ {
+		weight := 1.0
+		if i < len(weights) && weights[i] != 0 {
+			weight = weights[i]
+		}
+		otherMembers, err := zReadZSetMembersInTxn(txn, keys[i])
+		if err != nil {
+			return nil, err
+		}
+		otherMemberMap := make(map[string]float64, len(otherMembers))
+		for _, m := range otherMembers {
+			otherMemberMap[m.Member] = m.Score * weight
+		}
+		for member := range memberScores {
+			if otherScore, exists := otherMemberMap[member]; exists {
+				existing := memberScores[member]
+				memberScores[member] = applyAggregateScore(existing, true, otherScore, aggregate)
+			} else {
+				delete(memberScores, member)
+			}
+		}
+	}
+	return memberScores, nil
+}
+
+func zDiffMembersInTxn(txn *badger.Txn, keys []string) ([]ZSetMember, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+
+	firstMembers, err := zReadZSetMembersInTxn(txn, keys[0])
+	if err != nil {
+		return nil, err
+	}
+
+	otherMembers := make(map[string]bool)
+	for i := 1; i < len(keys); i++ {
+		members, err := zReadZSetMembersInTxn(txn, keys[i])
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range members {
+			otherMembers[m.Member] = true
+		}
+	}
+
+	var result []ZSetMember
+	for _, m := range firstMembers {
+		if !otherMembers[m.Member] {
+			result = append(result, m)
+		}
+	}
+	return result, nil
+}
+
+func zStoreReplaceFromScores(txn *badger.Txn, destination string, memberScores map[string]float64) error {
+	if err := zSetDelInTxn(txn, destination); err != nil {
+		return err
+	}
+	if len(memberScores) == 0 {
+		return nil
+	}
+	members := make([]ZSetMember, 0, len(memberScores))
+	for member, score := range memberScores {
+		members = append(members, ZSetMember{Member: member, Score: score})
+	}
+	_, err := zAddMembersInTxn(txn, destination, members)
+	return err
+}
+
+func zStoreReplaceFromMembers(txn *badger.Txn, destination string, members []ZSetMember) error {
+	if err := zSetDelInTxn(txn, destination); err != nil {
+		return err
+	}
+	if len(members) == 0 {
+		return nil
+	}
+	_, err := zAddMembersInTxn(txn, destination, members)
+	return err
+}
+
 // ZRem 删除成员
 func (s *BotreonStore) ZRem(zSetName, member string) (int64, error) {
 	var deleted int64 = 0
@@ -765,46 +948,7 @@ func (s *BotreonStore) ZRange(zSetName string, start, stop int64) ([]*ZSetMember
 // ZSetDel 删除整个排序集
 func (s *BotreonStore) ZSetDel(zSetName string) error {
 	return s.retryUpdate(func(txn *badger.Txn) error {
-		dataPrefix := []byte(zSetName + sortedSetData)
-		indexPrefix := []byte(zSetName + sortedSetIndex)
-		opts := badger.DefaultIteratorOptions
-		opts.PrefetchValues = false
-
-		// 删除数据键
-		it := txn.NewIterator(opts)
-		for it.Rewind(); it.ValidForPrefix(dataPrefix); it.Next() {
-			if err := txn.Delete(it.Item().Key()); err != nil {
-				it.Close()
-				logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZSetDel: Failed to delete data key")
-				return err
-			}
-		}
-		it.Close()
-
-		// 删除索引键
-		it = txn.NewIterator(opts)
-		for it.Rewind(); it.ValidForPrefix(indexPrefix); it.Next() {
-			if err := txn.Delete(it.Item().Key()); err != nil {
-				it.Close()
-				logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZSetDel: Failed to delete index key")
-				return err
-			}
-		}
-		it.Close()
-
-		// 删除元数据和类型键
-		if err := txn.Delete(sortedSetKeyMeta(zSetName)); err != nil {
-			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZSetDel: Failed to delete meta")
-			return err
-		}
-		if err := txn.Delete(TypeOfKeyGet(zSetName)); err != nil {
-			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZSetDel: Failed to delete type key")
-			return err
-		}
-
-		// 成功路径不记录日志，避免性能影响
-		logger.Logger.Debug().Str("zset_name", zSetName).Msg("ZSetDel: Successfully deleted set")
-		return nil
+		return zSetDelInTxn(txn, zSetName)
 	}, 20) // 最多重试 20 次（优化：减少重试次数）
 }
 
@@ -1266,202 +1410,80 @@ func (s *BotreonStore) ZMPop(keys []string, modifier string, count int) (string,
 
 // ZUnionStore 实现 Redis ZUNIONSTORE 命令，计算并集并存储到目标集合
 func (s *BotreonStore) ZUnionStore(destination string, keys []string, weights []float64, aggregate string) (int64, error) {
-	// 先收集所有成员的分数（考虑权重和聚合方式）
-	memberScores := make(map[string]float64)
-
-	for i, key := range keys {
-		weight := 1.0
-		if i < len(weights) && weights[i] != 0 {
-			weight = weights[i]
-		}
-
-		// 获取所有成员
-		members, err := s.ZRange(key, 0, -1)
+	var count int64
+	var notify bool
+	err := s.retryUpdate(func(txn *badger.Txn) error {
+		count = 0
+		notify = false
+		memberScores, err := zUnionScoresInTxn(txn, keys, weights, aggregate)
 		if err != nil {
-			return 0, err
+			return err
 		}
-
-		for _, member := range members {
-			score := member.Score * weight
-			existingScore, exists := memberScores[member.Member]
-
-			if !exists {
-				memberScores[member.Member] = score
-			} else {
-				// 根据聚合方式计算
-				switch aggregate {
-				case "SUM", "":
-					memberScores[member.Member] = existingScore + score
-				case "MIN":
-					if score < existingScore {
-						memberScores[member.Member] = score
-					}
-				case "MAX":
-					if score > existingScore {
-						memberScores[member.Member] = score
-					}
-				}
-			}
+		if err := zStoreReplaceFromScores(txn, destination, memberScores); err != nil {
+			return err
 		}
+		count = int64(len(memberScores))
+		notify = count > 0
+		return nil
+	}, 20)
+	if err == nil && notify {
+		s.notifyBlockingZPop(destination)
 	}
-
-	// 删除目标集合的现有数据
-	if err := s.ZSetDel(destination); err != nil {
-		logger.Logger.Warn().Str("destination", destination).Err(err).Msg("ZUnionStore: 删除目标集合失败")
-	}
-
-	// 添加所有成员到目标集合
-	zsetMembers := make([]ZSetMember, 0, len(memberScores))
-	for member, score := range memberScores {
-		zsetMembers = append(zsetMembers, ZSetMember{Member: member, Score: score})
-	}
-
-	if len(zsetMembers) > 0 {
-		if err := s.ZAdd(destination, zsetMembers); err != nil {
-			return 0, err
-		}
-	}
-
-	return int64(len(memberScores)), nil
+	return count, err
 }
 
 // ZInterStore 实现 Redis ZINTERSTORE 命令，计算交集并存储到目标集合
 func (s *BotreonStore) ZInterStore(destination string, keys []string, weights []float64, aggregate string) (int64, error) {
-	if len(keys) == 0 {
-		// 删除目标集合
-		if err := s.ZSetDel(destination); err != nil {
-			logger.Logger.Warn().Str("destination", destination).Err(err).Msg("ZInterStore: 删除目标集合失败")
+	var count int64
+	var notify bool
+	err := s.retryUpdate(func(txn *badger.Txn) error {
+		count = 0
+		notify = false
+		if len(keys) == 0 {
+			return zSetDelInTxn(txn, destination)
 		}
-		return 0, nil
-	}
-
-	// 获取第一个集合的所有成员
-	firstMembers, err := s.ZRange(keys[0], 0, -1)
-	if err != nil {
-		return 0, err
-	}
-
-	// 收集所有成员的分数（考虑权重和聚合方式）
-	memberScores := make(map[string]float64)
-	firstWeight := 1.0
-	if len(weights) > 0 && weights[0] != 0 {
-		firstWeight = weights[0]
-	}
-
-	// 初始化第一个集合的成员
-	for _, member := range firstMembers {
-		memberScores[member.Member] = member.Score * firstWeight
-	}
-
-	// 检查每个成员是否在其他所有集合中
-	for i := 1; i < len(keys); i++ {
-		weight := 1.0
-		if i < len(weights) && weights[i] != 0 {
-			weight = weights[i]
-		}
-
-		otherMembers, err := s.ZRange(keys[i], 0, -1)
+		memberScores, err := zInterScoresInTxn(txn, keys, weights, aggregate)
 		if err != nil {
-			return 0, err
+			return err
 		}
-
-		otherMemberMap := make(map[string]float64)
-		for _, member := range otherMembers {
-			otherMemberMap[member.Member] = member.Score * weight
+		if err := zStoreReplaceFromScores(txn, destination, memberScores); err != nil {
+			return err
 		}
-
-		// 只保留在所有集合中都存在的成员
-		for member := range memberScores {
-			if otherScore, exists := otherMemberMap[member]; exists {
-				// 根据聚合方式更新分数
-				switch aggregate {
-				case "SUM", "":
-					memberScores[member] += otherScore
-				case "MIN":
-					if otherScore < memberScores[member] {
-						memberScores[member] = otherScore
-					}
-				case "MAX":
-					if otherScore > memberScores[member] {
-						memberScores[member] = otherScore
-					}
-				}
-			} else {
-				// 成员不在这个集合中，删除
-				delete(memberScores, member)
-			}
-		}
+		count = int64(len(memberScores))
+		notify = count > 0
+		return nil
+	}, 20)
+	if err == nil && notify {
+		s.notifyBlockingZPop(destination)
 	}
-
-	// 删除目标集合的现有数据
-	if err := s.ZSetDel(destination); err != nil {
-		logger.Logger.Warn().Str("destination", destination).Err(err).Msg("ZInterStore: 删除目标集合失败")
-	}
-
-	// 添加所有成员到目标集合
-	zsetMembers := make([]ZSetMember, 0, len(memberScores))
-	for member, score := range memberScores {
-		zsetMembers = append(zsetMembers, ZSetMember{Member: member, Score: score})
-	}
-
-	if len(zsetMembers) > 0 {
-		if err := s.ZAdd(destination, zsetMembers); err != nil {
-			return 0, err
-		}
-	}
-
-	return int64(len(memberScores)), nil
+	return count, err
 }
 
 // ZDiffStore 实现 Redis ZDIFFSTORE 命令，计算差集并存储到目标集合
 func (s *BotreonStore) ZDiffStore(destination string, keys []string) (int64, error) {
-	if len(keys) == 0 {
-		// 删除目标集合
-		if err := s.ZSetDel(destination); err != nil {
-			logger.Logger.Warn().Str("destination", destination).Err(err).Msg("ZDiffStore: 删除目标集合失败")
+	var count int64
+	var notify bool
+	err := s.retryUpdate(func(txn *badger.Txn) error {
+		count = 0
+		notify = false
+		if len(keys) == 0 {
+			return zSetDelInTxn(txn, destination)
 		}
-		return 0, nil
-	}
-
-	// 获取第一个集合的所有成员
-	firstMembers, err := s.ZRange(keys[0], 0, -1)
-	if err != nil {
-		return 0, err
-	}
-
-	// 构建其他集合的成员集合
-	otherMembers := make(map[string]bool)
-	for i := 1; i < len(keys); i++ {
-		members, err := s.ZRange(keys[i], 0, -1)
+		members, err := zDiffMembersInTxn(txn, keys)
 		if err != nil {
-			return 0, err
+			return err
 		}
-		for _, member := range members {
-			otherMembers[member.Member] = true
+		if err := zStoreReplaceFromMembers(txn, destination, members); err != nil {
+			return err
 		}
+		count = int64(len(members))
+		notify = count > 0
+		return nil
+	}, 20)
+	if err == nil && notify {
+		s.notifyBlockingZPop(destination)
 	}
-
-	// 找出只在第一个集合中的成员
-	zsetMembers := make([]ZSetMember, 0)
-	for _, member := range firstMembers {
-		if !otherMembers[member.Member] {
-			zsetMembers = append(zsetMembers, ZSetMember{Member: member.Member, Score: member.Score})
-		}
-	}
-
-	// 删除目标集合的现有数据
-	if err := s.ZSetDel(destination); err != nil {
-		logger.Logger.Warn().Str("destination", destination).Err(err).Msg("ZDiffStore: 删除目标集合失败")
-	}
-
-	// 添加所有成员到目标集合
-	if len(zsetMembers) > 0 {
-		if err := s.ZAdd(destination, zsetMembers); err != nil {
-			return 0, err
-		}
-	}
-
-	return int64(len(zsetMembers)), nil
+	return count, err
 }
 
 // ZDiff returns the difference of the first sorted set with all subsequent ones.

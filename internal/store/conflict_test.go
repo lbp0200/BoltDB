@@ -1009,6 +1009,125 @@ func TestDeterministicConflict_SetNXConcurrent(t *testing.T) {
 	}
 }
 
+// TestDeterministicConflict_ZUnionStoreWithSourceConflict verifies ZUNIONSTORE
+// stays correct while concurrent ZADD on source keys causes txn conflicts.
+func TestDeterministicConflict_ZUnionStoreWithSourceConflict(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	const writers = 4
+
+	if err := s.ZAdd("zus:1", []ZSetMember{
+		{Member: "a", Score: 1.0},
+		{Member: "b", Score: 2.0},
+	}); err != nil {
+		t.Fatalf("ZAdd zus:1: %v", err)
+	}
+	if err := s.ZAdd("zus:2", []ZSetMember{
+		{Member: "b", Score: 3.0},
+		{Member: "c", Score: 4.0},
+	}); err != nil {
+		t.Fatalf("ZAdd zus:2: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	var unionErr error
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, unionErr = s.ZUnionStore("zus:dest", []string{"zus:1", "zus:2"}, nil, "")
+	}()
+
+	for i := range writers {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_ = s.ZAdd("zus:1", []ZSetMember{{
+				Member: fmt.Sprintf("extra%d", idx),
+				Score:  10.0 + float64(idx),
+			}})
+		}(i)
+	}
+	wg.Wait()
+
+	if unionErr != nil {
+		t.Fatalf("ZUnionStore: %v", unionErr)
+	}
+
+	score, exists, err := s.ZScore("zus:dest", "b")
+	if err != nil {
+		t.Fatalf("ZScore(b): %v", err)
+	}
+	if !exists {
+		t.Fatal("member b should exist in destination")
+	}
+	if score != 5.0 {
+		t.Errorf("score(b): got %v, want 5.0", score)
+	}
+
+	card, err := s.ZCard("zus:dest")
+	if err != nil {
+		t.Fatalf("ZCard: %v", err)
+	}
+	if card < 3 {
+		t.Errorf("ZCard: got %d, want at least 3", card)
+	}
+}
+
+// TestDeterministicConflict_XDelConcurrent verifies concurrent XDEL of distinct
+// stream entries drains the stream exactly once.
+func TestDeterministicConflict_XDelConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	stream := "stream:xdel:conflict"
+	const entries = 4
+
+	ids := make([]string, entries)
+	for i := range entries {
+		id := fmt.Sprintf("100000000000%d-0", i)
+		got, err := s.XAdd(stream, StreamXAddOptions{}, id, map[string]string{
+			"field": fmt.Sprintf("v%d", i),
+		})
+		if err != nil {
+			t.Fatalf("XAdd %s: %v", id, err)
+		}
+		ids[i] = got
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, entries)
+	deleted := make([]int64, entries)
+	for i := range entries {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			n, err := s.XDel(stream, ids[idx])
+			deleted[idx] = n
+			errs[idx] = err
+		}(i)
+	}
+	wg.Wait()
+
+	var totalDeleted int64
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d XDel: %v", i, err)
+		}
+		totalDeleted += deleted[i]
+	}
+	if totalDeleted != entries {
+		t.Errorf("total deleted: got %d, want %d", totalDeleted, entries)
+	}
+
+	length, err := s.XLen(stream)
+	if err != nil {
+		t.Fatalf("XLen: %v", err)
+	}
+	if length != 0 {
+		t.Errorf("XLen: got %d, want 0", length)
+	}
+}
+
 // TestDeterministicConflict_RetryUpdateSuccessAfterConflict verifies that
 // retryUpdate correctly retries on TransactionConflict and eventually succeeds.
 func TestDeterministicConflict_RetryUpdateSuccessAfterConflict(t *testing.T) {
