@@ -19,6 +19,9 @@ import (
 // Failure doc: docs/failures/replication-thrash.md
 // Expected: reconnect count ≤ 12, slave converges within 15s of chaos stop.
 func TestRegressionReplicationThrash(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping heavy regression in short mode")
+	}
 	master := StartRegression(t)
 	defer master.Close()
 
@@ -174,6 +177,9 @@ func TestRegressionReplicationThrash(t *testing.T) {
 // Failure doc: docs/failures/replication-thrash.md
 // Expected: after FULLRESYNC, slave converges within 15s.
 func TestRegressionReplicationThrashFullresync(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping heavy regression in short mode")
+	}
 	master := StartRegression(t)
 	defer master.Close()
 

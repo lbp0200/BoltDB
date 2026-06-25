@@ -14,6 +14,9 @@ import (
 // Failure doc: docs/failures/retry-storm.md
 // Expected: ActiveRetries stays ≤ 100, L0 recovers below 10 after load stops.
 func TestRegressionRetryStorm(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping heavy regression in short mode")
+	}
 	srv := StartRegression(t)
 	defer srv.Close()
 

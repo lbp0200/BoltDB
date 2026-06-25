@@ -38,6 +38,9 @@ import (
 //
 // Failure doc: docs/failures/snapshot-inconsistency.md
 func TestRegressionSnapshotFullresyncOffset(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping heavy regression in short mode")
+	}
 	master := StartRegression(t)
 	defer master.Close()
 

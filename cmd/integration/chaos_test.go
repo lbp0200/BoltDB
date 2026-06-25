@@ -206,7 +206,7 @@ func TestChaos_Blocking(t *testing.T) {
 
 	ctx := context.Background()
 	numBlockers := 20
-	numPushers := 5
+	numPushers := 10
 	numOps := 15
 
 	var wg sync.WaitGroup
@@ -232,7 +232,7 @@ func TestChaos_Blocking(t *testing.T) {
 			blockersStarted <- struct{}{}
 
 			for j := 0; j < numOps; j++ {
-				timeout := rand.Intn(3)
+				timeout := rand.Intn(3) + 1 // 1-3s, never infinite
 				cmd := []string{"BLPOP", "BRPOP"}[rand.Intn(2)]
 				proto.WriteRESP(conn, &proto.Array{
 					Args: [][]byte{

@@ -24,6 +24,9 @@ import (
 // Fixed: capture currentOffset AFTER AddSlave (under writeMu). Also fixed
 // slave offset drift from counting PING/REPLCONF bytes in lastOffset.
 func TestRegressionPsyncReconnectNoLoss(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping heavy regression in short mode")
+	}
 	master := StartRegression(t)
 	defer master.Close()
 

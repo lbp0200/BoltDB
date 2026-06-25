@@ -23,6 +23,9 @@ import (
 // Failure doc: docs/failures/snapshot-inconsistency.md
 // Expected: loaded store is byte-identical in semantics to the source.
 func TestRegressionSnapshotConsistency(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping heavy regression in short mode")
+	}
 	ctx := context.Background()
 
 	// Store A: write all data types

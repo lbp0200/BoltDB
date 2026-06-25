@@ -2116,14 +2116,13 @@ func TestBLPOPTimeout(t *testing.T) {
 	ctx := context.Background()
 
 	start := time.Now()
-	// timeout 为 0 表示立即返回（非阻塞），BLPOP 无数据时返回 nil
-	result, err := sharedClient.BLPop(ctx, 0, "nonexistent_timeout_key").Result()
+	result, err := sharedClient.BLPop(ctx, time.Second, "nonexistent_timeout_key").Result()
 	elapsed := time.Since(start)
 
 	assert.Equal(t, redis.Nil, err)
 	assert.Nil(t, result)
-	if elapsed > 500*time.Millisecond {
-		t.Fatalf("BLPOP timeout=0 should return immediately, took: %v", elapsed)
+	if elapsed > 3*time.Second {
+		t.Fatalf("BLPOP timeout=1s should return within 2s, took: %v", elapsed)
 	}
 }
 

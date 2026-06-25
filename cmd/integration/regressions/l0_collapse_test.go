@@ -15,6 +15,9 @@ import (
 // Invariant: L0 score stays below hard threshold (20), ActiveRetries ≤ 100,
 // L0 recovers below recovery threshold (10) within drain window.
 func TestRegressionL0Collapse(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping heavy regression in short mode")
+	}
 	srv := StartRegression(t)
 	defer srv.Close()
 

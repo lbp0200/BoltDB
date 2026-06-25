@@ -33,6 +33,9 @@ import (
 //
 // This is the Tier 3 verification in the three-tier soak semantics.
 func TestRegressionDuplicateWindowMeasurement(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping heavy regression in short mode")
+	}
 	master := StartRegression(t)
 	defer master.Close()
 
