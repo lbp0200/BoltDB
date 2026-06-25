@@ -131,6 +131,7 @@ func geoHashToCoordKey(key string, hash uint64) []byte {
 func (s *BotreonStore) GeoAdd(key string, members []GeoMember) (int64, error) {
 	var added int64
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		added = 0 // reset each attempt; stale value must not survive conflict retry
 		// Set type key
 		typeKey := TypeOfKeyGet(key)
 
@@ -703,7 +704,24 @@ func (s *BotreonStore) GeoMembers(key string) ([]string, error) {
 
 // GeoCard returns the number of members in a geo set
 func (s *BotreonStore) GeoCard(key string) (int64, error) {
-	return s.ZCard(key)
+	var count int64
+	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeGeo); err != nil {
+			return err
+		}
+		item, err := txn.Get(geoKey(key))
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		return item.Value(func(val []byte) error {
+			count = int64(binary.BigEndian.Uint64(val))
+			return nil
+		})
+	})
+	return count, err
 }
 
 // GeoDel removes multiple members from a geo set

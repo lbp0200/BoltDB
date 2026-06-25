@@ -181,6 +181,16 @@ func TestGeoCard(t *testing.T) {
 	count, err := store.GeoCard("emptygeo")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), count)
+
+	_, err = store.GeoAdd("mygeo", []GeoMember{
+		{Member: "Paris", Lat: 48.8566, Lon: 2.3521},
+		{Member: "London", Lat: 51.5074, Lon: -0.1276},
+	})
+	assert.NoError(t, err)
+
+	count, err = store.GeoCard("mygeo")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), count)
 }
 
 // TestGeoRadiusByMember tests GeoRadiusByMember function

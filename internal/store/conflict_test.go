@@ -343,6 +343,179 @@ func TestDeterministicConflict_SPopNConcurrent(t *testing.T) {
 	}
 }
 
+// TestDeterministicConflict_ZIncrByConcurrent verifies concurrent ZINCRBY on the
+// same member converges to the exact accumulated score.
+func TestDeterministicConflict_ZIncrByConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	zSetName := "zset:zincrby:conflict"
+	const goroutines = 20
+	const increment = 1.0
+
+	var wg sync.WaitGroup
+	errs := make([]error, goroutines)
+	for i := range goroutines {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, errs[idx] = s.ZIncrBy(zSetName, "counter", increment)
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d ZIncrBy: %v", i, err)
+		}
+	}
+
+	score, exists, err := s.ZScore(zSetName, "counter")
+	if err != nil {
+		t.Fatalf("ZScore: %v", err)
+	}
+	if !exists {
+		t.Fatal("member should exist after concurrent ZIncrBy")
+	}
+	want := float64(goroutines) * increment
+	if score != want {
+		t.Errorf("score: got %v, want %v", score, want)
+	}
+}
+
+// TestDeterministicConflict_ZRemConcurrent verifies concurrent ZRem on distinct
+// members drains the zset without errors.
+func TestDeterministicConflict_ZRemConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	zSetName := "zset:zrem:conflict"
+	const members = 20
+
+	zMembers := make([]ZSetMember, members)
+	for i := range members {
+		name := fmt.Sprintf("m%d", i)
+		zMembers[i] = ZSetMember{Member: name, Score: float64(i)}
+	}
+	if err := s.ZAdd(zSetName, zMembers); err != nil {
+		t.Fatalf("ZAdd: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, members)
+	deleted := make([]int64, members)
+	for i := range members {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			member := fmt.Sprintf("m%d", idx)
+			n, err := s.ZRem(zSetName, member)
+			deleted[idx] = n
+			errs[idx] = err
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d ZRem: %v", i, err)
+		}
+		if deleted[i] != 1 {
+			t.Errorf("goroutine %d ZRem: deleted %d, want 1", i, deleted[i])
+		}
+	}
+
+	card, err := s.ZCard(zSetName)
+	if err != nil {
+		t.Fatalf("ZCard: %v", err)
+	}
+	if card != 0 {
+		t.Errorf("ZCard: got %d, want 0", card)
+	}
+}
+
+// TestDeterministicConflict_GeoAddConcurrent verifies concurrent GeoAdd of
+// distinct members on the same key.
+func TestDeterministicConflict_GeoAddConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "geo:add:conflict"
+	const members = 20
+
+	var wg sync.WaitGroup
+	errs := make([]error, members)
+	for i := range members {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, errs[idx] = s.GeoAdd(key, []GeoMember{{
+				Member: fmt.Sprintf("p%d", idx),
+				Lat:    1.0 + float64(idx)*0.01,
+				Lon:    2.0 + float64(idx)*0.01,
+			}})
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d GeoAdd: %v", i, err)
+		}
+	}
+
+	card, err := s.GeoCard(key)
+	if err != nil {
+		t.Fatalf("GeoCard: %v", err)
+	}
+	if card != members {
+		t.Errorf("GeoCard: got %d, want %d", card, members)
+	}
+}
+
+// TestDeterministicConflict_GeoDelConcurrent verifies concurrent GeoDel drains
+// the geo set without errors.
+func TestDeterministicConflict_GeoDelConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "geo:del:conflict"
+	const members = 20
+
+	geoMembers := make([]GeoMember, members)
+	for i := range members {
+		geoMembers[i] = GeoMember{
+			Member: fmt.Sprintf("p%d", i),
+			Lat:    10.0 + float64(i)*0.01,
+			Lon:    20.0 + float64(i)*0.01,
+		}
+	}
+	if _, err := s.GeoAdd(key, geoMembers); err != nil {
+		t.Fatalf("GeoAdd: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, members)
+	for i := range members {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			errs[idx] = s.GeoDel(key, fmt.Sprintf("p%d", idx))
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d GeoDel: %v", i, err)
+		}
+	}
+
+	card, err := s.GeoCard(key)
+	if err != nil {
+		t.Fatalf("GeoCard: %v", err)
+	}
+	if card != 0 {
+		t.Errorf("GeoCard: got %d, want 0", card)
+	}
+}
+
 // TestDeterministicConflict_RetryUpdateSuccessAfterConflict verifies that
 // retryUpdate correctly retries on TransactionConflict and eventually succeeds.
 func TestDeterministicConflict_RetryUpdateSuccessAfterConflict(t *testing.T) {

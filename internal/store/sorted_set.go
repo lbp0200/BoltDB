@@ -316,6 +316,7 @@ func (s *BotreonStore) ZRangeByScore(zSetName string, minScore, maxScore float64
 func (s *BotreonStore) ZRem(zSetName, member string) (int64, error) {
 	var deleted int64 = 0
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		deleted = 0 // reset each attempt; stale value must not survive conflict retry
 		// Check if key already exists with a different type
 		badgerTypeKey := TypeOfKeyGet(zSetName)
 		typeItem, typeErr := txn.Get(badgerTypeKey)
@@ -692,6 +693,7 @@ func (s *BotreonStore) ZCount(zSetName string, minScore, maxScore float64) (int6
 func (s *BotreonStore) ZIncrBy(zSetName, member string, increment float64) (float64, error) {
 	var newScore float64
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		newScore = 0 // reset each attempt; stale value must not survive conflict retry
 		badgerTypeKey := TypeOfKeyGet(zSetName)
 		if err := txn.Set(badgerTypeKey, []byte(KeyTypeSortedSet)); err != nil {
 			return err
@@ -1452,6 +1454,7 @@ func (s *BotreonStore) ZRevRangeByLex(zSetName, max, min string, offset, count i
 func (s *BotreonStore) ZRemRangeByLex(zSetName, min, max string) (int64, error) {
 	var removed int64
 	err := s.retryUpdate(func(txn *badger.Txn) error {
+		removed = 0 // reset each attempt; stale value must not survive conflict retry
 		// 获取范围内的成员
 		members, err := s.ZRangeByLex(zSetName, min, max, 0, 0)
 		if err != nil {
