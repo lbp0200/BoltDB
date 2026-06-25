@@ -685,6 +685,32 @@ func (s *BotreonStore) GeoRadiusByMember(key, member string, radius float64, uni
 	return results, err
 }
 
+// geoAllPositionsInTxn returns lat/lon for every member in one transaction.
+func geoAllPositionsInTxn(txn *badger.Txn, key string) (map[string][2]float64, error) {
+	if err := checkKeyType(txn, key, KeyTypeGeo); err != nil {
+		return nil, err
+	}
+
+	opts := badger.DefaultIteratorOptions
+	prefix := keyBadgerGet(prefixKeySortedSetBytes, []byte(key+sortedSetIndex))
+	opts.Prefix = prefix
+	opts.PrefetchValues = false
+
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	result := make(map[string][2]float64)
+	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+		score, member, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
+		if !ok {
+			continue
+		}
+		lat, lon := decodeGeoHash(uint64(score))
+		result[member] = [2]float64{lat, lon}
+	}
+	return result, nil
+}
+
 // GeoMembers returns all members in a geo set
 func (s *BotreonStore) GeoMembers(key string) ([]string, error) {
 	var members []string
@@ -757,77 +783,62 @@ func (s *BotreonStore) GeoGetHash(key, member string) (string, error) {
 
 // GetAllGeoHashes returns geohashes for all members
 func (s *BotreonStore) GeoGetAllHashes(key string) (map[string]string, error) {
-	members, err := s.GeoMembers(key)
-	if err != nil {
-		return nil, err
-	}
-
 	result := make(map[string]string)
-	for _, member := range members {
-		hash, err := s.GeoGetHash(key, member)
-		if err != nil {
-			return nil, err
+	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeGeo); err != nil {
+			return err
 		}
-		result[member] = hash
-	}
-	return result, nil
+		opts := badger.DefaultIteratorOptions
+		prefix := keyBadgerGet(prefixKeySortedSetBytes, []byte(key+sortedSetIndex))
+		opts.Prefix = prefix
+		opts.PrefetchValues = false
+
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			score, member, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
+			if !ok {
+				continue
+			}
+			result[member] = geoHashToString(uint64(score))
+		}
+		return nil
+	})
+	return result, err
 }
 
 // GetAllGeoPositions returns positions for all members
 func (s *BotreonStore) GeoGetAllPositions(key string) (map[string][2]float64, error) {
-	members, err := s.GeoMembers(key)
-	if err != nil {
-		return nil, err
-	}
-
-	positions, err := s.GeoPos(key, members...)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make(map[string][2]float64)
-	for i, member := range members {
-		result[member] = positions[i]
-	}
-	return result, nil
+	var result map[string][2]float64
+	err := s.db.View(func(txn *badger.Txn) error {
+		var err error
+		result, err = geoAllPositionsInTxn(txn, key)
+		return err
+	})
+	return result, err
 }
 
 // GetAllGeoDistances calculates distances between all pairs
 func (s *BotreonStore) GeoGetAllDistances(key string, fromMember string, unit string) (map[string]float64, error) {
-	fromPos, err := s.GeoPos(key, fromMember)
-	if err != nil {
-		return nil, err
-	}
-	if len(fromPos) == 0 || (fromPos[0][0] == 0 && fromPos[0][1] == 0) {
-		return nil, fmt.Errorf("member not found: %s", fromMember)
-	}
-
-	members, err := s.GeoMembers(key)
-	if err != nil {
-		return nil, err
-	}
-
-	positions, err := s.GeoPos(key, members...)
-	if err != nil {
-		return nil, err
-	}
-
 	result := make(map[string]float64)
-	for i, member := range members {
-		if member == fromMember {
-			continue
+	err := s.db.View(func(txn *badger.Txn) error {
+		positions, err := geoAllPositionsInTxn(txn, key)
+		if err != nil {
+			return err
 		}
-		dist := calculateDistance(fromPos[0][0], fromPos[0][1], positions[i][0], positions[i][1])
-		switch strings.ToUpper(unit) {
-		case "M", "":
-			result[member] = dist
-		case "KM":
-			result[member] = dist / 1000
-		case "MI":
-			result[member] = dist / 1609.344
-		case "FT":
-			result[member] = dist * 3.28084
+		fromPos, ok := positions[fromMember]
+		if !ok {
+			return fmt.Errorf("member not found: %s", fromMember)
 		}
-	}
-	return result, nil
+		for member, pos := range positions {
+			if member == fromMember {
+				continue
+			}
+			dist := calculateDistance(fromPos[0], fromPos[1], pos[0], pos[1])
+			result[member] = formatGeoDistance(dist, unit)
+		}
+		return nil
+	})
+	return result, err
 }

@@ -401,6 +401,52 @@ func zRangeMembersByRankInTxn(txn *badger.Txn, zSetName string, start, stop int6
 	return results, nil
 }
 
+// zRankInTxn returns the forward rank of a member, or -1 if not found.
+func zRankInTxn(txn *badger.Txn, zSetName, member string) (int64, error) {
+	dataKey := sortedSetKeyMember(zSetName, member)
+	item, err := txn.Get(dataKey)
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return -1, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	var score float64
+	err = item.Value(func(val []byte) error {
+		score = decodeScore(val)
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	opts := badger.DefaultIteratorOptions
+	prefix := keyBadgerGet(prefixKeySortedSetBytes, []byte(zSetName+sortedSetIndex))
+	opts.Prefix = prefix
+	opts.PrefetchValues = false
+
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	var rank int64
+	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+		memberScore, memberName, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
+		if !ok {
+			continue
+		}
+		if memberScore < score || (memberScore == score && memberName < member) {
+			rank++
+			continue
+		}
+		if memberScore == score && memberName == member {
+			return rank, nil
+		}
+		return -1, nil
+	}
+	return -1, nil
+}
+
 // zRangeByRankInTxn returns member names in the inclusive rank range inside an update txn.
 func zRangeByRankInTxn(txn *badger.Txn, zSetName string, start, stop int64) ([]string, error) {
 	members, err := zRangeMembersByRankInTxn(txn, zSetName, start, stop)
@@ -803,150 +849,59 @@ func (s *BotreonStore) ZRem(zSetName, member string) (int64, error) {
 
 // ZScore 获取成员分数
 func (s *BotreonStore) ZScore(zSetName, member string) (float64, bool, error) {
-	// Check if key exists with wrong type
-	typeKey := TypeOfKeyGet(zSetName)
-	if err := s.db.View(func(txn *badger.Txn) error {
-		typeItem, err := txn.Get(typeKey)
-		if err == nil {
-			typeVal, err := typeItem.ValueCopy(nil)
-			if err != nil {
-				return err
-			}
-			keyType := string(typeVal)
-			if keyType != "" && keyType != KeyTypeSortedSet {
-				return ErrWrongType
-			}
-		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+	var score float64
+	var exists bool
+	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, zSetName, KeyTypeSortedSet); err != nil {
 			return err
 		}
-		return nil
-	}); err != nil {
-		return 0, false, err
-	}
-
-	var score float64
-	dataKey := sortedSetKeyMember(zSetName, member)
-
-	err := s.db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(dataKey)
+		item, err := txn.Get(sortedSetKeyMember(zSetName, member))
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return nil
+		}
 		if err != nil {
 			return err
 		}
+		exists = true
 		return item.Value(func(val []byte) error {
 			score = decodeScore(val)
 			return nil
 		})
 	})
-
-	if errors.Is(err, badger.ErrKeyNotFound) {
-		return 0, false, nil
-	}
 	if err != nil {
 		logger.Logger.Error().Err(err).Str("member", member).Str("zset_name", zSetName).Msg("ZScore: Failed to get score")
 	}
-	return score, true, err
+	return score, exists, err
 }
 
 // ZRange 获取指定排名范围的成员
 func (s *BotreonStore) ZRange(zSetName string, start, stop int64) ([]*ZSetMember, error) {
-	// Check if key exists with wrong type
-	typeKey := TypeOfKeyGet(zSetName)
-	if err := s.db.View(func(txn *badger.Txn) error {
-		typeItem, err := txn.Get(typeKey)
-		if err == nil {
-			typeVal, err := typeItem.ValueCopy(nil)
-			if err != nil {
-				return err
-			}
-			keyType := string(typeVal)
-			if keyType != "" && keyType != KeyTypeSortedSet {
-				return ErrWrongType
-			}
-		} else if !errors.Is(err, badger.ErrKeyNotFound) {
-			return err
-		}
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-
-	var results []*ZSetMember
+	var members []ZSetMember
 	err := s.db.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		//prefix := []byte(zSetName + sortedSetIndex) // e.g., "myset:index:"
-		//opts.Prefix = prefix
-		prefix := keyBadgerGet(prefixKeySortedSetBytes, []byte(zSetName+sortedSetIndex)) // e.g., "zset:myset:index:"
-		opts.Prefix = prefix
-		opts.PrefetchValues = false
-
-		// 获取元数据
-		metaKey := sortedSetKeyMeta(zSetName)
-		var totalCount int64
-		item, err := txn.Get(metaKey)
-		if err == nil {
-			var meta ZSetsMetaValue
-			err = item.Value(func(val []byte) error {
-				meta, err = decodeMeta(val)
-				return err
-			})
-			if err != nil {
-				logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZRange: Failed to decode meta")
-				return err
-			}
-			totalCount = meta.Card
-		} else if !errors.Is(err, badger.ErrKeyNotFound) {
-			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZRange: Failed to get meta")
+		if err := checkKeyType(txn, zSetName, KeyTypeSortedSet); err != nil {
 			return err
 		}
-
-		// 处理负索引
-		if start < 0 {
-			start = totalCount + start
+		var err error
+		members, err = zRangeMembersByRankInTxn(txn, zSetName, start, stop)
+		if err != nil {
+			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZRange: Failed to read members")
+			return err
 		}
-		if stop < 0 {
-			stop = totalCount + stop
-		}
-		if start < 0 {
-			start = 0
-		}
-		if stop >= totalCount {
-			stop = totalCount - 1
-		}
-		if start > stop || totalCount == 0 {
-			return nil
-		}
-
-		it := txn.NewIterator(opts)
-		defer it.Close()
-
-		currentIndex := int64(0)
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			if currentIndex < start {
-				currentIndex++
-				continue
-			}
-			if currentIndex > stop {
-				break
-			}
-
-			item := it.Item()
-			score, member, _, ok := parseZSetIndexKey(item.Key(), prefix)
-			if !ok {
-				logger.Logger.Debug().Str("key", string(item.Key())).Msg("ZRange: Invalid key format")
-				continue
-			}
-
-			results = append(results, &ZSetMember{Member: member, Score: score})
-			currentIndex++
-		}
-		// 成功路径不记录日志，避免性能影响
 		logger.Logger.Debug().
-			Int("members_count", len(results)).
+			Int("members_count", len(members)).
 			Str("zset_name", zSetName).
 			Msg("ZRange: Retrieved members")
 		return nil
 	})
-	return results, err
+	if err != nil {
+		return nil, err
+	}
+	results := make([]*ZSetMember, len(members))
+	for i := range members {
+		m := members[i]
+		results[i] = &ZSetMember{Member: m.Member, Score: m.Score}
+	}
+	return results, nil
 }
 
 // ZSetDel 删除整个排序集
@@ -1112,49 +1067,9 @@ func (s *BotreonStore) ZIncrBy(zSetName, member string, increment float64) (floa
 func (s *BotreonStore) ZRank(zSetName, member string) (int64, error) {
 	var rank int64 = -1
 	err := s.db.View(func(txn *badger.Txn) error {
-		// 获取成员分数
-		dataKey := sortedSetKeyMember(zSetName, member)
-		item, err := txn.Get(dataKey)
-		if errors.Is(err, badger.ErrKeyNotFound) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		var score float64
-		err = item.Value(func(val []byte) error {
-			score = decodeScore(val)
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-
-		// 遍历索引，计算排名
-		opts := badger.DefaultIteratorOptions
-		prefix := keyBadgerGet(prefixKeySortedSetBytes, []byte(zSetName+sortedSetIndex))
-		opts.Prefix = prefix
-		opts.PrefetchValues = false
-
-		it := txn.NewIterator(opts)
-		defer it.Close()
-
-		rank = 0
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			memberScore, memberName, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
-			if !ok {
-				continue
-			}
-			if memberScore < score || (memberScore == score && memberName < member) {
-				rank++
-			} else if memberScore == score && memberName == member {
-				return nil
-			} else {
-				break
-			}
-		}
-		rank = -1 // 未找到
-		return nil
+		var err error
+		rank, err = zRankInTxn(txn, zSetName, member)
+		return err
 	})
 	return rank, err
 }
@@ -1163,17 +1078,15 @@ func (s *BotreonStore) ZRank(zSetName, member string) (int64, error) {
 func (s *BotreonStore) ZRevRank(zSetName, member string) (int64, error) {
 	var rank int64 = -1
 	err := s.db.View(func(txn *badger.Txn) error {
-		// 检查成员是否存在
-		dataKey := sortedSetKeyMember(zSetName, member)
-		_, err := txn.Get(dataKey)
-		if errors.Is(err, badger.ErrKeyNotFound) {
-			return nil
-		}
+		forwardRank, err := zRankInTxn(txn, zSetName, member)
 		if err != nil {
 			return err
 		}
+		if forwardRank == -1 {
+			rank = -1
+			return nil
+		}
 
-		// 获取总数
 		metaKey := sortedSetKeyMeta(zSetName)
 		var totalCount int64
 		metaItem, err := txn.Get(metaKey)
@@ -1189,17 +1102,10 @@ func (s *BotreonStore) ZRevRank(zSetName, member string) (int64, error) {
 			if err != nil {
 				return err
 			}
-		}
-
-		// 计算正向排名，然后转换为反向排名
-		forwardRank, err := s.ZRank(zSetName, member)
-		if err != nil {
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
 			return err
 		}
-		if forwardRank == -1 {
-			rank = -1
-			return nil
-		}
+
 		rank = totalCount - 1 - forwardRank
 		return nil
 	})
@@ -1565,6 +1471,16 @@ func compareLex(a, b string, inclusive bool) bool {
 }
 
 // ZRangeByLex 实现 Redis ZRANGEBYLEX 命令，返回有序集合中成员值介于min和max之间的成员（字典序）
+func zFilterMemberNamesByLex(members []ZSetMember, min, max string) []string {
+	var filtered []string
+	for _, member := range members {
+		if memberInLexRange(member.Member, min, max) {
+			filtered = append(filtered, member.Member)
+		}
+	}
+	return filtered
+}
+
 func (s *BotreonStore) ZRangeByLex(zSetName, min, max string, offset, count int) ([]string, error) {
 	var filtered []string
 	err := s.db.View(func(txn *badger.Txn) error {
@@ -1572,23 +1488,7 @@ func (s *BotreonStore) ZRangeByLex(zSetName, min, max string, offset, count int)
 		if err != nil {
 			return err
 		}
-		for _, member := range members {
-			memberStr := member.Member
-			minOK := compareLex(min, memberStr, true)
-			var maxOK bool
-			if max == "+" {
-				maxOK = true
-			} else if len(max) > 0 && max[0] == '(' {
-				maxOK = memberStr < max[1:]
-			} else if len(max) > 0 && max[0] == '[' {
-				maxOK = memberStr <= max[1:]
-			} else {
-				maxOK = memberStr <= max
-			}
-			if minOK && maxOK {
-				filtered = append(filtered, memberStr)
-			}
-		}
+		filtered = zFilterMemberNamesByLex(members, min, max)
 		return nil
 	})
 	if err != nil {
@@ -1611,31 +1511,34 @@ func (s *BotreonStore) ZRangeByLex(zSetName, min, max string, offset, count int)
 
 // ZRevRangeByLex 实现 Redis ZREVRANGEBYLEX 命令，返回有序集合中成员值介于min和max之间的成员（字典序，反向）
 func (s *BotreonStore) ZRevRangeByLex(zSetName, max, min string, offset, count int) ([]string, error) {
-	// 先获取正向范围
-	results, err := s.ZRangeByLex(zSetName, min, max, 0, 0)
+	var filtered []string
+	err := s.db.View(func(txn *badger.Txn) error {
+		members, err := zReadZSetMembersInTxn(txn, zSetName)
+		if err != nil {
+			return err
+		}
+		filtered = zFilterMemberNamesByLex(members, min, max)
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	// 反转结果
-	for i, j := 0, len(results)-1; i < j; i, j = i+1, j-1 {
-		results[i], results[j] = results[j], results[i]
+	for i, j := 0, len(filtered)-1; i < j; i, j = i+1, j-1 {
+		filtered[i], filtered[j] = filtered[j], filtered[i]
 	}
 
-	// 应用offset和count
+	var results []string
 	if offset < 0 {
 		offset = 0
 	}
-	if offset < len(results) {
+	if offset < len(filtered) {
 		end := offset + count
-		if count <= 0 || end > len(results) {
-			end = len(results)
+		if count <= 0 || end > len(filtered) {
+			end = len(filtered)
 		}
-		results = results[offset:end]
-	} else {
-		results = []string{}
+		results = filtered[offset:end]
 	}
-
 	return results, nil
 }
 
@@ -1667,18 +1570,29 @@ func (s *BotreonStore) ZRemRangeByLex(zSetName, min, max string) (int64, error) 
 // ZMScore 实现 Redis ZMSCORE 命令，批量获取多个成员的分数
 func (s *BotreonStore) ZMScore(zSetName string, members ...string) ([]float64, error) {
 	scores := make([]float64, len(members))
-	for i, member := range members {
-		score, exists, err := s.ZScore(zSetName, member)
-		if err != nil {
-			return nil, err
+	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, zSetName, KeyTypeSortedSet); err != nil {
+			return err
 		}
-		if exists {
-			scores[i] = score
-		} else {
-			scores[i] = 0 // Redis返回nil，这里用0表示不存在
+		for i, member := range members {
+			item, err := txn.Get(sortedSetKeyMember(zSetName, member))
+			if errors.Is(err, badger.ErrKeyNotFound) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			err = item.Value(func(val []byte) error {
+				scores[i] = decodeScore(val)
+				return nil
+			})
+			if err != nil {
+				return err
+			}
 		}
-	}
-	return scores, nil
+		return nil
+	})
+	return scores, err
 }
 
 // unregisterBlockingZPop removes a specific channel from all keys' wait lists
