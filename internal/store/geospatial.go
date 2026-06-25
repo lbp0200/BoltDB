@@ -591,67 +591,73 @@ func extractMembers(results []GeoSearchResult) []string {
 	return members
 }
 
+// geoDelMemberInTxn removes one geo member inside an open update transaction.
+// Returns true when the member existed and was deleted.
+func geoDelMemberInTxn(txn *badger.Txn, key, member string) (bool, error) {
+	hashKey := geoIndexKey(key, member)
+	item, err := txn.Get(hashKey)
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var hash uint64
+	if err := item.Value(func(val []byte) error {
+		hash = binary.BigEndian.Uint64(val)
+		return nil
+	}); err != nil {
+		return false, err
+	}
+
+	if err := txn.Delete(sortedSetKeyMember(key, member)); err != nil {
+		return false, err
+	}
+	if err := txn.Delete(sortedSetKeyIndex(key, float64(hash), member, 0)); err != nil {
+		return false, err
+	}
+	if err := txn.Delete(hashKey); err != nil {
+		return false, err
+	}
+	if err := txn.Delete(geoHashToCoordKey(key, hash)); err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
+		return false, err
+	}
+
+	metaKey := geoKey(key)
+	var count int64
+	metaItem, err := txn.Get(metaKey)
+	if err == nil {
+		err = metaItem.Value(func(val []byte) error {
+			count = int64(binary.BigEndian.Uint64(val))
+			return nil
+		})
+		if err != nil {
+			return false, err
+		}
+	}
+	count--
+	if count <= 0 {
+		if err := txn.Delete(metaKey); err != nil {
+			return false, err
+		}
+		if err := txn.Delete(TypeOfKeyGet(key)); err != nil {
+			return false, err
+		}
+	} else {
+		metaBytes := make([]byte, 8)
+		binary.BigEndian.PutUint64(metaBytes, uint64(count))
+		if err := txn.Set(metaKey, metaBytes); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
 // GeoDel removes members from a geo set
 func (s *BotreonStore) GeoDel(key, member string) error {
 	return s.retryUpdate(func(txn *badger.Txn) error {
-		// Get hash first
-		hashKey := geoIndexKey(key, member)
-		item, err := txn.Get(hashKey)
-		if errors.Is(err, badger.ErrKeyNotFound) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		var hash uint64
-		if err := item.Value(func(val []byte) error {
-			hash = binary.BigEndian.Uint64(val)
-			return nil
-		}); err != nil {
-			return err
-		}
-
-		// Delete all associated keys
-		if err := txn.Delete(sortedSetKeyMember(key, member)); err != nil {
-			return err
-		}
-		if err := txn.Delete(sortedSetKeyIndex(key, float64(hash), member, 0)); err != nil {
-			return err
-		}
-		if err := txn.Delete(hashKey); err != nil {
-			return err
-		}
-
-		// Update metadata
-		metaKey := geoKey(key)
-		var count int64
-		metaItem, err := txn.Get(metaKey)
-		if err == nil {
-			err = metaItem.Value(func(val []byte) error {
-				count = int64(binary.BigEndian.Uint64(val))
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-		}
-		count--
-		if count <= 0 {
-			if err := txn.Delete(metaKey); err != nil {
-				return err
-			}
-			if err := txn.Delete(TypeOfKeyGet(key)); err != nil {
-				return err
-			}
-		} else {
-			metaBytes := make([]byte, 8)
-			binary.BigEndian.PutUint64(metaBytes, uint64(count))
-			if err := txn.Set(metaKey, metaBytes); err != nil {
-				return err
-			}
-		}
-
-		return nil
+		_, err := geoDelMemberInTxn(txn, key, member)
+		return err
 	}, 20)
 }
 
@@ -756,17 +762,26 @@ func (s *BotreonStore) GeoCard(key string) (int64, error) {
 	return count, err
 }
 
-// GeoDel removes multiple members from a geo set
+// GeoRemove removes multiple members from a geo set in one transaction.
 func (s *BotreonStore) GeoRemove(key string, members ...string) (int64, error) {
-	var removed int64
-	for _, member := range members {
-		err := s.GeoDel(key, member)
-		if err != nil {
-			return removed, err
-		}
-		removed++
+	if len(members) == 0 {
+		return 0, nil
 	}
-	return removed, nil
+	var removed int64
+	err := s.retryUpdate(func(txn *badger.Txn) error {
+		removed = 0 // reset each attempt; stale value must not survive conflict retry
+		for _, member := range members {
+			ok, err := geoDelMemberInTxn(txn, key, member)
+			if err != nil {
+				return err
+			}
+			if ok {
+				removed++
+			}
+		}
+		return nil
+	}, 20)
+	return removed, err
 }
 
 // GetHash returns the geohash for a member

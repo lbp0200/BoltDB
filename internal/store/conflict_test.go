@@ -516,6 +516,69 @@ func TestDeterministicConflict_GeoDelConcurrent(t *testing.T) {
 	}
 }
 
+// TestDeterministicConflict_GeoRemoveBatchWithConflict verifies batched GEOREM
+// stays correct while concurrent GEOADD causes txn conflicts.
+func TestDeterministicConflict_GeoRemoveBatchWithConflict(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "geo:rem:batch"
+	const writers = 4
+
+	if _, err := s.GeoAdd(key, []GeoMember{
+		{Member: "keep", Lat: 39.9, Lon: 116.4},
+		{Member: "drop1", Lat: 31.2, Lon: 121.5},
+		{Member: "drop2", Lat: 30.5, Lon: 120.0},
+	}); err != nil {
+		t.Fatalf("GeoAdd: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	var removeErr error
+	var removed int64
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		removed, removeErr = s.GeoRemove(key, "drop1", "drop2", "missing")
+	}()
+
+	for i := range writers {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, _ = s.GeoAdd(key, []GeoMember{{
+				Member: fmt.Sprintf("extra%d", idx),
+				Lat:    39.9 + float64(idx)*0.01,
+				Lon:    116.4 + float64(idx)*0.01,
+			}})
+		}(i)
+	}
+	wg.Wait()
+
+	if removeErr != nil {
+		t.Fatalf("GeoRemove: %v", removeErr)
+	}
+	if removed != 2 {
+		t.Errorf("GeoRemove: got %d removed, want 2", removed)
+	}
+
+	positions, err := s.GeoPos(key, "keep")
+	if err != nil {
+		t.Fatalf("GeoPos(keep): %v", err)
+	}
+	if len(positions) == 0 || (positions[0][0] == 0 && positions[0][1] == 0) {
+		t.Fatal("member keep should still exist")
+	}
+
+	card, err := s.GeoCard(key)
+	if err != nil {
+		t.Fatalf("GeoCard: %v", err)
+	}
+	if card < 1 {
+		t.Errorf("GeoCard: got %d, want at least 1", card)
+	}
+}
+
 // TestDeterministicConflict_ZSetDelConcurrent verifies concurrent ZSetDel on the
 // same key is idempotent and leaves the zset empty.
 func TestDeterministicConflict_ZSetDelConcurrent(t *testing.T) {
