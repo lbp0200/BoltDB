@@ -578,23 +578,25 @@ func (s *BotreonStore) ZSetDel(zSetName string) error {
 
 		// 删除数据键
 		it := txn.NewIterator(opts)
-		defer it.Close()
 		for it.Rewind(); it.ValidForPrefix(dataPrefix); it.Next() {
 			if err := txn.Delete(it.Item().Key()); err != nil {
+				it.Close()
 				logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZSetDel: Failed to delete data key")
 				return err
 			}
 		}
+		it.Close()
 
 		// 删除索引键
 		it = txn.NewIterator(opts)
-		defer it.Close()
 		for it.Rewind(); it.ValidForPrefix(indexPrefix); it.Next() {
 			if err := txn.Delete(it.Item().Key()); err != nil {
+				it.Close()
 				logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZSetDel: Failed to delete index key")
 				return err
 			}
 		}
+		it.Close()
 
 		// 删除元数据和类型键
 		if err := txn.Delete(sortedSetKeyMeta(zSetName)); err != nil {
@@ -1573,20 +1575,20 @@ func (s *BotreonStore) BZPopMaxBlocking(ctx context.Context, keys []string, time
 		}
 	}
 
-	if timeout == 0 {
-		return "", nil, nil
-	}
-
 	resultCh := make(chan string, 1)
-	timer := time.NewTimer(time.Duration(timeout) * time.Second)
-	defer func() {
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
+	var timerCh <-chan time.Time
+	if timeout > 0 {
+		timer := time.NewTimer(time.Duration(timeout) * time.Second)
+		defer func() {
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
 			}
-		}
-	}()
+		}()
+		timerCh = timer.C
+	}
 
 	if key, member, ok := s.registerAndRecheckZMax(keys, resultCh); ok {
 		return key, member, nil
@@ -1599,7 +1601,7 @@ func (s *BotreonStore) BZPopMaxBlocking(ctx context.Context, keys []string, time
 			return "", nil, nil
 		}
 		return key, &members[0], nil
-	case <-timer.C:
+	case <-timerCh:
 		s.unregisterBlockingZPop(resultCh, keys)
 		return "", nil, nil
 	case <-ctx.Done():
@@ -1624,20 +1626,20 @@ func (s *BotreonStore) BZPopMinBlocking(ctx context.Context, keys []string, time
 		}
 	}
 
-	if timeout == 0 {
-		return "", nil, nil
-	}
-
 	resultCh := make(chan string, 1)
-	timer := time.NewTimer(time.Duration(timeout) * time.Second)
-	defer func() {
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
+	var timerCh <-chan time.Time
+	if timeout > 0 {
+		timer := time.NewTimer(time.Duration(timeout) * time.Second)
+		defer func() {
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
 			}
-		}
-	}()
+		}()
+		timerCh = timer.C
+	}
 
 	if key, member, ok := s.registerAndRecheckZMin(keys, resultCh); ok {
 		return key, member, nil
@@ -1650,7 +1652,7 @@ func (s *BotreonStore) BZPopMinBlocking(ctx context.Context, keys []string, time
 			return "", nil, nil
 		}
 		return key, &members[0], nil
-	case <-timer.C:
+	case <-timerCh:
 		s.unregisterBlockingZPop(resultCh, keys)
 		return "", nil, nil
 	case <-ctx.Done():

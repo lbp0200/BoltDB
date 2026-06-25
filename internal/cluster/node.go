@@ -57,6 +57,18 @@ func NewNode(id, addr string) *Node {
 func (n *Node) AddSlotRange(start, end uint32) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+
+	// Merge with last range if adjacent or overlapping (common case for sequential calls)
+	if len(n.Slots) > 0 {
+		last := &n.Slots[len(n.Slots)-1]
+		if start >= last.Start && start <= last.End+1 {
+			if end > last.End {
+				last.End = end
+			}
+			return
+		}
+	}
+
 	n.Slots = append(n.Slots, SlotRange{Start: start, End: end})
 }
 
@@ -130,6 +142,20 @@ func (n *Node) SetMyself() {
 	n.Flags = append(newFlags, FlagMyself)
 }
 
+// GetPongRecv 返回最后一次pong接收时间
+func (n *Node) GetPongRecv() int64 {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.PongRecv
+}
+
+// SetPongRecv 设置pong接收时间（用于测试）
+func (n *Node) SetPongRecv(t int64) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.PongRecv = t
+}
+
 // UpdatePong 更新pong接收时间
 func (n *Node) UpdatePong() {
 	n.mu.Lock()
@@ -142,6 +168,13 @@ func (n *Node) UpdatePing() {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.PingSent = time.Now().UnixMilli()
+}
+
+// HasFailFlag 检查节点是否已有 FAIL 或 PFAIL 标记（线程安全）
+func (n *Node) HasFailFlag() bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.hasFailFlag()
 }
 
 // hasFailFlag 检查节点是否已有 FAIL 或 PFAIL 标记（不加锁，调用者需持有锁）

@@ -6,14 +6,92 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"os"
 	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
+	"github.com/lbp0200/BoltDB/internal/backup"
 	"github.com/lbp0200/BoltDB/internal/proto"
+	"github.com/lbp0200/BoltDB/internal/replication"
+	"github.com/lbp0200/BoltDB/internal/server"
+	"github.com/lbp0200/BoltDB/internal/store"
 )
+
+// fuzzServerInfra holds the per-process standalone fuzz server.
+// One instance per fuzz function (each runs in its own process).
+type fuzzServerInfra struct {
+	once   sync.Once
+	db     *store.BotreonStore
+	srv    *server.Handler
+	lis    net.Listener
+	client *redis.Client
+	dir    string
+}
+
+var fuzzSrv fuzzServerInfra
+
+// startFuzzServer initializes the standalone fuzz server once per process.
+// The Go fuzzer runs each FuzzXxx target in a separate child process that
+// does NOT execute TestMain, so sharedListener is unavailable.
+func startFuzzServer(t *testing.T) {
+	t.Helper()
+	fuzzSrv.once.Do(func() {
+		var err error
+		fuzzSrv.dir, err = os.MkdirTemp("", "boltdb-fuzz-*")
+		if err != nil {
+			t.Fatal(err)
+		}
+		fuzzSrv.db, err = store.NewBotreonStore(fuzzSrv.dir)
+		if err != nil {
+			os.RemoveAll(fuzzSrv.dir)
+			t.Fatal(err)
+		}
+		ps := store.NewPubSubManager()
+		bp := backup.NewBackupManager(fuzzSrv.db, fuzzSrv.dir)
+		rm := replication.NewReplicationManager(fuzzSrv.db)
+		fuzzSrv.srv = &server.Handler{
+			Db:          fuzzSrv.db,
+			PubSub:      ps,
+			Backup:      bp,
+			Replication: rm,
+			Ctx:         context.Background(),
+		}
+		fuzzSrv.lis, err = net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			fuzzSrv.db.Close()
+			os.RemoveAll(fuzzSrv.dir)
+			t.Fatal(err)
+		}
+		go func() { _ = fuzzSrv.srv.ServeTCP(fuzzSrv.lis) }()
+		time.Sleep(50 * time.Millisecond)
+		fuzzSrv.client = redis.NewClient(&redis.Options{
+			Addr: fuzzSrv.lis.Addr().String(),
+		})
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := fuzzSrv.client.Ping(ctx).Result(); err != nil {
+			fuzzSrv.lis.Close()
+			fuzzSrv.db.Close()
+			os.RemoveAll(fuzzSrv.dir)
+			t.Fatal(err)
+		}
+	})
+}
+
+// resetFuzzData clears all data for a fresh fuzz iteration.
+func resetFuzzData(t *testing.T) {
+	t.Helper()
+	if err := fuzzSrv.db.ClearAllData(); err != nil {
+		t.Fatalf("clear fuzz data: %v", err)
+	}
+	fuzzSrv.db.ClearCaches()
+	fuzzSrv.srv.PubSub.Clear()
+}
 
 // Opcodes for command sequence fuzzing.
 const (
@@ -160,12 +238,12 @@ func FuzzServerCommandSequence(f *testing.F) {
 			return
 		}
 
-		setupTest(t)
-		defer teardownTest(t)
+		startFuzzServer(t)
+		resetFuzzData(t)
 
 		baseline := runtime.NumGoroutine()
 
-		conn, err := net.DialTimeout("tcp", sharedListener.Addr().String(), 5*time.Second)
+		conn, err := net.DialTimeout("tcp", fuzzSrv.lis.Addr().String(), 5*time.Second)
 		if err != nil {
 			return
 		}
@@ -209,7 +287,7 @@ func FuzzServerCommandSequence(f *testing.F) {
 		// Verify server still alive
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		if err := sharedClient.Ping(ctx).Err(); err != nil {
+		if err := fuzzSrv.client.Ping(ctx).Err(); err != nil {
 			t.Fatalf("server not responsive after fuzz: %v", err)
 		}
 	})
@@ -247,12 +325,12 @@ func FuzzServerRawBytes(f *testing.F) {
 			return
 		}
 
-		setupTest(t)
-		defer teardownTest(t)
+		startFuzzServer(t)
+		resetFuzzData(t)
 
 		baseline := runtime.NumGoroutine()
 
-		conn, err := net.DialTimeout("tcp", sharedListener.Addr().String(), 5*time.Second)
+		conn, err := net.DialTimeout("tcp", fuzzSrv.lis.Addr().String(), 5*time.Second)
 		if err != nil {
 			return
 		}
@@ -284,7 +362,7 @@ func FuzzServerRawBytes(f *testing.F) {
 		// Verify server still alive
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		if err := sharedClient.Ping(ctx).Err(); err != nil {
+		if err := fuzzSrv.client.Ping(ctx).Err(); err != nil {
 			t.Fatalf("server not responsive after fuzz: %v", err)
 		}
 	})
@@ -477,12 +555,12 @@ func FuzzServerPipeline(f *testing.F) {
 			return
 		}
 
-		setupTest(t)
-		defer teardownTest(t)
+		startFuzzServer(t)
+		resetFuzzData(t)
 
 		baseline := runtime.NumGoroutine()
 
-		conn, err := net.DialTimeout("tcp", sharedListener.Addr().String(), 5*time.Second)
+		conn, err := net.DialTimeout("tcp", fuzzSrv.lis.Addr().String(), 5*time.Second)
 		if err != nil {
 			return
 		}
@@ -512,7 +590,7 @@ func FuzzServerPipeline(f *testing.F) {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		if err := sharedClient.Ping(ctx).Err(); err != nil {
+		if err := fuzzSrv.client.Ping(ctx).Err(); err != nil {
 			t.Fatalf("server not responsive after pipeline fuzz: %v", err)
 		}
 	})
@@ -546,8 +624,8 @@ func FuzzServerConcurrent(f *testing.F) {
 			opsPerClient = 1
 		}
 
-		setupTest(t)
-		defer teardownTest(t)
+		startFuzzServer(t)
+		resetFuzzData(t)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -559,7 +637,7 @@ func FuzzServerConcurrent(f *testing.F) {
 			go func(clientID int) {
 				defer wg.Done()
 				rng := rand.New(rand.NewSource(time.Now().UnixNano() + int64(clientID)))
-				conn, err := net.DialTimeout("tcp", sharedListener.Addr().String(), 3*time.Second)
+				conn, err := net.DialTimeout("tcp", fuzzSrv.lis.Addr().String(), 3*time.Second)
 				if err != nil {
 					return
 				}
@@ -617,7 +695,7 @@ func FuzzServerConcurrent(f *testing.F) {
 
 		ctx2, cancel2 := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel2()
-		if err := sharedClient.Ping(ctx2).Err(); err != nil {
+		if err := fuzzSrv.client.Ping(ctx2).Err(); err != nil {
 			t.Fatalf("server not responsive after concurrent fuzz: %v", err)
 		}
 	})

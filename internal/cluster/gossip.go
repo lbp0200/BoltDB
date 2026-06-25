@@ -108,6 +108,20 @@ func (g *Gossiper) pingRandomPeers() {
 		return
 	}
 
+	// Ensure bus connections for known peers missing one
+	if g.cluster.Bus != nil {
+		for _, peer := range peers {
+			if !g.cluster.Bus.HasPeer(peer.ID) {
+				busAddr := busAddrForPeer(peer.Addr)
+				if err := g.cluster.Bus.Connect(busAddr, peer.ID); err != nil {
+					logger.Logger.Debug().
+						Err(err).Str("peer", peer.ID).Str("bus", busAddr).
+						Msg("cluster gossip: bus connect retry")
+				}
+			}
+		}
+	}
+
 	// Shuffle and pick first gossipFanout
 	rand.Shuffle(len(peers), func(i, j int) {
 		peers[i], peers[j] = peers[j], peers[i]
@@ -118,15 +132,25 @@ func (g *Gossiper) pingRandomPeers() {
 		count = len(peers)
 	}
 
+	// If cluster bus is available and has peers, send real PING over TCP
+	if g.cluster.Bus != nil && g.cluster.Bus.PeerCount() > 0 {
+		g.cluster.Bus.SendPING()
+		for _, peer := range peers[:count] {
+			logger.Logger.Debug().
+				Str("peer", peer.ID).
+				Str("addr", peer.Addr).
+				Msg("cluster gossip: PING via bus")
+		}
+		return
+	}
+
+	// Fallback: update local timestamps (unit tests, or bus not yet connected)
 	for _, peer := range peers[:count] {
-		// In a full implementation, this would open a TCP connection and
-		// send a CLUSTER message. Here we just update the ping timestamp
-		// and log the intent.
 		peer.UpdatePing()
 		logger.Logger.Debug().
 			Str("peer", peer.ID).
 			Str("addr", peer.Addr).
-			Msg("cluster gossip: PING")
+			Msg("cluster gossip: PING (local fallback)")
 	}
 }
 
@@ -171,6 +195,7 @@ func (g *Gossiper) checkFailures() {
 			for i := uint32(0); i < SlotCount; i++ {
 				if g.cluster.Slots[i] != nil && g.cluster.Slots[i].ID == id {
 					g.cluster.Slots[i] = g.cluster.Myself
+					g.cluster.Myself.AddSlotRange(i, i)
 				}
 			}
 		}

@@ -140,6 +140,17 @@ func main() {
 	tcpAddr := ln.Addr().(*net.TCPAddr)
 	handler.Port = tcpAddr.Port
 
+	// 启动集群总线（必须在数据端口确定之后）
+	if handler.Cluster != nil {
+		host, _, _ := net.SplitHostPort(*addrFlag)
+		if host == "" {
+			host = "0.0.0.0"
+		}
+		if err := handler.Cluster.Bus.Start(host, tcpAddr.Port); err != nil {
+			logger.Logger.Fatal().Err(err).Msg("Failed to start cluster bus")
+		}
+	}
+
 	logger.Warning("BoltDB 服务器启动，监听地址: %s", *addrFlag)
 	logger.Warning("当前日志级别: %s", logger.GetLevelString())
 
@@ -157,6 +168,7 @@ func main() {
 	replMgr.Stop()
 	if handler.Cluster != nil {
 		handler.Cluster.Gossip.Stop()
+		handler.Cluster.Bus.Stop()
 	}
 	cancel()
 	metricsWg.Wait()

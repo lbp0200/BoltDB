@@ -40,6 +40,7 @@ type connState struct {
 	monitoring    bool
 	monitorCh     chan []byte
 	respVersion   int // 2 for RESP2 (default), 3 for RESP3; set by HELLO
+	blocking      atomic.Bool
 }
 
 type Handler struct {
@@ -566,7 +567,9 @@ func (h *Handler) processRequest(req *proto.Array, reader *bufio.Reader, remoteA
 		}
 	}
 	if h.Replication != nil && h.Replication.IsMaster() && isWriteCommand(cmd) {
-		if cmd != "REPLICAOF" && cmd != "PSYNC" && cmd != "REPLCONF" {
+		// MIGRATE has external side effects (RESTORE on target node) and
+		// must NOT be propagated. Each replica's Del is independent.
+		if cmd != "REPLICAOF" && cmd != "PSYNC" && cmd != "REPLCONF" && cmd != "MIGRATE" {
 			h.Replication.PropagateCommand(propagateArgs)
 		}
 	}
@@ -1375,6 +1378,8 @@ func (h *Handler) clientListRESP() proto.RESP {
 			psub = len(state.subscriber.Patterns)
 		} else if state.inTransaction {
 			flags = "t"
+		} else if state.blocking.Load() {
+			flags = "b"
 		}
 		if state.inTransaction {
 			multi = len(state.commands)
@@ -1397,6 +1402,26 @@ func wrapStoreError(err error) proto.RESP {
 		return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
 	return proto.NewError(fmt.Sprintf("ERR %v", err))
+}
+
+// targetRespError extracts a human-readable error string from a RESP response,
+// or returns "" if the response indicates success (SimpleString "+OK").
+func targetRespError(resp *proto.Array) string {
+	if resp == nil || len(resp.Args) == 0 {
+		return ""
+	}
+	msg := resp.Args[0]
+	if msg == nil {
+		return ""
+	}
+	firstWord := string(msg)
+	if idx := strings.IndexByte(firstWord, ' '); idx > 0 {
+		firstWord = firstWord[:idx]
+	}
+	if firstWord == "OK" {
+		return ""
+	}
+	return string(msg)
 }
 
 func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, remoteAddr string) proto.RESP {
@@ -1528,6 +1553,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				var killed int
 				switch killType {
 				case "SLAVE":
+					if h.Replication == nil {
+						return proto.NewInteger(0)
+					}
 					slaves := h.Replication.GetSlaves()
 					for _, slave := range slaves {
 						if err := slave.Close(); err != nil {
@@ -1536,6 +1564,32 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 						h.Replication.RemoveSlave(slave.ID)
 						killed++
 					}
+				case "BLOCKING":
+					h.connsMu.RLock()
+					var targets []struct {
+						state *connState
+						conn  net.Conn
+					}
+					for s, m := range h.conns {
+						if s.blocking.Load() {
+							targets = append(targets, struct {
+								state *connState
+								conn  net.Conn
+							}{s, m.conn})
+						}
+					}
+					h.connsMu.RUnlock()
+					for _, t := range targets {
+						t.state.mu.Lock()
+						if t.state.cancel != nil {
+							t.state.cancel()
+						}
+						t.state.mu.Unlock()
+						if t.conn != nil {
+							_ = t.conn.Close()
+						}
+					}
+					killed = len(targets)
 				case "NORMAL":
 					h.connsMu.RLock()
 					var targets []struct {
@@ -2393,7 +2447,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			// 检查是否是 TTL（数字）而不是序列化数据
 			if ttlMS, err := strconv.ParseInt(ttlArg, 10, 64); err == nil {
 				// 参数位置偏移：key, ttl, serializedData, [REPLACE|ABSTTL]
-				if len(args) < 4 {
+				if len(args) < 3 {
 					return proto.NewError("ERR wrong number of arguments for 'RESTORE' command")
 				}
 				// 序列化数据现在在 args[2]
@@ -3090,7 +3144,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR timeout is not a float")
 		}
 		h.markDirtyKeys(state, source, destination)
+		state.blocking.Store(true)
 		value, err := h.Db.BLMoveBlocking(state.ctx, source, destination, sourceDirection, destinationDirection, timeout)
+		state.blocking.Store(false)
 		if err != nil {
 			return wrapStoreError(err)
 		}
@@ -3148,7 +3204,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR timeout is not an integer or out of range")
 		}
+		state.blocking.Store(true)
 		key, value, err := h.Db.BLPOPBlocking(state.ctx, keys, timeout)
+		state.blocking.Store(false)
 		if err != nil {
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -3172,7 +3230,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR timeout is not an integer or out of range")
 		}
+		state.blocking.Store(true)
 		key, value, err := h.Db.BRPOPBlocking(state.ctx, keys, timeout)
+		state.blocking.Store(false)
 		if err != nil {
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -3193,7 +3253,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR timeout is not an integer or out of range")
 		}
+		state.blocking.Store(true)
 		value, err := h.Db.BRPOPLPUSHBlocking(state.ctx, source, destination, timeout)
+		state.blocking.Store(false)
 		if err != nil {
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -4101,7 +4163,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR timeout is not an integer or out of range")
 		}
+		state.blocking.Store(true)
 		key, member, err := h.Db.BZPopMaxBlocking(state.ctx, keys, timeout)
+		state.blocking.Store(false)
 		if err != nil {
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -4125,7 +4189,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		if err != nil {
 			return proto.NewError("ERR timeout is not an integer or out of range")
 		}
+		state.blocking.Store(true)
 		key, member, err := h.Db.BZPopMinBlocking(state.ctx, keys, timeout)
+		state.blocking.Store(false)
 		if err != nil {
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -6480,7 +6546,13 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			allArgs = append(allArgs, streamIDs[j])
 		}
 
+		if block >= 0 {
+			state.blocking.Store(true)
+		}
 		results, err := h.Db.XRead(state.ctx, count, block, allArgs...)
+		if block >= 0 {
+			state.blocking.Store(false)
+		}
 		if err != nil {
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -6852,7 +6924,13 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			streamIDs[j] = string(args[i+j*2+1])
 		}
 
+		if block >= 0 {
+			state.blocking.Store(true)
+		}
 		results, err := h.Db.XReadGroup(h.Ctx, group, consumer, count, block, streamKeys...)
+		if block >= 0 {
+			state.blocking.Store(false)
+		}
 		if err != nil {
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -8003,6 +8081,120 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			}
 		}
 		return &proto.Array{Args: arr}
+
+	case "MIGRATE":
+		// MIGRATE host port key|"" db timeout [COPY] [REPLACE] [KEYS key ...]
+		if len(args) < 4 {
+			return proto.NewError("ERR wrong number of arguments for 'MIGRATE' command")
+		}
+		host := string(args[0])
+		port := string(args[1])
+		timeoutStr := string(args[4])
+		timeoutMS, err := strconv.Atoi(timeoutStr)
+		if err != nil || timeoutMS < 0 {
+			return proto.NewError("ERR timeout is not an integer or out of range")
+		}
+		timeout := time.Duration(timeoutMS) * time.Millisecond
+		if timeout < time.Second {
+			timeout = time.Second
+		}
+
+		// Parse options
+		copyKey := false
+		replace := false
+		var keysToMigrate []string
+
+		// key is at args[2], can be "" meaning "use KEYS option"
+		keyArg := string(args[2])
+		if keyArg != "" {
+			keysToMigrate = append(keysToMigrate, keyArg)
+		}
+
+		for i := 5; i < len(args); i++ {
+			opt := strings.ToUpper(string(args[i]))
+			switch opt {
+			case "COPY":
+				copyKey = true
+			case "REPLACE":
+				replace = true
+			case "KEYS":
+				for j := i + 1; j < len(args); j++ {
+					keysToMigrate = append(keysToMigrate, string(args[j]))
+				}
+				i = len(args)
+			}
+		}
+
+		if len(keysToMigrate) == 0 {
+			return proto.NewError("ERR no keys to migrate")
+		}
+
+		targetAddr := net.JoinHostPort(host, port)
+
+		// Connect once and send all RESTORE commands over the same connection
+		conn, err := net.DialTimeout("tcp", targetAddr, timeout)
+		if err != nil {
+			return proto.NewError(fmt.Sprintf("ERR MIGRATE: connecting to %s: %v", targetAddr, err))
+		}
+		defer func() { _ = conn.Close() }()
+		_ = conn.SetDeadline(time.Now().Add(timeout))
+
+		reader := bufio.NewReader(conn)
+		var migratedKeys []string
+
+		for _, migrateKey := range keysToMigrate {
+			data, err := h.Db.Dump(migrateKey)
+			if err != nil {
+				if strings.Contains(err.Error(), "no such key") {
+					continue
+				}
+				_ = conn.Close()
+				return proto.NewError(fmt.Sprintf("ERR MIGRATE: dump key %s: %v", migrateKey, err))
+			}
+
+			// Build RESTORE command using raw RESP format
+			var restoreData []byte
+			if replace {
+				restoreData = []byte(fmt.Sprintf("*5\r\n$7\r\nRESTORE\r\n$%d\r\n%s\r\n$1\r\n0\r\n$%d\r\n",
+					len(migrateKey), migrateKey, len(data)))
+			} else {
+				restoreData = []byte(fmt.Sprintf("*4\r\n$7\r\nRESTORE\r\n$%d\r\n%s\r\n$1\r\n0\r\n$%d\r\n",
+					len(migrateKey), migrateKey, len(data)))
+			}
+			restoreData = append(restoreData, data...)
+			restoreData = append(restoreData, "\r\n"...)
+			if replace {
+				restoreData = append(restoreData, "$7\r\nREPLACE\r\n"...)
+			}
+
+			if _, err := conn.Write(restoreData); err != nil {
+				_ = conn.Close()
+				return proto.NewError(fmt.Sprintf("ERR MIGRATE: write to %s: %v", targetAddr, err))
+			}
+
+			resp, err := proto.ReadRESP(reader)
+			if err != nil {
+				_ = conn.Close()
+				return proto.NewError(fmt.Sprintf("ERR MIGRATE: target response for key %s: %v", migrateKey, err))
+			}
+
+			targetErr := targetRespError(resp)
+			if targetErr != "" {
+				_ = conn.Close()
+				return proto.NewError(fmt.Sprintf("ERR MIGRATE: target error for key %s: %s", migrateKey, targetErr))
+			}
+
+			migratedKeys = append(migratedKeys, migrateKey)
+		}
+
+		// Only delete local keys after all RESTOREs succeeded
+		if !copyKey {
+			for _, migrateKey := range migratedKeys {
+				h.markDirtyKeys(state, migrateKey)
+				_, _ = h.Db.Del(migrateKey)
+			}
+		}
+		return proto.OK
 
 	case "MONITOR":
 		if len(args) > 0 {

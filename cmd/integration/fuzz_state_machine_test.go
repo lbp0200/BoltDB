@@ -48,6 +48,7 @@ const (
 	fsmEXPIRE
 	fsmMONITOR
 	fsmWAIT
+	fsmCLUSTER
 	fsmCount
 )
 
@@ -81,6 +82,7 @@ var fsmOpNames = map[byte]string{
 	fsmEXPIRE:      "EXPIRE",
 	fsmMONITOR:     "MONITOR",
 	fsmWAIT:        "WAIT",
+	fsmCLUSTER:     "CLUSTER",
 }
 
 // TestFuzzServerStateMachineChaos runs aggressive state-transition sequences
@@ -305,6 +307,17 @@ func executeFSMOp(t *testing.T, conn net.Conn, reader *bufio.Reader, op byte, rn
 		return true
 	case fsmWAIT:
 		sendRESP(conn, "WAIT", "0", "0")
+		return true
+	case fsmCLUSTER:
+		// Rotate between safe subcommands — even with cluster disabled
+		// these should return an error, not crash
+		subs := []string{"INFO", "NODES", "MYID", "SLOTS", "KEYSLOT"}
+		sub := subs[rng.Intn(len(subs))]
+		if sub == "KEYSLOT" {
+			sendRESP(conn, "CLUSTER", sub, fsmRandKey(rng))
+		} else {
+			sendRESP(conn, "CLUSTER", sub)
+		}
 		return true
 	default:
 		return false

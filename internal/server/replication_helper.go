@@ -40,6 +40,7 @@ func isWriteCommand(cmd string) bool {
 		"TS.CREATE": true, "TS.ADD": true, "TS.DEL": true,
 		// P1.5 — 修复复制数据丢失（2026-06-15）
 		"RESTORE":    true,
+		"MIGRATE":    true,
 		"FLUSHDB":    true,
 		"FLUSHALL":   true,
 		"XAUTOCLAIM": true,

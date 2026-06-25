@@ -1754,22 +1754,21 @@ func (s *BotreonStore) BLPOPBlocking(ctx context.Context, keys []string, timeout
 		}
 	}
 
-	// If timeout is 0, return immediately
-	if timeout == 0 {
-		return "", "", nil
-	}
-
 	// Create result channel
 	resultCh := make(chan BlockingResult, 1)
-	timer := time.NewTimer(time.Duration(timeout) * time.Second)
-	defer func() {
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
+	var timerCh <-chan time.Time
+	if timeout > 0 {
+		timer := time.NewTimer(time.Duration(timeout) * time.Second)
+		defer func() {
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
 			}
-		}
-	}()
+		}()
+		timerCh = timer.C
+	}
 
 	// Register + re-check to close the TOCTOU race window
 	if key, value, ok := s.registerAndRecheck(keys, resultCh, s.LPop); ok {
@@ -1780,7 +1779,7 @@ func (s *BotreonStore) BLPOPBlocking(ctx context.Context, keys []string, timeout
 	select {
 	case result := <-resultCh:
 		return result.Key, result.Value, nil
-	case <-timer.C:
+	case <-timerCh:
 		s.unregisterBlockingPop(resultCh, keys)
 		return "", "", nil
 	case <-ctx.Done():
@@ -1802,22 +1801,20 @@ func (s *BotreonStore) BRPOPBlocking(ctx context.Context, keys []string, timeout
 		}
 	}
 
-	// If timeout is 0, return immediately
-	if timeout == 0 {
-		return "", "", nil
-	}
-
-	// Create result channel
 	resultCh := make(chan BlockingResult, 1)
-	timer := time.NewTimer(time.Duration(timeout) * time.Second)
-	defer func() {
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
+	var timerCh <-chan time.Time
+	if timeout > 0 {
+		timer := time.NewTimer(time.Duration(timeout) * time.Second)
+		defer func() {
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
 			}
-		}
-	}()
+		}()
+		timerCh = timer.C
+	}
 
 	// Register + re-check to close the TOCTOU race window
 	if key, value, ok := s.registerAndRecheck(keys, resultCh, s.RPop); ok {
@@ -1828,7 +1825,7 @@ func (s *BotreonStore) BRPOPBlocking(ctx context.Context, keys []string, timeout
 	select {
 	case result := <-resultCh:
 		return result.Key, result.Value, nil
-	case <-timer.C:
+	case <-timerCh:
 		s.unregisterBlockingPop(resultCh, keys)
 		return "", "", nil
 	case <-ctx.Done():

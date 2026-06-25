@@ -131,6 +131,7 @@ func init() {
 		{name: "LTRIM", arity: 4, flags: []commandFlag{flagWrite}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "MEMORY", arity: -2, flags: []commandFlag{flagReadonly}},
 		{name: "MGET", arity: -2, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: -1, step: 1},
+		{name: "MIGRATE", arity: -5, flags: []commandFlag{flagWrite, flagDenyOOM}},
 		{name: "MODULE", arity: -2, flags: []commandFlag{flagAdmin, flagReadonly}},
 		{name: "MONITOR", arity: 1, flags: []commandFlag{flagAdmin, flagNoscript}},
 		{name: "MOVE", arity: 3, flags: []commandFlag{flagWrite}, firstKey: 1, lastKey: 1, step: 1},

@@ -1,9 +1,12 @@
 package server
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/lbp0200/BoltDB/internal/cluster"
 	"github.com/lbp0200/BoltDB/internal/proto"
+	"github.com/lbp0200/BoltDB/internal/store"
 	"github.com/zeebo/assert"
 )
 
@@ -355,19 +358,65 @@ func TestRESPShape_Del(t *testing.T) {
 	shapeInteger(t, resp)
 }
 
-// TestRESPShape_CLUSTER_SLOTS tests the CLUSTER SLOTS response shape
+// TestRESPShape_CLUSTER_SLOTS tests the CLUSTER SLOTS response shape.
+// Single-node cluster is sufficient — we ADDSLOTS and verify NestedArray depth.
 func TestRESPShape_CLUSTER_SLOTS(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping cluster test in short mode")
 	}
-	// CLUSTER SLOTS needs a real cluster setup
-	// This test verifies the [][]interface{} → RESP conversion
-	// by calling the handler via a server with cluster mode
 
-	// The cluster package requires node configuration that's hard to set up
-	// in a unit test. Shape validation happens in cluster integration tests.
-	t.Skip("CLUSTER SLOTS requires multi-node cluster setup")
+	handler, state := setupTestClusterHandler(t)
+	defer handler.Db.Close()
+
+	// Add some slots to populate the slots response
+	clusterCmd := cluster.NewClusterCommands(handler.Cluster)
+	_, err := clusterCmd.HandleCommand([]string{"ADDSLOTS", "0", "1", "2", "3", "4"})
+	assert.NoError(t, err)
+
+	// CLUSTER SLOTS with single-node returns:
+	// NestedArray [
+	//   NestedArray [BulkString("0"), BulkString("4"), NestedArray [BulkString(ip), BulkString(port), BulkString(nodeID)]]
+	// ]
+	resp := handler.executeCommand(state, "CLUSTER", [][]byte{[]byte("SLOTS")}, "127.0.0.1:12345")
+
+	outer := shapeNestedArray(t, resp, 1)
+
+	// Each element is a slot range entry: [start, end, [host, port, id]]
+	for i, entry := range outer.Elems {
+		slotEntry, ok := entry.(*proto.NestedArray)
+		if !ok {
+			t.Fatalf("slot entry %d should be NestedArray (got %T)", i, entry)
+		}
+		if len(slotEntry.Elems) < 3 {
+			t.Fatalf("slot entry %d should have >=3 elements (got %d)", i, len(slotEntry.Elems))
+		}
+
+		// First two elements are BulkString (start/end slot numbers)
+		_, okStart := slotEntry.Elems[0].(*proto.BulkString)
+		if !okStart {
+			t.Fatalf("slot entry %d element 0 (start) should be BulkString (got %T)", i, slotEntry.Elems[0])
+		}
+		_, okEnd := slotEntry.Elems[1].(*proto.BulkString)
+		if !okEnd {
+			t.Fatalf("slot entry %d element 1 (end) should be BulkString (got %T)", i, slotEntry.Elems[1])
+		}
+
+		// Third element is NestedArray: [host, port, nodeID]
+		nodeInfo, ok := slotEntry.Elems[2].(*proto.NestedArray)
+		if !ok {
+			t.Fatalf("slot entry %d element 2 should be NestedArray (got %T)", i, slotEntry.Elems[2])
+		}
+		if len(nodeInfo.Elems) != 3 {
+			t.Fatalf("slot entry %d node info should have 3 elements (got %d)", i, len(nodeInfo.Elems))
+		}
+		for j, subElem := range nodeInfo.Elems {
+			_, ok := subElem.(*proto.BulkString)
+			if !ok {
+				t.Fatalf("slot entry %d node info element %d should be BulkString (got %T)", i, j, subElem)
+			}
+		}
+	}
 }
 
 // TestRESPShape_CommandInfo verifies COMMAND returns per-command NestedArrays
@@ -901,4 +950,76 @@ func TestSPopSingleInTransactionMissingReturnsNull_RESP3(t *testing.T) {
 	shapeNull(t, na.Elems[0])
 }
 
+func TestRESPShape_CLUSTER_COUNTKEYSINSLOT(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping cluster test in short mode")
+	}
 
+	handler, state := setupTestClusterHandler(t)
+	defer handler.Db.Close()
+
+	// Insert keys and compute their CRC16 slot
+	keys := []string{"cnt:key1", "cnt:key2", "cnt:key3", "other:key"}
+	for _, k := range keys {
+		handler.executeCommand(state, "SET", [][]byte{[]byte(k), []byte("v")}, "127.0.0.1:12345")
+	}
+
+	// Verify COUNTKEYSINSLOT returns a non-negative integer for any valid slot
+	for _, k := range keys {
+		slot := cluster.Slot(k)
+		resp := handler.executeCommand(state, "CLUSTER", [][]byte{[]byte("COUNTKEYSINSLOT"), []byte(fmt.Sprintf("%d", slot))}, "127.0.0.1:12345")
+		count := shapeInteger(t, resp)
+		if count < 0 {
+			t.Fatalf("COUNTKEYSINSLOT for slot %d (key %s) returned %d", slot, k, count)
+		}
+	}
+
+	// COUNTKEYSINSLOT with slot that has data should return >=1
+	slot0 := cluster.Slot(keys[0])
+	resp := handler.executeCommand(state, "CLUSTER", [][]byte{[]byte("COUNTKEYSINSLOT"), []byte(fmt.Sprintf("%d", slot0))}, "127.0.0.1:12345")
+	count := shapeInteger(t, resp)
+	if count < 1 {
+		t.Fatalf("expected >=1 keys in slot %d, got %d", slot0, count)
+	}
+
+	// COUNTKEYSINSLOT with invalid slot number should return error
+	errResp := handler.executeCommand(state, "CLUSTER", [][]byte{[]byte("COUNTKEYSINSLOT"), []byte("99999")}, "127.0.0.1:12345")
+	_, ok := errResp.(*proto.Error)
+	if !ok {
+		t.Fatalf("COUNTKEYSINSLOT with invalid slot should return Error, got %T", errResp)
+	}
+}
+
+func TestRESPShape_ASKING(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// ASKING returns SimpleString("OK")
+	resp := handler.executeCommand(state, "ASKING", nil, "127.0.0.1:12345")
+	ss, ok := resp.(*proto.SimpleString)
+	assert.True(t, ok)
+	assert.Equal(t, "OK", string(*ss))
+
+	assert.True(t, state.clusterAsking)
+}
+
+func setupTestClusterHandler(t *testing.T) (*Handler, *connState) {
+	t.Helper()
+	dbPath := t.TempDir()
+	db, err := store.NewBotreonStore(dbPath)
+	assert.NoError(t, err)
+
+	c, err := cluster.NewCluster(db, "", "127.0.0.1:6337")
+	assert.NoError(t, err)
+
+	handler := &Handler{
+		Db:      db,
+		Cluster: c,
+		conns:   make(map[*connState]*connMeta),
+	}
+	state := &connState{}
+
+	return handler, state
+}

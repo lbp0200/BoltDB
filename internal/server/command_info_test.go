@@ -1,15 +1,18 @@
 package server
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/lbp0200/BoltDB/internal/cluster"
 	"github.com/lbp0200/BoltDB/internal/proto"
+	"github.com/lbp0200/BoltDB/internal/store"
 	"github.com/zeebo/assert"
 )
 
 func TestCommandRegistryCount(t *testing.T) {
-	assert.Equal(t, 225, len(commandRegistry))
-	assert.Equal(t, 225, len(commandMap))
+	assert.Equal(t, 226, len(commandRegistry))
+	assert.Equal(t, 226, len(commandMap))
 }
 
 func TestCommandMapKeysMatchRegistry(t *testing.T) {
@@ -35,7 +38,7 @@ func TestHandleCommandNoArgs(t *testing.T) {
 	resp := handleCommand(nil)
 	na, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.Equal(t, 225, len(na.Elems))
+	assert.Equal(t, 226, len(na.Elems))
 
 	for _, elem := range na.Elems {
 		cmdInfo, ok := elem.(*proto.NestedArray)
@@ -54,7 +57,7 @@ func TestHandleCommandCount(t *testing.T) {
 	resp := handleCommand([][]byte{[]byte("COUNT")})
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.Equal(t, int64(225), int64(*integer))
+	assert.Equal(t, int64(226), int64(*integer))
 }
 
 func TestHandleCommandInfoExisting(t *testing.T) {
@@ -171,12 +174,12 @@ func TestHandleCommandCaseInsensitive(t *testing.T) {
 	resp := handleCommand([][]byte{[]byte("count")})
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.Equal(t, int64(225), int64(*integer))
+	assert.Equal(t, int64(226), int64(*integer))
 
 	resp = handleCommand([][]byte{[]byte("Count")})
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.Equal(t, int64(225), int64(*integer))
+	assert.Equal(t, int64(226), int64(*integer))
 }
 
 func TestHandleCommandInfoCaseInsensitive(t *testing.T) {
@@ -297,6 +300,70 @@ func TestCommandInfoNegativeArity(t *testing.T) {
 	cluster, ok := commandMap["CLUSTER"]
 	assert.True(t, ok)
 	assert.Equal(t, -2, cluster.arity)
+}
+
+func TestClusterSubcommandArity(t *testing.T) {
+	dbPath := t.TempDir()
+	db, err := store.NewBotreonStore(dbPath)
+	assert.NoError(t, err)
+	defer db.Close()
+
+	c, err := cluster.NewCluster(db, "", "127.0.0.1:6379")
+	assert.NoError(t, err)
+
+	cc := cluster.NewClusterCommands(c)
+
+	tests := []struct {
+		subcommand string
+		args       []string
+		wantOK     bool
+	}{
+		{"MEET", []string{}, false},
+		{"MEET", []string{"127.0.0.1", "6379"}, true},
+		{"MEET", []string{"127.0.0.1", "6379", "nodeid"}, true},
+		{"NODES", []string{}, true},
+		{"NODES", []string{"extra"}, true},
+		{"INFO", []string{}, true},
+		{"MYID", []string{}, true},
+		{"KEYSLOT", []string{}, false},
+		{"KEYSLOT", []string{"mykey"}, true},
+		{"SLOTS", []string{}, true},
+		{"ADDSLOTS", []string{}, false},
+		{"ADDSLOTS", []string{"0"}, true},
+		{"FORGET", []string{}, false},
+		{"FORGET", []string{"nodeid"}, true},
+		{"SAVECONFIG", []string{}, true},
+		{"FLUSHSLOTS", []string{}, true},
+		{"COUNTKEYSINSLOT", []string{}, false},
+		{"COUNTKEYSINSLOT", []string{"0"}, true},
+		{"EPOCH", []string{}, true},
+		{"SLAVES", []string{}, false},
+		{"SLAVES", []string{"nodeid"}, true},
+		{"RESET", []string{}, true},
+		{"RESET", []string{"HARD"}, true},
+		{"CALLS", []string{}, true},
+		{"SETSLOT", []string{}, false},
+		{"SETSLOT", []string{"0", "NODE", "nodeid"}, true},
+		{"DELSLOTS", []string{}, false},
+		{"DELSLOTS", []string{"0"}, true},
+	}
+
+	for _, tt := range tests {
+		args := make([]string, 0, 1+len(tt.args))
+		args = append(args, tt.subcommand)
+		args = append(args, tt.args...)
+
+		_, err := cc.HandleCommand(args)
+		if tt.wantOK {
+			if err != nil && strings.Contains(err.Error(), "unknown subcommand") {
+				t.Errorf("CLUSTER %s: unexpected unknown subcommand error: %v", args, err)
+			}
+		} else {
+			if err == nil {
+				t.Errorf("CLUSTER %s: expected arity error, got nil", args)
+			}
+		}
+	}
 }
 
 func TestCommandInfoFlagCheck(t *testing.T) {

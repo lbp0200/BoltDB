@@ -242,6 +242,11 @@ func ReadRESP(r *bufio.Reader) (*Array, error) {
 		}
 		// 将简单字符串转换为单元素数组
 		return &Array{Args: [][]byte{line[1:]}}, nil
+	case '-': // Error
+		if len(line) < 2 {
+			return nil, fmt.Errorf("invalid error format")
+		}
+		return &Array{Args: [][]byte{line[1:]}}, nil
 	case '$': // Bulk String (单独发送，redis-benchmark 不使用)
 		// 这不应该出现在命令中，但为了健壮性处理
 		bulkLen, err := strconv.Atoi(string(line[1:]))
@@ -249,7 +254,7 @@ func ReadRESP(r *bufio.Reader) (*Array, error) {
 			return nil, fmt.Errorf("invalid bulk string length: %s", line[1:])
 		}
 		if bulkLen == -1 {
-			return nil, fmt.Errorf("null bulk string not supported as command")
+			return &Array{Args: [][]byte{nil}}, nil
 		}
 		if bulkLen > MaxBulkLen {
 			return nil, fmt.Errorf("bulk string length too large: %d", bulkLen)

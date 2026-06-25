@@ -20,6 +20,9 @@ type Cluster struct {
 	Epoch  int64               // 当前配置纪元
 	mu     sync.RWMutex        // 保护集群状态的锁
 	Gossip *Gossiper           // 节点间 gossip 协议
+	Bus    *ClusterBus         // 集群总线（节点间持久 TCP 连接）
+
+	pfailReports map[string]map[string]struct{} // nodeID → set of reporters
 }
 
 // NewCluster 创建新集群
@@ -38,10 +41,11 @@ func NewCluster(store *store.BotreonStore, nodeID, addr string) (*Cluster, error
 	myself.Flags = append(myself.Flags, FlagMaster)
 
 	cluster := &Cluster{
-		Myself: myself,
-		Nodes:  make(map[string]*Node),
-		Store:  store,
-		Epoch:  0,
+		Myself:       myself,
+		Nodes:        make(map[string]*Node),
+		Store:        store,
+		Epoch:        0,
+		pfailReports: make(map[string]map[string]struct{}),
 	}
 	cluster.Nodes[nodeID] = myself
 
@@ -63,8 +67,11 @@ func NewCluster(store *store.BotreonStore, nodeID, addr string) (*Cluster, error
 		myself.AddSlotRange(0, SlotCount-1)
 	}
 
-	// 初始化 gossip（使用 background context；生产环境由 main.go 通过 SetGossipContext 替换）
+	// 初始化 gossip（使用 background context；生产环境由 main.go 替换）
 	cluster.Gossip = NewGossiper(context.Background(), cluster)
+
+	// 初始化 cluster bus
+	cluster.Bus = NewClusterBus(cluster)
 
 	return cluster, nil
 }
@@ -113,6 +120,7 @@ func (c *Cluster) RemoveNode(nodeID string) {
 	for i := uint32(0); i < SlotCount; i++ {
 		if c.Slots[i] != nil && c.Slots[i].ID == nodeID {
 			c.Slots[i] = c.Myself
+			c.Myself.AddSlotRange(i, i)
 		}
 	}
 	c.mu.Unlock()
@@ -138,6 +146,8 @@ func (c *Cluster) AssignSlot(slot uint32, nodeID string) error {
 
 	c.Slots[slot] = node
 	node.AddSlotRange(slot, slot)
+	c.Epoch++
+	node.Epoch = c.Epoch
 	c.mu.Unlock()
 
 	return c.SaveConfig()
@@ -161,6 +171,8 @@ func (c *Cluster) AssignSlotRange(start, end uint32, nodeID string) error {
 	for i := start; i <= end; i++ {
 		c.Slots[i] = node
 	}
+	c.Epoch++
+	node.Epoch = c.Epoch
 	node.AddSlotRange(start, end)
 	c.mu.Unlock()
 
@@ -233,7 +245,7 @@ func (c *Cluster) GetClusterNodes() []string {
 
 // formatNodeLine 格式化节点行为CLUSTER NODES格式
 func (c *Cluster) formatNodeLine(node *Node) string {
-	// 格式: <id> <ip:port> <flags> <master> <ping-sent> <pong-recv> <epoch> <link-state> <slots>
+	node.mu.RLock()
 	flags := ""
 	if len(node.Flags) > 0 {
 		flags = node.Flags[0]
@@ -260,9 +272,14 @@ func (c *Cluster) formatNodeLine(node *Node) string {
 		slots = fmt.Sprintf(" %s", fmt.Sprintf("%v", slotStrs))
 	}
 
+	pingSent := node.PingSent
+	pongRecv := node.PongRecv
+	epoch := node.Epoch
+	node.mu.RUnlock()
+
 	return fmt.Sprintf("%s %s %s %s %d %d %d connected%s",
 		node.ID, node.Addr, flags, masterID,
-		node.PingSent, node.PongRecv, node.Epoch, slots)
+		pingSent, pongRecv, epoch, slots)
 }
 
 // GetClusterSlots 获取槽位分配信息（用于CLUSTER SLOTS命令）
@@ -457,6 +474,28 @@ func (c *Cluster) SetSlotMigrating(slot uint32, targetNodeID string) {
 	if node, exists := c.Nodes[targetNodeID]; exists {
 		c.Myself.SetMigratingSlot(slot, node.Addr)
 	}
+}
+
+// MarkNodePFail 标记一个节点为 PFAIL
+func (c *Cluster) MarkNodePFail(nodeID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if n, ok := c.Nodes[nodeID]; ok && n.ID != c.Myself.ID {
+		if !n.hasFailFlag() {
+			n.Flags = append(n.Flags, FlagPFail)
+		}
+	}
+}
+
+// GetPFailReports 获取 PFAIL 报告计数（用于测试）
+func (c *Cluster) GetPFailReports(nodeID string) int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	reports, ok := c.pfailReports[nodeID]
+	if !ok {
+		return 0
+	}
+	return len(reports)
 }
 
 // ClearSlotMigration 清除槽位迁移状态

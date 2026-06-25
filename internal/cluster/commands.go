@@ -184,13 +184,18 @@ func (cc *ClusterCommands) handleSetSlot(args []string) (string, error) {
 
 	switch subcommand {
 	case "IMPORTING":
-		// 导入槽位（迁移中）
+		if len(subArgs) < 1 {
+			return "", fmt.Errorf("ERR wrong number of arguments for 'CLUSTER SETSLOT IMPORTING'")
+		}
+		cc.cluster.SetSlotImporting(uint32(slot), subArgs[0])
+		logger.Logger.Info().Uint32("slot", uint32(slot)).Str("source", subArgs[0]).Msg("cluster SETSLOT IMPORTING")
 		return "OK", nil
 	case "MIGRATING":
-		// 迁移槽位（迁移中）
 		if len(subArgs) < 1 {
-			return "", fmt.Errorf("ERR wrong number of arguments")
+			return "", fmt.Errorf("ERR wrong number of arguments for 'CLUSTER SETSLOT MIGRATING'")
 		}
+		cc.cluster.SetSlotMigrating(uint32(slot), subArgs[0])
+		logger.Logger.Info().Uint32("slot", uint32(slot)).Str("target", subArgs[0]).Msg("cluster SETSLOT MIGRATING")
 		return "OK", nil
 	case "STABLE":
 		// 稳定状态
@@ -237,6 +242,15 @@ func (cc *ClusterCommands) handleMeet(args []string) (string, error) {
 			Str("peer", peerNodeID).
 			Str("addr", addr).
 			Msg("cluster MEET: added peer from internal handshake")
+
+		// Establish reverse bus connection to the peer
+		if cc.cluster.Bus != nil {
+			busAddr := busAddrForPeer(addr)
+			if err := cc.cluster.Bus.Connect(busAddr, peerNodeID); err != nil {
+				logger.Logger.Warn().Err(err).Str("peer", peerNodeID).Str("bus", busAddr).Msg("cluster MEET: reverse bus connect failed")
+			}
+		}
+
 		// Return our own node ID so the caller can update its node table
 		return cc.cluster.Myself.ID, nil
 	}
@@ -299,9 +313,24 @@ func (cc *ClusterCommands) handleMeet(args []string) (string, error) {
 				cc.cluster.Nodes[realNodeID] = node
 			}
 			cc.cluster.mu.Unlock()
+
+			// Clean up any stale bus connection under the old placeholder ID
+			if cc.cluster.Bus != nil {
+				cc.cluster.Bus.Disconnect(nodeID)
+			}
+
 			if err := cc.cluster.SaveConfig(); err != nil {
 				logger.Logger.Warn().Err(err).Msg("cluster MEET: failed to persist config")
 			}
+
+			// Establish persistent bus connection
+			if cc.cluster.Bus != nil {
+				busAddr := busAddrForPeer(addr)
+				if err := cc.cluster.Bus.Connect(busAddr, realNodeID); err != nil {
+					logger.Logger.Warn().Err(err).Str("peer", realNodeID).Str("bus", busAddr).Msg("cluster MEET: bus connect failed")
+				}
+			}
+
 			logger.Logger.Info().
 				Str("peer", realNodeID).
 				Str("addr", addr).
@@ -331,6 +360,7 @@ func (cc *ClusterCommands) handleForget(args []string) (string, error) {
 	for i := uint32(0); i < SlotCount; i++ {
 		if cc.cluster.Slots[i] != nil && cc.cluster.Slots[i].ID == nodeID {
 			cc.cluster.Slots[i] = cc.cluster.Myself
+			cc.cluster.Myself.AddSlotRange(i, i)
 		}
 	}
 
@@ -359,6 +389,7 @@ func (cc *ClusterCommands) handleReplicate(args []string) (string, error) {
 	for i := uint32(0); i < SlotCount; i++ {
 		if cc.cluster.Slots[i] == cc.cluster.Myself {
 			cc.cluster.Slots[i] = master
+			master.AddSlotRange(i, i)
 		}
 	}
 	cc.cluster.Myself.Slots = []SlotRange{}

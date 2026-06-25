@@ -323,13 +323,13 @@ func TestHandleSetSlot(t *testing.T) {
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
 
-	// Test CLUSTER SETSLOT <slot> IMPORTING
-	result, err := cmd.HandleCommand([]string{"SETSLOT", "100", "IMPORTING"})
+	// Test CLUSTER SETSLOT <slot> IMPORTING <source-node-id>
+	result, err := cmd.HandleCommand([]string{"SETSLOT", "100", "IMPORTING", "source-node-id"})
 	assert.NoError(t, err)
 	assert.Equal(t, "OK", result)
 
-	// Test CLUSTER SETSLOT <slot> MIGRATING <nodeid>
-	result, err = cmd.HandleCommand([]string{"SETSLOT", "101", "MIGRATING", "some-node-id"})
+	// Test CLUSTER SETSLOT <slot> MIGRATING <target-node-id>
+	result, err = cmd.HandleCommand([]string{"SETSLOT", "101", "MIGRATING", "target-node-id"})
 	assert.NoError(t, err)
 	assert.Equal(t, "OK", result)
 
