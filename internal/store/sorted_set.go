@@ -311,108 +311,146 @@ func (s *BotreonStore) ZRangeByScore(zSetName string, minScore, maxScore float64
 	return results, err
 }
 
-// ZRem 删除成员
+// zRemMemberInTxn removes one member inside an open update transaction.
+// Returns 1 if deleted, 0 if the member did not exist.
+func zRemMemberInTxn(txn *badger.Txn, zSetName, member string) (int64, error) {
+	badgerTypeKey := TypeOfKeyGet(zSetName)
+	typeItem, typeErr := txn.Get(badgerTypeKey)
+	if typeErr == nil {
+		typeVal, err := typeItem.ValueCopy(nil)
+		if err != nil {
+			return 0, err
+		}
+		keyType := string(typeVal)
+		if keyType != "" && keyType != KeyTypeSortedSet {
+			return 0, ErrWrongType
+		}
+	} else if !errors.Is(typeErr, badger.ErrKeyNotFound) {
+		return 0, typeErr
+	}
 
+	dataKey := sortedSetKeyMember(zSetName, member)
+	item, err := txn.Get(dataKey)
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return 0, nil
+	}
+	if err != nil {
+		logger.Logger.Error().Err(err).Str("data_key", string(dataKey)).Msg("ZRem: Failed to get data key")
+		return 0, err
+	}
+
+	var scoreBytes []byte
+	err = item.Value(func(val []byte) error {
+		scoreBytes = val
+		return nil
+	})
+	if err != nil {
+		logger.Logger.Error().Err(err).Str("member", member).Msg("ZRem: Failed to get score")
+		return 0, err
+	}
+	score := decodeScore(scoreBytes)
+
+	metaKey := sortedSetKeyMeta(zSetName)
+	var meta ZSetsMetaValue
+	metaItem, err := txn.Get(metaKey)
+	if err == nil {
+		err = metaItem.Value(func(val []byte) error {
+			meta, err = decodeMeta(val)
+			return err
+		})
+		if err != nil {
+			logger.Logger.Error().Err(err).Msg("ZRem: Failed to decode meta")
+			return 0, err
+		}
+	} else if !errors.Is(err, badger.ErrKeyNotFound) {
+		logger.Logger.Error().Err(err).Msg("ZRem: Failed to get meta")
+		return 0, err
+	}
+
+	if err := txn.Delete(dataKey); err != nil {
+		logger.Logger.Error().Err(err).Msg("ZRem: Failed to delete data key")
+		return 0, err
+	}
+
+	indexKey := sortedSetKeyIndex(zSetName, score, member, meta.Version)
+	if err := txn.Delete(indexKey); err != nil {
+		logger.Logger.Error().Err(err).Msg("ZRem: Failed to delete index key")
+		return 0, err
+	}
+
+	meta.Card--
+	if meta.Card <= 0 {
+		if err := txn.Delete(metaKey); err != nil {
+			logger.Logger.Error().Err(err).Msg("ZRem: Failed to delete meta")
+			return 0, err
+		}
+		if err := txn.Delete(badgerTypeKey); err != nil {
+			logger.Logger.Error().Err(err).Msg("ZRem: Failed to delete type key")
+			return 0, err
+		}
+		logger.Logger.Debug().Str("member", member).Str("zset_name", zSetName).Msg("ZRem: Deleted member, set empty")
+		return 1, nil
+	}
+	if err := txn.Set(metaKey, encodeMeta(meta)); err != nil {
+		logger.Logger.Error().Err(err).Msg("ZRem: Failed to set meta")
+		return 0, err
+	}
+
+	logger.Logger.Debug().
+		Str("member", member).
+		Str("zset_name", zSetName).
+		Int64("card", meta.Card).
+		Msg("ZRem: Successfully removed member")
+	return 1, nil
+}
+
+// zRangeAllMembersInTxn returns all members from an open read view inside an update txn.
+func zRangeAllMembersInTxn(txn *badger.Txn, zSetName string) ([]ZSetMember, error) {
+	prefix := keyBadgerGet(prefixKeySortedSetBytes, []byte(zSetName+sortedSetIndex))
+	opts := badger.DefaultIteratorOptions
+	opts.Prefix = prefix
+	opts.PrefetchValues = false
+
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	var results []ZSetMember
+	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+		score, member, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
+		if !ok {
+			continue
+		}
+		results = append(results, ZSetMember{Member: member, Score: score})
+	}
+	return results, nil
+}
+
+func memberInLexRange(memberStr, min, max string) bool {
+	minOK := compareLex(min, memberStr, true)
+	var maxOK bool
+	switch {
+	case max == "+":
+		maxOK = true
+	case len(max) > 0 && max[0] == '(':
+		maxOK = memberStr < max[1:]
+	case len(max) > 0 && max[0] == '[':
+		maxOK = memberStr <= max[1:]
+	default:
+		maxOK = memberStr <= max
+	}
+	return minOK && maxOK
+}
+
+// ZRem 删除成员
 func (s *BotreonStore) ZRem(zSetName, member string) (int64, error) {
 	var deleted int64 = 0
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		deleted = 0 // reset each attempt; stale value must not survive conflict retry
-		// Check if key already exists with a different type
-		badgerTypeKey := TypeOfKeyGet(zSetName)
-		typeItem, typeErr := txn.Get(badgerTypeKey)
-		if typeErr == nil {
-			typeVal, err := typeItem.ValueCopy(nil)
-			if err != nil {
-				return err
-			}
-			keyType := string(typeVal)
-			if keyType != "" && keyType != KeyTypeSortedSet {
-				return ErrWrongType
-			}
-		} else if !errors.Is(typeErr, badger.ErrKeyNotFound) {
-			return typeErr
-		}
-
-		dataKey := sortedSetKeyMember(zSetName, member)
-		item, err := txn.Get(dataKey)
-		if errors.Is(err, badger.ErrKeyNotFound) {
-			// Redis 规范：ZRem 对不存在的成员返回成功（删除 0 个），不是错误
-			return nil
-		}
+		n, err := zRemMemberInTxn(txn, zSetName, member)
 		if err != nil {
-			logger.Logger.Error().Err(err).Str("data_key", string(dataKey)).Msg("ZRem: Failed to get data key")
 			return err
 		}
-
-		// 获取分数
-		var scoreBytes []byte
-		err = item.Value(func(val []byte) error {
-			scoreBytes = val
-			return nil
-		})
-		if err != nil {
-			logger.Logger.Error().Err(err).Str("member", member).Msg("ZRem: Failed to get score")
-			return err
-		}
-		score := decodeScore(scoreBytes)
-
-		// 获取元数据
-		metaKey := sortedSetKeyMeta(zSetName)
-		var meta ZSetsMetaValue
-		metaItem, err := txn.Get(metaKey)
-		if err == nil {
-			err = metaItem.Value(func(val []byte) error {
-				meta, err = decodeMeta(val)
-				return err
-			})
-			if err != nil {
-				logger.Logger.Error().Err(err).Msg("ZRem: Failed to decode meta")
-				return err
-			}
-		} else if !errors.Is(err, badger.ErrKeyNotFound) {
-			logger.Logger.Error().Err(err).Msg("ZRem: Failed to get meta")
-			return err
-		}
-
-		if err := txn.Delete(dataKey); err != nil {
-			logger.Logger.Error().Err(err).Msg("ZRem: Failed to delete data key")
-			return err
-		}
-
-		indexKey := sortedSetKeyIndex(zSetName, score, member, meta.Version)
-		if err := txn.Delete(indexKey); err != nil {
-			logger.Logger.Error().Err(err).Msg("ZRem: Failed to delete index key")
-			return err
-		}
-
-		// 更新元数据
-		meta.Card--
-		if meta.Card <= 0 {
-			if err := txn.Delete(metaKey); err != nil {
-				logger.Logger.Error().Err(err).Msg("ZRem: Failed to delete meta")
-				return err
-			}
-			// 删除 TYPE_ 键（与 Redis 行为一致：空的有序集合不存在）
-			if err := txn.Delete(badgerTypeKey); err != nil {
-				logger.Logger.Error().Err(err).Msg("ZRem: Failed to delete type key")
-				return err
-			}
-			logger.Logger.Debug().Str("member", member).Str("zset_name", zSetName).Msg("ZRem: Deleted member, set empty")
-			deleted = 1
-			return nil
-		}
-		if err := txn.Set(metaKey, encodeMeta(meta)); err != nil {
-			logger.Logger.Error().Err(err).Msg("ZRem: Failed to set meta")
-			return err
-		}
-
-		// 成功路径不记录日志，避免性能影响
-		logger.Logger.Debug().
-			Str("member", member).
-			Str("zset_name", zSetName).
-			Int64("card", meta.Card).
-			Msg("ZRem: Successfully removed member")
-		deleted = 1
+		deleted = n
 		return nil
 	}, 20) // 最多重试 20 次（优化：减少重试次数）
 	if err != nil {
@@ -1455,18 +1493,20 @@ func (s *BotreonStore) ZRemRangeByLex(zSetName, min, max string) (int64, error) 
 	var removed int64
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		removed = 0 // reset each attempt; stale value must not survive conflict retry
-		// 获取范围内的成员
-		members, err := s.ZRangeByLex(zSetName, min, max, 0, 0)
+		members, err := zRangeAllMembersInTxn(txn, zSetName)
 		if err != nil {
 			return err
 		}
 
-		// 删除每个成员
 		for _, member := range members {
-			if _, err := s.ZRem(zSetName, member); err != nil {
+			if !memberInLexRange(member.Member, min, max) {
+				continue
+			}
+			n, err := zRemMemberInTxn(txn, zSetName, member.Member)
+			if err != nil {
 				return err
 			}
-			removed++
+			removed += n
 		}
 		return nil
 	}, 20) // 最多重试 20 次（优化：减少重试次数）

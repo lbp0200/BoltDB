@@ -516,6 +516,102 @@ func TestDeterministicConflict_GeoDelConcurrent(t *testing.T) {
 	}
 }
 
+// TestDeterministicConflict_ZSetDelConcurrent verifies concurrent ZSetDel on the
+// same key is idempotent and leaves the zset empty.
+func TestDeterministicConflict_ZSetDelConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	zSetName := "zset:zsetdel:conflict"
+	const goroutines = 10
+
+	if err := s.ZAdd(zSetName, []ZSetMember{
+		{Member: "a", Score: 1.0},
+		{Member: "b", Score: 2.0},
+		{Member: "c", Score: 3.0},
+	}); err != nil {
+		t.Fatalf("ZAdd: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, goroutines)
+	for i := range goroutines {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			errs[idx] = s.ZSetDel(zSetName)
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d ZSetDel: %v", i, err)
+		}
+	}
+
+	card, err := s.ZCard(zSetName)
+	if err != nil {
+		t.Fatalf("ZCard: %v", err)
+	}
+	if card != 0 {
+		t.Errorf("ZCard: got %d, want 0", card)
+	}
+}
+
+// TestDeterministicConflict_ZRemRangeByLexConcurrent verifies concurrent
+// ZREMRANGEBYLEX calls remove the lex range exactly once in total.
+func TestDeterministicConflict_ZRemRangeByLexConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	zSetName := "zset:zremrangebylex:conflict"
+	const goroutines = 8
+
+	if err := s.ZAdd(zSetName, []ZSetMember{
+		{Member: "a", Score: 1.0},
+		{Member: "b", Score: 1.0},
+		{Member: "c", Score: 1.0},
+		{Member: "d", Score: 1.0},
+	}); err != nil {
+		t.Fatalf("ZAdd: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, goroutines)
+	removed := make([]int64, goroutines)
+	for i := range goroutines {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			n, err := s.ZRemRangeByLex(zSetName, "[b", "[c")
+			removed[idx] = n
+			errs[idx] = err
+		}(i)
+	}
+	wg.Wait()
+
+	var totalRemoved int64
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d ZRemRangeByLex: %v", i, err)
+		}
+		totalRemoved += removed[i]
+	}
+	if totalRemoved != 2 {
+		t.Errorf("total removed: got %d, want 2", totalRemoved)
+	}
+
+	members, err := s.ZRange(zSetName, 0, -1)
+	if err != nil {
+		t.Fatalf("ZRange: %v", err)
+	}
+	if len(members) != 2 {
+		t.Fatalf("ZRange: got %d members, want 2", len(members))
+	}
+	if members[0].Member != "a" || members[1].Member != "d" {
+		t.Errorf("remaining members: got [%s, %s], want [a, d]", members[0].Member, members[1].Member)
+	}
+}
+
 // TestDeterministicConflict_RetryUpdateSuccessAfterConflict verifies that
 // retryUpdate correctly retries on TransactionConflict and eventually succeeds.
 func TestDeterministicConflict_RetryUpdateSuccessAfterConflict(t *testing.T) {
