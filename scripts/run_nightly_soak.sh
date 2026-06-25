@@ -83,7 +83,7 @@ print_banner() {
     log "  Report:   ${SOAK_REPORT_DIR}"
     log "========================================"
     log ""
-    log "  Short Strict Replication Soak: SOAK_REPL_SHORT_DURATION"
+    log "  Short Strict Replication Soak: 15m"
     log "  Build: git rev-parse HEAD"
     git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null | tee -a "$OUTPUT_LOG"
     log ""

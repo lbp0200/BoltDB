@@ -1,4 +1,5 @@
-// 简化 RESP，只支持 basics（Array/Bulk/Simple/Error/Integer）
+// RESP protocol types: Array, BulkString, SimpleString, Error, Integer,
+// NestedArray, plus RESP3 types (Map, Set, Push, Null, Double, Boolean, BigNumber).
 package proto
 
 import (

@@ -2,7 +2,6 @@ package sentinel
 
 import (
 	"fmt"
-	"net"
 	"time"
 
 	"github.com/lbp0200/BoltDB/internal/logger"
@@ -107,8 +106,7 @@ func (fm *FailoverManager) selectNewMaster(oldMaster *MasterInstance) *SlaveInst
 
 	// 遍历候选集，尝试存活探测，返回第一个可达的
 	for _, c := range candidates {
-		conn, err := net.DialTimeout("tcp", c.slave.GetAddr(), 3*time.Second)
-		if err != nil {
+		if err := pingCheck(c.slave.GetAddr()); err != nil {
 			logger.Logger.Warn().
 				Str("slave_addr", c.slave.GetAddr()).
 				Int64("offset", c.slave.GetOffset()).
@@ -116,7 +114,7 @@ func (fm *FailoverManager) selectNewMaster(oldMaster *MasterInstance) *SlaveInst
 				Msg("候选从节点不可达，跳过")
 			continue
 		}
-		_ = conn.Close()
+
 		logger.Logger.Info().
 			Str("slave_addr", c.slave.GetAddr()).
 			Int64("offset", c.slave.GetOffset()).

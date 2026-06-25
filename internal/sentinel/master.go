@@ -1,7 +1,6 @@
 package sentinel
 
 import (
-	"net"
 	"sync"
 	"time"
 
@@ -79,7 +78,8 @@ func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
 	failoverCooldown := mi.failoverCooldown
 	mi.mu.RUnlock()
 
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	// Use PING-based health check with AUTH support (connects, sends PING, closes).
+	err := pingCheck(addr)
 
 	var shouldBroadcast bool
 	var shouldTriggerFailover bool
@@ -115,8 +115,6 @@ func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
 			}
 		}
 	} else {
-		_ = conn.Close()
-
 		mi.lastPongTime = time.Now()
 
 		if mi.state == "sdown" {

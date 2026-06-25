@@ -16,8 +16,8 @@ var (
 
 func init() {
 	// 从环境变量读取日志配置
-	logFile := os.Getenv("BOLTREON_LOG_FILE")
-	levelStr := os.Getenv("BOLTREON_LOG_LEVEL")
+	logFile := os.Getenv("BOLTDB_LOG_FILE")
+	levelStr := os.Getenv("BOLTDB_LOG_LEVEL")
 	if levelStr == "" {
 		levelStr = "warn" // 默认 WARNING 级别
 	}

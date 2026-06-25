@@ -268,11 +268,14 @@ func TestMasterInstance_checkMaster_Recovery(t *testing.T) {
 
 	master := NewMasterInstance("test-master", ln.Addr().String(), 2)
 
-	// Start a goroutine that accepts then immediately closes, simulating a responsive master
+	// Start a goroutine that responds to PING with +PONG
 	go func() {
 		conn, err := ln.Accept()
 		if err == nil {
-			_ = conn.Close()
+			defer conn.Close()
+			buf := make([]byte, 64)
+			_, _ = conn.Read(buf)
+			_, _ = conn.Write([]byte("+PONG\r\n"))
 		}
 	}()
 
@@ -300,11 +303,14 @@ func TestMasterInstance_checkMaster_AlreadySdown(t *testing.T) {
 
 	master := NewMasterInstance("test-master", ln.Addr().String(), 2)
 
-	// Start a goroutine that accepts then immediately closes, simulating a responsive master
+	// Start a goroutine that responds to PING with +PONG
 	go func() {
 		conn, err := ln.Accept()
 		if err == nil {
-			_ = conn.Close()
+			defer conn.Close()
+			buf := make([]byte, 64)
+			_, _ = conn.Read(buf)
+			_, _ = conn.Write([]byte("+PONG\r\n"))
 		}
 	}()
 
@@ -316,7 +322,7 @@ func TestMasterInstance_checkMaster_AlreadySdown(t *testing.T) {
 	master.lastPingTime = time.Now()
 	master.mu.Unlock()
 
-	// Call checkMaster - should recover since master is listening
+	// Call checkMaster - should recover since master responds to PING
 	master.checkMaster(sentinel)
 
 	// State should be ok

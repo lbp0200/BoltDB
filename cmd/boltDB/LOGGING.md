@@ -34,31 +34,31 @@ BoltDB 服务器使用 **zerolog** 作为日志库，这是一个高性能、零
 
 ```bash
 # 使用 DEBUG 级别（最详细）
-go run cmd/boltreon/main.go -addr :6379 -dir ./data -log-level DEBUG
+go run cmd/boltDB/main.go -addr :6337 -dir ./data -log-level DEBUG
 
 # 使用 INFO 级别
-go run cmd/boltreon/main.go -addr :6379 -dir ./data -log-level INFO
+go run cmd/boltDB/main.go -addr :6337 -dir ./data -log-level INFO
 
 # 使用 WARN 级别（默认）
-go run cmd/boltreon/main.go -addr :6379 -dir ./data -log-level WARN
+go run cmd/boltDB/main.go -addr :6337 -dir ./data -log-level WARN
 
 # 使用 ERROR 级别（最少日志）
-go run cmd/boltreon/main.go -addr :6379 -dir ./data -log-level ERROR
+go run cmd/boltDB/main.go -addr :6337 -dir ./data -log-level ERROR
 ```
 
 ### 方法 2: 环境变量
 
 ```bash
 # 设置环境变量
-export BOLTREON_LOG_LEVEL=DEBUG
+export BOLTDB_LOG_LEVEL=DEBUG
 
 # 启动服务器（会自动读取环境变量）
-go run cmd/boltreon/main.go -addr :6379 -dir ./data
+go run cmd/boltDB/main.go -addr :6337 -dir ./data
 ```
 
 ### 优先级
 
-命令行参数 `-log-level` 的优先级高于环境变量 `BOLTREON_LOG_LEVEL`。
+命令行参数 `-log-level` 的优先级高于环境变量 `BOLTDB_LOG_LEVEL`。
 
 ## 日志格式
 
@@ -113,13 +113,13 @@ logger.Logger.Debug().
 
 ```bash
 # 启动服务器，启用 DEBUG 日志
-go run cmd/boltreon/main.go -addr :6379 -dir ./data -log-level DEBUG
+go run cmd/boltDB/main.go -addr :6337 -dir ./data -log-level DEBUG
 ```
 
 ### 2. 在另一个终端运行 redis-benchmark
 
 ```bash
-redis-benchmark -h 127.0.0.1 -p 6379 -t ping -n 1 -c 1
+redis-benchmark -h 127.0.0.1 -p 6337 -t ping -n 1 -c 1
 ```
 
 ### 3. 查看服务器日志
@@ -174,10 +174,10 @@ WRN 写入响应失败 remote_addr=... error="write: broken pipe"
 
 ```bash
 # 保存日志到文件
-go run cmd/boltreon/main.go -addr :6379 -dir ./data -log-level DEBUG > server.log 2>&1
+go run cmd/boltDB/main.go -addr :6337 -dir ./data -log-level DEBUG > server.log 2>&1
 
 # 同时查看和控制台输出
-go run cmd/boltreon/main.go -addr :6379 -dir ./data -log-level DEBUG | tee server.log
+go run cmd/boltDB/main.go -addr :6337 -dir ./data -log-level DEBUG | tee server.log
 ```
 
 ## 性能考虑

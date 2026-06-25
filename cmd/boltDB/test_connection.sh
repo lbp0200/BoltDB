@@ -2,7 +2,7 @@
 
 # 测试 BoltDB 服务器连接
 SERVER_ADDR="127.0.0.1"
-SERVER_PORT="6379"
+SERVER_PORT="6337"
 
 echo "测试 BoltDB 服务器连接..."
 

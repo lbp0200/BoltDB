@@ -3,7 +3,7 @@
 # 测试脚本，模拟 redis-benchmark 的行为
 
 SERVER_ADDR="127.0.0.1"
-SERVER_PORT="6379"
+SERVER_PORT="6337"
 
 echo "=== 测试 1: CONFIG GET * ==="
 echo -e "*3\r\n\$6\r\nCONFIG\r\n\$3\r\nGET\r\n\$1\r\n*\r\n" | nc $SERVER_ADDR $SERVER_PORT

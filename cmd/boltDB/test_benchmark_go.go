@@ -15,7 +15,7 @@ import (
 // 模拟 redis-benchmark 的行为
 func main() {
 	// 连接服务器
-	conn, err := net.DialTimeout("tcp", "127.0.0.1:6379", 5*time.Second)
+	conn, err := net.DialTimeout("tcp", "127.0.0.1:6337", 5*time.Second)
 	if err != nil {
 		fmt.Printf("❌ 连接失败: %v\n", err)
 		return

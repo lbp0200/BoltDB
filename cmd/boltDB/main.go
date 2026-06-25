@@ -21,15 +21,24 @@ import (
 
 // Command-line flags - defined at package level for testability
 var (
-	addrFlag                = flag.String("addr", ":6337", "listen addr")
-	dbPathFlag              = flag.String("dir", os.TempDir(), "badger dir")
-	logLevelFlag            = flag.String("log-level", "", "log level: DEBUG, INFO, WARNING, ERROR (default: WARNING, or from BOLTDB_LOG_LEVEL env)")
+	addrFlag                = flag.String("addr", getEnv("BOLTDB_ADDR", ":6337"), "listen addr (or BOLTDB_ADDR env)")
+	dbPathFlag              = flag.String("dir", getEnv("BOLTDB_DIR", os.TempDir()), "badger dir (or BOLTDB_DIR env)")
+	logLevelFlag            = flag.String("log-level", "", "log level: DEBUG, INFO, WARNING, ERROR (default: WARNING, or BOLTDB_LOG_LEVEL env)")
 	clusterEnabledFlag      = flag.Bool("cluster", false, "enable cluster mode")
 	replicaofFlag           = flag.String("replicaof", "", "replicaof master host:port")
 	skipStartupCleanup      = flag.Bool("skip-startup-cleanup", false, "skip startup cleanup (data integrity check)")
 	clientOutputBufferLimit = flag.Int64("client-output-buffer-limit", 0, "per-client output buffer hard limit in bytes (0 = unlimited)")
 	metricsAddrFlag         = flag.String("metrics-addr", "", "metrics HTTP listen addr (e.g. :6338, empty = disabled)")
 )
+
+// getEnv returns the value of the environment variable named by key, or
+// fallback if the variable is not set or empty.
+func getEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
 
 func main() {
 	flag.Parse()

@@ -9,7 +9,7 @@
 | node-redis compat | 110/110 (100%) |
 | redis-cli compat | 77/77 (100%) |
 | timer 泄漏 | 8/8 已修复 |
-| isWriteCommand | 91/91 完整 |
+| isWriteCommand | 94/94 完整 |
 | goroutine leak test | 通过 |
 
 ---

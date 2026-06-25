@@ -19,7 +19,7 @@ var (
 	addrFlag       = flag.String("addr", ":26379", "sentinel listen addr")
 	configFlag     = flag.String("config", "", "sentinel config file (redis sentinel.conf format)")
 	gossipPortFlag = flag.Int("gossip-port", 0, "sentinel gossip port (0 = random)")
-	logLevelFlag   = flag.String("log-level", "", "log level: DEBUG, INFO, WARNING, ERROR")
+	logLevelFlag   = flag.String("log-level", "", "log level: DEBUG, INFO, WARNING, ERROR (default: WARNING, or BOLTDB_LOG_LEVEL env)")
 )
 
 func main() {

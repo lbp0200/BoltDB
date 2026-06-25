@@ -37,5 +37,6 @@ main
 
 # AI agent generated docs
 AGENTS.md
+debug
 /sentinel
 /evolution

@@ -454,6 +454,7 @@ redis-cli -p 6337 GET "{user:1}:name"
 | `BOLTDB_DIR` | Data directory |
 | `BOLTDB_ADDR` | Listen address |
 | `BOLTDB_LOG_LEVEL` | Log level |
+| `BOLTDB_PASSWORD` | AUTH password (requires AUTH command from clients) |
 
 ---
 

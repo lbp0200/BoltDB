@@ -4,11 +4,20 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/lbp0200/BoltDB/internal/logger"
 )
+
+// sentinelPassword is the AUTH password read from BOLTDB_PASSWORD env var.
+// When set, the sentinel sends AUTH after establishing every connection.
+var sentinelPassword string
+
+func init() {
+	sentinelPassword = os.Getenv("BOLTDB_PASSWORD")
+}
 
 // SentinelConnection 哨兵连接
 type SentinelConnection struct {
@@ -24,11 +33,53 @@ func NewSentinelConnection(addr string) (*SentinelConnection, error) {
 		return nil, fmt.Errorf("connect to %s failed: %w", addr, err)
 	}
 
-	return &SentinelConnection{
+	sc := &SentinelConnection{
 		conn:   conn,
 		reader: bufio.NewReader(conn),
 		writer: bufio.NewWriter(conn),
-	}, nil
+	}
+
+	// If a password is configured, authenticate immediately.
+	if sentinelPassword != "" {
+		if err := sc.authenticate(); err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("auth to %s failed: %w", addr, err)
+		}
+	}
+
+	return sc, nil
+}
+
+// authenticate sends AUTH <password> and checks the response.
+func (sc *SentinelConnection) authenticate() error {
+	authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n",
+		len(sentinelPassword), sentinelPassword)
+	if err := sc.SendCommand(authCmd); err != nil {
+		return fmt.Errorf("send AUTH failed: %w", err)
+	}
+	resp, err := sc.ReadResponse()
+	if err != nil {
+		return fmt.Errorf("read AUTH response failed: %w", err)
+	}
+	if resp != "+OK" {
+		return fmt.Errorf("AUTH failed: %s", resp)
+	}
+	return nil
+}
+
+// Ping sends PING and verifies +PONG.
+func (sc *SentinelConnection) Ping() error {
+	if err := sc.SendCommand("*1\r\n$4\r\nPING\r\n"); err != nil {
+		return fmt.Errorf("send PING failed: %w", err)
+	}
+	resp, err := sc.ReadResponse()
+	if err != nil {
+		return fmt.Errorf("read PING response failed: %w", err)
+	}
+	if resp != "+PONG" {
+		return fmt.Errorf("unexpected PING response: %s", resp)
+	}
+	return nil
 }
 
 // Close 关闭连接
@@ -157,4 +208,19 @@ func GetRole(addr string) (string, error) {
 	}
 
 	return resp, nil
+}
+
+// pingCheck connects to addr (with AUTH if password is set), sends PING,
+// and returns nil on +PONG. Used by checkMaster for proper health checks.
+func pingCheck(addr string) error {
+	sc, err := NewSentinelConnection(addr)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := sc.Close(); err != nil {
+			logger.Logger.Debug().Err(err).Msg("Failed to close pingCheck connection")
+		}
+	}()
+	return sc.Ping()
 }

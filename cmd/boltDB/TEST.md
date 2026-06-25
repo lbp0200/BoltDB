@@ -19,10 +19,10 @@ go mod tidy
 
 ```bash
 # 在项目根目录
-go test ./cmd/boltreon -v
+go test ./cmd/boltDB -v
 
-# 或在 cmd/boltreon 目录
-cd cmd/boltreon
+# 或在 cmd/boltDB 目录
+cd cmd/boltDB
 go test -v
 ```
 
@@ -30,28 +30,28 @@ go test -v
 
 ```bash
 # 测试String命令
-go test ./cmd/boltreon -run TestStringCommands -v
+go test ./cmd/boltDB -run TestStringCommands -v
 
 # 测试Hash命令
-go test ./cmd/boltreon -run TestHashCommands -v
+go test ./cmd/boltDB -run TestHashCommands -v
 
 # 测试List命令
-go test ./cmd/boltreon -run TestListCommands -v
+go test ./cmd/boltDB -run TestListCommands -v
 
 # 测试Set命令
-go test ./cmd/boltreon -run TestSetCommands -v
+go test ./cmd/boltDB -run TestSetCommands -v
 
 # 测试SortedSet命令
-go test ./cmd/boltreon -run TestSortedSetCommands -v
+go test ./cmd/boltDB -run TestSortedSetCommands -v
 
 # 测试通用命令
-go test ./cmd/boltreon -run TestGeneralCommands -v
+go test ./cmd/boltDB -run TestGeneralCommands -v
 
 # 测试并发操作
-go test ./cmd/boltreon -run TestConcurrentOperations -v
+go test ./cmd/boltDB -run TestConcurrentOperations -v
 
 # 测试错误处理
-go test ./cmd/boltreon -run TestErrorHandling -v
+go test ./cmd/boltDB -run TestErrorHandling -v
 ```
 
 ## 测试覆盖
@@ -157,7 +157,7 @@ go test ./cmd/boltreon -run TestErrorHandling -v
 === RUN   TestErrorHandling
 --- PASS: TestErrorHandling (0.01s)
 PASS
-ok      github.com/lbp0200/BoltDB/cmd/boltreon    0.280s
+ok      github.com/lbp0200/BoltDB/cmd/boltDB    0.280s
 ```
 
 ## 故障排查
@@ -180,7 +180,7 @@ go mod tidy
 如果测试运行时间过长，可以增加超时时间：
 
 ```bash
-go test ./cmd/boltreon -timeout 30s
+go test ./cmd/boltDB -timeout 30s
 ```
 
 ### 4. 数据验证失败
@@ -199,7 +199,7 @@ go test ./cmd/boltreon -timeout 30s
 - name: Run Integration Tests
   run: |
     go get github.com/go-redis/redis/v8
-    go test ./cmd/boltreon -v
+    go test ./cmd/boltDB -v
 ```
 
 ## 扩展测试

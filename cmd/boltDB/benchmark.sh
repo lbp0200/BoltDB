@@ -6,7 +6,7 @@
 
 TEST_TYPE=${1:-basic}
 SERVER_ADDR="127.0.0.1"
-SERVER_PORT="6379"
+SERVER_PORT="6337"
 DATA_DIR="./benchmark_data"
 
 # 颜色输出

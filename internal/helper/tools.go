@@ -10,7 +10,7 @@ import (
 	"github.com/lbp0200/BoltDB/internal/logger"
 )
 
-// store/badger_store.go
+// store/define.go — type BotreonStore
 func Uint64ToBytes(n uint64) []byte {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, n)
@@ -52,6 +52,8 @@ func Float64ToBytes(f float64) []byte {
 	_ = binary.Write(buf, binary.LittleEndian, f)
 	return buf.Bytes()
 }
+
+// InterfaceToBytes 将任意接口类型转换为字节数组
 func InterfaceToBytes(data interface{}) ([]byte, error) {
 	logFuncTag := "InterfaceToBytes"
 	var buf bytes.Buffer

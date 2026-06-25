@@ -172,11 +172,21 @@ func TestFailoverManager_StartFailover_AlreadyInProgress(t *testing.T) {
 func TestFailoverManager_selectNewMaster(t *testing.T) {
 	t.Parallel()
 
-	// Start a TCP listener so selectNewMaster's liveness check passes
+	// Start a TCP listener that responds to PING with +PONG
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	assert.NoError(t, err)
 	defer ln.Close()
 	slaveAddr := ln.Addr().String()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err == nil {
+			defer conn.Close()
+			buf := make([]byte, 64)
+			_, _ = conn.Read(buf)
+			_, _ = conn.Write([]byte("+PONG\r\n"))
+		}
+	}()
 
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()

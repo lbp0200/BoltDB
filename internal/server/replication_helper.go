@@ -33,6 +33,10 @@ func isWriteCommand(cmd string) bool {
 		// Stream commands
 		"XADD": true, "XDEL": true, "XACK": true,
 		"XCLAIM": true, "XGROUP": true, "XTRIM": true,
+		// Database management
+		"SWAPDB": true, "MOVE": true,
+		// Pub/Sub
+		"PUBLISH": true,
 		// JSON commands
 		"JSON.SET": true, "JSON.DEL": true, "JSON.ARRAPPEND": true,
 		"JSON.NUMINCRBY": true, "JSON.NUMMULTBY": true, "JSON.CLEAR": true,

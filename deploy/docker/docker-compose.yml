@@ -14,8 +14,8 @@ version: '3.8'
 services:
   bolt:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
     image: lbp0200/boltdb:latest
     container_name: boltdb
     ports:

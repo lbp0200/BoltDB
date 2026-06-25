@@ -3,7 +3,7 @@
 # 详细的测试脚本，模拟 redis-benchmark 的精确行为
 
 SERVER_ADDR="127.0.0.1"
-SERVER_PORT="6379"
+SERVER_PORT="6337"
 
 echo "=== 测试 1: 使用 telnet 测试 CONFIG GET * ==="
 {
@@ -25,7 +25,7 @@ def test_config_get():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(5)
-        s.connect(('127.0.0.1', 6379))
+        s.connect(('127.0.0.1', 6337))
         
         # 发送 CONFIG GET *
         cmd = b"*3\r\n$6\r\nCONFIG\r\n$3\r\nGET\r\n$1\r\n*\r\n"

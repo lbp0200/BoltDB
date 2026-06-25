@@ -431,6 +431,7 @@ redis-cli -p 6337 GET "{user:1}:name"
 | `BOLTDB_DIR` | 数据目录 |
 | `BOLTDB_ADDR` | 监听地址 |
 | `BOLTDB_LOG_LEVEL` | 日志级别 |
+| `BOLTDB_PASSWORD` | AUTH 密码（客户端需通过 AUTH 命令认证） |
 
 ---
 
