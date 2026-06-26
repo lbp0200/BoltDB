@@ -465,6 +465,16 @@ func runSoakPipeline(ctx context.Context, addr string, rng *rand.Rand, errCh cha
 	}
 }
 
+// trySendErr sends an error to errCh without blocking.
+// If the channel is full, the error is logged via t.Logf instead.
+func trySendErr(errCh chan<- error, err error) {
+	select {
+	case errCh <- err:
+	default:
+		// Channel full — drop to avoid goroutine leak.
+	}
+}
+
 func runSoakNormal(ctx context.Context, addr string, rng *rand.Rand, errCh chan<- error) {
 	conn, reader, err := dialSoak(addr)
 	if err != nil {
@@ -474,12 +484,26 @@ func runSoakNormal(ctx context.Context, addr string, rng *rand.Rand, errCh chan<
 
 	op := rng.Intn(5)
 	switch op {
-	case 0: // SET
+	case 0: // SET + verify read-back
 		key := fmt.Sprintf("soak:set:%d", rng.Intn(100))
 		val := fmt.Sprintf("v:%d", rng.Intn(10000))
 		_ = sendRESPLine(conn, fmt.Sprintf("*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(key), key, len(val), val))
 		if _, err := proto.ReadRESP(reader); err != nil {
 			return
+		}
+		// Write-then-read verification: GET the same key and compare
+		_ = sendRESPLine(conn, fmt.Sprintf("*2\r\n$3\r\nGET\r\n$%d\r\n%s\r\n", len(key), key))
+		getResp, err := proto.ReadRESP(reader)
+		if err != nil {
+			return
+		}
+		if getResp == nil {
+			trySendErr(errCh, fmt.Errorf("soak SET/GET: GET returned nil-array for key=%s after successful SET", key))
+		} else if len(getResp.Args) > 0 {
+			got := string(getResp.Args[0])
+			if got != val {
+				trySendErr(errCh, fmt.Errorf("soak SET/GET mismatch: key=%s expected=%s got=%s", key, val, got))
+			}
 		}
 	case 1: // GET
 		key := fmt.Sprintf("soak:set:%d", rng.Intn(100))
@@ -499,7 +523,7 @@ func runSoakNormal(ctx context.Context, addr string, rng *rand.Rand, errCh chan<
 			return
 		}
 	case 3: // SADD/SREM
-		key := fmt.Sprintf("soak:set:%d", rng.Intn(20))
+		key := fmt.Sprintf("soak:sadd:%d", rng.Intn(20))
 		member := fmt.Sprintf("m%d", rng.Intn(100))
 		_ = sendRESPLine(conn, fmt.Sprintf("*3\r\n$4\r\nSADD\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(key), key, len(member), member))
 		if _, err := proto.ReadRESP(reader); err != nil {
@@ -509,11 +533,32 @@ func runSoakNormal(ctx context.Context, addr string, rng *rand.Rand, errCh chan<
 		if _, err := proto.ReadRESP(reader); err != nil {
 			return
 		}
-	case 4: // INCR
+	case 4: // INCR + verify response is valid integer
 		key := fmt.Sprintf("soak:cnt:%d", rng.Intn(20))
 		_ = sendRESPLine(conn, fmt.Sprintf("*2\r\n$4\r\nINCR\r\n$%d\r\n%s\r\n", len(key), key))
-		if _, err := proto.ReadRESP(reader); err != nil {
+		incrResp, err := proto.ReadRESP(reader)
+		if err != nil {
 			return
+		}
+		if incrResp == nil || len(incrResp.Args) == 0 {
+			trySendErr(errCh, fmt.Errorf("soak INCR: empty response for key=%s", key))
+		} else {
+			// INCR returns an integer. Args[0] may include RESP prefix (e.g. ":1")
+			valStr := string(incrResp.Args[0])
+			if len(valStr) > 0 && valStr[0] == ':' {
+				valStr = valStr[1:]
+			}
+			var n int64
+			for _, c := range valStr {
+				if c >= '0' && c <= '9' {
+					n = n*10 + int64(c-'0')
+				} else {
+					break
+				}
+			}
+			if n < 1 {
+				trySendErr(errCh, fmt.Errorf("soak INCR: expected positive integer, got %q for key=%s", valStr, key))
+			}
 		}
 	}
 }
