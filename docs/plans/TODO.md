@@ -18,6 +18,33 @@
 
 ---
 
+## 测试质量改进
+
+### Phase 1：加固 Coverage 测试（当前）
+- [ ] 审查 handler_coverage*_test.go 中 317 个测试
+- [ ] 替换弱断言：`len > 0` → 精确值，`>= 0` → 精确值
+- [ ] 目标：消除所有 `assert.True(t, len(...)` 和 `assert.True(t, int64(...) >= 0)` 模式
+
+### Phase 2：Soak 数据一致性
+- [ ] 在 runSoakNormal 中添加「写后读验证」
+- [ ] 每次 SET 后 GET 并比较值
+
+### Phase 3：并发数据完整性
+- [ ] 并发 INCR 精确计数测试
+- [ ] 并发 SET 最终一致性测试
+
+### Phase 4：边界和异常
+- [ ] RDB roundtrip 端到端测试
+- [ ] 大载荷测试（1MB value）
+- [ ] 连接中断中途测试
+- [ ] 命令参数边界测试
+
+### Phase 5：测试质量度量
+- [ ] 引入 mutation testing
+- [ ] 设置质量基线
+
+---
+
 ## 架构边界（已决策：不做）
 
 | 边界 | 原因 |
