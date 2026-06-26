@@ -47,6 +47,24 @@
 
 ---
 
+## SortedSet 算法优化
+
+基于 `internal/store/sorted_set.go` 核心算法评估，双键索引 + 版本号方案在 BadgerDB 上是务实选择，以下为待优化项：
+
+### P2：性能瓶颈
+- [ ] **ZRANK O(N) 瓶颈**：当前全量扫描 index 计算排名，大 sorted set（10万+）时变慢。可考虑维护内存跳表/B+树索引，但复杂度高
+- [ ] **ZINCRBY 3 次 key 操作**：每次 ZINCRBY 涉及删旧 index + 写新 index + 写 data，可优化为 2 次
+
+### P3：健壮性
+- [ ] **Version uint32 溢出**：`meta.Version` 为 uint32（上限 ~43 亿），同一 sorted set 执行 ~43 亿次 ZAdd 后回绕，可能与旧 index key 碰撞。实际几乎不可能触发，建议文档标注
+- [ ] **ZRandMember 全量加载**：每次调用全量扫描 index 加载所有成员到内存。可用蓄水池抽样优化，但 BadgerDB 不支持随机访问
+
+### 评分编码（已正确实现，无需修改）
+- `encodeScore`/`decodeScore` 使用标准 IEEE 754 翻转技巧，与 Redis 一致
+- `NaN` 处理与 Redis 行为一致（实际影响极小）
+
+---
+
 ## 架构边界（已决策：不做）
 
 | 边界 | 原因 |
