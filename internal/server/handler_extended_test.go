@@ -328,9 +328,8 @@ func TestServerObjectCommands(t *testing.T) {
 			cmd:  "OBJECT",
 			args: [][]byte{[]byte("ENCODING"), []byte("objkey")},
 			check: func(t *testing.T, resp proto.RESP) {
-				bulk, ok := resp.(*proto.BulkString)
+				_, ok := resp.(*proto.BulkString)
 				assert.True(t, ok)
-				assert.True(t, len(string(*bulk)) >= 0)
 			},
 		},
 		// OBJECT IDLETIME
@@ -341,7 +340,7 @@ func TestServerObjectCommands(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
-				assert.True(t, int64(*integer) >= 0)
+				assert.Equal(t, int64(0), int64(*integer))
 			},
 		},
 	}
@@ -372,9 +371,8 @@ func TestServerClientCommands(t *testing.T) {
 			cmd:  "CLIENT",
 			args: [][]byte{[]byte("LIST")},
 			check: func(t *testing.T, resp proto.RESP) {
-				bulk, ok := resp.(*proto.BulkString)
+				_, ok := resp.(*proto.BulkString)
 				assert.True(t, ok)
-				assert.True(t, len(string(*bulk)) >= 0)
 			},
 		},
 		// CLIENT ID
@@ -385,7 +383,7 @@ func TestServerClientCommands(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
-				assert.True(t, int64(*integer) >= 0)
+				assert.True(t, int64(*integer) > 0)
 			},
 		},
 		// CLIENT GETNAME
@@ -437,9 +435,8 @@ func TestServerConfigCommands(t *testing.T) {
 			cmd:  "CONFIG",
 			args: [][]byte{[]byte("GET"), []byte("maxmemory")},
 			check: func(t *testing.T, resp proto.RESP) {
-				arr, ok := resp.(*proto.Array)
+				_, ok := resp.(*proto.Array)
 				assert.True(t, ok)
-				assert.True(t, len(arr.Args) >= 0)
 			},
 		},
 		// CONFIG HELP

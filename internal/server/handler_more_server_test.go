@@ -81,9 +81,8 @@ func TestServerAdditionalCommands(t *testing.T) {
 			cmd:  "LATENCY",
 			args: [][]byte{[]byte("LATEST")},
 			check: func(t *testing.T, resp proto.RESP) {
-				arr, ok := resp.(*proto.Array)
+				_, ok := resp.(*proto.Array)
 				assert.True(t, ok)
-				assert.True(t, len(arr.Args) >= 0)
 			},
 		},
 		// LATENCY HELP
@@ -143,9 +142,8 @@ func TestServerAdditionalCommands(t *testing.T) {
 			cmd:  "SLOWLOG",
 			args: [][]byte{[]byte("GET"), []byte("10")},
 			check: func(t *testing.T, resp proto.RESP) {
-				arr, ok := resp.(*proto.Array)
+				_, ok := resp.(*proto.Array)
 				assert.True(t, ok)
-				assert.True(t, len(arr.Args) >= 0)
 			},
 		},
 		// SLOWLOG RESET

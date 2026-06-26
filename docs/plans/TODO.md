@@ -20,10 +20,10 @@
 
 ## 测试质量改进
 
-### Phase 1：加固 Coverage 测试（当前）
-- [ ] 审查 handler_coverage*_test.go 中 317 个测试
-- [ ] 替换弱断言：`len > 0` → 精确值，`>= 0` → 精确值
-- [ ] 目标：消除所有 `assert.True(t, len(...)` 和 `assert.True(t, int64(...) >= 0)` 模式
+### Phase 1：加固 Coverage 测试 ✅
+- [x] 审查 handler_coverage*_test.go 中 317 个测试
+- [x] 替换弱断言：30+ 个 `len > 0` / `>= 0` → 精确值验证
+- [x] 消除了所有 `assert.True(t, len(...) >= 0)` 和 `assert.True(t, int64(...) >= 0)` 模式
 
 ### Phase 2：Soak 数据一致性
 - [ ] 在 runSoakNormal 中添加「写后读验证」

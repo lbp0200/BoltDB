@@ -257,9 +257,8 @@ func TestServerKeyCommands(t *testing.T) {
 			cmd:  "KEYS",
 			args: [][]byte{[]byte("*")},
 			check: func(t *testing.T, resp proto.RESP) {
-				arr, ok := resp.(*proto.Array)
+				_, ok := resp.(*proto.Array)
 				assert.True(t, ok)
-				assert.True(t, len(arr.Args) >= 0)
 			},
 		},
 	}

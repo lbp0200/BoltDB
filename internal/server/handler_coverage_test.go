@@ -73,7 +73,7 @@ func TestExecuteCommand_CLIENT_LIST_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "CLIENT", [][]byte{[]byte("LIST")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
-	assert.True(t, len(*bs) > 0)
+	assert.True(t, strings.Contains(string(*bs), "addr="))
 }
 
 // TestExecuteCommand_CLIENT_GETNAME tests CLIENT GETNAME command
@@ -441,7 +441,7 @@ func TestExecuteCommand_GETEX_Coverage(t *testing.T) {
 	ttl := handler.executeCommand(state, "TTL", [][]byte{[]byte("gdex")}, "127.0.0.1:12345")
 	ttlInt, ok := ttl.(*proto.Integer)
 	assert.True(t, ok)
-	assert.True(t, int64(*ttlInt) >= 0)
+	assert.True(t, int64(*ttlInt) >= 1 && int64(*ttlInt) <= 10)
 
 	resp = handler.executeCommand(state, "GETEX", [][]byte{[]byte("nonexist")}, "127.0.0.1:12345")
 	shapeIsNilBulk(t, resp)
@@ -620,7 +620,7 @@ func TestExecuteCommand_PFCOUNT_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "PFCOUNT", [][]byte{[]byte("myhyperloglog")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.True(t, int64(*integer) > 0)
+	assert.Equal(t, int64(3), int64(*integer))
 }
 
 // TestExecuteCommand_PFMERGE tests PFMERGE command
@@ -777,7 +777,7 @@ func TestExecuteCommand_SLOWLOG_LEN_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "SLOWLOG", [][]byte{[]byte("LEN")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.True(t, int64(*integer) >= 0)
+	assert.Equal(t, int64(0), int64(*integer))
 }
 
 // TestExecuteCommand_DEBUG_SLEEP tests DEBUG SLEEP command
@@ -861,7 +861,7 @@ func TestExecuteCommand_XADD_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "XADD", [][]byte{[]byte("mystream"), []byte("*"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
-	assert.True(t, len(*bs) > 0)
+	assert.True(t, strings.Contains(string(*bs), "-"))
 
 	// Verify stream length increased
 	lenResp := handler.executeCommand(state, "XLEN", [][]byte{[]byte("mystream")}, "127.0.0.1:12345")
@@ -881,7 +881,7 @@ func TestExecuteCommand_XLEN_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "XLEN", [][]byte{[]byte("mystream")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.True(t, int64(*integer) > 0)
+	assert.Equal(t, int64(1), int64(*integer))
 }
 
 // TestExecuteCommand_XRANGE tests XRANGE command
@@ -896,24 +896,22 @@ func TestExecuteCommand_XRANGE_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "XRANGE", [][]byte{[]byte("mystream"), []byte("-"), []byte("+")}, "127.0.0.1:12345")
 	nestedArr, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(nestedArr.Elems) > 0)
+	assert.Equal(t, 1, len(nestedArr.Elems))
 
 	// Verify returned entry contains expected field-value pair
-	if len(nestedArr.Elems) > 0 {
-		entry, ok := nestedArr.Elems[0].(*proto.NestedArray)
-		if ok && len(entry.Elems) >= 2 {
-			// entry.Elems[0] is ID, entry.Elems[1] is [field, value, ...]
-			fieldValueArr, ok := entry.Elems[1].(*proto.NestedArray)
-			if ok && len(fieldValueArr.Elems) >= 2 {
-				fieldBs, ok1 := fieldValueArr.Elems[0].(*proto.BulkString)
-				valueBs, ok2 := fieldValueArr.Elems[1].(*proto.BulkString)
-				if ok1 && ok2 {
-					assert.Equal(t, "field", string(*fieldBs))
-					assert.Equal(t, "value", string(*valueBs))
-				}
-			}
-		}
-	}
+	entry, ok := nestedArr.Elems[0].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.True(t, len(entry.Elems) >= 2)
+	// entry.Elems[0] is ID, entry.Elems[1] is [field, value, ...]
+	fieldValueArr, ok := entry.Elems[1].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.True(t, len(fieldValueArr.Elems) >= 2)
+	fieldBs, ok1 := fieldValueArr.Elems[0].(*proto.BulkString)
+	valueBs, ok2 := fieldValueArr.Elems[1].(*proto.BulkString)
+	assert.True(t, ok1)
+	assert.True(t, ok2)
+	assert.Equal(t, "field", string(*fieldBs))
+	assert.Equal(t, "value", string(*valueBs))
 }
 
 // TestExecuteCommand_XREAD tests XREAD command
@@ -928,41 +926,39 @@ func TestExecuteCommand_XREAD_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "XREAD", [][]byte{[]byte("COUNT"), []byte("1"), []byte("STREAMS"), []byte("mystream"), []byte("0")}, "127.0.0.1:12345")
 	narr, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(narr.Elems) >= 1)
-	if len(narr.Elems) >= 1 {
-		streamResult, ok := narr.Elems[0].(*proto.NestedArray)
-		assert.True(t, ok)
-		assert.True(t, len(streamResult.Elems) >= 2)
-		if len(streamResult.Elems) >= 2 {
-			streamKey, ok := streamResult.Elems[0].(*proto.BulkString)
-			assert.True(t, ok)
-			assert.Equal(t, "mystream", string(*streamKey))
-			entries, ok := streamResult.Elems[1].(*proto.NestedArray)
-			assert.True(t, ok)
-			assert.True(t, len(entries.Elems) >= 1)
-			if len(entries.Elems) >= 1 {
-				entry, ok := entries.Elems[0].(*proto.NestedArray)
-				assert.True(t, ok)
-				assert.True(t, len(entry.Elems) >= 2)
-				if len(entry.Elems) >= 2 {
-					entryID, ok := entry.Elems[0].(*proto.BulkString)
-					assert.True(t, ok)
-					assert.Equal(t, "1", string(*entryID))
-					fields, ok := entry.Elems[1].(*proto.NestedArray)
-					assert.True(t, ok)
-					assert.True(t, len(fields.Elems) >= 2)
-					if len(fields.Elems) >= 2 {
-						fieldName, ok := fields.Elems[0].(*proto.BulkString)
-						assert.True(t, ok)
-						assert.Equal(t, "field", string(*fieldName))
-						fieldVal, ok := fields.Elems[1].(*proto.BulkString)
-						assert.True(t, ok)
-						assert.Equal(t, "value", string(*fieldVal))
-					}
-				}
-			}
-		}
-	}
+	assert.Equal(t, 1, len(narr.Elems))
+
+	streamResult, ok := narr.Elems[0].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(streamResult.Elems))
+
+	streamKey, ok := streamResult.Elems[0].(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "mystream", string(*streamKey))
+
+	entries, ok := streamResult.Elems[1].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(entries.Elems))
+
+	entry, ok := entries.Elems[0].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(entry.Elems))
+
+	entryID, ok := entry.Elems[0].(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "1", string(*entryID))
+
+	fields, ok := entry.Elems[1].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(fields.Elems))
+
+	fieldName, ok := fields.Elems[0].(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "field", string(*fieldName))
+
+	fieldVal, ok := fields.Elems[1].(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "value", string(*fieldVal))
 }
 
 // TestExecuteCommand_XGROUP_CREATE tests XGROUP CREATE command
@@ -981,24 +977,21 @@ func TestExecuteCommand_XGROUP_CREATE_Coverage(t *testing.T) {
 	infoResp := handler.executeCommand(state, "XINFO", [][]byte{[]byte("GROUPS"), []byte("mystream")}, "127.0.0.1:12345")
 	infoArr, ok := infoResp.(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(infoArr.Elems) >= 1) // At least one group entry
+	assert.Equal(t, 1, len(infoArr.Elems)) // Exactly one group entry
 	// Verify group name in first group entry
-	if len(infoArr.Elems) >= 1 {
-		groupEntry, ok := infoArr.Elems[0].(*proto.NestedArray)
-		if ok {
-			// groupEntry is [name, consumers, pending, ...] alternating key/value
-			// Check name field
-			for i := 0; i < len(groupEntry.Elems)-1; i += 2 {
-				keyBs, ok1 := groupEntry.Elems[i].(*proto.BulkString)
-				valBs, ok2 := groupEntry.Elems[i+1].(*proto.BulkString)
-				if ok1 && ok2 {
-					key := string(*keyBs)
-					if key == "name" {
-						val := string(*valBs)
-						assert.Equal(t, "mygroup", val)
-						break
-					}
-				}
+	groupEntry, ok := infoArr.Elems[0].(*proto.NestedArray)
+	assert.True(t, ok)
+	// groupEntry is [name, consumers, pending, ...] alternating key/value
+	// Check name field
+	for i := 0; i < len(groupEntry.Elems)-1; i += 2 {
+		keyBs, ok1 := groupEntry.Elems[i].(*proto.BulkString)
+		valBs, ok2 := groupEntry.Elems[i+1].(*proto.BulkString)
+		if ok1 && ok2 {
+			key := string(*keyBs)
+			if key == "name" {
+				val := string(*valBs)
+				assert.Equal(t, "mygroup", val)
+				break
 			}
 		}
 	}
@@ -1045,7 +1038,7 @@ func TestExecuteCommand_GEOADD_Coverage(t *testing.T) {
 	geoResp := handler.executeCommand(state, "GEOPOS", [][]byte{[]byte("mygeo"), []byte("SanFrancisco")}, "127.0.0.1:12345")
 	geoNested, ok := geoResp.(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(geoNested.Elems) >= 1)
+	assert.Equal(t, 1, len(geoNested.Elems))
 	if len(geoNested.Elems) >= 1 {
 		// GEOPOS returns [longitude, latitude] as nested array
 		coord, ok := geoNested.Elems[0].(*proto.NestedArray)
@@ -1530,7 +1523,7 @@ func TestExecuteCommand_SADD_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "SADD", [][]byte{[]byte("myset"), []byte("member1"), []byte("member2")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.True(t, int64(*integer) >= 0)
+	assert.Equal(t, int64(2), int64(*integer))
 }
 
 // TestExecuteCommand_SREM tests SREM command
@@ -1543,7 +1536,7 @@ func TestExecuteCommand_SREM_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "SREM", [][]byte{[]byte("myset"), []byte("member1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.True(t, int64(*integer) >= 0)
+	assert.Equal(t, int64(1), int64(*integer))
 }
 
 // TestExecuteCommand_SMEMBERS tests SMEMBERS command
@@ -1556,7 +1549,7 @@ func TestExecuteCommand_SMEMBERS_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "SMEMBERS", [][]byte{[]byte("myset")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) > 0)
+	assert.Equal(t, 2, len(arr.Args))
 }
 
 // TestExecuteCommand_HSET tests HSET command
@@ -1568,7 +1561,7 @@ func TestExecuteCommand_HSET_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "HSET", [][]byte{[]byte("myhash"), []byte("field1"), []byte("value1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.True(t, int64(*integer) >= 0)
+	assert.Equal(t, int64(1), int64(*integer))
 }
 
 // TestExecuteCommand_HGET tests HGET command
@@ -1593,7 +1586,7 @@ func TestExecuteCommand_HDEL_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "HDEL", [][]byte{[]byte("myhash"), []byte("field1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.True(t, int64(*integer) >= 0)
+	assert.Equal(t, int64(1), int64(*integer))
 }
 
 // TestExecuteCommand_HRANDFIELD_Coverage tests HRANDFIELD command
@@ -1635,7 +1628,7 @@ func TestExecuteCommand_ZADD_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "ZADD", [][]byte{[]byte("myzset"), []byte("1"), []byte("member1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.True(t, int64(*integer) >= 0)
+	assert.Equal(t, int64(1), int64(*integer))
 }
 
 // TestExecuteCommand_ZREM tests ZREM command
@@ -1648,7 +1641,7 @@ func TestExecuteCommand_ZREM_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "ZREM", [][]byte{[]byte("myzset"), []byte("member1")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.True(t, int64(*integer) >= 0)
+	assert.Equal(t, int64(1), int64(*integer))
 }
 
 // TestExecuteCommand_ZSCORE tests ZSCORE command
@@ -1673,7 +1666,7 @@ func TestExecuteCommand_ZRANGE_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "ZRANGE", [][]byte{[]byte("myzset"), []byte("0"), []byte("-1")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) > 0)
+	assert.Equal(t, 1, len(arr.Args))
 }
 
 // TestExecuteCommand_ZCOUNT tests ZCOUNT command
@@ -1686,7 +1679,7 @@ func TestExecuteCommand_ZCOUNT_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "ZCOUNT", [][]byte{[]byte("myzset"), []byte("0"), []byte("10")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.True(t, int64(*integer) >= 0)
+	assert.Equal(t, int64(1), int64(*integer))
 }
 
 // TestExecuteQueuedCommand tests executeQueuedCommand for MULTI/EXEC transactions
