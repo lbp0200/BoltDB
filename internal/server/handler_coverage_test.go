@@ -9,7 +9,6 @@ import (
 	"github.com/zeebo/assert"
 )
 
-
 // TestExecuteCommand_PING tests PING command
 func TestExecuteCommand_PING_Coverage(t *testing.T) {
 	t.Parallel()
@@ -180,8 +179,10 @@ func TestExecuteCommand_LASTSAVE_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	resp := handler.executeCommand(state, "LASTSAVE", nil, "127.0.0.1:12345")
-	// Just verify it doesn't panic and returns something
-	assert.True(t, resp != nil)
+	// LASTSAVE without Backup returns an error
+	err, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*err), "backup not enabled"))
 }
 
 // TestExecuteCommand_UNKNOWN tests unknown command
@@ -801,8 +802,9 @@ func TestExecuteCommand_LOLWUT_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	resp := handler.executeCommand(state, "LOLWUT", nil, "127.0.0.1:12345")
-	// Should return something
-	assert.True(t, resp != nil)
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*bs), "BoltDB"))
 }
 
 // TestExecuteCommand_LATENCY_LATEST tests LATENCY LATEST command
@@ -1513,7 +1515,10 @@ func TestExecuteCommand_LCS_Coverage(t *testing.T) {
 	handler.executeCommand(state, "SET", [][]byte{[]byte("key2"), []byte("hello world")}, "127.0.0.1:12345")
 
 	resp := handler.executeCommand(state, "LCS", [][]byte{[]byte("key1"), []byte("key2")}, "127.0.0.1:12345")
-	assert.True(t, resp != nil)
+	// LCS returns the longest common subsequence
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "hello world", string(*bs))
 }
 
 // TestExecuteCommand_SADD tests SADD command
@@ -1987,9 +1992,10 @@ func TestExecuteQueuedCommand(t *testing.T) {
 			cmd:  "ZSCORE",
 			args: [][]byte{[]byte("nonexistent_zset"), []byte("member")},
 			validate: func(t *testing.T, resp proto.RESP) {
-				// For non-existent sorted set, result depends on implementation
-				// Just verify it doesn't panic
-				_ = resp
+				// Non-existent key should return nil bulk string
+				bs, ok := resp.(*proto.BulkString)
+				assert.True(t, ok)
+				assert.Nil(t, *bs)
 			},
 		},
 

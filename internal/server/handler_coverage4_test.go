@@ -25,7 +25,7 @@ func setupHandlerWithConns(t *testing.T, states []*connState) *Handler {
 type mockConn struct{ net.Conn }
 
 func (m *mockConn) RemoteAddr() net.Addr { return &mockAddr{addr: "127.0.0.1:12345"} }
-func (m *mockConn) Close() error          { return nil }
+func (m *mockConn) Close() error         { return nil }
 
 type mockAddr struct{ addr string }
 
@@ -283,7 +283,11 @@ func TestExecuteCommand_EXPIRETIME_Coverage(t *testing.T) {
 
 	handler.executeCommand(state, "SET", [][]byte{[]byte("ekey"), []byte("value")}, "127.0.0.1:12345")
 	resp := handler.executeCommand(state, "EXPIRETIME", [][]byte{[]byte("ekey")}, "127.0.0.1:12345")
-	assert.True(t, resp != nil)
+	// EXPIRETIME returns absolute Unix timestamp in seconds
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	// Key exists without TTL → -1
+	assert.Equal(t, int64(-1), int64(*integer))
 }
 
 func TestExecuteCommand_PEXPIRETIME_Coverage(t *testing.T) {
@@ -293,7 +297,11 @@ func TestExecuteCommand_PEXPIRETIME_Coverage(t *testing.T) {
 
 	handler.executeCommand(state, "SET", [][]byte{[]byte("pekey"), []byte("value")}, "127.0.0.1:12345")
 	resp := handler.executeCommand(state, "PEXPIRETIME", [][]byte{[]byte("pekey")}, "127.0.0.1:12345")
-	assert.True(t, resp != nil)
+	// PEXPIRETIME returns absolute Unix timestamp in milliseconds
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	// Key exists without TTL → -1
+	assert.Equal(t, int64(-1), int64(*integer))
 }
 
 func TestExecuteCommand_HELLO_Resp3_Coverage(t *testing.T) {
@@ -313,7 +321,10 @@ func TestExecuteCommand_ACL_NotSupported_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	resp := handler.executeCommand(state, "ACL", nil, "127.0.0.1:12345")
-	assert.True(t, resp != nil)
+	// ACL with no args returns wrong number of arguments
+	err, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*err), "wrong number of arguments"))
 }
 
 func TestExecuteCommand_ACL_CAT_Coverage(t *testing.T) {
@@ -322,7 +333,10 @@ func TestExecuteCommand_ACL_CAT_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	resp := handler.executeCommand(state, "ACL", [][]byte{[]byte("CAT")}, "127.0.0.1:12345")
-	assert.True(t, resp != nil)
+	// ACL CAT returns an Array of command categories
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.True(t, len(arr.Args) > 0)
 }
 
 func TestExecuteCommand_ACL_SETUSER_Coverage(t *testing.T) {
@@ -331,7 +345,10 @@ func TestExecuteCommand_ACL_SETUSER_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	resp := handler.executeCommand(state, "ACL", [][]byte{[]byte("SETUSER"), []byte("test")}, "127.0.0.1:12345")
-	assert.True(t, resp != nil)
+	// ACL SETUSER is not implemented — returns unknown subcommand error
+	err, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*err), "unknown subcommand"))
 }
 
 func TestExecuteCommand_RENAME_NonExistent_Coverage(t *testing.T) {
@@ -434,7 +451,10 @@ func TestExecuteCommand_XGROUP_HELP_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	resp := handler.executeCommand(state, "XGROUP", [][]byte{[]byte("HELP")}, "127.0.0.1:12345")
-	assert.True(t, resp != nil)
+	// XGROUP HELP is not a valid subcommand — returns syntax error
+	err, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*err), "syntax error"))
 }
 
 func TestExecuteCommand_LATENCY_HISTORY_Coverage(t *testing.T) {
@@ -443,7 +463,10 @@ func TestExecuteCommand_LATENCY_HISTORY_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	resp := handler.executeCommand(state, "LATENCY", [][]byte{[]byte("HISTORY"), []byte("command")}, "127.0.0.1:12345")
-	assert.True(t, resp != nil)
+	// LATENCY HISTORY is not a valid subcommand — returns error
+	err, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*err), "unknown subcommand"))
 }
 
 func TestExecuteCommand_MEMORY_STATS_Coverage(t *testing.T) {
@@ -452,5 +475,8 @@ func TestExecuteCommand_MEMORY_STATS_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	resp := handler.executeCommand(state, "MEMORY", [][]byte{[]byte("STATS")}, "127.0.0.1:12345")
-	assert.True(t, resp != nil)
+	// MEMORY STATS is not a valid subcommand — returns error
+	err, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*err), "unknown subcommand"))
 }

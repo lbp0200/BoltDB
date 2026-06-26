@@ -33,6 +33,7 @@ var commandMap map[string]cmdInfo
 
 func init() {
 	commands := []cmdInfo{
+		{name: "ACL", arity: -2, flags: []commandFlag{flagAdmin, flagNoscript, flagReadonly}},
 		{name: "APPEND", arity: 3, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "ASKING", arity: 1, flags: []commandFlag{flagReadonly}},
 		{name: "AUTH", arity: -2, flags: []commandFlag{flagNoscript, flagReadonly}},
@@ -63,6 +64,7 @@ func init() {
 		{name: "ECHO", arity: 2, flags: []commandFlag{flagReadonly}},
 		{name: "EXEC", arity: 1, flags: []commandFlag{flagNoscript, flagReadonly}},
 		{name: "EXISTS", arity: -2, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: -1, step: 1},
+		{name: "EXPIRETIME", arity: 2, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "EXPIRE", arity: 3, flags: []commandFlag{flagWrite}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "EXPIREAT", arity: 3, flags: []commandFlag{flagWrite}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "FLUSHALL", arity: -1, flags: []commandFlag{flagWrite, flagAdmin}},
@@ -122,6 +124,7 @@ func init() {
 		{name: "LLEN", arity: 2, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "LMOVE", arity: 5, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: 2, step: 1},
 		{name: "LOLWUT", arity: -1, flags: []commandFlag{flagReadonly}},
+		{name: "LCS", arity: -3, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 2, step: 1},
 		{name: "LPOP", arity: -2, flags: []commandFlag{flagWrite}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "LPOS", arity: -3, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "LPUSH", arity: -3, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: 1, step: 1},
@@ -143,6 +146,7 @@ func init() {
 		{name: "PERSIST", arity: 2, flags: []commandFlag{flagWrite}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "PEXPIRE", arity: 3, flags: []commandFlag{flagWrite}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "PEXPIREAT", arity: 3, flags: []commandFlag{flagWrite}, firstKey: 1, lastKey: 1, step: 1},
+		{name: "PEXPIRETIME", arity: 2, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "PFADD", arity: -2, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "PFCOUNT", arity: -2, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: -1, step: 1},
 		{name: "PFINFO", arity: 2, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
@@ -236,6 +240,7 @@ func init() {
 		{name: "ZDIFF", arity: -3, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: -1, step: 1},
 		{name: "ZDIFFSTORE", arity: -3, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: -1, step: 1},
 		{name: "ZINCRBY", arity: 4, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: 1, step: 1},
+		{name: "ZINTER", arity: -4, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: -1, step: 1},
 		{name: "ZINTERSTORE", arity: -4, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: -1, step: 1},
 		{name: "ZLEXCOUNT", arity: 4, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "LMPOP", arity: -4, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: -1, step: 1},
@@ -259,6 +264,7 @@ func init() {
 		{name: "ZREVRANK", arity: 3, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "ZSCAN", arity: -2, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "ZSCORE", arity: 3, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
+		{name: "ZUNION", arity: -4, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: -1, step: 1},
 		{name: "ZUNIONSTORE", arity: -4, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: -1, step: 1},
 	}
 

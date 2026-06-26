@@ -1514,6 +1514,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		return proto.NewBulkString(args[0])
 
+	case "ACL":
+		return handleACL(args)
+
 	case "CLIENT":
 		if len(args) < 1 {
 			return proto.NewError("ERR wrong number of arguments for 'CLIENT' command")
@@ -1951,76 +1954,16 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		return proto.NewInteger(int64(boolToInt(success)))
 
 	case "INCR":
-		if len(args) < 1 {
-			return proto.NewError("ERR wrong number of arguments for 'INCR' command")
-		}
-		key := string(args[0])
-		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
-			return resp
-		}
-		h.markDirtyKeys(state, key)
-		value, err := h.Db.INCR(key)
-		if err != nil {
-			return wrapStoreError(err)
-		}
-		return proto.NewInteger(value)
+		return h.handleINCR(state, args, remoteAddr)
 
 	case "INCRBY":
-		if len(args) < 2 {
-			return proto.NewError("ERR wrong number of arguments for 'INCRBY' command")
-		}
-		key := string(args[0])
-		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
-			return resp
-		}
-		increment, err := strconv.ParseInt(string(args[1]), 10, 64)
-		if err != nil {
-			return proto.NewError("ERR value is not an integer or out of range")
-		}
-		h.markDirtyKeys(state, key)
-		value, err := h.Db.INCRBY(key, increment)
-		if err != nil {
-			return wrapStoreError(err)
-		}
-		return proto.NewInteger(value)
+		return h.handleINCRBY(state, args, remoteAddr)
 
 	case "DECR":
-		if len(args) < 1 {
-			return proto.NewError("ERR wrong number of arguments for 'DECR' command")
-		}
-		key := string(args[0])
-		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
-			return resp
-		}
-		h.markDirtyKeys(state, key)
-		value, err := h.Db.DECR(key)
-		if err != nil {
-			return wrapStoreError(err)
-		}
-		return proto.NewInteger(value)
+		return h.handleDECR(state, args, remoteAddr)
 
 	case "DECRBY":
-		if len(args) < 2 {
-			return proto.NewError("ERR wrong number of arguments for 'DECRBY' command")
-		}
-		key := string(args[0])
-		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
-			return resp
-		}
-		decrement, err := strconv.ParseInt(string(args[1]), 10, 64)
-		if err != nil {
-			return proto.NewError("ERR value is not an integer or out of range")
-		}
-		h.markDirtyKeys(state, key)
-		value, err := h.Db.DECRBY(key, decrement)
-		if err != nil {
-			return wrapStoreError(err)
-		}
-		return proto.NewInteger(value)
+		return h.handleDECRBY(state, args, remoteAddr)
 
 	case "INCRBYFLOAT":
 		if len(args) < 2 {
@@ -2043,40 +1986,10 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		return proto.NewBulkString([]byte(fmt.Sprintf("%.10g", value)))
 
 	case "APPEND":
-		if len(args) < 2 {
-			return proto.NewError("ERR wrong number of arguments for 'APPEND' command")
-		}
-		key, value := string(args[0]), string(args[1])
-		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
-			return resp
-		}
-		h.markDirtyKeys(state, key)
-		length, err := h.Db.APPEND(key, value)
-		if err != nil {
-			return wrapStoreError(err)
-		}
-		// #nosec G115 - length is bounded by practical data size limits
-		return proto.NewInteger(int64(length))
+		return h.handleAPPEND(state, args, remoteAddr)
 
 	case "STRLEN":
-		if len(args) < 1 {
-			return proto.NewError("ERR wrong number of arguments for 'STRLEN' command")
-		}
-		key := string(args[0])
-		// 检查集群重定向
-		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
-			return resp
-		}
-		length, err := h.Db.StrLen(key)
-		if err != nil {
-			if errors.Is(err, store.ErrWrongType) {
-				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
-			}
-			return proto.NewInteger(0)
-		}
-		// #nosec G115 - length is bounded by practical data size limits
-		return proto.NewInteger(int64(length))
+		return h.handleSTRLEN(state, args, remoteAddr)
 
 	case "SETBIT":
 		if len(args) < 3 {
@@ -2624,6 +2537,12 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		return proto.NewInteger(pttl)
 
+	case "EXPIRETIME":
+		return h.handleExpireTime(state, args, remoteAddr)
+
+	case "PEXPIRETIME":
+		return h.handlePExpireTime(state, args, remoteAddr)
+
 	case "PERSIST":
 		if len(args) < 1 {
 			return proto.NewError("ERR wrong number of arguments for 'PERSIST' command")
@@ -3070,6 +2989,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		}
 		return &proto.Array{Args: result}
 
+	case "LCS":
+		return h.handleLCS(state, args, remoteAddr)
+
 	case "LREM":
 		if len(args) < 3 {
 			return proto.NewError("ERR wrong number of arguments for 'LREM' command")
@@ -3275,64 +3197,13 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 	// Hash命令
 	case "HSET":
-		if len(args) < 3 {
-			return proto.NewError("ERR wrong number of arguments for 'HSET' command")
-		}
-		key := string(args[0])
-		h.markDirtyKeys(state, key)
-		count := 0
-		for i := 1; i < len(args); i += 2 {
-			if i+1 >= len(args) {
-				break
-			}
-			field, value := string(args[i]), args[i+1]
-			if err := h.Db.HSet(key, field, string(value)); err != nil {
-				if errors.Is(err, store.ErrWrongType) {
-					return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
-				}
-				return proto.NewError(fmt.Sprintf("ERR %v", err))
-			}
-			count++
-		}
-		// #nosec G115 - count is bounded by practical data size limits
-		return proto.NewInteger(int64(count))
+		return h.handleHSET(state, args, remoteAddr)
 
 	case "HGET":
-		if len(args) < 2 {
-			return proto.NewError("ERR wrong number of arguments for 'HGET' command")
-		}
-		key, field := string(args[0]), string(args[1])
-		value, err := h.Db.HGet(key, field)
-		if errors.Is(err, store.ErrWrongType) {
-			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
-		}
-		if err != nil || value == nil {
-			if state.respVersion == 3 {
-				return &proto.Null{}
-			}
-			return proto.NewBulkString(nil)
-		}
-		return proto.NewBulkString(value)
+		return h.handleHGET(state, args, remoteAddr)
 
 	case "HDEL":
-		if len(args) < 2 {
-			return proto.NewError("ERR wrong number of arguments for 'HDEL' command")
-		}
-		key := string(args[0])
-		fields := make([]string, len(args)-1)
-		for i := 1; i < len(args); i++ {
-			fields[i-1] = string(args[i])
-		}
-		h.markDirtyKeys(state, key)
-		count, err := h.Db.HDel(key, fields...)
-		if errors.Is(err, store.ErrWrongType) {
-			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
-		}
-		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
-		}
-		// #nosec G115 - count is bounded by practical data size limits
-		return proto.NewInteger(int64(count))
+		return h.handleHDEL(state, args, remoteAddr)
 
 	case "HELLO":
 		protoLevel := 2
@@ -4908,6 +4779,12 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			result[i] = []byte(m.Member)
 		}
 		return &proto.Array{Args: result}
+
+	case "ZINTER":
+		return h.handleZINTER(state, args, remoteAddr)
+
+	case "ZUNION":
+		return h.handleZUNION(state, args, remoteAddr)
 
 	case "ZLEXCOUNT":
 		// ZLEXCOUNT key min max

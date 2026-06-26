@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/cluster"
 	"github.com/lbp0200/BoltDB/internal/proto"
@@ -1003,6 +1004,143 @@ func TestRESPShape_ASKING(t *testing.T) {
 	assert.Equal(t, "OK", string(*ss))
 
 	assert.True(t, state.clusterAsking)
+}
+
+// TestRESPShape_ExpireTime verifies EXPIRETIME returns Integer
+func TestRESPShape_ExpireTime(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Key with no expiry → -1
+	resp := handler.executeCommand(state, "EXPIRETIME", [][]byte{[]byte("noexp")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(-2), int64(*integer)) // key doesn't exist
+
+	handler.executeCommand(state, "SET", [][]byte{[]byte("etkey"), []byte("v")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(state, "EXPIRETIME", [][]byte{[]byte("etkey")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(-1), int64(*integer)) // exists, no TTL
+
+	handler.executeCommand(state, "EXPIRE", [][]byte{[]byte("etkey"), []byte("10000")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(state, "EXPIRETIME", [][]byte{[]byte("etkey")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.True(t, int64(*integer) > time.Now().Unix()-1) // positive timestamp
+}
+
+// TestRESPShape_PExpireTime verifies PEXPIRETIME returns Integer (milliseconds)
+func TestRESPShape_PExpireTime(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "SET", [][]byte{[]byte("petkey"), []byte("v")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(state, "PEXPIRETIME", [][]byte{[]byte("petkey")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(-1), int64(*integer)) // exists, no TTL
+
+	handler.executeCommand(state, "PEXPIRE", [][]byte{[]byte("petkey"), []byte("10000000")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(state, "PEXPIRETIME", [][]byte{[]byte("petkey")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.True(t, int64(*integer) > time.Now().UnixMilli()-1) // positive ms timestamp
+}
+
+// TestRESPShape_ACL_Whoami verifies ACL WHOAMI returns BulkString
+func TestRESPShape_ACL_Whoami(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "ACL", [][]byte{[]byte("WHOAMI")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "default", string(*bs))
+}
+
+// TestRESPShape_ACL_List verifies ACL LIST returns Array of rules
+func TestRESPShape_ACL_List(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "ACL", [][]byte{[]byte("LIST")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.True(t, len(arr.Args) >= 1)
+}
+
+// TestRESPShape_ACL_Cat verifies ACL CAT returns Array of categories
+func TestRESPShape_ACL_Cat(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "ACL", [][]byte{[]byte("CAT")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.True(t, len(arr.Args) >= 4)
+}
+
+// TestRESPShape_LCS verifies LCS returns BulkString
+func TestRESPShape_LCS(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "SET", [][]byte{[]byte("lcs1"), []byte("hello world")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SET", [][]byte{[]byte("lcs2"), []byte("hello there")}, "127.0.0.1:12345")
+
+	// Without modifiers — BulkString
+	resp := handler.executeCommand(state, "LCS", [][]byte{[]byte("lcs1"), []byte("lcs2")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.True(t, len(*bs) > 0)
+
+	// With LEN — Integer
+	resp = handler.executeCommand(state, "LCS", [][]byte{[]byte("lcs1"), []byte("lcs2"), []byte("LEN")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.True(t, int64(*integer) > 0)
+}
+
+// TestRESPShape_ZINTER verifies ZINTER returns Array
+func TestRESPShape_ZINTER(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "ZADD", [][]byte{[]byte("zint1"), []byte("1"), []byte("a"), []byte("2"), []byte("b")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "ZADD", [][]byte{[]byte("zint2"), []byte("1"), []byte("a"), []byte("3"), []byte("c")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand(state, "ZINTER", [][]byte{[]byte("2"), []byte("zint1"), []byte("zint2")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.True(t, len(arr.Args) >= 1)
+	// WITHSCORES returns alternating member/score
+	resp = handler.executeCommand(state, "ZINTER", [][]byte{[]byte("2"), []byte("zint1"), []byte("zint2"), []byte("WITHSCORES")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(arr.Args)) // 1 member + 1 score
+}
+
+// TestRESPShape_ZUNION verifies ZUNION returns Array
+func TestRESPShape_ZUNION(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "ZADD", [][]byte{[]byte("zun1"), []byte("1"), []byte("a"), []byte("2"), []byte("b")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "ZADD", [][]byte{[]byte("zun2"), []byte("1"), []byte("a"), []byte("3"), []byte("c")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand(state, "ZUNION", [][]byte{[]byte("2"), []byte("zun1"), []byte("zun2")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.True(t, len(arr.Args) >= 2) // a, b, c = 3 members
 }
 
 func setupTestClusterHandler(t *testing.T) (*Handler, *connState) {

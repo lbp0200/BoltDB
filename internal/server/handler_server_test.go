@@ -7,7 +7,6 @@ import (
 	"github.com/zeebo/assert"
 )
 
-
 // TestServerInfoCommand tests INFO command
 func TestServerInfoCommand(t *testing.T) {
 	t.Parallel()

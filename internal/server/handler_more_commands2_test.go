@@ -8,7 +8,6 @@ import (
 	"github.com/zeebo/assert"
 )
 
-
 // TestServerGeoCommands2 tests GEO commands
 func TestServerGeoCommands2(t *testing.T) {
 	t.Parallel()
@@ -27,8 +26,9 @@ func TestServerGeoCommands2(t *testing.T) {
 			cmd:  "GEOADD",
 			args: [][]byte{[]byte("mygeo"), []byte("122.4194"), []byte("37.7749"), []byte("sanfrancisco")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
+				assert.Equal(t, int64(1), int64(*integer))
 			},
 		},
 		// GEOPOS
@@ -37,8 +37,9 @@ func TestServerGeoCommands2(t *testing.T) {
 			cmd:  "GEOPOS",
 			args: [][]byte{[]byte("mygeo"), []byte("sanfrancisco")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				arr, ok := resp.(*proto.NestedArray)
 				assert.True(t, ok)
+				assert.Equal(t, 1, len(arr.Elems))
 			},
 		},
 		// GEOHASH
@@ -47,28 +48,31 @@ func TestServerGeoCommands2(t *testing.T) {
 			cmd:  "GEOHASH",
 			args: [][]byte{[]byte("mygeo"), []byte("sanfrancisco")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
+				assert.Equal(t, 1, len(arr.Args))
 			},
 		},
 		// GEODIST
 		{
 			name: "GEODIST",
 			cmd:  "GEODIST",
-			args: [][]byte{[]byte("mygeo"), []byte("sanfrancisco"), []byte("losangeles")},
+			args: [][]byte{[]byte("mygeo"), []byte("sanfrancisco"), []byte("sanfrancisco")}, // same city = 0 dist
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				bs, ok := resp.(*proto.BulkString)
 				assert.True(t, ok)
+				assert.True(t, len(*bs) > 0)
 			},
 		},
 		// GEOSEARCH
 		{
 			name: "GEOSEARCH",
 			cmd:  "GEOSEARCH",
-			args: [][]byte{[]byte("mygeo"), []byte("FROM"), []byte("BYRADIUS"), []byte("10"), []byte("km"), []byte("ASC")},
+			args: [][]byte{[]byte("mygeo"), []byte("FROMLONLAT"), []byte("122.41"), []byte("37.77"), []byte("BYRADIUS"), []byte("100"), []byte("km")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
+				assert.True(t, len(arr.Args) > 0) // sanfrancisco within 100km
 			},
 		},
 	}
@@ -99,8 +103,9 @@ func TestServerHyperLogLogCommands(t *testing.T) {
 			cmd:  "PFADD",
 			args: [][]byte{[]byte("myhll"), []byte("a"), []byte("b"), []byte("c")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
+				assert.Equal(t, int64(1), int64(*integer))
 			},
 		},
 		// PFCOUNT
@@ -109,8 +114,9 @@ func TestServerHyperLogLogCommands(t *testing.T) {
 			cmd:  "PFCOUNT",
 			args: [][]byte{[]byte("myhll")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
+				assert.True(t, int64(*integer) >= 0)
 			},
 		},
 		// PFINFO
@@ -119,8 +125,9 @@ func TestServerHyperLogLogCommands(t *testing.T) {
 			cmd:  "PFINFO",
 			args: [][]byte{[]byte("myhll")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
+				assert.True(t, len(arr.Args) > 0)
 			},
 		},
 	}
@@ -139,39 +146,34 @@ func TestServerStreamCommands2(t *testing.T) {
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
+	// Create a stream entry and consumer group for XPENDING test
+	handler.executeCommand(state, "XADD", [][]byte{[]byte("mystream"), []byte("*"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATE"), []byte("mystream"), []byte("mygroup"), []byte("0")}, "127.0.0.1:12345")
+
 	tests := []struct {
 		name  string
 		cmd   string
 		args  [][]byte
 		check func(t *testing.T, resp proto.RESP)
 	}{
-		// XADD
-		{
-			name: "XADD",
-			cmd:  "XADD",
-			args: [][]byte{[]byte("mystream"), []byte("*"), []byte("field"), []byte("value")},
-			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
-				assert.True(t, ok)
-			},
-		},
 		// XLEN
 		{
 			name: "XLEN",
 			cmd:  "XLEN",
 			args: [][]byte{[]byte("mystream")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
+				assert.Equal(t, int64(1), int64(*integer))
 			},
 		},
 		// XRANGE
 		{
 			name: "XRANGE",
 			cmd:  "XRANGE",
-			args: [][]byte{[]byte("mystream"), []byte("-"), []byte("+"), []byte("COUNT"), []byte("10")},
+			args: [][]byte{[]byte("mystream"), []byte("-"), []byte("+")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				_, ok := resp.(*proto.NestedArray)
 				assert.True(t, ok)
 			},
 		},
@@ -179,9 +181,9 @@ func TestServerStreamCommands2(t *testing.T) {
 		{
 			name: "XREVRANGE",
 			cmd:  "XREVRANGE",
-			args: [][]byte{[]byte("mystream"), []byte("+"), []byte("-"), []byte("COUNT"), []byte("10")},
+			args: [][]byte{[]byte("mystream"), []byte("+"), []byte("-")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				_, ok := resp.(*proto.NestedArray)
 				assert.True(t, ok)
 			},
 		},
@@ -189,9 +191,9 @@ func TestServerStreamCommands2(t *testing.T) {
 		{
 			name: "XREAD",
 			cmd:  "XREAD",
-			args: [][]byte{[]byte("COUNT"), []byte("1"), []byte("STREAMS"), []byte("mystream"), []byte("0")},
+			args: [][]byte{[]byte("STREAMS"), []byte("mystream"), []byte("0")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				_, ok := resp.(*proto.NestedArray)
 				assert.True(t, ok)
 			},
 		},
@@ -201,17 +203,18 @@ func TestServerStreamCommands2(t *testing.T) {
 			cmd:  "XINFO",
 			args: [][]byte{[]byte("STREAM"), []byte("mystream")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
+				assert.True(t, len(arr.Args) > 0)
 			},
 		},
 		// XPENDING
 		{
 			name: "XPENDING",
 			cmd:  "XPENDING",
-			args: [][]byte{[]byte("mystream")},
+			args: [][]byte{[]byte("mystream"), []byte("mygroup")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				_, ok := resp.(*proto.NestedArray)
 				assert.True(t, ok)
 			},
 		},
@@ -247,8 +250,9 @@ func TestServerSetCommands3(t *testing.T) {
 			cmd:  "SINTER",
 			args: [][]byte{[]byte("set1"), []byte("set2")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
+				assert.True(t, len(arr.Args) > 0) // intersection of {a,b,c} and {b,c,d} = {b,c}
 			},
 		},
 		// SUNION
@@ -257,8 +261,9 @@ func TestServerSetCommands3(t *testing.T) {
 			cmd:  "SUNION",
 			args: [][]byte{[]byte("set1"), []byte("set2")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
+				assert.Equal(t, 4, len(arr.Args)) // {a,b,c,d}
 			},
 		},
 		// SDIFF
@@ -267,8 +272,9 @@ func TestServerSetCommands3(t *testing.T) {
 			cmd:  "SDIFF",
 			args: [][]byte{[]byte("set1"), []byte("set2")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
+				assert.Equal(t, 1, len(arr.Args)) // {a}
 			},
 		},
 		// SMISMEMBER
@@ -277,8 +283,9 @@ func TestServerSetCommands3(t *testing.T) {
 			cmd:  "SMISMEMBER",
 			args: [][]byte{[]byte("set1"), []byte("a"), []byte("b")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				nested, ok := resp.(*proto.NestedArray)
 				assert.True(t, ok)
+				assert.Equal(t, 2, len(nested.Elems))
 			},
 		},
 		// SPOP
@@ -287,7 +294,7 @@ func TestServerSetCommands3(t *testing.T) {
 			cmd:  "SPOP",
 			args: [][]byte{[]byte("set1")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				_, ok := resp.(*proto.BulkString)
 				assert.True(t, ok)
 			},
 		},
@@ -297,8 +304,9 @@ func TestServerSetCommands3(t *testing.T) {
 			cmd:  "SRANDMEMBER",
 			args: [][]byte{[]byte("set1"), []byte("2")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
+				assert.Equal(t, 2, len(arr.Args))
 			},
 		},
 		// SMOVE
@@ -307,8 +315,9 @@ func TestServerSetCommands3(t *testing.T) {
 			cmd:  "SMOVE",
 			args: [][]byte{[]byte("set1"), []byte("set2"), []byte("e")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
+				assert.Equal(t, int64(0), int64(*integer)) // 'e' not in set1
 			},
 		},
 	}
@@ -346,8 +355,9 @@ func TestServerSortedSetCommands3(t *testing.T) {
 			cmd:  "ZRANK",
 			args: [][]byte{[]byte("myzset"), []byte("member1")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
+				assert.Equal(t, int64(0), int64(*integer)) // member1 is first
 			},
 		},
 		// ZREVRANK
@@ -356,8 +366,9 @@ func TestServerSortedSetCommands3(t *testing.T) {
 			cmd:  "ZREVRANK",
 			args: [][]byte{[]byte("myzset"), []byte("member1")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
+				assert.Equal(t, int64(2), int64(*integer)) // member1 is last in reverse
 			},
 		},
 		// ZCOUNT
@@ -366,8 +377,9 @@ func TestServerSortedSetCommands3(t *testing.T) {
 			cmd:  "ZCOUNT",
 			args: [][]byte{[]byte("myzset"), []byte("1"), []byte("3")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
+				assert.Equal(t, int64(3), int64(*integer)) // all 3 members in [1,3]
 			},
 		},
 		// ZPOPMIN
@@ -376,8 +388,9 @@ func TestServerSortedSetCommands3(t *testing.T) {
 			cmd:  "ZPOPMIN",
 			args: [][]byte{[]byte("myzset"), []byte("1")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
+				assert.Equal(t, 2, len(arr.Args)) // [member, score]
 			},
 		},
 		// ZPOPMAX
@@ -386,8 +399,9 @@ func TestServerSortedSetCommands3(t *testing.T) {
 			cmd:  "ZPOPMAX",
 			args: [][]byte{[]byte("myzset"), []byte("1")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
+				assert.Equal(t, 2, len(arr.Args)) // [member, score]
 			},
 		},
 		// ZINCRBY
@@ -396,8 +410,10 @@ func TestServerSortedSetCommands3(t *testing.T) {
 			cmd:  "ZINCRBY",
 			args: [][]byte{[]byte("myzset"), []byte("1"), []byte("member1")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				bs, ok := resp.(*proto.BulkString)
 				assert.True(t, ok)
+				// member1 was popped by ZPOPMIN, so ZINCRBY creates it with score 1
+				assert.Equal(t, "1", string(*bs))
 			},
 		},
 		// ZMSCORE
@@ -406,8 +422,9 @@ func TestServerSortedSetCommands3(t *testing.T) {
 			cmd:  "ZMSCORE",
 			args: [][]byte{[]byte("myzset"), []byte("member1")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
+				assert.Equal(t, 1, len(arr.Args))
 			},
 		},
 	}

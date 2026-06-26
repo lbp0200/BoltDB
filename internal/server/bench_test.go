@@ -9,7 +9,6 @@ import (
 	"github.com/lbp0200/BoltDB/internal/store"
 )
 
-
 // setupBenchmarkHandler creates a handler for benchmark testing
 func setupBenchmarkHandler(b *testing.B) (*Handler, *connState) {
 	dbPath := b.TempDir()

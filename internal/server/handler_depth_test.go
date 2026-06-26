@@ -9,7 +9,6 @@ import (
 	"github.com/zeebo/assert"
 )
 
-
 // TestStringBoundary_EmptyKey tests GET on nonexistent key
 func TestStringBoundary_EmptyKey(t *testing.T) {
 	t.Parallel()

@@ -462,6 +462,68 @@ func (s *BotreonStore) PTTL(key string) (int64, error) {
 	return ttl, err
 }
 
+// ExpireTime 实现 Redis EXPIRETIME 命令，返回键过期时间的Unix时间戳（秒）
+// 返回 -1 表示键存在但没有设置过期时间，-2 表示键不存在
+func (s *BotreonStore) ExpireTime(key string) (int64, error) {
+	return s.computeAbsoluteExpiry(key, time.Second)
+}
+
+// PExpireTime 实现 Redis PEXPIRETIME 命令，返回键过期时间的Unix时间戳（毫秒）
+// 返回 -1 表示键存在但没有设置过期时间，-2 表示键不存在
+func (s *BotreonStore) PExpireTime(key string) (int64, error) {
+	return s.computeAbsoluteExpiry(key, time.Millisecond)
+}
+
+// computeAbsoluteExpiry 是 ExpireTime/PExpireTime 的公共实现
+func (s *BotreonStore) computeAbsoluteExpiry(key string, unit time.Duration) (int64, error) {
+	var result int64 = -2
+	err := s.db.View(func(txn *badger.Txn) error {
+		typeKey := TypeOfKeyGet(key)
+		item, err := txn.Get(typeKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return nil // 键不存在，返回-2
+		}
+		if err != nil {
+			return err
+		}
+		val, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		keyType := string(val)
+
+		valueKey, err := s.getKeyValueKey(key, keyType)
+		if err != nil {
+			return err
+		}
+
+		valueItem, err := txn.Get(valueKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			result = -2
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		expiresAt := valueItem.ExpiresAt()
+		if expiresAt == 0 {
+			result = -1 // 键存在但没有设置过期时间
+			return nil
+		}
+
+		// #nosec G115 - expiresAt is a valid Unix timestamp within int64 range
+		switch unit {
+		case time.Millisecond:
+			result = int64(expiresAt) / 1e6
+		default:
+			result = int64(expiresAt) / 1e9
+		}
+		return nil
+	})
+	return result, err
+}
+
 // PERSIST 实现 Redis PERSIST 命令，移除键的过期时间
 func (s *BotreonStore) Persist(key string) (bool, error) {
 	var hasTTL bool

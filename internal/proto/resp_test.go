@@ -186,6 +186,47 @@ func TestReadRESPArray(t *testing.T) {
 			expected: &Array{Args: [][]byte{[]byte("SET"), []byte("key"), []byte("value")}},
 			wantErr:  false,
 		},
+		{
+			name:     "simple string command (+PONG)",
+			input:    "+PONG\r\n",
+			expected: &Array{Args: [][]byte{[]byte("PONG")}},
+			wantErr:  false,
+		},
+		{
+			name:     "error as command (-ERR)",
+			input:    "-ERR unknown command\r\n",
+			expected: &Array{Args: [][]byte{[]byte("ERR unknown command")}},
+			wantErr:  false,
+		},
+		{
+			name:     "standalone nil bulk string",
+			input:    "$-1\r\n",
+			expected: &Array{Args: [][]byte{nil}},
+			wantErr:  false,
+		},
+		{
+			name:     "standalone bulk string",
+			input:    "$5\r\nhello\r\n",
+			expected: &Array{Args: [][]byte{[]byte("hello")}},
+			wantErr:  false,
+		},
+		{
+			name:     "array with integer element",
+			input:    "*2\r\n:1\r\n$3\r\nkey\r\n",
+			expected: &Array{Args: [][]byte{[]byte("1"), []byte("key")}},
+			wantErr:  false,
+		},
+		{
+			name:     "array with simple string element",
+			input:    "*2\r\n+OK\r\n$3\r\nkey\r\n",
+			expected: &Array{Args: [][]byte{[]byte("OK"), []byte("key")}},
+			wantErr:  false,
+		},
+		{
+			name:    "invalid array prefix star only",
+			input:   "*\r\n",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -632,6 +673,21 @@ func TestRESP3_String(t *testing.T) {
 			name:     "big number string",
 			resp:     BigNumber{Value: "42"},
 			expected: "(42\r\n",
+		},
+		{
+			name:     "set string",
+			resp:     &Set{Elems: []RESP{NewBulkString([]byte("a")), NewBulkString([]byte("b"))}},
+			expected: "~2\r\n$1\r\na\r\n$1\r\nb\r\n",
+		},
+		{
+			name:     "empty set string",
+			resp:     &Set{Elems: []RESP{}},
+			expected: "~0\r\n",
+		},
+		{
+			name:     "verbatim string",
+			resp:     VerbatimString{Encoding: "txt", Value: "hello"},
+			expected: "=9\r\ntxt:hello\r\n",
 		},
 	}
 

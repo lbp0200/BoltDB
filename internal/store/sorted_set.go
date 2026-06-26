@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	"sort"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -1365,6 +1366,62 @@ func (s *BotreonStore) ZDiffStore(destination string, keys []string) (int64, err
 		s.notifyBlockingZPop(destination)
 	}
 	return count, err
+}
+
+// ZInter 实现 Redis ZINTER 命令（Redis 7.0+），返回交集成员
+// 与 ZINTERSTORE 不同，不存储结果，直接返回成员列表
+func (s *BotreonStore) ZInter(keys []string, weights []float64, aggregate string) ([]ZSetMember, error) {
+	var result []ZSetMember
+	err := s.db.View(func(txn *badger.Txn) error {
+		memberScores, err := zInterScoresInTxn(txn, keys, weights, aggregate)
+		if err != nil {
+			return err
+		}
+		// Convert map to sorted slice
+		result = make([]ZSetMember, 0, len(memberScores))
+		for member, score := range memberScores {
+			result = append(result, ZSetMember{Member: member, Score: score})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	// Sort by score then member for deterministic ordering
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Score != result[j].Score {
+			return result[i].Score < result[j].Score
+		}
+		return result[i].Member < result[j].Member
+	})
+	return result, nil
+}
+
+// ZUnion 实现 Redis ZUNION 命令（Redis 7.0+），返回并集成员
+// 与 ZUNIONSTORE 不同，不存储结果，直接返回成员列表
+func (s *BotreonStore) ZUnion(keys []string, weights []float64, aggregate string) ([]ZSetMember, error) {
+	var result []ZSetMember
+	err := s.db.View(func(txn *badger.Txn) error {
+		memberScores, err := zUnionScoresInTxn(txn, keys, weights, aggregate)
+		if err != nil {
+			return err
+		}
+		result = make([]ZSetMember, 0, len(memberScores))
+		for member, score := range memberScores {
+			result = append(result, ZSetMember{Member: member, Score: score})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Score != result[j].Score {
+			return result[i].Score < result[j].Score
+		}
+		return result[i].Member < result[j].Member
+	})
+	return result, nil
 }
 
 // ZDiff returns the difference of the first sorted set with all subsequent ones.

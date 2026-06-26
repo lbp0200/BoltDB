@@ -8,7 +8,6 @@ import (
 	"github.com/zeebo/assert"
 )
 
-
 // TestExecuteCommand_CLIENT_ID_Coverage tests CLIENT ID command
 func TestExecuteCommand_CLIENT_ID_Coverage(t *testing.T) {
 	t.Parallel()
@@ -1136,6 +1135,81 @@ func TestExecuteCommand_ZDIFF_Coverage(t *testing.T) {
 	assert.Equal(t, 4, len(arr.Args))
 
 	resp = handler.executeCommand(state, "ZDIFF", [][]byte{[]byte("2"), []byte("empty"), []byte("zdiff1")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(arr.Args))
+}
+
+// TestExecuteCommand_ZINTER_Coverage tests ZINTER command (Redis 7.0+)
+func TestExecuteCommand_ZINTER_Coverage(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "ZADD", [][]byte{[]byte("zinter1"), []byte("1"), []byte("a"), []byte("2"), []byte("b")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "ZADD", [][]byte{[]byte("zinter2"), []byte("1"), []byte("a"), []byte("3"), []byte("c")}, "127.0.0.1:12345")
+
+	// Basic ZINTER
+	resp := handler.executeCommand(state, "ZINTER", [][]byte{[]byte("2"), []byte("zinter1"), []byte("zinter2")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(arr.Args)) // only 'a' is in both
+	assert.Equal(t, "a", string(arr.Args[0]))
+
+	// ZINTER WITHSCORES
+	resp = handler.executeCommand(state, "ZINTER", [][]byte{[]byte("2"), []byte("zinter1"), []byte("zinter2"), []byte("WITHSCORES")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(arr.Args)) // member + score
+	assert.Equal(t, "a", string(arr.Args[0]))
+
+	// ZINTER with WEIGHTS
+	resp = handler.executeCommand(state, "ZINTER", [][]byte{[]byte("2"), []byte("zinter1"), []byte("zinter2"), []byte("WEIGHTS"), []byte("2"), []byte("1")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(arr.Args))
+
+	// ZINTER with AGGREGATE
+	resp = handler.executeCommand(state, "ZINTER", [][]byte{[]byte("2"), []byte("zinter1"), []byte("zinter2"), []byte("AGGREGATE"), []byte("MAX")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(arr.Args))
+
+	// ZINTER empty intersection
+	resp = handler.executeCommand(state, "ZINTER", [][]byte{[]byte("2"), []byte("zinter1"), []byte("empty")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(arr.Args))
+}
+
+// TestExecuteCommand_ZUNION_Coverage tests ZUNION command (Redis 7.0+)
+func TestExecuteCommand_ZUNION_Coverage(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "ZADD", [][]byte{[]byte("zun1"), []byte("1"), []byte("a"), []byte("2"), []byte("b")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "ZADD", [][]byte{[]byte("zun2"), []byte("1"), []byte("a"), []byte("3"), []byte("c")}, "127.0.0.1:12345")
+
+	// Basic ZUNION
+	resp := handler.executeCommand(state, "ZUNION", [][]byte{[]byte("2"), []byte("zun1"), []byte("zun2")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 3, len(arr.Args)) // a, b, c
+
+	// ZUNION WITHSCORES
+	resp = handler.executeCommand(state, "ZUNION", [][]byte{[]byte("2"), []byte("zun1"), []byte("zun2"), []byte("WITHSCORES")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 6, len(arr.Args)) // 3 * (member + score)
+
+	// ZUNION with WEIGHTS
+	resp = handler.executeCommand(state, "ZUNION", [][]byte{[]byte("2"), []byte("zun1"), []byte("zun2"), []byte("WEIGHTS"), []byte("2"), []byte("1")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+
+	// ZUNION empty
+	resp = handler.executeCommand(state, "ZUNION", [][]byte{[]byte("1"), []byte("empty")}, "127.0.0.1:12345")
 	arr, ok = resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 0, len(arr.Args))

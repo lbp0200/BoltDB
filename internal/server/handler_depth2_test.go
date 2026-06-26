@@ -9,7 +9,6 @@ import (
 	"github.com/zeebo/assert"
 )
 
-
 // TestHashBoundary_EmptyHash tests HGET on nonexistent hash
 func TestHashBoundary_EmptyHash(t *testing.T) {
 	t.Parallel()

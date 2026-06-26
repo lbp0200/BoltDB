@@ -8,7 +8,6 @@ import (
 	"github.com/zeebo/assert"
 )
 
-
 // TestServerListCommands2 tests more list commands
 func TestServerListCommands2(t *testing.T) {
 	t.Parallel()
@@ -42,8 +41,9 @@ func TestServerListCommands2(t *testing.T) {
 			cmd:  "LINDEX",
 			args: [][]byte{[]byte("mylist"), []byte("0")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				bs, ok := resp.(*proto.BulkString)
 				assert.True(t, ok)
+				assert.Equal(t, "value2", string(*bs))
 			},
 		},
 	}
@@ -99,8 +99,9 @@ func TestServerSetCommands2(t *testing.T) {
 			cmd:  "SMEMBERS",
 			args: [][]byte{[]byte("myset")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
+				assert.True(t, len(arr.Args) > 0)
 			},
 		},
 	}
@@ -148,8 +149,9 @@ func TestServerSortedSetCommands2(t *testing.T) {
 			cmd:  "ZSCORE",
 			args: [][]byte{[]byte("myzset"), []byte("member1")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				bs, ok := resp.(*proto.BulkString)
 				assert.True(t, ok)
+				assert.Equal(t, "1", string(*bs))
 			},
 		},
 	}
@@ -205,8 +207,9 @@ func TestServerHashCommands2(t *testing.T) {
 			cmd:  "HKEYS",
 			args: [][]byte{[]byte("myhash")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
+				assert.True(t, len(arr.Args) > 0)
 			},
 		},
 	}

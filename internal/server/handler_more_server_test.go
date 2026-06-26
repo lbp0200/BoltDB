@@ -9,7 +9,6 @@ import (
 	"github.com/zeebo/assert"
 )
 
-
 // TestServerAdditionalCommands tests additional server commands
 func TestServerAdditionalCommands(t *testing.T) {
 	t.Parallel()
@@ -28,7 +27,8 @@ func TestServerAdditionalCommands(t *testing.T) {
 			cmd:  "SHUTDOWN",
 			args: nil,
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				// Returns error (NOREADONLY) via handler
+				_, ok := resp.(*proto.Error)
 				assert.True(t, ok)
 			},
 		},
@@ -47,8 +47,10 @@ func TestServerAdditionalCommands(t *testing.T) {
 			cmd:  "MEMORY",
 			args: [][]byte{[]byte("USAGE"), []byte("nonexistent")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				// Nonexistent key returns nil bulk string
+				bs, ok := resp.(*proto.BulkString)
 				assert.True(t, ok)
+				assert.Nil(t, *bs)
 			},
 		},
 		// MEMORY DOCTOR
@@ -57,8 +59,9 @@ func TestServerAdditionalCommands(t *testing.T) {
 			cmd:  "MEMORY",
 			args: [][]byte{[]byte("DOCTOR")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
+				assert.True(t, len(arr.Args) > 0)
 			},
 		},
 		// MEMORY HELP
@@ -100,8 +103,9 @@ func TestServerAdditionalCommands(t *testing.T) {
 			cmd:  "LATENCY",
 			args: [][]byte{[]byte("DOCTOR")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
+				assert.True(t, len(arr.Args) > 0)
 			},
 		},
 		// READONLY
@@ -128,7 +132,8 @@ func TestServerAdditionalCommands(t *testing.T) {
 			cmd:  "LASTSAVE",
 			args: nil,
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				// Backup not enabled — returns Error
+				_, ok := resp.(*proto.Error)
 				assert.True(t, ok)
 			},
 		},
@@ -191,7 +196,8 @@ func TestServerPubSubCommands(t *testing.T) {
 			cmd:  "PUBSUB",
 			args: [][]byte{[]byte("CHANNELS")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				// PubSub not enabled — returns Error
+				_, ok := resp.(*proto.Error)
 				assert.True(t, ok)
 			},
 		},
@@ -201,7 +207,7 @@ func TestServerPubSubCommands(t *testing.T) {
 			cmd:  "PUBSUB",
 			args: [][]byte{[]byte("CHANNELS"), []byte("test*")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				_, ok := resp.(*proto.Error)
 				assert.True(t, ok)
 			},
 		},
@@ -211,7 +217,7 @@ func TestServerPubSubCommands(t *testing.T) {
 			cmd:  "PUBSUB",
 			args: [][]byte{[]byte("NUMSUB"), []byte("testchannel")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				_, ok := resp.(*proto.Error)
 				assert.True(t, ok)
 			},
 		},
@@ -221,7 +227,7 @@ func TestServerPubSubCommands(t *testing.T) {
 			cmd:  "PUBSUB",
 			args: [][]byte{[]byte("NUMPAT")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				_, ok := resp.(*proto.Error)
 				assert.True(t, ok)
 			},
 		},
@@ -231,7 +237,7 @@ func TestServerPubSubCommands(t *testing.T) {
 			cmd:  "PUBSUB",
 			args: [][]byte{[]byte("HELP")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(proto.RESP)
+				_, ok := resp.(*proto.Error)
 				assert.True(t, ok)
 			},
 		},

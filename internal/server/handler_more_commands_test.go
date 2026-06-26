@@ -7,7 +7,6 @@ import (
 	"github.com/zeebo/assert"
 )
 
-
 // TestServerMoreStringCommands tests more string commands
 func TestServerMoreStringCommands(t *testing.T) {
 	t.Parallel()
@@ -101,9 +100,7 @@ func TestServerMoreStringCommands(t *testing.T) {
 			cmd:  "SET",
 			args: [][]byte{[]byte("strkey"), []byte("newvalue"), []byte("XX")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Should return OK for existing key
-				_, ok := resp.(proto.RESP)
-				assert.True(t, ok)
+				assert.Equal(t, proto.OK, resp)
 			},
 		},
 	}
@@ -242,9 +239,9 @@ func TestServerTypeAndExistsCommands(t *testing.T) {
 			cmd:  "TYPE",
 			args: [][]byte{[]byte("stringkey")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Just verify it returns a valid RESP response
-				_, ok := resp.(proto.RESP)
+				ss, ok := resp.(*proto.SimpleString)
 				assert.True(t, ok)
+				assert.Equal(t, "string", string(*ss))
 			},
 		},
 		// TYPE for hash
@@ -253,9 +250,9 @@ func TestServerTypeAndExistsCommands(t *testing.T) {
 			cmd:  "TYPE",
 			args: [][]byte{[]byte("hashkey")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Just verify it returns a valid RESP response
-				_, ok := resp.(proto.RESP)
+				ss, ok := resp.(*proto.SimpleString)
 				assert.True(t, ok)
+				assert.Equal(t, "hash", string(*ss))
 			},
 		},
 		// TYPE for list
@@ -264,9 +261,9 @@ func TestServerTypeAndExistsCommands(t *testing.T) {
 			cmd:  "TYPE",
 			args: [][]byte{[]byte("listkey")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Just verify it returns a valid RESP response
-				_, ok := resp.(proto.RESP)
+				ss, ok := resp.(*proto.SimpleString)
 				assert.True(t, ok)
+				assert.Equal(t, "list", string(*ss))
 			},
 		},
 		// TYPE for set
@@ -275,9 +272,9 @@ func TestServerTypeAndExistsCommands(t *testing.T) {
 			cmd:  "TYPE",
 			args: [][]byte{[]byte("setkey")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Just verify it returns a valid RESP response
-				_, ok := resp.(proto.RESP)
+				ss, ok := resp.(*proto.SimpleString)
 				assert.True(t, ok)
+				assert.Equal(t, "set", string(*ss))
 			},
 		},
 		// TYPE for nonexistent
@@ -286,9 +283,9 @@ func TestServerTypeAndExistsCommands(t *testing.T) {
 			cmd:  "TYPE",
 			args: [][]byte{[]byte("nonexistent")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Just verify it returns a valid RESP response
-				_, ok := resp.(proto.RESP)
+				ss, ok := resp.(*proto.SimpleString)
 				assert.True(t, ok)
+				assert.Equal(t, "none", string(*ss))
 			},
 		},
 		// EXISTS

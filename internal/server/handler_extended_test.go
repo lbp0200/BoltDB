@@ -7,7 +7,6 @@ import (
 	"github.com/zeebo/assert"
 )
 
-
 // TestServerBitCommands tests BIT commands
 func TestServerBitCommands(t *testing.T) {
 	t.Parallel()
@@ -93,21 +92,31 @@ func TestServerTransactionCommands(t *testing.T) {
 
 	// Just verify commands execute without error - actual transaction behavior may vary
 	tests := []struct {
-		name string
-		cmd  string
-		args [][]byte
+		name  string
+		cmd   string
+		args  [][]byte
+		check func(t *testing.T, resp proto.RESP)
 	}{
-		{"MULTI", "MULTI", nil},
-		{"SET in transaction", "SET", [][]byte{[]byte("txkey"), []byte("txvalue")}},
-		{"EXEC", "EXEC", nil},
+		{"MULTI", "MULTI", nil, func(t *testing.T, resp proto.RESP) {
+			ss, ok := resp.(*proto.SimpleString)
+			assert.True(t, ok)
+			assert.Equal(t, "OK", string(*ss))
+		}},
+		{"SET in transaction", "SET", [][]byte{[]byte("txkey"), []byte("txvalue")}, func(t *testing.T, resp proto.RESP) {
+			ss, ok := resp.(*proto.SimpleString)
+			assert.True(t, ok)
+			assert.Equal(t, "QUEUED", string(*ss))
+		}},
+		{"EXEC", "EXEC", nil, func(t *testing.T, resp proto.RESP) {
+			_, ok := resp.(*proto.NestedArray)
+			assert.True(t, ok)
+		}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			resp := handler.executeCommand(state, tt.cmd, tt.args, "127.0.0.1:12345")
-			// Just verify it returns a valid RESP response
-			_, ok := resp.(proto.RESP)
-			assert.True(t, ok)
+			tt.check(t, resp)
 		})
 	}
 }
@@ -141,8 +150,8 @@ func TestServerGeoCommands(t *testing.T) {
 			cmd:  "GEODIST",
 			args: [][]byte{[]byte("cities"), []byte("San Francisco"), []byte("Los Angeles")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Returns distance or nil
-				_, ok := resp.(proto.RESP)
+				// Los Angeles not added — returns Error
+				_, ok := resp.(*proto.Error)
 				assert.True(t, ok)
 			},
 		},
@@ -207,8 +216,7 @@ func TestServerStreamCommands(t *testing.T) {
 			cmd:  "XRANGE",
 			args: [][]byte{[]byte("mystream"), []byte("-"), []byte("+"), []byte("COUNT"), []byte("1")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Just verify it returns a valid RESP response
-				_, ok := resp.(proto.RESP)
+				_, ok := resp.(*proto.NestedArray)
 				assert.True(t, ok)
 			},
 		},
@@ -244,9 +252,8 @@ func TestServerScanCommands(t *testing.T) {
 			cmd:  "SCAN",
 			args: [][]byte{[]byte("0")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Just verify it returns a valid RESP response
-				_, ok := resp.(proto.RESP)
-				assert.True(t, ok)
+				_, ok := resp.(proto.RawString)
+				assert.True(t, ok) // SCAN returns formatted RESP string
 			},
 		},
 		// SSCAN
@@ -255,8 +262,7 @@ func TestServerScanCommands(t *testing.T) {
 			cmd:  "SSCAN",
 			args: [][]byte{[]byte("nonexistent"), []byte("0")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Just verify it returns a valid RESP response
-				_, ok := resp.(proto.RESP)
+				_, ok := resp.(*proto.NestedArray)
 				assert.True(t, ok)
 			},
 		},
@@ -266,8 +272,7 @@ func TestServerScanCommands(t *testing.T) {
 			cmd:  "HSCAN",
 			args: [][]byte{[]byte("nonexistent"), []byte("0")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Just verify it returns a valid RESP response
-				_, ok := resp.(proto.RESP)
+				_, ok := resp.(*proto.NestedArray)
 				assert.True(t, ok)
 			},
 		},
@@ -277,8 +282,7 @@ func TestServerScanCommands(t *testing.T) {
 			cmd:  "ZSCAN",
 			args: [][]byte{[]byte("nonexistent"), []byte("0")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Just verify it returns a valid RESP response
-				_, ok := resp.(proto.RESP)
+				_, ok := resp.(*proto.NestedArray)
 				assert.True(t, ok)
 			},
 		},
@@ -390,9 +394,10 @@ func TestServerClientCommands(t *testing.T) {
 			cmd:  "CLIENT",
 			args: [][]byte{[]byte("GETNAME")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Returns nil or name
-				_, ok := resp.(proto.RESP)
+				// No name set — returns nil bulk string
+				bs, ok := resp.(*proto.BulkString)
 				assert.True(t, ok)
+				assert.Nil(t, *bs)
 			},
 		},
 		// CLIENT SETNAME
@@ -443,8 +448,8 @@ func TestServerConfigCommands(t *testing.T) {
 			cmd:  "CONFIG",
 			args: [][]byte{[]byte("HELP")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Just verify it returns a valid RESP response
-				_, ok := resp.(proto.RESP)
+				// CONFIG HELP is not supported — returns Error
+				_, ok := resp.(*proto.Error)
 				assert.True(t, ok)
 			},
 		},
@@ -476,9 +481,8 @@ func TestServerClusterCommands(t *testing.T) {
 			cmd:  "CLUSTER",
 			args: [][]byte{[]byte("INFO")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Just verify it returns a valid RESP response
-				_, ok := resp.(proto.RESP)
-				assert.True(t, ok)
+				_, ok := resp.(*proto.Error)
+				assert.True(t, ok) // cluster disabled
 			},
 		},
 		// CLUSTER NODES
@@ -487,9 +491,8 @@ func TestServerClusterCommands(t *testing.T) {
 			cmd:  "CLUSTER",
 			args: [][]byte{[]byte("NODES")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Just verify it returns a valid RESP response
-				_, ok := resp.(proto.RESP)
-				assert.True(t, ok)
+				_, ok := resp.(*proto.Error)
+				assert.True(t, ok) // cluster disabled
 			},
 		},
 		// CLUSTER MYID
@@ -498,9 +501,8 @@ func TestServerClusterCommands(t *testing.T) {
 			cmd:  "CLUSTER",
 			args: [][]byte{[]byte("MYID")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Just verify it returns a valid RESP response
-				_, ok := resp.(proto.RESP)
-				assert.True(t, ok)
+				_, ok := resp.(*proto.Error)
+				assert.True(t, ok) // cluster disabled
 			},
 		},
 		// CLUSTER KEYSLOT
@@ -509,9 +511,8 @@ func TestServerClusterCommands(t *testing.T) {
 			cmd:  "CLUSTER",
 			args: [][]byte{[]byte("KEYSLOT"), []byte("testkey")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Just verify it returns a valid RESP response
-				_, ok := resp.(proto.RESP)
-				assert.True(t, ok)
+				_, ok := resp.(*proto.Error)
+				assert.True(t, ok) // cluster disabled
 			},
 		},
 	}
@@ -542,8 +543,8 @@ func TestServerReplConfCommands(t *testing.T) {
 			cmd:  "REPLCONF",
 			args: [][]byte{[]byte("LISTENING-PORT"), []byte("6379")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Just verify it returns a valid RESP response
-				_, ok := resp.(proto.RESP)
+				// Replication not enabled — returns Error
+				_, ok := resp.(*proto.Error)
 				assert.True(t, ok)
 			},
 		},
@@ -553,8 +554,8 @@ func TestServerReplConfCommands(t *testing.T) {
 			cmd:  "REPLCONF",
 			args: [][]byte{[]byte("CAPA"), []byte("eof")},
 			check: func(t *testing.T, resp proto.RESP) {
-				// Just verify it returns a valid RESP response
-				_, ok := resp.(proto.RESP)
+				// Replication not enabled — returns Error
+				_, ok := resp.(*proto.Error)
 				assert.True(t, ok)
 			},
 		},
@@ -586,8 +587,8 @@ func TestServerSaveCommands(t *testing.T) {
 			cmd:  "SAVE",
 			args: nil,
 			check: func(t *testing.T, resp proto.RESP) {
-				// Just verify it returns a valid RESP response
-				_, ok := resp.(proto.RESP)
+				// Backup not enabled in tests — returns Error
+				_, ok := resp.(*proto.Error)
 				assert.True(t, ok)
 			},
 		},
@@ -597,8 +598,8 @@ func TestServerSaveCommands(t *testing.T) {
 			cmd:  "BGSAVE",
 			args: nil,
 			check: func(t *testing.T, resp proto.RESP) {
-				// BGSAVE returns OK or background started
-				_, ok := resp.(proto.RESP)
+				// Backup not enabled in tests — returns Error
+				_, ok := resp.(*proto.Error)
 				assert.True(t, ok)
 			},
 		},

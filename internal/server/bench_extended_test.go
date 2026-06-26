@@ -7,7 +7,6 @@ import (
 	"github.com/lbp0200/BoltDB/internal/store"
 )
 
-
 func BenchmarkExecuteCommand_MGET_5(b *testing.B) {
 	handler, state := setupBenchmarkHandler(b)
 	defer handler.Db.Close()
@@ -127,5 +126,3 @@ func BenchmarkPubSub_Publish_100(b *testing.B) {
 		handler.PubSub.Publish("ch", payload)
 	}
 }
-
-

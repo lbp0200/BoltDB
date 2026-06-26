@@ -16,8 +16,6 @@ import (
 	"github.com/zeebo/assert"
 )
 
-
-
 // setupTestHandler 创建测试用的Handler
 func setupTestHandler(t *testing.T) (*Handler, *connState) {
 	dbPath := t.TempDir()
@@ -587,8 +585,9 @@ func TestWatchCleanupOnDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 	reader1 := bufio.NewReader(conn1)
 
-	_, err = sendCommand(conn1, reader1, "WATCH", "mykey")
+	resp, err := sendCommand(conn1, reader1, "WATCH", "mykey")
 	assert.NoError(t, err)
+	assert.Equal(t, proto.OK, resp)
 
 	// 验证 watchMonitors 已创建并包含 mykey
 	handler.watchMu.Lock()
@@ -625,8 +624,9 @@ func TestWatchCleanupOnDisconnectMultipleKeys(t *testing.T) {
 	assert.NoError(t, err)
 	reader := bufio.NewReader(conn)
 
-	_, err = sendCommand(conn, reader, "WATCH", "k1", "k2", "k3")
+	resp, err := sendCommand(conn, reader, "WATCH", "k1", "k2", "k3")
 	assert.NoError(t, err)
+	assert.Equal(t, proto.OK, resp)
 
 	handler.watchMu.Lock()
 	assert.Equal(t, 3, len(handler.watchMonitors))
@@ -700,12 +700,17 @@ func TestDisconnectMidTransaction(t *testing.T) {
 	reader := bufio.NewReader(conn)
 
 	// 开始事务但不 EXEC
-	_, err = sendCommand(conn, reader, "MULTI")
+	resp, err := sendCommand(conn, reader, "MULTI")
 	assert.NoError(t, err)
-	_, err = sendCommand(conn, reader, "SET", "midkey", "midval")
+	assert.Equal(t, proto.OK, resp)
+	resp, err = sendCommand(conn, reader, "SET", "midkey", "midval")
 	assert.NoError(t, err)
-	_, err = sendCommand(conn, reader, "INCR", "midkey")
+	// In transaction — returns QUEUED
+	queuedResp := proto.NewSimpleString("QUEUED")
+	assert.Equal(t, queuedResp, resp)
+	resp, err = sendCommand(conn, reader, "INCR", "midkey")
 	assert.NoError(t, err)
+	assert.Equal(t, queuedResp, resp)
 
 	// 断开连接（不 EXEC/DISCARD）
 	conn.Close()
@@ -717,7 +722,7 @@ func TestDisconnectMidTransaction(t *testing.T) {
 	defer conn2.Close()
 	reader2 := bufio.NewReader(conn2)
 
-	resp, err := sendCommand(conn2, reader2, "GET", "midkey")
+	resp, err = sendCommand(conn2, reader2, "GET", "midkey")
 	assert.NoError(t, err)
 	bulk, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
@@ -785,36 +790,55 @@ func TestRealWorldScenario(t *testing.T) {
 
 	// 场景1：用户会话管理
 	// SET session:user1 "token123"
-	_, err = sendCommand(conn, reader, "SET", "session:user1", "token123")
+	resp, err := sendCommand(conn, reader, "SET", "session:user1", "token123")
 	assert.NoError(t, err)
+	assert.Equal(t, proto.OK, resp)
 
 	// EXPIRE session:user1 3600
-	_, err = sendCommand(conn, reader, "EXPIRE", "session:user1", "3600")
+	resp, err = sendCommand(conn, reader, "EXPIRE", "session:user1", "3600")
 	assert.NoError(t, err)
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
 
 	// GET session:user1
-	_, err = sendCommand(conn, reader, "GET", "session:user1")
+	resp, err = sendCommand(conn, reader, "GET", "session:user1")
 	assert.NoError(t, err)
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "token123", string(*bs))
 
 	// 场景2：计数器
 	// INCR page:views
-	_, err = sendCommand(conn, reader, "INCR", "page:views")
+	resp, err = sendCommand(conn, reader, "INCR", "page:views")
 	assert.NoError(t, err)
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
 
 	// INCRBY page:views 10
-	_, err = sendCommand(conn, reader, "INCRBY", "page:views", "10")
+	resp, err = sendCommand(conn, reader, "INCRBY", "page:views", "10")
 	assert.NoError(t, err)
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(11), int64(*integer))
 
 	// 场景3：购物车（使用Hash）
 	// HSET cart:user1 item1 2
-	_, err = sendCommand(conn, reader, "HSET", "cart:user1", "item1", "2")
+	resp, err = sendCommand(conn, reader, "HSET", "cart:user1", "item1", "2")
 	assert.NoError(t, err)
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
 
 	// HSET cart:user1 item2 1
-	_, err = sendCommand(conn, reader, "HSET", "cart:user1", "item2", "1")
+	resp, err = sendCommand(conn, reader, "HSET", "cart:user1", "item2", "1")
 	assert.NoError(t, err)
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
 
 	// HGETALL cart:user1
-	_, err = sendCommand(conn, reader, "HGETALL", "cart:user1")
+	resp, err = sendCommand(conn, reader, "HGETALL", "cart:user1")
 	assert.NoError(t, err)
 }

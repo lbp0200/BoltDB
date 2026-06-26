@@ -7,7 +7,6 @@ import (
 	"github.com/zeebo/assert"
 )
 
-
 // TestExecuteCommand_DUMP_NonExistent_Coverage tests DUMP command on non-existent key
 func TestExecuteCommand_DUMP_NonExistent_Coverage(t *testing.T) {
 	t.Parallel()
@@ -137,7 +136,7 @@ func TestExecuteCommand_RANDOMKEY_Coverage2(t *testing.T) {
 
 	// RANDOMKEY
 	resp := handler.executeCommand(state, "RANDOMKEY", nil, "127.0.0.1:12345")
-	// Just check that it returns something valid
-	_, ok := resp.(*proto.BulkString)
+	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
+	assert.True(t, len(*bs) > 0)
 }

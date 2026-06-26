@@ -2832,6 +2832,184 @@ func TestMONITOR_PING(t *testing.T) {
 	}
 }
 
+// ========== 新增命令集成测试 ==========
+
+// TestExpireTimeIntegration 验证 EXPIRETIME 通过 RESP 协议返回正确值
+func TestExpireTimeIntegration(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+	ctx := context.Background()
+
+	// SET + EXPIRE + EXPIRETIME
+	assert.NoError(t, sharedClient.Set(ctx, "et_key", "v", 0).Err())
+	assert.NoError(t, sharedClient.Expire(ctx, "et_key", 100*time.Second).Err())
+
+	val, err := sharedClient.Do(ctx, "EXPIRETIME", "et_key").Result()
+	assert.NoError(t, err)
+	// EXPIRETIME returns absolute Unix timestamp (seconds)
+	expireTime, ok := val.(int64)
+	assert.True(t, ok)
+	assert.True(t, expireTime > time.Now().Unix()-1)
+
+	// Key without TTL → -1
+	assert.NoError(t, sharedClient.Set(ctx, "et_no_ttl", "v", 0).Err())
+	val, err = sharedClient.Do(ctx, "EXPIRETIME", "et_no_ttl").Result()
+	assert.NoError(t, err)
+	expireTime, ok = val.(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(-1), expireTime)
+
+	// Non-existent key → -2
+	val, err = sharedClient.Do(ctx, "EXPIRETIME", "nonexistent_et").Result()
+	assert.NoError(t, err)
+	expireTime, ok = val.(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(-2), expireTime)
+}
+
+// TestPExpireTimeIntegration 验证 PEXPIRETIME 通过 RESP 协议返回毫秒值
+func TestPExpireTimeIntegration(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+	ctx := context.Background()
+
+	assert.NoError(t, sharedClient.Set(ctx, "pet_key", "v", 0).Err())
+	assert.NoError(t, sharedClient.Expire(ctx, "pet_key", 100*time.Second).Err())
+
+	val, err := sharedClient.Do(ctx, "PEXPIRETIME", "pet_key").Result()
+	assert.NoError(t, err)
+	pet, ok := val.(int64)
+	assert.True(t, ok)
+	assert.True(t, pet > time.Now().UnixMilli()-1)
+
+	// Key without TTL → -1
+	assert.NoError(t, sharedClient.Set(ctx, "pet_no_ttl", "v", 0).Err())
+	val, err = sharedClient.Do(ctx, "PEXPIRETIME", "pet_no_ttl").Result()
+	assert.NoError(t, err)
+	pet, ok = val.(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(-1), pet)
+}
+
+// TestLCSIntegration 验证 LCS 通过 RESP 协议返回正确结果
+func TestLCSIntegration(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+	ctx := context.Background()
+
+	assert.NoError(t, sharedClient.Set(ctx, "lcs_a", "hello world", 0).Err())
+	assert.NoError(t, sharedClient.Set(ctx, "lcs_b", "hello there", 0).Err())
+
+	// LCS (default) → BulkString
+	val, err := sharedClient.Do(ctx, "LCS", "lcs_a", "lcs_b").Result()
+	assert.NoError(t, err)
+	lcs, ok := val.(string)
+	assert.True(t, ok)
+	assert.True(t, len(lcs) > 0)
+
+	// LCS LEN → Integer
+	val, err = sharedClient.Do(ctx, "LCS", "lcs_a", "lcs_b", "LEN").Result()
+	assert.NoError(t, err)
+	length, ok := val.(int64)
+	assert.True(t, ok)
+	assert.True(t, length > 0)
+
+	// LCS with non-existent key → error
+	_, err = sharedClient.Do(ctx, "LCS", "lcs_a", "nonexistent").Result()
+	assert.Error(t, err)
+}
+
+// TestACLIntegration 验证 ACL 命令通过 RESP 协议
+func TestACLIntegration(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+	ctx := context.Background()
+
+	// ACL WHOAMI → BulkString "default"
+	val, err := sharedClient.Do(ctx, "ACL", "WHOAMI").Result()
+	assert.NoError(t, err)
+	whoami, ok := val.(string)
+	assert.True(t, ok)
+	assert.Equal(t, "default", whoami)
+
+	// ACL CAT → Array of categories
+	val, err = sharedClient.Do(ctx, "ACL", "CAT").Result()
+	assert.NoError(t, err)
+	cats, ok := val.([]interface{})
+	assert.True(t, ok)
+	assert.True(t, len(cats) >= 4)
+
+	// ACL LIST → Array of rules
+	val, err = sharedClient.Do(ctx, "ACL", "LIST").Result()
+	assert.NoError(t, err)
+	rules, ok := val.([]interface{})
+	assert.True(t, ok)
+	assert.True(t, len(rules) >= 1)
+}
+
+// TestZINTERIntegration 验证 ZINTER 通过 RESP 协议
+func TestZINTERIntegration(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+	ctx := context.Background()
+
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zi_a", redis.Z{Score: 1, Member: "a"}, redis.Z{Score: 2, Member: "b"}).Err())
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zi_b", redis.Z{Score: 1, Member: "a"}, redis.Z{Score: 3, Member: "c"}).Err())
+
+	// ZINTER without WITHSCORES → array of members
+	val, err := sharedClient.Do(ctx, "ZINTER", "2", "zi_a", "zi_b").Result()
+	assert.NoError(t, err)
+	members, ok := val.([]interface{})
+	assert.True(t, ok)
+	assert.True(t, len(members) >= 1)
+
+	// ZINTER WITHSCORES → alternating member/score
+	val, err = sharedClient.Do(ctx, "ZINTER", "2", "zi_a", "zi_b", "WITHSCORES").Result()
+	assert.NoError(t, err)
+	withScores, ok := val.([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(withScores)) // 1 member + 1 score
+
+	// ZINTER empty intersection → empty array
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zi_empty", redis.Z{Score: 1, Member: "x"}).Err())
+	val, err = sharedClient.Do(ctx, "ZINTER", "2", "zi_a", "zi_empty").Result()
+	assert.NoError(t, err)
+	empty, ok := val.([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(empty))
+}
+
+// TestZUNIONIntegration 验证 ZUNION 通过 RESP 协议
+func TestZUNIONIntegration(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+	ctx := context.Background()
+
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zu_a", redis.Z{Score: 1, Member: "a"}, redis.Z{Score: 2, Member: "b"}).Err())
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zu_b", redis.Z{Score: 1, Member: "a"}, redis.Z{Score: 3, Member: "c"}).Err())
+
+	// ZUNION → array of all members (a, b, c)
+	val, err := sharedClient.Do(ctx, "ZUNION", "2", "zu_a", "zu_b").Result()
+	assert.NoError(t, err)
+	members, ok := val.([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 3, len(members)) // a, b, c
+
+	// ZUNION WITHSCORES
+	val, err = sharedClient.Do(ctx, "ZUNION", "2", "zu_a", "zu_b", "WITHSCORES").Result()
+	assert.NoError(t, err)
+	withScores, ok := val.([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 6, len(withScores)) // 3 members * (member + score)
+
+	// ZUNION with empty key → members from non-empty key only
+	val, err = sharedClient.Do(ctx, "ZUNION", "2", "zu_a", "nonexistent_zu").Result()
+	assert.NoError(t, err)
+	partial, ok := val.([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(partial)) // a, b from zu_a only
+}
+
 
 
 

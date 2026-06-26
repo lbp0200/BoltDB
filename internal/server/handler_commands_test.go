@@ -7,7 +7,6 @@ import (
 	"github.com/zeebo/assert"
 )
 
-
 // TestServerStringCommands tests string type commands
 func TestServerStringCommands(t *testing.T) {
 	t.Parallel()

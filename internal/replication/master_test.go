@@ -447,3 +447,57 @@ func TestMasterConnection_SendCommand_MultipleArgs(t *testing.T) {
 		t.Errorf("expected %q, got %q", expected, string(mock.writeBuffer))
 	}
 }
+
+func TestMasterConnection_ReadResponse_Array(t *testing.T) {
+	t.Parallel()
+	mock := newMockMasterConn()
+	// Array response: *2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n
+	mock.readBuffer = []byte("*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n")
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   mock,
+		Reader: bufio.NewReader(mock),
+		Writer: bufio.NewWriter(mock),
+		stopCh: make(chan struct{}),
+	}
+	resp, err := mc.ReadResponse()
+	assert.NoError(t, err)
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(arr.Args))
+	assert.Equal(t, "foo", string(arr.Args[0]))
+	assert.Equal(t, "bar", string(arr.Args[1]))
+}
+
+func TestMasterConnection_ReadResponse_NilArray(t *testing.T) {
+	t.Parallel()
+	mock := newMockMasterConn()
+	mock.readBuffer = []byte("*-1\r\n")
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   mock,
+		Reader: bufio.NewReader(mock),
+		Writer: bufio.NewWriter(mock),
+		stopCh: make(chan struct{}),
+	}
+	// ReadResponse does not support nil arrays; returns an error
+	_, err := mc.ReadResponse()
+	assert.Error(t, err)
+}
+
+func TestMasterConnection_ReadResponse_EmptyLine(t *testing.T) {
+	t.Parallel()
+	mock := newMockMasterConn()
+	mock.readBuffer = []byte("\r\n")
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   mock,
+		Reader: bufio.NewReader(mock),
+		Writer: bufio.NewWriter(mock),
+		stopCh: make(chan struct{}),
+	}
+	resp, err := mc.ReadResponse()
+	assert.Error(t, err)
+	assert.Nil(t, resp)
+	assert.True(t, strings.Contains(err.Error(), "empty response"))
+}
