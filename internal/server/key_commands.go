@@ -1,0 +1,754 @@
+package server
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/lbp0200/BoltDB/internal/proto"
+)
+
+// handleDEL 实现 DEL 命令
+func (h *Handler) handleDEL(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 1 {
+		return proto.NewError("ERR wrong number of arguments for 'DEL' command")
+	}
+	keys := make([]string, len(args))
+	for i, arg := range args {
+		keys[i] = string(arg)
+	}
+	// 检查集群重定向
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
+	h.markDirtyKeys(state, keys...)
+	count := int64(0)
+	for _, arg := range args {
+		key := string(arg)
+		deleted, err := h.Db.Del(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
+		count += deleted
+	}
+	// #nosec G115 - count is bounded by practical data size limits
+	return proto.NewInteger(count)
+}
+
+// handleEXISTS 实现 EXISTS 命令
+func (h *Handler) handleEXISTS(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 1 {
+		return proto.NewError("ERR wrong number of arguments for 'EXISTS' command")
+	}
+	keys := make([]string, len(args))
+	for i, arg := range args {
+		keys[i] = string(arg)
+	}
+	// 检查集群重定向
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
+	count := 0
+	for _, arg := range args {
+		key := string(arg)
+		exists, err := h.Db.Exists(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
+		if exists {
+			count++
+		}
+	}
+	// #nosec G115 - count is bounded by practical data size limits
+	return proto.NewInteger(int64(count))
+}
+
+// handleTYPE 实现 TYPE 命令
+func (h *Handler) handleTYPE(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 1 {
+		return proto.NewError("ERR wrong number of arguments for 'TYPE' command")
+	}
+	key := string(args[0])
+	// 检查集群重定向
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
+	keyType, err := h.Db.Type(key)
+	if err != nil {
+		return proto.NewSimpleString("none")
+	}
+	return proto.NewSimpleString(keyType)
+}
+
+// handleDUMP 实现 DUMP 命令
+func (h *Handler) handleDUMP(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 1 {
+		return proto.NewError("ERR wrong number of arguments for 'DUMP' command")
+	}
+	key := string(args[0])
+	data, err := h.Db.Dump(key)
+	if err != nil {
+		if state.respVersion == 3 {
+			return &proto.Null{}
+		}
+		return proto.NewBulkString(nil)
+	}
+	return proto.NewBulkString(data)
+}
+
+// handleRESTORE 实现 RESTORE 命令
+func (h *Handler) handleRESTORE(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'RESTORE' command")
+	}
+	key := string(args[0])
+	// 解析 TTL（毫秒）
+	var ttl time.Duration = 0
+	replace := false
+	if len(args) > 2 {
+		ttlArg := string(args[1])
+		// 检查是否是 TTL（数字）而不是序列化数据
+		if ttlMS, err := strconv.ParseInt(ttlArg, 10, 64); err == nil {
+			// 参数位置偏移：key, ttl, serializedData, [REPLACE|ABSTTL]
+			if len(args) < 3 {
+				return proto.NewError("ERR wrong number of arguments for 'RESTORE' command")
+			}
+			// 序列化数据现在在 args[2]
+			absttl := false
+			for i := 3; i < len(args); i++ {
+				upper := strings.ToUpper(string(args[i]))
+				switch upper {
+				case "REPLACE":
+					replace = true
+				case "ABSTTL":
+					absttl = true
+				}
+			}
+			if absttl {
+				// ABSTTL: TTL 是绝对时间戳（毫秒）
+				now := time.Now().UnixMilli()
+				if ttlMS > now {
+					ttl = time.Duration(ttlMS-now) * time.Millisecond
+				}
+			} else {
+				// TTL 是相对时间（毫秒）
+				ttl = time.Duration(ttlMS) * time.Millisecond
+			}
+			serializedData := string(args[2])
+			err := h.Db.Restore(key, []byte(serializedData), ttl, replace)
+			if err != nil {
+				return wrapStoreError(err)
+			}
+			return proto.OK
+		}
+	}
+	// 旧格式：key, serializedData, [REPLACE]
+	serializedData := string(args[1])
+	for i := 2; i < len(args); i++ {
+		if strings.ToUpper(string(args[i])) == "REPLACE" {
+			replace = true
+			break
+		}
+	}
+	err := h.Db.Restore(key, []byte(serializedData), ttl, replace)
+	if err != nil {
+		return wrapStoreError(err)
+	}
+	return proto.OK
+}
+
+// handleOBJECT 实现 OBJECT 命令
+func (h *Handler) handleOBJECT(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'OBJECT' command")
+	}
+	subcommand := strings.ToUpper(string(args[0]))
+	key := string(args[1])
+
+	switch subcommand {
+	case "REFCOUNT":
+		refcount, err := h.Db.ObjectRefCount(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
+		if refcount == 0 {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
+			return proto.NewBulkString(nil)
+		}
+		return proto.NewInteger(refcount)
+	case "ENCODING":
+		encoding, err := h.Db.ObjectEncoding(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
+		if encoding == "" {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
+			return proto.NewBulkString(nil)
+		}
+		return proto.NewBulkString([]byte(encoding))
+	case "IDLETIME":
+		idletime, err := h.Db.ObjectIdleTime(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
+		return proto.NewInteger(idletime)
+	case "FREQ":
+		// BoltDB doesn't support LFU, return 0
+		return proto.NewInteger(0)
+	default:
+		return proto.NewError("ERR syntax error")
+	}
+}
+
+// handleEXPIRE 实现 EXPIRE 命令
+func (h *Handler) handleEXPIRE(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'EXPIRE' command")
+	}
+	key := string(args[0])
+	seconds, err := strconv.Atoi(string(args[1]))
+	if err != nil {
+		return proto.NewError("ERR value is not an integer or out of range")
+	}
+	h.markDirtyKeys(state, key)
+	success, err := h.Db.Expire(key, seconds)
+	if err != nil {
+		return wrapStoreError(err)
+	}
+	return proto.NewInteger(int64(boolToInt(success)))
+}
+
+// handleEXPIREAT 实现 EXPIREAT 命令
+func (h *Handler) handleEXPIREAT(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'EXPIREAT' command")
+	}
+	key := string(args[0])
+	timestamp, err := strconv.ParseInt(string(args[1]), 10, 64)
+	if err != nil {
+		return proto.NewError("ERR value is not an integer or out of range")
+	}
+	h.markDirtyKeys(state, key)
+	success, err := h.Db.ExpireAt(key, timestamp)
+	if err != nil {
+		return wrapStoreError(err)
+	}
+	return proto.NewInteger(int64(boolToInt(success)))
+}
+
+// handlePEXPIRE 实现 PEXPIRE 命令
+func (h *Handler) handlePEXPIRE(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'PEXPIRE' command")
+	}
+	key := string(args[0])
+	milliseconds, err := strconv.ParseInt(string(args[1]), 10, 64)
+	if err != nil {
+		return proto.NewError("ERR value is not an integer or out of range")
+	}
+	h.markDirtyKeys(state, key)
+	success, err := h.Db.PExpire(key, milliseconds)
+	if err != nil {
+		return wrapStoreError(err)
+	}
+	return proto.NewInteger(int64(boolToInt(success)))
+}
+
+// handlePEXPIREAT 实现 PEXPIREAT 命令
+func (h *Handler) handlePEXPIREAT(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'PEXPIREAT' command")
+	}
+	key := string(args[0])
+	timestamp, err := strconv.ParseInt(string(args[1]), 10, 64)
+	if err != nil {
+		return proto.NewError("ERR value is not an integer or out of range")
+	}
+	h.markDirtyKeys(state, key)
+	success, err := h.Db.PExpireAt(key, timestamp)
+	if err != nil {
+		return wrapStoreError(err)
+	}
+	return proto.NewInteger(int64(boolToInt(success)))
+}
+
+// handleTTL 实现 TTL 命令
+func (h *Handler) handleTTL(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 1 {
+		return proto.NewError("ERR wrong number of arguments for 'TTL' command")
+	}
+	key := string(args[0])
+	ttl, err := h.Db.TTL(key)
+	if err != nil {
+		return proto.NewInteger(-2)
+	}
+	return proto.NewInteger(ttl)
+}
+
+// handlePTTL 实现 PTTL 命令
+func (h *Handler) handlePTTL(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 1 {
+		return proto.NewError("ERR wrong number of arguments for 'PTTL' command")
+	}
+	key := string(args[0])
+	pttl, err := h.Db.PTTL(key)
+	if err != nil {
+		return proto.NewInteger(-2)
+	}
+	return proto.NewInteger(pttl)
+}
+
+// handleEXPIRETIME 实现 EXPIRETIME 命令
+func (h *Handler) handleEXPIRETIME(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	return h.handleExpireTime(state, args, remoteAddr)
+}
+
+// handlePEXPIRETIME 实现 PEXPIRETIME 命令
+func (h *Handler) handlePEXPIRETIME(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	return h.handlePExpireTime(state, args, remoteAddr)
+}
+
+// handlePERSIST 实现 PERSIST 命令
+func (h *Handler) handlePERSIST(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 1 {
+		return proto.NewError("ERR wrong number of arguments for 'PERSIST' command")
+	}
+	key := string(args[0])
+	h.markDirtyKeys(state, key)
+	success, err := h.Db.Persist(key)
+	if err != nil {
+		return wrapStoreError(err)
+	}
+	return proto.NewInteger(int64(boolToInt(success)))
+}
+
+// handleRENAME 实现 RENAME 命令
+func (h *Handler) handleRENAME(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'RENAME' command")
+	}
+	key, newKey := string(args[0]), string(args[1])
+	h.markDirtyKeys(state, key, newKey)
+	if err := h.Db.Rename(key, newKey); err != nil {
+		return wrapStoreError(err)
+	}
+	return proto.OK
+}
+
+// handleRENAMENX 实现 RENAMENX 命令
+func (h *Handler) handleRENAMENX(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'RENAMENX' command")
+	}
+	key, newKey := string(args[0]), string(args[1])
+	h.markDirtyKeys(state, key, newKey)
+	success, err := h.Db.RenameNX(key, newKey)
+	if err != nil {
+		return wrapStoreError(err)
+	}
+	return proto.NewInteger(int64(boolToInt(success)))
+}
+
+// handleCOPY 实现 COPY 命令
+func (h *Handler) handleCOPY(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'COPY' command")
+	}
+	srcKey := string(args[0])
+	dstKey := string(args[1])
+	replace := false
+	db := int(0)
+	i := 2
+	for i < len(args) {
+		opt := strings.ToUpper(string(args[i]))
+		switch opt {
+		case "REPLACE":
+			replace = true
+			i++
+		case "DB":
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			dbNum, err := strconv.Atoi(string(args[i+1]))
+			if err != nil {
+				return proto.NewError("ERR value is not an integer")
+			}
+			db = dbNum
+			i += 2
+		default:
+			return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
+		}
+	}
+	// 不支持跨数据库COPY
+	if db != 0 {
+		return proto.NewError("ERR DB option not supported")
+	}
+	// 获取源键类型
+	srcType, err := h.Db.Type(srcKey)
+	if err != nil {
+		return wrapStoreError(err)
+	}
+	if srcType == "none" {
+		return proto.NewInteger(0) // 源键不存在
+	}
+	// 检查目标键是否存在
+	dstExists, err := h.Db.Exists(dstKey)
+	if err != nil {
+		return wrapStoreError(err)
+	}
+	if dstExists && !replace {
+		return proto.NewInteger(0) // 目标存在且不替换
+	}
+	h.markDirtyKeys(state, srcKey, dstKey)
+	// 根据类型复制
+	var copied bool
+	switch srcType {
+	case "string":
+		val, err := h.Db.Get(srcKey)
+		if err == nil {
+			err = h.Db.Set(dstKey, val)
+		}
+		copied = err == nil
+	case "list":
+		copied = h.copyList(srcKey, dstKey)
+	case "hash":
+		copied = h.copyHash(srcKey, dstKey)
+	case "set":
+		copied = h.copySet(srcKey, dstKey)
+	case "zset":
+		copied = h.copySortedSet(srcKey, dstKey)
+	default:
+		return proto.NewError("ERR unknown type")
+	}
+	if !copied {
+		return proto.NewError("ERR copy failed")
+	}
+	return proto.NewInteger(1)
+}
+
+// handleSWAPDB 实现 SWAPDB 命令
+func (h *Handler) handleSWAPDB(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'SWAPDB' command")
+	}
+	// BoltDB 是单数据库实现，SWAPDB 是空操作
+	return proto.NewSimpleString("OK")
+}
+
+// handleTOUCH 实现 TOUCH 命令
+func (h *Handler) handleTOUCH(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 1 {
+		return proto.NewError("ERR wrong number of arguments for 'TOUCH' command")
+	}
+	count := int64(0)
+	for _, arg := range args {
+		key := string(arg)
+		exists, err := h.Db.Exists(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
+		if exists {
+			count++
+		}
+	}
+	return proto.NewInteger(count)
+}
+
+// handleSHUTDOWN 实现 SHUTDOWN 命令
+func (h *Handler) handleSHUTDOWN(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	// SHUTDOWN 命令（简化实现：返回错误，因为没有优雅关闭机制）
+	return proto.NewError("ERR Redis is running in read-only mode. To shutdown use SHUTDOWN NOSAVE or SHUTDOWN SAVE")
+}
+
+// handleKEYS 实现 KEYS 命令
+func (h *Handler) handleKEYS(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 1 {
+		return proto.NewError("ERR wrong number of arguments for 'KEYS' command")
+	}
+	pattern := string(args[0])
+	keys, err := h.Db.Keys(pattern)
+	if err != nil {
+		return wrapStoreError(err)
+	}
+	results := make([][]byte, len(keys))
+	for i, k := range keys {
+		results[i] = []byte(k)
+	}
+	return &proto.Array{Args: results}
+}
+
+// handleSCAN 实现 SCAN 命令
+func (h *Handler) handleSCAN(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	cursor := uint64(0)
+	pattern := "*"
+	count := 10
+	if len(args) >= 1 {
+		var err error
+		cursor, err = strconv.ParseUint(string(args[0]), 10, 64)
+		if err != nil {
+			return proto.NewError("ERR invalid cursor")
+		}
+	}
+	if len(args) >= 3 && strings.ToUpper(string(args[1])) == "MATCH" {
+		pattern = string(args[2])
+	}
+	if len(args) >= 5 && strings.ToUpper(string(args[3])) == "COUNT" {
+		var err error
+		count, err = strconv.Atoi(string(args[4]))
+		if err != nil {
+			return proto.NewError("ERR value is not an integer or out of range")
+		}
+	}
+	result, err := h.Db.Scan(cursor, pattern, count)
+	if err != nil {
+		return wrapStoreError(err)
+	}
+	// 返回嵌套数组格式: [cursor, [key1, key2, ...]]
+	return proto.NewScanResponse(result.Cursor, result.Keys)
+}
+
+// handleRANDOMKEY 实现 RANDOMKEY 命令
+func (h *Handler) handleRANDOMKEY(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	key, err := h.Db.RandomKey()
+	if err != nil || key == "" {
+		if state.respVersion == 3 {
+			return &proto.Null{}
+		}
+		return proto.NewBulkString(nil)
+	}
+	return proto.NewBulkString([]byte(key))
+
+	// List命令
+}
+
+// handleSORT 实现 SORT 命令
+func (h *Handler) handleSORT(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 1 {
+		return proto.NewError("ERR wrong number of arguments for 'SORT' command")
+	}
+	key := string(args[0])
+
+	// Parse options
+	var offset, count int64 = 0, -1
+	var getPatterns []string
+	var asc = true
+	var alpha bool
+	var destKey string
+	var byPattern string
+
+	i := 1
+	for i < len(args) {
+		opt := strings.ToUpper(string(args[i]))
+		switch opt {
+		case "BY":
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			byPattern = string(args[i+1])
+			i += 2
+		case "LIMIT":
+			if i+2 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			parseResult, err := strconv.ParseInt(string(args[i+1]), 10, 64)
+			if err != nil {
+				return proto.NewError("ERR value is not an integer")
+			}
+			offset = parseResult
+			count, err = strconv.ParseInt(string(args[i+2]), 10, 64)
+			if err != nil {
+				return proto.NewError("ERR value is not an integer")
+			}
+			i += 3
+		case "GET":
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			getPatterns = append(getPatterns, string(args[i+1]))
+			i += 2
+		case "ASC":
+			asc = true
+			i++
+		case "DESC":
+			asc = false
+			i++
+		case "ALPHA":
+			alpha = true
+			i++
+		case "STORE":
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			destKey = string(args[i+1])
+			i += 2
+		default:
+			i++
+		}
+	}
+
+	// Get source type
+	keyType, err := h.Db.Type(key)
+	if err != nil {
+		return wrapStoreError(err)
+	}
+	var values []string
+	var scores []float64
+
+	switch keyType {
+	case "list":
+		listValues, err := h.Db.LRange(key, 0, -1)
+		if err != nil {
+			return wrapStoreError(err)
+		}
+		values = listValues
+	case "set":
+		setValues, err := h.Db.SMembers(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
+		values = setValues
+	case "string":
+		val, err := h.Db.Get(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
+		values = []string{val}
+	case "zset":
+		members, err := h.Db.ZRange(key, 0, -1)
+		if err != nil {
+			return wrapStoreError(err)
+		}
+		for _, m := range members {
+			values = append(values, m.Member)
+			scores = append(scores, m.Score)
+		}
+	default:
+		return proto.NewError("ERR Operation against a key holding the wrong kind of value")
+	}
+
+	// Apply BY pattern - get weights from external keys
+	if byPattern != "" && len(values) > 0 {
+		weights := make([]float64, len(values))
+		for idx, val := range values {
+			targetKey := strings.Replace(byPattern, "*", val, 1)
+			weightVal, err := h.Db.Get(targetKey)
+			if err != nil {
+				return wrapStoreError(err)
+			}
+			if weightVal != "" {
+				if f, err := strconv.ParseFloat(weightVal, 64); err == nil {
+					weights[idx] = f
+				} else {
+					weights[idx] = float64(idx)
+				}
+			} else {
+				weights[idx] = float64(idx)
+			}
+		}
+		scores = weights
+		// When using BY, sort by scores (numeric)
+		alpha = false
+	}
+
+	// Sort values
+	if len(scores) == 0 && !alpha && len(values) > 0 {
+		// Numeric sort
+		scores = make([]float64, len(values))
+		for idx, v := range values {
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				scores[idx] = f
+			} else {
+				scores[idx] = 0
+			}
+		}
+	}
+
+	// Simple bubble sort (for simplicity)
+	n := len(values)
+	for i := 0; i < n-1; i++ {
+		for j := 0; j < n-i-1; j++ {
+			swap := false
+			if alpha {
+				if asc {
+					swap = values[j] > values[j+1]
+				} else {
+					swap = values[j] < values[j+1]
+				}
+			} else {
+				if asc {
+					swap = scores[j] > scores[j+1]
+				} else {
+					swap = scores[j] < scores[j+1]
+				}
+			}
+			if swap {
+				values[j], values[j+1] = values[j+1], values[j]
+				if len(scores) > 0 {
+					scores[j], scores[j+1] = scores[j+1], scores[j]
+				}
+			}
+		}
+	}
+
+	// Apply LIMIT
+	if offset > 0 {
+		if offset >= int64(len(values)) {
+			values = []string{}
+		} else if offset < int64(len(values)) {
+			values = values[offset:]
+		}
+	}
+	if count >= 0 && int64(len(values)) > count {
+		values = values[:count]
+	}
+
+	// Apply GET patterns
+	if len(getPatterns) > 0 {
+		finalValues := make([]string, 0)
+		for _, pattern := range getPatterns {
+			for _, val := range values {
+				targetKey := strings.Replace(pattern, "*", val, 1)
+				targetVal, err := h.Db.Get(targetKey)
+				if err != nil {
+					return wrapStoreError(err)
+				}
+				finalValues = append(finalValues, targetVal)
+			}
+		}
+		values = finalValues
+	}
+
+	// STORE
+	if destKey != "" {
+		h.markDirtyKeys(state, destKey)
+		// Store as a list
+		for idx, v := range values {
+			if idx == 0 {
+				if _, err := h.Db.Del(destKey); err != nil {
+					return wrapStoreError(err)
+				}
+			}
+			if _, err := h.Db.RPush(destKey, v); err != nil {
+				return wrapStoreError(err)
+			}
+		}
+		if h.Replication != nil && h.Replication.IsMaster() {
+			h.Replication.PropagateCommand(args)
+		}
+		return proto.NewInteger(int64(len(values)))
+	}
+
+	// Return result
+	results := make([][]byte, len(values))
+	for idx, v := range values {
+		results[idx] = []byte(v)
+	}
+	return &proto.Array{Args: results}
+
+	// ==================== AUTH ====================
+}
