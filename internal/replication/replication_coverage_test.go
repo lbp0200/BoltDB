@@ -1912,6 +1912,141 @@ func TestErrorsIsStop(t *testing.T) {
 	assert.True(t, errorsIsStop(err, stopCh))
 }
 
+// TestFullResyncDataIntegrity 验证 FULLRESYNC 后 slave 数据与 master 完全一致
+// 覆盖 string / list / hash / set / zset / stream / geo 多种数据类型
+func TestFullResyncDataIntegrity(t *testing.T) {
+	t.Parallel()
+	master := setupTestStore(t)
+	defer master.Close()
+
+	// 写入各类数据
+	assert.NoError(t, master.Set("str1", "hello"))
+	assert.NoError(t, master.Set("str2", "world"))
+	err := master.SetStringBatch([]store.StringEntry{
+		{Key: "batch_a", Value: "batch_val_a"},
+		{Key: "batch_b", Value: "batch_val_b"},
+	})
+	assert.NoError(t, err)
+	_, err = master.LPush("mylist", "c", "b", "a")
+	assert.NoError(t, err)
+	_, err = master.RPush("mylist", "d", "e")
+	assert.NoError(t, err)
+	assert.NoError(t, master.HSet("myhash", "field1", "val1"))
+	assert.NoError(t, master.HSet("myhash", "field2", "val2"))
+	_, err = master.SAdd("myset", "m1", "m2", "m3")
+	assert.NoError(t, err)
+	assert.NoError(t, master.ZAdd("myzset", []store.ZSetMember{
+		{Score: 1.0, Member: "a"},
+		{Score: 2.0, Member: "b"},
+	}))
+	_, err = master.GeoAdd("mygeo", []store.GeoMember{
+		{Member: "beijing", Lat: 39.9, Lon: 116.4},
+		{Member: "shanghai", Lat: 31.2, Lon: 121.5},
+	})
+	assert.NoError(t, err)
+
+	// 带 TTL 的字符串键
+	assert.NoError(t, master.Set("ttl_key", "will_expire"))
+	_, err = master.Expire("ttl_key", 3600)
+	assert.NoError(t, err)
+
+	// 生成 RDB 快照
+	rdbData, err := GenerateRDB(master)
+	assert.NoError(t, err)
+	assert.True(t, len(rdbData) > 0)
+
+	// 加载到 slave
+	slave := setupTestStore(t)
+	defer slave.Close()
+
+	err = LoadRDBWithStore(rdbData, slave)
+	assert.NoError(t, err)
+
+	// 验证所有数据类型一致
+	t.Run("string", func(t *testing.T) {
+		val, err := slave.Get("str1")
+		assert.NoError(t, err)
+		assert.Equal(t, "hello", val)
+		val, err = slave.Get("str2")
+		assert.NoError(t, err)
+		assert.Equal(t, "world", val)
+		val, err = slave.Get("batch_a")
+		assert.NoError(t, err)
+		assert.Equal(t, "batch_val_a", val)
+	})
+
+	t.Run("list", func(t *testing.T) {
+		vals, err := slave.LRange("mylist", 0, -1)
+		assert.NoError(t, err)
+		assert.Equal(t, 5, len(vals))
+		assert.Equal(t, "a", vals[0]) // LPUSH c,b,a → [a,b,c]; then RPUSH d,e → [a,b,c,d,e]
+		assert.Equal(t, "b", vals[1])
+		assert.Equal(t, "c", vals[2])
+		assert.Equal(t, "d", vals[3])
+		assert.Equal(t, "e", vals[4])
+	})
+
+	t.Run("hash", func(t *testing.T) {
+		val, err := slave.HGet("myhash", "field1")
+		assert.NoError(t, err)
+		assert.Equal(t, []byte("val1"), val)
+		val, err = slave.HGet("myhash", "field2")
+		assert.NoError(t, err)
+		assert.Equal(t, []byte("val2"), val)
+	})
+
+	t.Run("set", func(t *testing.T) {
+		members, err := slave.SMembers("myset")
+		assert.NoError(t, err)
+		assert.Equal(t, 3, len(members))
+	})
+
+	t.Run("zset", func(t *testing.T) {
+		count, err := slave.ZCard("myzset")
+		assert.NoError(t, err)
+		assert.Equal(t, int64(2), count)
+	})
+
+	t.Run("geo", func(t *testing.T) {
+		pos, err := slave.GeoGetAllPositions("mygeo")
+		assert.NoError(t, err)
+		assert.Equal(t, 2, len(pos))
+	})
+
+	t.Run("ttl", func(t *testing.T) {
+		val, err := slave.Get("ttl_key")
+		assert.NoError(t, err)
+		assert.Equal(t, "will_expire", val)
+
+		ttl, err := slave.TTL("ttl_key")
+		assert.NoError(t, err)
+		if ttl <= 0 {
+			t.Errorf("TTL should be >0 after RDB load, got ttl=%d (want >0, -1=no_expiry, -2=missing)", ttl)
+		}
+	})
+
+}
+
+func TestHandlePSync_FullResyncDataIntegrity(t *testing.T) {
+	t.Parallel()
+	master := setupTestStore(t)
+	rm := NewReplicationManager(master)
+	defer rm.Stop()
+
+	rm.SetRole(RoleMaster)
+
+	// 写入数据
+	assert.NoError(t, master.Set("psync_key", "psync_value"))
+	rm.PropagateCommand([][]byte{[]byte("SET"), []byte("psync_key"), []byte("psync_value")})
+
+	// 验证 HandlePSync 返回正确的结果
+	result, err := HandlePSync(rm, "?", 0)
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.True(t, result.FullResync) // 不同 replId 触发全量同步
+	assert.Equal(t, rm.GetReplicationID(), result.ReplId)
+}
+
 // TestIsTransientReplicationError tests isTransientReplicationError function
 func TestIsTransientReplicationError(t *testing.T) {
 	t.Parallel()

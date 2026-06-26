@@ -169,6 +169,9 @@ func (s *BotreonStore) linkNodes(txn *badger.Txn, key string, prevID, nextID str
 
 // LPush Redis LPUSH 实现
 func (s *BotreonStore) LPush(key string, values ...string) (int, error) {
+	if err := s.checkErrorInjector("LPush"); err != nil {
+		return 0, err
+	}
 	s.keyLockMgr.Lock(key)
 	defer s.keyLockMgr.Unlock(key)
 

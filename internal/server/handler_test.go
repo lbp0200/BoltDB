@@ -509,7 +509,7 @@ func TestConcurrentConnections(t *testing.T) {
 			reader := bufio.NewReader(conn)
 			resp, err := proto.ReadRESP(reader)
 			assert.NoError(t, err)
-			assert.NotNil(t, resp)
+			assert.Equal(t, "OK", string(resp.Args[0]))
 
 			// GET
 			req = &proto.Array{
@@ -520,7 +520,7 @@ func TestConcurrentConnections(t *testing.T) {
 
 			resp, err = proto.ReadRESP(reader)
 			assert.NoError(t, err)
-			assert.NotNil(t, resp)
+			assert.Equal(t, value, string(resp.Args[0]))
 
 			done <- true
 		}(i)

@@ -16,6 +16,9 @@ import (
 
 // Del 删除键，返回删除的数量
 func (s *BotreonStore) Del(key string) (int64, error) {
+	if err := s.checkErrorInjector("Del"); err != nil {
+		return 0, err
+	}
 	typeKey := TypeOfKeyGet(key)
 	var deleted int64
 
@@ -228,6 +231,9 @@ func (s *BotreonStore) Type(key string) (string, error) {
 
 // EXPIRE 实现 Redis EXPIRE 命令，设置键的过期时间（秒）
 func (s *BotreonStore) Expire(key string, seconds int) (bool, error) {
+	if err := s.checkErrorInjector("Expire"); err != nil {
+		return false, err
+	}
 	success := false
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		typeKey := TypeOfKeyGet(key)
@@ -392,16 +398,27 @@ func (s *BotreonStore) TTL(key string) (int64, error) {
 			return err
 		}
 
-		// ExpiresAt 返回的是 Unix 纳秒时间戳 (uint64)
+		// ExpiresAt 返回的是 Unix 时间戳，单位由写入方式决定：
+		//   - Expire() 写入的是纳秒（旧格式，uint64 值极大，约 1.75e18）
+		//   - WithTTL() / SetWithTTL() 写入的是秒（正确格式，约 1.75e9）
+		//   通过阈值 nowUnix*100 区分：秒值不会超过 nowUnix*2（年 2106 上限），
+		//   纳秒值远超此范围。
 		expiresAt := valueItem.ExpiresAt()
 		if expiresAt == 0 {
 			ttl = -1 // -1表示键存在但没有设置过期时间
 			return nil
 		}
 
-		// #nosec G115 - expiresAt is a valid Unix timestamp within int64 range
-		nowNano := time.Now().UnixNano()
-		ttl = int64(expiresAt-uint64(nowNano)) / int64(time.Second)
+		nowUnix := uint64(time.Now().Unix())
+		if expiresAt > nowUnix*100 {
+			// 纳秒格式（旧版 Expire 写入），与 nowNano 比较
+			// #nosec G115 - expiresAt is a valid Unix timestamp within int64 range
+			nowNano := uint64(time.Now().UnixNano())
+			ttl = int64(expiresAt-nowNano) / int64(time.Second)
+		} else {
+			// 秒格式（WithTTL / SetWithTTL / RDB loader 写入），与 nowUnix 比较
+			ttl = int64(expiresAt - nowUnix)
+		}
 		if ttl < 0 {
 			ttl = -2 // 已过期
 		}
@@ -444,16 +461,27 @@ func (s *BotreonStore) PTTL(key string) (int64, error) {
 			return err
 		}
 
-		// ExpiresAt 返回的是 Unix 纳秒时间戳 (uint64)
+		// ExpiresAt 返回的是 Unix 时间戳，单位由写入方式决定：
+		//   - Expire() 写入的是纳秒（旧格式，uint64 值极大，约 1.75e18）
+		//   - WithTTL() / SetWithTTL() 写入的是秒（正确格式，约 1.75e9）
+		//   通过阈值 nowUnix*100 区分：秒值不会超过 nowUnix*2（年 2106 上限），
+		//   纳秒值远超此范围。
 		expiresAt := valueItem.ExpiresAt()
 		if expiresAt == 0 {
 			ttl = -1 // -1表示键存在但没有设置过期时间
 			return nil
 		}
 
-		// #nosec G115 - expiresAt is a valid Unix timestamp within int64 range
-		nowNano := time.Now().UnixNano()
-		ttl = int64(expiresAt-uint64(nowNano)) / int64(time.Millisecond)
+		nowUnix := uint64(time.Now().Unix())
+		if expiresAt > nowUnix*100 {
+			// 纳秒格式（旧版 Expire 写入），与 nowNano 比较
+			// #nosec G115 - expiresAt is a valid Unix timestamp within int64 range
+			nowNano := uint64(time.Now().UnixNano())
+			ttl = int64(expiresAt-nowNano) / int64(time.Millisecond)
+		} else {
+			// 秒格式（WithTTL / SetWithTTL / RDB loader 写入），与 nowUnix 比较
+			ttl = int64(expiresAt-nowUnix) * 1000 // 秒 → 毫秒
+		}
 		if ttl < 0 {
 			ttl = -2 // 已过期
 		}
@@ -513,11 +541,23 @@ func (s *BotreonStore) computeAbsoluteExpiry(key string, unit time.Duration) (in
 		}
 
 		// #nosec G115 - expiresAt is a valid Unix timestamp within int64 range
-		switch unit {
-		case time.Millisecond:
-			result = int64(expiresAt) / 1e6
-		default:
-			result = int64(expiresAt) / 1e9
+		nowUnix := uint64(time.Now().Unix())
+		if expiresAt > nowUnix*100 {
+			// 纳秒格式 -> 直接除到底层单位
+			switch unit {
+			case time.Millisecond:
+				result = int64(expiresAt) / 1e6
+			default:
+				result = int64(expiresAt) / 1e9
+			}
+		} else {
+			// 秒格式 -> expiresAt 就是 Unix 秒时间戳
+			switch unit {
+			case time.Millisecond:
+				result = int64(expiresAt) * 1000
+			default:
+				result = int64(expiresAt)
+			}
 		}
 		return nil
 	})
@@ -699,11 +739,25 @@ func (s *BotreonStore) Rename(key, newKey string) error {
 				return err
 			}
 			newValueKey := []byte(s.stringKey(newKey))
-			// 保持TTL
+			// 保持TTL（处理 ExpiresAt 双格式：纳秒 vs 秒）
 			expiresAt := oldValue.ExpiresAt()
 			if expiresAt > 0 {
-				// #nosec G115 - expiresAt is a valid Unix timestamp within int64 range
-				ttl := time.Until(time.Unix(int64(expiresAt), 0))
+				nowUnix := uint64(time.Now().Unix())
+				var ttl time.Duration
+				if expiresAt > nowUnix*100 {
+					// 纳秒格式（Expire/PExpire 写入）
+					// #nosec G115 - expiresAt is within int64 range
+					nowNano := uint64(time.Now().UnixNano())
+					if expiresAt > nowNano {
+						ttl = time.Duration(expiresAt - nowNano)
+					}
+				} else {
+					// 秒格式（WithTTL/SetWithTTL/RDB loader 写入）
+					if expiresAt > nowUnix {
+						// #nosec G115 - expiresAt is within int64 range
+						ttl = time.Duration(expiresAt-nowUnix) * time.Second
+					}
+				}
 				if ttl > 0 {
 					e := badger.NewEntry(newValueKey, valueBytes).WithTTL(ttl)
 					if err := txn.SetEntry(e); err != nil {
@@ -819,11 +873,25 @@ func copyKeysByPrefix(txn *badger.Txn, oldPrefix []byte, oldKey, newKey, keyType
 			return err
 		}
 
-		// 设置新键（保持TTL）
+		// 设置新键（保持TTL，处理 ExpiresAt 双格式）
 		expiresAt := item.ExpiresAt()
 		if expiresAt > 0 {
-			// #nosec G115 - expiresAt is a valid Unix timestamp within int64 range
-			ttl := time.Until(time.Unix(int64(expiresAt), 0))
+			nowUnix := uint64(time.Now().Unix())
+			var ttl time.Duration
+			if expiresAt > nowUnix*100 {
+				// 纳秒格式（Expire/PExpire 写入）
+				// #nosec G115 - expiresAt is within int64 range
+				nowNano := uint64(time.Now().UnixNano())
+				if expiresAt > nowNano {
+					ttl = time.Duration(expiresAt - nowNano)
+				}
+			} else {
+				// 秒格式（WithTTL/SetWithTTL/RDB loader 写入）
+				if expiresAt > nowUnix {
+					// #nosec G115 - expiresAt is within int64 range
+					ttl = time.Duration(expiresAt-nowUnix) * time.Second
+				}
+			}
 			if ttl > 0 {
 				e := badger.NewEntry([]byte(newKeyStr), val).WithTTL(ttl)
 				if err := txn.SetEntry(e); err != nil {
@@ -1172,14 +1240,22 @@ func (s *BotreonStore) Dump(key string) ([]byte, error) {
 		}
 		keyType := string(valCopy)
 
-		// 获取 TTL（毫秒）— 从值键的 ExpiresAt 读取
+		// 获取 TTL（毫秒）— 从值键的 ExpiresAt 读取（需处理双格式）
 		var ttl int64 = 0
 		valueKey, err := s.getKeyValueKey(key, keyType)
 		if err == nil {
 			if valItem, err := txn.Get(valueKey); err == nil {
 				if expiresAt := valItem.ExpiresAt(); expiresAt > 0 {
-					nowNano := time.Now().UnixNano()
-					remaining := int64(expiresAt) - nowNano
+					nowUnix := uint64(time.Now().Unix())
+					var remaining int64
+					if expiresAt > nowUnix*100 {
+						// 纳秒格式
+						nowNano := time.Now().UnixNano()
+						remaining = int64(expiresAt) - nowNano
+					} else {
+						// 秒格式
+						remaining = (int64(expiresAt) - int64(nowUnix)) * 1_000_000_000
+					}
 					if remaining > 0 {
 						ttl = remaining / 1_000_000 // 纳秒转毫秒
 					}

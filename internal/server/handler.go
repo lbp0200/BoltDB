@@ -1717,15 +1717,19 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewError("ERR wrong number of arguments for 'SET' command")
 		}
 		key, value := string(args[0]), string(args[1])
+
 		// 检查集群重定向
 		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 			return resp
 		}
-		h.markDirtyKeys(state, key)
-		if err := h.Db.Set(key, value); err != nil {
-			return wrapStoreError(err)
+
+		ttl, nx, xx, get, keepTTL, err := parseSetOptions(args[2:])
+		if err != nil {
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
-		return proto.OK
+
+		h.markDirtyKeys(state, key)
+		return h.setKeyWithOpts(state, key, value, ttl, nx, xx, get, keepTTL)
 
 	case "GET":
 		if len(args) < 1 {
@@ -8181,8 +8185,52 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte, respVersion in
 	switch cmd {
 	case "SET":
 		key, value := string(args[0]), string(args[1])
-		if err := h.Db.Set(key, value); err != nil {
-			return wrapStoreError(err)
+		ttl, nx, xx, get, keepTTL, err := parseSetOptions(args[2:])
+		if err != nil {
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		// 在队列执行中不需要集群重定向（已在入队时检查）
+		// 但需要处理 NX/XX/exists 检查和 GET 旧值
+		var oldVal string
+		exists := false
+		if nx || xx || get || keepTTL {
+			if v, err := h.Db.Get(key); err == nil {
+				exists = true
+				oldVal = v
+			} else if !errors.Is(err, store.ErrKeyNotFound) && !errors.Is(err, store.ErrWrongType) {
+				return wrapStoreError(err)
+			}
+			if nx && exists {
+				return nilBulk()
+			}
+			if xx && !exists {
+				return nilBulk()
+			}
+		}
+		if keepTTL {
+			ttlSec, ttlErr := h.Db.TTL(key)
+			if err := h.Db.Set(key, value); err != nil {
+				return wrapStoreError(err)
+			}
+			if ttlErr == nil && ttlSec > 0 {
+				if _, err := h.Db.Expire(key, int(ttlSec)); err != nil {
+					return wrapStoreError(err)
+				}
+			}
+		} else if ttl > 0 {
+			if err := h.Db.SetWithTTL(key, value, ttl); err != nil {
+				return wrapStoreError(err)
+			}
+		} else {
+			if err := h.Db.Set(key, value); err != nil {
+				return wrapStoreError(err)
+			}
+		}
+		if get {
+			if !exists {
+				return nilBulk()
+			}
+			return proto.NewBulkString([]byte(oldVal))
 		}
 		return proto.OK
 	case "GET":
@@ -8626,4 +8674,151 @@ func (h *Handler) copySortedSet(srcKey, dstKey string) bool {
 	}
 	err = h.Db.ZAdd(dstKey, zMembers)
 	return err == nil
+}
+
+// parseSetOptions 解析 SET 命令的可选修饰符（EX/PX/EXAT/PXAT/NX/XX/GET/KEEPTTL）
+// 返回 ttl, nx, xx, get, keepTTL 及可能的解析错误。
+func parseSetOptions(opts [][]byte) (ttl time.Duration, nx, xx, get, keepTTL bool, err error) {
+	for i := 0; i < len(opts); i++ {
+		opt := strings.ToUpper(string(opts[i]))
+		switch opt {
+		case "NX":
+			nx = true
+		case "XX":
+			xx = true
+		case "GET":
+			get = true
+		case "KEEPTTL":
+			keepTTL = true
+		case "EX":
+			i++
+			if i >= len(opts) {
+				return 0, false, false, false, false, fmt.Errorf("syntax error")
+			}
+			sec, parseErr := strconv.Atoi(string(opts[i]))
+			if parseErr != nil {
+				return 0, false, false, false, false, fmt.Errorf("value is not an integer or out of range")
+			}
+			if sec < 0 {
+				return 0, false, false, false, false, fmt.Errorf("invalid expire time in 'set' command")
+			}
+			ttl = time.Duration(sec) * time.Second
+		case "PX":
+			i++
+			if i >= len(opts) {
+				return 0, false, false, false, false, fmt.Errorf("syntax error")
+			}
+			ms, parseErr := strconv.ParseInt(string(opts[i]), 10, 64)
+			if parseErr != nil {
+				return 0, false, false, false, false, fmt.Errorf("value is not an integer or out of range")
+			}
+			if ms < 0 {
+				return 0, false, false, false, false, fmt.Errorf("invalid expire time in 'set' command")
+			}
+			ttl = time.Duration(ms) * time.Millisecond
+		case "EXAT":
+			i++
+			if i >= len(opts) {
+				return 0, false, false, false, false, fmt.Errorf("syntax error")
+			}
+			ts, parseErr := strconv.ParseInt(string(opts[i]), 10, 64)
+			if parseErr != nil {
+				return 0, false, false, false, false, fmt.Errorf("value is not an integer or out of range")
+			}
+			remaining := ts - time.Now().Unix()
+			if remaining < 0 {
+				return 0, false, false, false, false, fmt.Errorf("invalid expire time in 'set' command")
+			}
+			ttl = time.Duration(remaining) * time.Second
+		case "PXAT":
+			i++
+			if i >= len(opts) {
+				return 0, false, false, false, false, fmt.Errorf("syntax error")
+			}
+			ts, parseErr := strconv.ParseInt(string(opts[i]), 10, 64)
+			if parseErr != nil {
+				return 0, false, false, false, false, fmt.Errorf("value is not an integer or out of range")
+			}
+			remaining := ts - time.Now().UnixMilli()
+			if remaining < 0 {
+				return 0, false, false, false, false, fmt.Errorf("invalid expire time in 'set' command")
+			}
+			ttl = time.Duration(remaining) * time.Millisecond
+		default:
+			return 0, false, false, false, false, fmt.Errorf("syntax error")
+		}
+	}
+	if nx && xx {
+		return 0, false, false, false, false, fmt.Errorf("syntax error")
+	}
+	return
+}
+
+// setKeyWithOpts 执行 SET 命令的键值写入，处理所有可选修饰符。
+func (h *Handler) setKeyWithOpts(state *connState, key, value string, ttl time.Duration, nx, xx, get, keepTTL bool) proto.RESP {
+	// 获取旧值（用于 NX/XX 检查和 GET 选项）
+	var oldVal string
+	exists := false
+	oldVal, err := h.Db.Get(key)
+	if err == nil {
+		exists = true
+	} else if !errors.Is(err, store.ErrKeyNotFound) && !errors.Is(err, store.ErrWrongType) {
+		return wrapStoreError(err)
+	}
+
+	// NX: 只在键不存在时设置
+	if nx && exists {
+		if get {
+			return nilBulkString(state.respVersion)
+		}
+		return &proto.Null{}
+	}
+
+	// XX: 只在键已存在时设置
+	if xx && !exists {
+		if get {
+			return nilBulkString(state.respVersion)
+		}
+		return &proto.Null{}
+	}
+
+	// 执行 SET
+	if keepTTL {
+		// 读取当前 TTL 再 Set，然后重新应用
+		ttlSec, ttlErr := h.Db.TTL(key)
+		if err := h.Db.Set(key, value); err != nil {
+			return wrapStoreError(err)
+		}
+		if ttlErr == nil && ttlSec > 0 {
+			if _, err := h.Db.Expire(key, int(ttlSec)); err != nil {
+				return wrapStoreError(err)
+			}
+		}
+	} else if ttl > 0 {
+		if err := h.Db.SetWithTTL(key, value, ttl); err != nil {
+			return wrapStoreError(err)
+		}
+	} else {
+		if err := h.Db.Set(key, value); err != nil {
+			return wrapStoreError(err)
+		}
+	}
+
+	// GET: 返回旧值
+	if get {
+		if !exists {
+			return nilBulkString(state.respVersion)
+		}
+		return proto.NewBulkString([]byte(oldVal))
+	}
+
+	return proto.OK
+}
+
+// nilBulkString 返回 RESP2 或 RESP3 格式的 null bulk string
+func nilBulkString(respVersion int) proto.RESP {
+	if respVersion == 3 {
+		return &proto.Null{}
+	}
+	return proto.NewBulkString(nil)
 }

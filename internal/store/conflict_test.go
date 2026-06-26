@@ -1992,3 +1992,141 @@ func TestDeterministicConflict_RetryUpdateSuccessAfterConflict(t *testing.T) {
 		t.Errorf("counter: got %d, want %d", final, expected)
 	}
 }
+
+// TestDeterministicConflict_ZRevRankConcurrent 验证并发 ZAdd + ZRevRank
+// 不会导致事务嵌套快照问题（曾修复的 98b0c60 bug）。
+func TestDeterministicConflict_ZRevRankConcurrent(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "zset:zrevrank:concurrent"
+	const goroutines = 20
+
+	var wg sync.WaitGroup
+	errs := make([]error, goroutines*2) // half ZAdd, half ZRevRank
+
+	// 先添加初始成员
+	members := make([]ZSetMember, 10)
+	for i := range members {
+		members[i] = ZSetMember{Member: fmt.Sprintf("m%d", i), Score: float64(i)}
+	}
+	if err := s.ZAdd(key, members); err != nil {
+		t.Fatalf("initial ZAdd: %v", err)
+	}
+
+	for i := range goroutines {
+		wg.Add(2)
+		// ZAdd goroutine
+		go func(idx int) {
+			defer wg.Done()
+			m := ZSetMember{Member: fmt.Sprintf("new%d", idx), Score: float64(idx)}
+			errs[idx] = s.ZAdd(key, []ZSetMember{m})
+		}(i)
+		// ZRevRank goroutine
+		go func(idx int) {
+			defer wg.Done()
+			_, err := s.ZRevRank(key, fmt.Sprintf("m%d", idx%10))
+			errs[goroutines+idx] = err
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d: %v", i, err)
+		}
+	}
+
+	// Verify final card is correct
+	card, err := s.ZCard(key)
+	if err != nil {
+		t.Fatalf("ZCard: %v", err)
+	}
+	// At least the initial 10 members must exist
+	if card < 10 {
+		t.Errorf("ZCard: got %d, want at least 10", card)
+	}
+}
+
+// TestDeterministicConflict_HSetCountExact 验证并发 HSet 后 HLen 准确。
+// 曾修复的 1c5a085 bug：HSet 在 retryUpdate 外读 count 导致 count 漂移。
+func TestDeterministicConflict_HSetCountExact(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "hash:count:exact"
+	const goroutines = 30
+
+	var wg sync.WaitGroup
+	errs := make([]error, goroutines)
+	for i := range goroutines {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			field := fmt.Sprintf("f%d", idx)
+			errs[idx] = s.HSet(key, field, idx)
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("HSet goroutine %d: %v", i, err)
+		}
+	}
+
+	hlen, err := s.HLen(key)
+	if err != nil {
+		t.Fatalf("HLen: %v", err)
+	}
+	if hlen != uint64(goroutines) {
+		t.Errorf("HLen after concurrent HSet: got %d, want %d", hlen, goroutines)
+	}
+}
+
+// TestDeterministicConflict_HDelAndHSetCount 验证并发 HDel + HSet 后 HLen 准确。
+func TestDeterministicConflict_HDelAndHSetCount(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "hash:hdel:hset:count"
+	const writers = 20
+
+	// 先写入一批 field
+	for i := range writers {
+		if err := s.HSet(key, fmt.Sprintf("f%d", i), i); err != nil {
+			t.Fatalf("initial HSet: %v", err)
+		}
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, writers)
+	half := writers / 2
+	for i := range writers {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			var err error
+			if idx < half {
+							_, err = s.HDel(key, fmt.Sprintf("f%d", idx))
+			} else {
+				err = s.HSet(key, fmt.Sprintf("f%d", idx), idx+100)
+			}
+			errs[idx] = err
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d: %v", i, err)
+		}
+	}
+
+	hlen, err := s.HLen(key)
+	if err != nil {
+		t.Fatalf("HLen: %v", err)
+	}
+	// half deleted (f0..f9 removed), half re-set (f10..f19 still exist)
+	// #nosec G115 - writers/half are small ints fitting uint64
+	if hlen != uint64(writers-half) {
+		t.Errorf("HLen: got %d, want %d", hlen, writers-half)
+	}
+}

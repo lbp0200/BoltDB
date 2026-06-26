@@ -93,6 +93,27 @@ type BotreonStore struct {
 		l0Rejected    int64
 		l0Delayed     int64
 	}
+
+	// 错误注入（仅测试用，nil = 禁用）
+	errorInjector *ErrorInjector
+}
+
+// SetErrorInjector 设置错误注入器（仅测试用）。传 nil 可禁用。
+func (s *BotreonStore) SetErrorInjector(ei *ErrorInjector) {
+	s.errorInjector = ei
+}
+
+// ErrorInjector 返回当前的错误注入器（可能为 nil）。
+func (s *BotreonStore) ErrorInjector() *ErrorInjector {
+	return s.errorInjector
+}
+
+// checkErrorInjector 检查是否有错误需注入。无注入时返回 nil。
+func (s *BotreonStore) checkErrorInjector(method string) error {
+	if s.errorInjector == nil {
+		return nil
+	}
+	return s.errorInjector.Check(method)
 }
 
 // Check 执行存储一致性检查

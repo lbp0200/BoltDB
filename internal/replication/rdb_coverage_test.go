@@ -3,6 +3,7 @@ package replication
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/store"
 	"github.com/zeebo/assert"
@@ -424,7 +425,8 @@ func TestWriteKeyValue_StringType(t *testing.T) {
 func TestWriteKeyValue_WithTTL(t *testing.T) {
 	t.Parallel()
 	enc := NewRDBEncoder()
-	err := enc.WriteKeyValue("testkey", "testvalue", store.KeyTypeString, 60)
+	expireAt := time.Now().Unix() + 60
+	err := enc.WriteKeyValue("testkey", "testvalue", store.KeyTypeString, expireAt)
 	assert.NoError(t, err)
 
 	rdbData := enc.Bytes()
@@ -631,26 +633,26 @@ func TestDecodeLatLonBits(t *testing.T) {
 	t.Parallel()
 
 	// All zeros → converges toward min
-	result := decodeLatLonBits(0, -90, 90, 26)
+	result := store.DecodeLatLonBits(0, -90, 90, 26)
 	if !(result > -90 && result < -89) {
 		t.Errorf("expected near -90, got %f", result)
 	}
 
 	// All ones → converges toward max
-	result = decodeLatLonBits(0x3FFFFFF, -90, 90, 26)
+	result = store.DecodeLatLonBits(0x3FFFFFF, -90, 90, 26)
 	if !(result > 89 && result < 90) {
 		t.Errorf("expected near 90, got %f", result)
 	}
 
 	// Single bit at position 25 (MSB of 26) → positive
-	result = decodeLatLonBits(0x2000000, -90, 90, 26)
+	result = store.DecodeLatLonBits(0x2000000, -90, 90, 26)
 	if !(result > 0) {
 		t.Errorf("expected positive, got %f", result)
 	}
 
 	// 1-bit encoding: 0 → -90, 1 → 90
-	result = decodeLatLonBits(0, -180, 180, 1)
+	result = store.DecodeLatLonBits(0, -180, 180, 1)
 	assert.Equal(t, float64(-90), result)
-	result = decodeLatLonBits(1, -180, 180, 1)
+	result = store.DecodeLatLonBits(1, -180, 180, 1)
 	assert.Equal(t, float64(90), result)
 }

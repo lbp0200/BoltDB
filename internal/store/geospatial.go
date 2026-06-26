@@ -61,17 +61,17 @@ func encodeLatLonBits(value, min, max float64, bits uint) uint64 {
 	return result
 }
 
-// decodeGeoHash decodes a 52-bit geohash to latitude and longitude
-func decodeGeoHash(hash uint64) (lat, lon float64) {
+// DecodeGeoHash decodes a 52-bit geohash to latitude and longitude
+func DecodeGeoHash(hash uint64) (lat, lon float64) {
 	latBits := hash >> 26
 	lonBits := hash & ((1 << 26) - 1)
-	lat = decodeLatLonBits(latBits, -90, 90, 26)
-	lon = decodeLatLonBits(lonBits, -180, 180, 26)
+	lat = DecodeLatLonBits(latBits, -90, 90, 26)
+	lon = DecodeLatLonBits(lonBits, -180, 180, 26)
 	return
 }
 
-// decodeLatLonBits decodes bits back to coordinate value
-func decodeLatLonBits(bits uint64, min, max float64, totalBits uint) float64 {
+// DecodeLatLonBits decodes bits back to coordinate value
+func DecodeLatLonBits(bits uint64, min, max float64, totalBits uint) float64 {
 	low, high := min, max
 	for i := uint(0); i < totalBits; i++ {
 		mid := (low + high) / 2
@@ -288,7 +288,7 @@ func (s *BotreonStore) GeoPos(key string, members ...string) ([][2]float64, erro
 			if err != nil {
 				return err
 			}
-			lat, lon := decodeGeoHash(hash)
+			lat, lon := DecodeGeoHash(hash)
 			results = append(results, [2]float64{lat, lon})
 		}
 		return nil
@@ -352,7 +352,7 @@ func (s *BotreonStore) GeoDist(key, member1, member2, unit string) (float64, err
 		}); err != nil {
 			return err
 		}
-		lat1, lon1 := decodeGeoHash(hash1)
+		lat1, lon1 := DecodeGeoHash(hash1)
 
 		// Get second member position
 		hashKey2 := geoIndexKey(key, member2)
@@ -370,7 +370,7 @@ func (s *BotreonStore) GeoDist(key, member1, member2, unit string) (float64, err
 		}); err != nil {
 			return err
 		}
-		lat2, lon2 := decodeGeoHash(hash2)
+		lat2, lon2 := DecodeGeoHash(hash2)
 
 		dist = calculateDistance(lat1, lon1, lat2, lon2)
 
@@ -399,10 +399,10 @@ func geoHashToBoundingBox(hash uint64) (minLat, maxLat, minLon, maxLon float64) 
 	latBits := hash >> 26
 	lonBits := hash & ((1 << 26) - 1)
 
-	minLat = decodeLatLonBits(latBits, -90, 90, 26)
-	maxLat = decodeLatLonBits(latBits|((1<<26)-1), -90, 90, 26)
-	minLon = decodeLatLonBits(lonBits, -180, 180, 26)
-	maxLon = decodeLatLonBits(lonBits|((1<<26)-1), -180, 180, 26)
+	minLat = DecodeLatLonBits(latBits, -90, 90, 26)
+	maxLat = DecodeLatLonBits(latBits|((1<<26)-1), -90, 90, 26)
+	minLon = DecodeLatLonBits(lonBits, -180, 180, 26)
+	maxLon = DecodeLatLonBits(lonBits|((1<<26)-1), -180, 180, 26)
 
 	return
 }
@@ -492,7 +492,7 @@ func geoRadiusInTxn(txn *badger.Txn, key string, lon, lat, radiusM float64, unit
 			continue
 		}
 		memberHash := score
-		memberLat, memberLon := decodeGeoHash(uint64(memberHash))
+		memberLat, memberLon := DecodeGeoHash(uint64(memberHash))
 
 		dist := calculateDistance(lat, lon, memberLat, memberLon)
 		if dist > radiusM {
@@ -684,7 +684,7 @@ func (s *BotreonStore) GeoRadiusByMember(key, member string, radius float64, uni
 		}); err != nil {
 			return err
 		}
-		lat, lon := decodeGeoHash(hash)
+		lat, lon := DecodeGeoHash(hash)
 		results, err = geoRadiusInTxn(txn, key, lon, lat, radiusM, unit, count, withDist, withHash, withCoord)
 		return err
 	})
@@ -711,7 +711,7 @@ func geoAllPositionsInTxn(txn *badger.Txn, key string) (map[string][2]float64, e
 		if !ok {
 			continue
 		}
-		lat, lon := decodeGeoHash(uint64(score))
+		lat, lon := DecodeGeoHash(uint64(score))
 		result[member] = [2]float64{lat, lon}
 	}
 	return result, nil

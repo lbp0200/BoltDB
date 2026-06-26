@@ -61,7 +61,16 @@ func TestGossip_PingNoPeers(t *testing.T) {
 	defer cleanup()
 
 	g := NewGossiper(context.Background(), cluster)
+
+	// No peers → pingRandomPeers should be a safe no-op
 	g.pingRandomPeers()
+
+	// Cluster state unchanged (only Myself exists)
+	cluster.mu.RLock()
+	assert.Equal(t, 1, len(cluster.Nodes))
+	_, selfExists := cluster.Nodes[cluster.Myself.ID]
+	assert.True(t, selfExists)
+	cluster.mu.RUnlock()
 }
 
 func TestGossip_PingWithPeers(t *testing.T) {
@@ -99,6 +108,19 @@ func TestGossip_PingManyPeersRespectsFanout(t *testing.T) {
 
 	g := NewGossiper(context.Background(), cluster)
 	g.pingRandomPeers()
+
+	// Without Bus, pingRandomPeers falls back to local timestamp update.
+	// Verify at least one peer was pinged (respecting fanout).
+	cluster.mu.RLock()
+	defer cluster.mu.RUnlock()
+	pingedCount := 0
+	for _, node := range cluster.Nodes {
+		if node.ID != cluster.Myself.ID && node.PingSent > 0 {
+			pingedCount++
+		}
+	}
+	assert.True(t, pingedCount > 0)
+	assert.True(t, pingedCount <= gossipFanout)
 }
 
 func TestGossip_CheckFailures_SkipsSelf(t *testing.T) {

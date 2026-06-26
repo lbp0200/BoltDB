@@ -3,6 +3,7 @@ package replication
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/store"
 	"github.com/zeebo/assert"
@@ -33,8 +34,9 @@ func TestRDBEncoder_WriteStringKeyValue_WithTTL(t *testing.T) {
 	t.Parallel()
 	enc := NewRDBEncoder()
 
-	// 写入带 TTL 的字符串键值
-	err := enc.WriteStringKeyValue("key1", "value1", 60) // 60秒 TTL
+	// 写入带绝对过期时间戳的字符串键值
+	expireAt := time.Now().Unix() + 60 // 60秒后过期
+	err := enc.WriteStringKeyValue("key1", "value1", expireAt)
 	assert.NoError(t, err)
 
 	// 验证数据已写入（应该更长因为有过期时间）
@@ -85,7 +87,7 @@ func TestRDBEncoder_WriteSortedSetKeyValue(t *testing.T) {
 	enc := NewRDBEncoder()
 
 	// 写入有序集合键值
-	members := []*store.ZSetMember{
+	members := []store.ZSetMember{
 		{Member: "member1", Score: 1.0},
 		{Member: "member2", Score: 2.0},
 	}

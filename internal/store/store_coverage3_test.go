@@ -178,8 +178,10 @@ func TestZMPop_EmptyKey_Coverage(t *testing.T) {
 	t.Parallel()
 	s := setupTestStore(t)
 
-	_, _, err := s.ZMPop([]string{"nokey"}, "MAX", 1)
+	key, members, err := s.ZMPop([]string{"nokey"}, "MAX", 1)
 	assert.NoError(t, err)
+	assert.Equal(t, "", key)
+	assert.Equal(t, 0, len(members))
 }
 
 func TestZDiff_Coverage(t *testing.T) {
@@ -278,6 +280,10 @@ func TestCreateEmptyStream_Coverage(t *testing.T) {
 
 	err := s.CreateEmptyStream("empty_stream")
 	assert.NoError(t, err)
+
+	length, err := s.XLen("empty_stream")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), length)
 }
 
 func TestSetStringBatch_Coverage(t *testing.T) {
@@ -322,6 +328,10 @@ func TestRestoreHLL_Coverage(t *testing.T) {
 
 	_, err := s.PFAdd("hll1", "a", "b", "c")
 	assert.NoError(t, err)
+
+	card, err := s.PFCount("hll1")
+	assert.NoError(t, err)
+	assert.True(t, card > 0)
 }
 
 func TestIsUUIDFormat_Coverage(t *testing.T) {

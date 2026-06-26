@@ -20,6 +20,9 @@ func (s *BotreonStore) stringKey(key string) string {
 
 // Set 实现 Redis SET 命令
 func (s *BotreonStore) Set(key string, value string) error {
+	if err := s.checkErrorInjector("Set"); err != nil {
+		return err
+	}
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// Check if key already exists with a different type
 		badgerTypeKey := TypeOfKeyGet(key)
@@ -257,6 +260,9 @@ func (s *BotreonStore) MSetNX(keyValues ...string) (bool, error) {
 
 // Get 实现 Redis GET 命令
 func (s *BotreonStore) Get(key string) (string, error) {
+	if err := s.checkErrorInjector("Get"); err != nil {
+		return "", err
+	}
 	// 先检查读缓存
 	if s.readCache != nil {
 		if cachedValue, found := s.readCache.Get(key); found {
@@ -1001,6 +1007,7 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 			}
 		}
 		originalLen := len(data)
+		var remainingTTL time.Duration
 
 		for _, op := range ops {
 			// Convert offset (can be negative, meaning from end)
@@ -1108,9 +1115,8 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 				results = append(results, newValue)
 			}
 
-			// Update TTL if needed
+			// Update TTL if needed (compute remaining TTL before any deletion)
 			if len(data) > originalLen {
-				// Get the current TTL if any
 				typeKey := TypeOfKeyGet(key)
 				if item, err := txn.Get(typeKey); err == nil {
 					val, err := item.ValueCopy(nil)
@@ -1121,10 +1127,18 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 						strKey := s.stringKey(key)
 						if strItem, err := txn.Get([]byte(strKey)); err == nil {
 							if expiresAt := strItem.ExpiresAt(); expiresAt > 0 {
-								ttl := time.Duration(int64(expiresAt) - time.Now().UnixNano())
-								if ttl > 0 {
-									if err := txn.Delete([]byte(strKey)); err != nil {
-										return err
+								nowUnix := uint64(time.Now().Unix())
+								if expiresAt > nowUnix*100 {
+									// 纳秒格式
+									nowNano := uint64(time.Now().UnixNano())
+									if expiresAt > nowNano {
+										remainingTTL = time.Duration(expiresAt - nowNano)
+									}
+								} else {
+									// 秒格式
+									if expiresAt > nowUnix {
+										// #nosec G115 - expiresAt is within int64 range
+										remainingTTL = time.Duration(expiresAt-nowUnix) * time.Second
 									}
 								}
 							}
@@ -1134,14 +1148,24 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 			}
 		}
 
-		// Save the updated data
+		// Save the updated data (preserve TTL if there was one)
 		if len(data) > 0 {
 			strKey := s.stringKey(key)
 			if err := txn.Set(TypeOfKeyGet(key), []byte(KeyTypeString)); err != nil {
 				return err
 			}
-			if err := txn.Set([]byte(strKey), data); err != nil {
-				return err
+			if remainingTTL > 0 {
+				if err := txn.Delete([]byte(strKey)); err != nil {
+					return err
+				}
+				e := badger.NewEntry([]byte(strKey), data).WithTTL(remainingTTL)
+				if err := txn.SetEntry(e); err != nil {
+					return err
+				}
+			} else {
+				if err := txn.Set([]byte(strKey), data); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -1161,6 +1185,9 @@ type StringEntry struct {
 // SetStringBatch 批量写入多个字符串键值对
 // 用于 RDB 加载等场景，减少事务数
 func (s *BotreonStore) SetStringBatch(entries []StringEntry) error {
+	if err := s.checkErrorInjector("SetStringBatch"); err != nil {
+		return err
+	}
 	if len(entries) == 0 {
 		return nil
 	}

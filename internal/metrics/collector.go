@@ -52,6 +52,10 @@ func (c *Collector) refresh() Snapshot {
 
 	var retryActive, retryTotal, writesBlocked, l0Rejected, l0Delayed int64
 	var l0Score float64
+
+	// Read function pointers under RLock to prevent data race
+	// if any pointer is being set concurrently (e.g. during init).
+	c.mu.RLock()
 	if c.RetryMetricsFn != nil {
 		retryActive, retryTotal, writesBlocked, l0Rejected, l0Delayed, l0Score = c.RetryMetricsFn()
 	}
@@ -117,6 +121,7 @@ func (c *Collector) refresh() Snapshot {
 	if c.TotalOutputBytesFn != nil {
 		outB = c.TotalOutputBytesFn()
 	}
+	c.mu.RUnlock()
 
 	s := Snapshot{
 		Time: time.Now(),

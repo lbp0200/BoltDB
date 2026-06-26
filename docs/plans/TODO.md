@@ -14,6 +14,70 @@
 
 ---
 
+---
+
+## P2：测试质量加固（Test Quality Hardening）
+
+### 背景
+
+代码覆盖率很高（~1500 个测试函数），但**大量测试只断言「没报错」，不验证返回值是否正确**。
+历史上已有多批 bug（并发竞争、复制一致性、错误吞没、涌现行为）在单元测试全部通过的情况下流到生产/soak。
+
+三个递进阶段：
+
+| 阶段 | 投入 | 目标 |
+|------|------|------|
+| P2a — 低 hanging fruit | 几天 | 补弱断言、去 stub、加值验证 |
+| P2b — 中等投入 | 一到两周 | 隔离加固、错误注入、变异测试引入 |
+| P2c — 高 ROI | 按需 | 属性测试、集成测试并行化 |
+
+### P2a — 低 hanging fruit
+
+### P2a — 已完成
+
+| 项 | 状态 |
+|----|------|
+| Store coverage 测试补值验证 | ✅ 6 个弱断言测试已加固 |
+| TestConcurrentConnections 并发值验证 | ✅ SET/GET 值正确性验证 |
+| Cluster stub 测试加实质性断言 | ✅ 3 个 stub 测试已加固 |
+| 复制端到端数据完整性 | ✅ TestFullResyncDataIntegrity (7 子测试) + TestHandlePSync_FullResyncDataIntegrity |
+| 集成测试状态隔离文档 | ✅ setupTest 补充注释文档 |
+
+### P2b — 已完成
+
+| 项 | 说明 | 状态 |
+|----|------|------|
+| **RDB TTL 持久化修复** | 发现 `ExpiresAt` 秒/纳秒不匹配 + 编码器双重 `time.Now()` 漂移 | ✅ |
+| **Error Injection 层** | `ErrorInjector` + 10 个 store 方法注入点 + 21 个测试 (store+handler) | ✅ |
+| **并发原子性测试** | ZRevRank 并发/HSet count 准确度/MULTI/EXEC 错误传播 | ✅ |
+| **Gossip 行为测试** | PingNoPeers 空 peer 验证 + PFAIL payload flags/epoch 增强 | ✅ |
+| **变异测试基线** | go-mutesting 脚本 + manual 回退 + 首次弱测试发现 (ttl==0) | ✅ |
+| **TTL 双格式批量修复** | 系统性审计 9 个 `.ExpiresAt()` 读取点，修复 6 个真实 bug（PTTL/EXPIRETIME/DUMP/BitField/Rename） | ✅ |
+| **SET 命令修饰符** | 实现 EX/PX/EXAT/PXAT/NX/XX/GET/KEEPTTL 完整支持 | ✅ |
+| **比较操作符变异** | manual-mutation.sh 增加 `>↔>=`/`<↔<=` 变异，覆盖 ttl>0 类缺口 | ✅ |
+
+---
+
+### P2b — 中等投入
+
+| 项 | 说明 |
+|----|------|
+| **变异测试引入** | 配置 `go-mutesting`，先跑基线，找到最弱的测试文件逐步加固 |
+| **Error injection 测试** | 给 store 加可注入错误的 wrapper，测试高层错误处理路径（14 处曾被吞掉） |
+| **复制端到端完整性** | 正式实现 `TestFullResyncDataIntegrity` 并加入 Tier B 门禁 |
+| **gossip 行为测试** | 给 `TestGossip_PingNoPeers` 等加 payload 验证，确保传播生效 |
+| **并发原子性测试** | 参考历史 HSet 并发 count 破坏、SPopN stale 结果等 bug，写多 goroutine 竞争测试 |
+
+### P2c — 高 ROI（按需）
+
+| 项 | 说明 | 状态 |
+|----|------|------|
+| **集成测试独立化** | `StartIsolatedServer` 工厂 + 3 个示例测试（SetGet/TTL/MultiDataType） | ✅ 基础设施就绪 |
+| **属性测试（stateful testing）** | 用 `rapid` 实现 6 个属性测试（SET/GET/DEL/LPush/LPop/SAdd/INCR） | ✅ 基础覆盖 |
+| **Soak 门槛前移** | `TestDegradationGate` 加入 Tier B 门禁 | ✅ |
+
+---
+
 ## P3：架构边界（已决策：不做）
 
 | 边界 | 原因 |
@@ -88,6 +152,17 @@
 | 修复: RESTORE 参数检查 | ✅ | `len(args) < 4` → `len(args) < 3` |
 | 修复: `BuildGossipPayload` 虚假 epoch | ✅ | 移除 `nodeEpoch == 0` fallback |
 | 修复: goroutine leak 测试 XRead | ✅ | 兼容 null response 变化 |
+
+---
+
+## 已知限制（有意识跳过或需独立规划）
+
+| 限制 | 说明 | 优先级 |
+|------|------|--------|
+| **Regression 测试超时** | `TestRegression*` 套件需要 600s 超时；当前 Tier B/C 脚本用 120s 不够。已确认非 flaky，需提升超时配置。 | 🟡 低 |
+| **handler.go 体积** | 8807 行。已按命令族拆分出 4 个文件（string/zset/hash/admin）共 ~550 行，但 handler.go 净增反超。剩余 bulk（SET 族/PF 族/Stream/Geo/HyperLogLog 等）仍集中在一个文件。 | 🟡 低 |
+| **SET KEEPTTL/GET 持久化传播** | `SET key value KEEPTTL` 和 `SET key value GET` 已完整实现。KEEPTTL 先读取原 TTL 再写入值并重新应用（handler 层 + store 层已完成）。`GET` 返回旧值已实现；旧值不传播到复制 backlog 属于架构级限制（非当前版本目标）。 | ✅ 已完成 |
+| **Soak/nightly 测试** | 仅 CI 环境（GitHub Actions cron）运行；本地需手动触发 `SOAK_DURATION=1h bash scripts/test-tier-c.sh`。文档见 `docs/nightly-soak-promp.md`。 | 🟢 无需处理 |
 
 ---
 

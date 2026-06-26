@@ -104,6 +104,9 @@ func (s *BotreonStore) setKey(key string, parts ...string) string {
 
 // SAdd 实现 Redis SADD 命令
 func (s *BotreonStore) SAdd(key string, members ...string) (int, error) {
+	if err := s.checkErrorInjector("SAdd"); err != nil {
+		return 0, err
+	}
 	added := 0
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		added = 0 // reset each attempt; stale value must not survive conflict retry

@@ -35,3 +35,6 @@ go test -race -timeout 120s -run 'TestSplitBrain|TestRegressionFailoverOscillati
 
 echo "=== Tier B: Shutdown ==="
 go test -race -timeout 60s -run 'Test(ShutdownWithReplication|GracefulShutdown)' -count=1 ./cmd/integration/
+
+echo "=== Tier B: Degradation gate ==="
+go test -race -timeout 120s -run 'TestDegradationGate' -count=1 ./internal/store/

@@ -19,6 +19,9 @@ var ErrMemberNotFound = errors.New("member not found")
 
 // 修改 HSet 维护计数器
 func (s *BotreonStore) HSet(key, field string, value interface{}) error {
+	if err := s.checkErrorInjector("HSet"); err != nil {
+		return err
+	}
 	logFuncTag := "BotreonStoreHSet"
 	// 将值转换为字符串（与Redis一致，Hash值都是字符串）
 	var bValue []byte
@@ -98,6 +101,9 @@ func (s *BotreonStore) HSet(key, field string, value interface{}) error {
 	}, 30)
 }
 func (s *BotreonStore) HGet(key, field string) ([]byte, error) {
+	if err := s.checkErrorInjector("HGet"); err != nil {
+		return nil, err
+	}
 	// Check key type before retrieving field
 	typeKey := TypeOfKeyGet(key)
 	var keyType string

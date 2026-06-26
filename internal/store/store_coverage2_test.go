@@ -112,6 +112,74 @@ func TestRenameNX_Coverage(t *testing.T) {
 	assert.True(t, ok)
 }
 
+// TestRename_WithTTL 验证 RENAME 时保留 TTL
+func TestRename_WithTTL(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	mustSet(t, s, "old_ttl", "value_ttl")
+
+	// 设置 2 小时 TTL
+	ok, err := s.Expire("old_ttl", 7200)
+	assert.NoError(t, err)
+	assert.True(t, ok)
+
+	// 验证 TTL 已设置
+	ttlBefore, err := s.TTL("old_ttl")
+	assert.NoError(t, err)
+	assert.True(t, ttlBefore > 0)
+
+	// RENAME
+	err = s.Rename("old_ttl", "new_ttl")
+	assert.NoError(t, err)
+
+	// 新键应保留 TTL
+	val, err := s.Get("new_ttl")
+	assert.NoError(t, err)
+	assert.Equal(t, "value_ttl", val)
+
+	ttlAfter, err := s.TTL("new_ttl")
+	assert.NoError(t, err)
+	if ttlAfter <= 0 {
+		t.Errorf("TTL should be preserved after RENAME, got %d", ttlAfter)
+	}
+
+	// 旧键应不存在
+	exists, err := s.Exists("old_ttl")
+	assert.NoError(t, err)
+	assert.False(t, exists)
+}
+
+// TestRename_WithExpiredTTL 验证 RENAME 已过期键时新键无 TTL
+func TestRename_WithExpiredTTL(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	mustSet(t, s, "old_exp", "value_exp")
+
+	// 设置 1 秒 TTL
+	ok, err := s.Expire("old_exp", 1)
+	assert.NoError(t, err)
+	assert.True(t, ok)
+
+	// 等待 TTL 过期
+	time.Sleep(1500 * time.Millisecond)
+
+	// RENAME — 键已过期但 Badger 可能还未物理删除
+	err = s.Rename("old_exp", "new_exp")
+	assert.NoError(t, err)
+
+	// 验证新键可读（无 TTL 持久化）
+	val, err := s.Get("new_exp")
+	assert.NoError(t, err)
+	assert.Equal(t, "value_exp", val)
+
+	// 新键应无 TTL
+	ttl, err := s.TTL("new_exp")
+	assert.NoError(t, err)
+	if ttl != -1 {
+		t.Errorf("Renamed expired key should have no TTL, got %d", ttl)
+	}
+}
+
 func TestDelString_Coverage(t *testing.T) {
 	t.Parallel()
 	s := setupTestStore(t)
@@ -195,8 +263,9 @@ func TestObjectRefCount_Coverage(t *testing.T) {
 	s := setupTestStore(t)
 	mustSet(t, s, "orc1", "v1")
 
-	_, err := s.ObjectRefCount("orc1")
+	refcnt, err := s.ObjectRefCount("orc1")
 	assert.NoError(t, err)
+	assert.True(t, refcnt > 0)
 }
 
 func TestObjectEncoding_Coverage(t *testing.T) {
@@ -291,6 +360,10 @@ func TestRestore_Replace_Coverage(t *testing.T) {
 
 	err = s.Restore("r1", data, 0, true)
 	assert.NoError(t, err)
+
+	val, err := s.Get("r1")
+	assert.NoError(t, err)
+	assert.Equal(t, "original", val)
 }
 
 func TestRunNextStartup_Coverage(t *testing.T) {
@@ -321,6 +394,9 @@ func TestGetRetryMetrics_Coverage(t *testing.T) {
 
 	metrics := s.GetRetryMetrics()
 	assert.NotNil(t, metrics)
+	assert.Equal(t, int32(0), metrics.ActiveRetries)
+	assert.Equal(t, int32(0), metrics.L0Rejected)
+	assert.Equal(t, int32(0), metrics.L0Delayed)
 }
 
 func TestGetDB_Coverage(t *testing.T) {

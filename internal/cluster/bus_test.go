@@ -141,7 +141,14 @@ func TestClusterBusDoubleStop(t *testing.T) {
 	assert.NoError(t, err)
 
 	bus.Stop()
-	bus.Stop()
+	bus.Stop() // second Stop must be idempotent — no panic, no deadlock
+
+	// Verify bus is stopped: listener address should be closed
+	addr := bus.Addr()
+	if addr != "" {
+		_, err := net.Dial("tcp", addr)
+		assert.Error(t, err)
+	}
 }
 
 func TestBuildGossipPayload(t *testing.T) {
@@ -180,16 +187,30 @@ func TestBuildGossipPayloadWithPFail(t *testing.T) {
 
 	peer := NewNode("peer1", "127.0.0.1:6380")
 	peer.Flags = []string{FlagPFail}
+	peer.Epoch = 5
 	cluster.Nodes["peer1"] = peer
 
 	bus := NewClusterBus(cluster)
 	payload := bus.BuildGossipPayload()
 
 	assert.NotNil(t, payload)
+	// PFail list
 	assert.Equal(t, 1, len(payload.PFail))
 	assert.Equal(t, "peer1", payload.PFail[0])
+
+	// Gossip section contains the PFAIL node with flags
 	assert.Equal(t, 1, len(payload.Nodes))
 	assert.Equal(t, "peer1", payload.Nodes[0].ID)
+	assert.Equal(t, "127.0.0.1:6380", payload.Nodes[0].Addr)
+	assert.Equal(t, int64(5), payload.Nodes[0].Epoch)
+	foundPFailFlag := false
+	for _, flag := range payload.Nodes[0].Flags {
+		if flag == FlagPFail {
+			foundPFailFlag = true
+			break
+		}
+	}
+	assert.True(t, foundPFailFlag)
 }
 
 func TestApplyGossipPayloadSlotReconciliation(t *testing.T) {

@@ -165,7 +165,7 @@ func TestGeoHashRoundTrip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			hash := encodeGeoHash(tt.lat, tt.lon)
-			decodedLat, decodedLon := decodeGeoHash(hash)
+			decodedLat, decodedLon := DecodeGeoHash(hash)
 
 			// Allow small floating point error
 			if abs(tt.lat-decodedLat) > 0.01 || abs(tt.lon-decodedLon) > 0.01 {

@@ -1,7 +1,9 @@
 package server
 
 import (
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/zeebo/assert"
@@ -318,4 +320,102 @@ func TestServerTypeAndExistsCommands(t *testing.T) {
 			tt.check(t, resp)
 		})
 	}
+}
+
+// TestSETModifiers 验证 SET 修饰符的实际效果（TTL、NX、XX、KEEPTTL）
+func TestSETModifiers(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	t.Run("EX sets TTL", func(t *testing.T) {
+		resp := handler.executeCommand(state, "SET", [][]byte{[]byte("s:ex"), []byte("v"), []byte("EX"), []byte("100")}, "127.0.0.1:12345")
+		assert.Equal(t, proto.OK, resp)
+
+		ttl, err := handler.Db.TTL("s:ex")
+		assert.NoError(t, err)
+		assert.True(t, ttl > 0 && ttl <= 100)
+	})
+
+	t.Run("PX sets TTL", func(t *testing.T) {
+		resp := handler.executeCommand(state, "SET", [][]byte{[]byte("s:px"), []byte("v"), []byte("PX"), []byte("50000")}, "127.0.0.1:12345")
+		assert.Equal(t, proto.OK, resp)
+
+		ttl, err := handler.Db.TTL("s:px")
+		assert.NoError(t, err)
+		assert.True(t, ttl > 0)
+	})
+
+	t.Run("NX sets only if missing", func(t *testing.T) {
+		resp := handler.executeCommand(state, "SET", [][]byte{[]byte("s:nx1"), []byte("v"), []byte("NX")}, "127.0.0.1:12345")
+		assert.Equal(t, proto.OK, resp)
+
+		resp = handler.executeCommand(state, "SET", [][]byte{[]byte("s:nx1"), []byte("v2"), []byte("NX")}, "127.0.0.1:12345")
+		if _, ok := resp.(*proto.Null); !ok {
+			t.Errorf("expected Null for NX on existing key, got %T", resp)
+		}
+
+		val, err := handler.Db.Get("s:nx1")
+		assert.NoError(t, err)
+		assert.Equal(t, "v", val)
+	})
+
+	t.Run("XX sets only if exists", func(t *testing.T) {
+		resp := handler.executeCommand(state, "SET", [][]byte{[]byte("s:xx1"), []byte("v"), []byte("XX")}, "127.0.0.1:12345")
+		if _, ok := resp.(*proto.Null); !ok {
+			t.Errorf("expected Null for XX on missing key, got %T", resp)
+		}
+
+		handler.executeCommand(state, "SET", [][]byte{[]byte("s:xx1"), []byte("orig")}, "127.0.0.1:12345")
+
+		resp = handler.executeCommand(state, "SET", [][]byte{[]byte("s:xx1"), []byte("newval"), []byte("XX")}, "127.0.0.1:12345")
+		assert.Equal(t, proto.OK, resp)
+
+		val, err := handler.Db.Get("s:xx1")
+		assert.NoError(t, err)
+		assert.Equal(t, "newval", val)
+	})
+
+	t.Run("KEEPTTL retains existing TTL", func(t *testing.T) {
+		resp := handler.executeCommand(state, "SET", [][]byte{[]byte("s:kt"), []byte("first"), []byte("EX"), []byte("200")}, "127.0.0.1:12345")
+		assert.Equal(t, proto.OK, resp)
+
+		ttlBefore, err := handler.Db.TTL("s:kt")
+		assert.NoError(t, err)
+		assert.True(t, ttlBefore > 0)
+
+		resp = handler.executeCommand(state, "SET", [][]byte{[]byte("s:kt"), []byte("second"), []byte("KEEPTTL")}, "127.0.0.1:12345")
+		assert.Equal(t, proto.OK, resp)
+
+		val, err := handler.Db.Get("s:kt")
+		assert.NoError(t, err)
+		assert.Equal(t, "second", val)
+
+		ttlAfter, err := handler.Db.TTL("s:kt")
+		assert.NoError(t, err)
+		if ttlAfter <= 0 {
+			t.Errorf("KEEPTTL should preserve TTL, got %d", ttlAfter)
+		}
+	})
+
+	t.Run("GET returns old value", func(t *testing.T) {
+		handler.executeCommand(state, "SET", [][]byte{[]byte("s:get"), []byte("oldval")}, "127.0.0.1:12345")
+
+		resp := handler.executeCommand(state, "SET", [][]byte{[]byte("s:get"), []byte("newval"), []byte("GET")}, "127.0.0.1:12345")
+		bs, ok := resp.(*proto.BulkString)
+		assert.True(t, ok)
+		if bs != nil {
+			assert.Equal(t, "oldval", string(*bs))
+		}
+	})
+
+	t.Run("EXAT sets absolute expiry", func(t *testing.T) {
+		future := time.Now().Unix() + 300
+		resp := handler.executeCommand(state, "SET", [][]byte{[]byte("s:exat"), []byte("v"), []byte("EXAT"), []byte(strconv.FormatInt(future, 10))}, "127.0.0.1:12345")
+		assert.Equal(t, proto.OK, resp)
+
+		ttl, err := handler.Db.TTL("s:exat")
+		assert.NoError(t, err)
+		assert.True(t, ttl > 0 && ttl <= 300)
+	})
 }

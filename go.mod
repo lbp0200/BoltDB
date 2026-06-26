@@ -12,6 +12,7 @@ require (
 	github.com/rs/zerolog v1.35.1
 	github.com/zeebo/assert v1.3.1
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
+	pgregory.net/rapid v1.3.0
 )
 
 require (

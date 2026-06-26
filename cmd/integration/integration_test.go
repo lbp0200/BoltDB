@@ -2627,6 +2627,14 @@ func teardownSharedServer() {
 
 // setupTest 清理数据并准备测试环境（每个测试前调用）
 // 替代旧的 setupTestServer，不重启服务器，仅清理数据
+//
+// 已知未清理的状态（风险较低，按需处理）：
+//   - Handler.conns / connsMu：TCP 连接跟踪。若测试正确关闭所有连接则自动清理
+//   - Handler.monitorClients：由 removeConnection 在连接关闭时清理
+//   - Handler.watchMonitors：同上
+//   - Handler.Replication：共享服务器未启用复制，不涉及
+//   - CONFIG SET：当前实现为 no-op，状态不持久化
+//   - Slowlog：累积但不影响功能正确性
 func setupTest(t *testing.T) {
 	t.Helper()
 	skipHeavyTestNameInShort(t)
@@ -2648,8 +2656,6 @@ func setupTest(t *testing.T) {
 
 	// 清理 PubSub 状态（跨测试残留会导致失败）
 	sharedServer.PubSub.Clear()
-
-	// ResetConnectionState 已移除 — connState 永不为 nil, 无需 fallback
 }
 
 // teardownTest 测试后清理（每个测试调用）

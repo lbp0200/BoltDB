@@ -48,15 +48,13 @@ func (enc *RDBEncoder) WriteDatabaseSelector(dbNum int) {
 	enc.writeLength(uint64(dbNum))
 }
 
-// WriteKeyValue 写入键值对
-func (enc *RDBEncoder) WriteKeyValue(key string, value interface{}, keyType string, ttl int64) error {
+// WriteKeyValue 写入键值对（expireTimeUnix = 0 表示无过期）
+func (enc *RDBEncoder) WriteKeyValue(key string, value interface{}, keyType string, expireTimeUnix int64) error {
 	// 如果有TTL，写入过期时间
-	if ttl > 0 {
-		now := time.Now().Unix()
-		expireTime := now + ttl
+	if expireTimeUnix > 0 {
 		enc.buf.WriteByte(0xFD) // FD = expire time in seconds
-		// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
-		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTime))
+		// #nosec G115 - expireTimeUnix is a valid Unix timestamp within uint32 range
+		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTimeUnix))
 	}
 
 	// 写入值类型
@@ -128,14 +126,12 @@ func (enc *RDBEncoder) WriteKeyValue(key string, value interface{}, keyType stri
 	return nil
 }
 
-// WriteStringKeyValue 写入字符串键值对
-func (enc *RDBEncoder) WriteStringKeyValue(key, value string, ttl int64) error {
-	if ttl > 0 {
-		now := time.Now().Unix()
-		expireTime := now + ttl
+// WriteStringKeyValue 写入字符串键值对（expireTimeUnix = 0 表示无过期）
+func (enc *RDBEncoder) WriteStringKeyValue(key, value string, expireTimeUnix int64) error {
+	if expireTimeUnix > 0 {
 		enc.buf.WriteByte(0xFD)
-		// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
-		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTime))
+		// #nosec G115 - expireTimeUnix is a valid Unix timestamp within uint32 range
+		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTimeUnix))
 	}
 
 	enc.buf.WriteByte(0) // STRING type
@@ -144,14 +140,12 @@ func (enc *RDBEncoder) WriteStringKeyValue(key, value string, ttl int64) error {
 	return nil
 }
 
-// WriteListKeyValue 写入列表键值对
-func (enc *RDBEncoder) WriteListKeyValue(key string, values []string, ttl int64) error {
-	if ttl > 0 {
-		now := time.Now().Unix()
-		expireTime := now + ttl
+// WriteListKeyValue 写入列表键值对（expireTimeUnix = 0 表示无过期）
+func (enc *RDBEncoder) WriteListKeyValue(key string, values []string, expireTimeUnix int64) error {
+	if expireTimeUnix > 0 {
 		enc.buf.WriteByte(0xFD)
-		// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
-		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTime))
+		// #nosec G115 - expireTimeUnix is a valid Unix timestamp within uint32 range
+		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTimeUnix))
 	}
 
 	enc.buf.WriteByte(1) // LIST type
@@ -163,14 +157,12 @@ func (enc *RDBEncoder) WriteListKeyValue(key string, values []string, ttl int64)
 	return nil
 }
 
-// WriteHashKeyValue 写入哈希键值对
-func (enc *RDBEncoder) WriteHashKeyValue(key string, fields map[string][]byte, ttl int64) error {
-	if ttl > 0 {
-		now := time.Now().Unix()
-		expireTime := now + ttl
+// WriteHashKeyValue 写入哈希键值对（expireTimeUnix = 0 表示无过期）
+func (enc *RDBEncoder) WriteHashKeyValue(key string, fields map[string][]byte, expireTimeUnix int64) error {
+	if expireTimeUnix > 0 {
 		enc.buf.WriteByte(0xFD)
-		// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
-		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTime))
+		// #nosec G115 - expireTimeUnix is a valid Unix timestamp within uint32 range
+		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTimeUnix))
 	}
 
 	enc.buf.WriteByte(3) // HASH type
@@ -183,14 +175,12 @@ func (enc *RDBEncoder) WriteHashKeyValue(key string, fields map[string][]byte, t
 	return nil
 }
 
-// WriteSetKeyValue 写入集合键值对
-func (enc *RDBEncoder) WriteSetKeyValue(key string, members []string, ttl int64) error {
-	if ttl > 0 {
-		now := time.Now().Unix()
-		expireTime := now + ttl
+// WriteSetKeyValue 写入集合键值对（expireTimeUnix = 0 表示无过期）
+func (enc *RDBEncoder) WriteSetKeyValue(key string, members []string, expireTimeUnix int64) error {
+	if expireTimeUnix > 0 {
 		enc.buf.WriteByte(0xFD)
-		// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
-		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTime))
+		// #nosec G115 - expireTimeUnix is a valid Unix timestamp within uint32 range
+		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTimeUnix))
 	}
 
 	enc.buf.WriteByte(2) // SET type
@@ -222,14 +212,12 @@ func (enc *RDBEncoder) WriteTimeSeriesKeyValue(key string, points []store.TimeSe
 	return nil
 }
 
-// WriteGeoKeyValue 写入 geo 键值对
-func (enc *RDBEncoder) WriteGeoKeyValue(key string, members []store.GeoMember, ttl int64) error {
-	if ttl > 0 {
-		now := time.Now().Unix()
-		expireTime := now + ttl
+// WriteGeoKeyValue 写入 geo 键值对（expireTimeUnix = 0 表示无过期）
+func (enc *RDBEncoder) WriteGeoKeyValue(key string, members []store.GeoMember, expireTimeUnix int64) error {
+	if expireTimeUnix > 0 {
 		enc.buf.WriteByte(0xFD)
-		// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
-		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTime))
+		// #nosec G115 - expireTimeUnix is a valid Unix timestamp within uint32 range
+		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTimeUnix))
 	}
 
 	enc.buf.WriteByte(6) // GEO type
@@ -279,14 +267,12 @@ func (enc *RDBEncoder) WriteStreamKeyValue(key string, entries []store.StreamEnt
 	return nil
 }
 
-// WriteSortedSetKeyValue 写入有序集合键值对
-func (enc *RDBEncoder) WriteSortedSetKeyValue(key string, members []*store.ZSetMember, ttl int64) error {
-	if ttl > 0 {
-		now := time.Now().Unix()
-		expireTime := now + ttl
+// WriteSortedSetKeyValue 写入有序集合键值对（expireTimeUnix = 0 表示无过期）
+func (enc *RDBEncoder) WriteSortedSetKeyValue(key string, members []store.ZSetMember, expireTimeUnix int64) error {
+	if expireTimeUnix > 0 {
 		enc.buf.WriteByte(0xFD)
-		// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
-		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTime))
+		// #nosec G115 - expireTimeUnix is a valid Unix timestamp within uint32 range
+		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTimeUnix))
 	}
 
 	enc.buf.WriteByte(4) // ZSET type
@@ -448,20 +434,8 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取有序集合值失败")
 					continue
 				}
-				if ttl > 0 {
-					now := time.Now().Unix()
-					expireTime := now + ttl
-					enc.buf.WriteByte(0xFD)
-					// #nosec G115 - expireTime is a valid Unix timestamp within uint32 range
-					_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTime))
-				}
-				enc.buf.WriteByte(4) // ZSET type
-				enc.writeString(key)
-				enc.writeLength(uint64(len(members)))
-				for _, m := range members {
-					enc.writeString(m.Member)
-					scoreBytes := []byte(fmt.Sprintf("%.10g", m.Score))
-					enc.writeBytes(scoreBytes)
+				if err := enc.WriteSortedSetKeyValue(key, members, ttl); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入有序集合值到RDB失败")
 				}
 
 			case store.KeyTypeStream:
@@ -536,7 +510,8 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 	return enc.Bytes(), snapshotOffset, nil
 }
 
-// readTTLFromValueTxn 从事务中读取值键的 TTL（BadgerDB 的 ExpiresAt 存储在 entry 头部）
+// readTTLFromValueTxn 从事务中读取值键的绝对过期时间（Unix 秒时间戳）。
+// 返回 0 表示无过期或已过期。返回正值 = 应写入 RDB 的过期时间戳。
 func readTTLFromValueTxn(txn *badger.Txn, key, keyType string) int64 {
 	var valueKey []byte
 	switch keyType {
@@ -567,11 +542,17 @@ func readTTLFromValueTxn(txn *badger.Txn, key, keyType string) int64 {
 		return 0
 	}
 	if expiresAt := valItem.ExpiresAt(); expiresAt > 0 {
-		expireTime := time.Unix(0, int64(expiresAt))
-		now := time.Now()
-		if expireTime.After(now) {
-			return int64(expireTime.Sub(now).Seconds())
+		// BadgerDB 的 ExpiresAt 有两种格式：
+		//   - 纳秒（旧版 Expire 写入，值约 1.75e18）
+		//   - 秒（WithTTL / SetWithTTL 写入，值约 1.75e9）
+		// 通过阈值 nowUnix*100 区分
+		nowUnix := uint64(time.Now().Unix())
+		if expiresAt > nowUnix*100 {
+			// 纳秒格式
+			return int64(expiresAt / 1_000_000_000)
 		}
+		// 秒格式
+		return int64(expiresAt)
 	}
 	return 0
 }
@@ -736,29 +717,6 @@ func readZSetInTxn(txn *badger.Txn, key string) ([]store.ZSetMember, error) {
 	return result, nil
 }
 
-// decodeGeoHash decodes a 52-bit geohash to latitude and longitude
-func decodeGeoHash(hash uint64) (lat, lon float64) {
-	latBits := hash >> 26
-	lonBits := hash & ((1 << 26) - 1)
-	lat = decodeLatLonBits(latBits, -90, 90, 26)
-	lon = decodeLatLonBits(lonBits, -180, 180, 26)
-	return
-}
-
-func decodeLatLonBits(bits uint64, min, max float64, totalBits uint) float64 {
-	low, high := min, max
-	for i := uint(0); i < totalBits; i++ {
-		mid := (low + high) / 2
-		bitPos := totalBits - i - 1
-		if (bits>>bitPos)&1 == 1 {
-			low = mid
-		} else {
-			high = mid
-		}
-	}
-	return (low + high) / 2
-}
-
 // readJSONInTxn 从事务中读取 JSON 值
 func readJSONInTxn(txn *badger.Txn, key string) (string, error) {
 	item, err := txn.Get([]byte("JSON:" + key))
@@ -830,7 +788,7 @@ func readGeoInTxn(txn *badger.Txn, key string) ([]store.GeoMember, error) {
 			return nil, err
 		}
 		hash := binary.BigEndian.Uint64(raw)
-		lat, lon := decodeGeoHash(hash)
+		lat, lon := store.DecodeGeoHash(hash)
 		result = append(result, store.GeoMember{Member: member, Lat: lat, Lon: lon})
 	}
 	return result, nil

@@ -640,7 +640,19 @@ func TestNodeUpdatePing(t *testing.T) {
 	node := cluster.GetMyself()
 	assert.NotNil(t, node)
 
-	// Test UpdatePing
+	// Test UpdatePing sets PingSent timestamp
+	oldPing := node.PingSent
 	node.UpdatePing()
-	// Just verify it doesn't panic and completes
+
+	node.mu.RLock()
+	assert.True(t, node.PingSent > 0)
+	assert.True(t, node.PingSent >= oldPing)
+	node.mu.RUnlock()
+
+	// Subsequent calls update the timestamp forward
+	firstPing := node.PingSent
+	node.UpdatePing()
+	node.mu.RLock()
+	assert.True(t, node.PingSent >= firstPing)
+	node.mu.RUnlock()
 }

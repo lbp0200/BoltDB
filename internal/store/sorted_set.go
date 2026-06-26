@@ -122,6 +122,9 @@ func keyBadgerGet(prefix string, key []byte) []byte {
 
 // ZAdd 添加或更新成员分数
 func (s *BotreonStore) ZAdd(zSetName string, members []ZSetMember) error {
+	if err := s.checkErrorInjector("ZAdd"); err != nil {
+		return err
+	}
 	if len(members) == 0 {
 		return nil
 	}
