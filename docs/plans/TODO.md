@@ -12,16 +12,9 @@
 | isWriteCommand | 94/94 完整 |
 | goroutine leak test | 通过 |
 | handler.go 拆分 | 8824→0 行，拆为 24 个文件，无单文件超 1136 行 |
-
----
-
-## 后续可做（Cluster 进阶）
-
-| 项 | 说明 | 优先级 |
-|----|------|--------|
-| Gossip payload 携带 | 节点/槽位视图交换，当前 PING/PONG 不携带集群状态 | P2 |
-| PFAIL/FAIL gossip 传播 | 当前基于本地 timer，可通过 gossip 传播升级为全局判定 | P2 |
-| 集群范围槽位同步 | 跨节点槽位分配/迁移状态的完整同步 | P3 |
+| Cluster gossip payload | ✅ 已实现（SlotOwners + Nodes + PFail） |
+| PFAIL gossip 传播 | ✅ 已实现（多节点投票晋升） |
+| 槽位视图同步 | ✅ 已实现（epoch 裁决） |
 
 ---
 
