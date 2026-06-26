@@ -25,9 +25,11 @@
 - [x] 替换弱断言：30+ 个 `len > 0` / `>= 0` → 精确值验证
 - [x] 消除了所有 `assert.True(t, len(...) >= 0)` 和 `assert.True(t, int64(...) >= 0)` 模式
 
-### Phase 2：Soak 数据一致性
-- [ ] 在 runSoakNormal 中添加「写后读验证」
-- [ ] 每次 SET 后 GET 并比较值
+### Phase 2：Soak 数据一致性 ✅
+- [x] 在 runSoakNormal 中添加 SET→GET 写后读验证
+- [x] INCR 验证返回正整数
+- [x] 修复 pre-existing 键命名空间冲突（soak:set:* → soak:sadd:*）
+- [x] 添加 trySendErr() 非阻塞发送防止 goroutine 泄漏
 
 ### Phase 3：并发数据完整性
 - [ ] 并发 INCR 精确计数测试
