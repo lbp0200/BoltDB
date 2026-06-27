@@ -1,68 +1,40 @@
-#!/usr/bin/env bash
-# Mutation test baseline script.
-# Runs go-mutesting on targeted packages and records results.
+#!/bin/bash
+# Mutation testing for BoltDB using gremlins
+# https://github.com/go-gremlins/gremlins
 #
 # Usage:
-#   bash scripts/mutation-test.sh                    # run on store (fastest)
-#   bash scripts/mutation-test.sh ./internal/server/  # run on server
-#   bash scripts/mutation-test.sh all                 # run all targeted packages
+#   bash scripts/mutation-test.sh                  # dry-run (analysis only)
+#   bash scripts/mutation-test.sh --run            # full mutation test
+#   bash scripts/mutation-test.sh --run ./internal/store  # single package
 #
-# The mutation score = killed / (killed + lived) * 100%.
-# Results are appended to docs/plans/mutation-baseline.md.
+# Quality gates are configured in .gremlins.yaml
 
 set -euo pipefail
 
-TARGET="${1:-store}"
-BASELINE="docs/plans/mutation-baseline.md"
-TIMEOUT="600s"
+cd "$(dirname "$0")/.."
 
-case "${TARGET}" in
-  store)
-    PKG="./internal/store/..."
+if ! command -v gremlins &>/dev/null; then
+  echo "ERROR: gremlins not installed. Install with:"
+  echo "  go install github.com/go-gremlins/gremlins/cmd/gremlins@latest"
+  exit 1
+fi
+
+MODE="${1:---dry-run}"
+shift 2>/dev/null || true
+
+case "$MODE" in
+  --dry-run|-d)
+    echo "=== Mutation Testing (dry-run) ==="
+    gremlins unleash --dry-run "$@" ./internal/store ./internal/server
     ;;
-  server)
-    PKG="./internal/server/..."
-    ;;
-  all)
-    PKG="./internal/store/... ./internal/server/..."
-    TIMEOUT="1800s"
+  --run|-r)
+    echo "=== Mutation Testing (full) ==="
+    gremlins unleash --output .gremlins-report.json "$@" ./internal/store ./internal/server
+    echo ""
+    echo "Report saved to .gremlins-report.json"
     ;;
   *)
-    PKG="${TARGET}"
+    echo "Usage: $0 [--dry-run|--run] [gremlins flags...]"
+    exit 1
     ;;
 esac
-
-echo "=== Mutation test: ${PKG} ==="
-echo "Started: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-# Run go-mutesting with timeout
-# --no-exec skips the built-in exec (uses go test under the hood)
-# We capture both the machine-readable output and the summary
-OUTPUT=$(go-mutesting --verbose "${PKG}" 2>&1 || true)
-echo "${OUTPUT}"
-
-# Extract summary line
-SUMMARY=$(echo "${OUTPUT}" | grep "✓\|✗\|The mutation score" | tail -5)
-echo "---"
-echo "${SUMMARY}"
-
-# Extract numeric score
-SCORE=$(echo "${OUTPUT}" | grep "The mutation score" | grep -oP '[0-9]+\.[0-9]+' || echo "N/A")
-KILLED=$(echo "${OUTPUT}" | grep -c "✓" || true)
-LIVED=$(echo "${OUTPUT}" | grep -c "✗" || true)
-
-{
-  echo ""
-  echo "## Run: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  echo "| Target | Score | Killed | Lived | Total |"
-  echo "|--------|-------|--------|-------|-------|"
-  echo "| ${PKG} | ${SCORE}% | ${KILLED} | ${LIVED} | $((KILLED + LIVED)) |"
-  echo ""
-  echo '```'
-  echo "${OUTPUT}"
-  echo '```'
-} >> "${BASELINE}"
-
-echo ""
-echo "=== Done. Score: ${SCORE}% (killed=${KILLED}, lived=${LIVED}) ==="
-echo "Results appended to ${BASELINE}"

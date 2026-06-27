@@ -28,6 +28,13 @@ type ZSetMember struct {
 }
 
 // ZSetsMetaValue 定义元数据结构体，存储成员数量和版本
+//
+// Design note on Version (uint32):
+//   - Version is bumped on every ZADD/ZINCRBY/ZREM that modifies the sorted set.
+//   - uint32 wraps at ~4.3 billion. After wrap, a new index key may collide with
+//     an old index key from a previous version. In practice this requires ~4.3B
+//     mutations on a single sorted set, which is virtually impossible under normal
+//     workloads. If such scale is anticipated, consider migrating to uint64.
 type ZSetsMetaValue struct {
 	Card    int64
 	Version uint32
@@ -97,6 +104,34 @@ func encodeVersion(version uint32) []byte {
 	b := make([]byte, 4)
 	binary.BigEndian.PutUint32(b, version)
 	return b
+}
+
+// encodeDataValue packs score (8 bytes, sorted-ordered) + version (4 bytes) into
+// a 12-byte value. The score bytes are the same as encodeScore (IEEE 754 bit-flip
+// for correct byte-order sorting). This allows reading both score and version from
+// a single key lookup, eliminating the need to read the meta key for version.
+func encodeDataValue(score float64, version uint32) []byte {
+	b := make([]byte, 12)
+	copy(b[:8], encodeScore(score))
+	binary.BigEndian.PutUint32(b[8:], version)
+	return b
+}
+
+// decodeDataValue unpacks score + version from a data value.
+// Backward compatible: accepts both old 8-byte (score-only, version=0)
+// and new 12-byte (score+version) formats.
+func decodeDataValue(val []byte) (float64, uint32) {
+	if len(val) >= 12 {
+		score := decodeScore(val[:8])
+		version := binary.BigEndian.Uint32(val[8:])
+		return score, version
+	}
+	// Legacy 8-byte format: score only, assume version 0
+	if len(val) >= 8 {
+		score := decodeScore(val[:8])
+		return score, 0
+	}
+	return 0, 0
 }
 
 // parseZSetIndexKey extracts score, member, version from a zset index key.
@@ -230,16 +265,16 @@ func zRemMemberInTxn(txn *badger.Txn, zSetName, member string) (int64, error) {
 		return 0, err
 	}
 
-	var scoreBytes []byte
+	var dataVal []byte
 	err = item.Value(func(val []byte) error {
-		scoreBytes = val
+		dataVal = val
 		return nil
 	})
 	if err != nil {
-		logger.Logger.Error().Err(err).Str("member", member).Msg("ZRem: Failed to get score")
+		logger.Logger.Error().Err(err).Str("member", member).Msg("ZRem: Failed to read data value")
 		return 0, err
 	}
-	score := decodeScore(scoreBytes)
+	score, memberVersion := decodeDataValue(dataVal)
 
 	metaKey := sortedSetKeyMeta(zSetName)
 	var meta ZSetsMetaValue
@@ -263,7 +298,7 @@ func zRemMemberInTxn(txn *badger.Txn, zSetName, member string) (int64, error) {
 		return 0, err
 	}
 
-	indexKey := sortedSetKeyIndex(zSetName, score, member, meta.Version)
+	indexKey := sortedSetKeyIndex(zSetName, score, member, memberVersion)
 	if err := txn.Delete(indexKey); err != nil {
 		logger.Logger.Error().Err(err).Msg("ZRem: Failed to delete index key")
 		return 0, err
@@ -406,6 +441,19 @@ func zRangeMembersByRankInTxn(txn *badger.Txn, zSetName string, start, stop int6
 }
 
 // zRankInTxn returns the forward rank of a member, or -1 if not found.
+//
+// Complexity: O(rank) average case, O(N) worst case (member not found or rank ≈ N).
+// The BadgerDB index is sorted by (score, member), so iteration naturally
+// terminates early once we pass the target position — no full scan needed
+// for members in the lower half. For members in the upper half (rank > N/2),
+// the scan continues further. This is acceptable because:
+//   - Most ZRANK queries target recently-added or frequently-accessed members
+//   - An O(N) worst case with early-termination average is better than the
+//     constant overhead of maintaining a rank cache on every ZADD/ZREM
+//
+// If upper-half ZRANK becomes a confirmed hotspot, the path forward is
+// bidirectional scan: compute reverseRank from the end, then
+// rank = card - 1 - reverseRank. This caps cost at O(min(rank, N-rank)).
 func zRankInTxn(txn *badger.Txn, zSetName, member string) (int64, error) {
 	dataKey := sortedSetKeyMember(zSetName, member)
 	item, err := txn.Get(dataKey)
@@ -418,7 +466,7 @@ func zRankInTxn(txn *badger.Txn, zSetName, member string) (int64, error) {
 
 	var score float64
 	err = item.Value(func(val []byte) error {
-		score = decodeScore(val)
+		score, _ = decodeDataValue(val)
 		return nil
 	})
 	if err != nil {
@@ -658,18 +706,19 @@ func zAddMembersInTxn(txn *badger.Txn, zSetName string, members []ZSetMember) (b
 		dataKey := sortedSetKeyMember(zSetName, member)
 
 		var oldScore float64
+		var oldVersion uint32
 		item, err = txn.Get(dataKey)
 		if err == nil {
-			var oldScoreBytes []byte
+			var oldDataVal []byte
 			err = item.Value(func(val []byte) error {
-				oldScoreBytes = val
+				oldDataVal = val
 				return nil
 			})
 			if err != nil {
 				logger.Logger.Error().Err(err).Str("zset_name", zSetName).Str("member", member).Msg("ZAdd: Failed to get old score")
 				return false, err
 			}
-			oldScore = decodeScore(oldScoreBytes)
+			oldScore, oldVersion = decodeDataValue(oldDataVal)
 			newMembers--
 		} else if !errors.Is(err, badger.ErrKeyNotFound) {
 			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Str("member", member).Msg("ZAdd: Failed to check member")
@@ -679,10 +728,10 @@ func zAddMembersInTxn(txn *badger.Txn, zSetName string, members []ZSetMember) (b
 		op := operation{
 			dataKey:  dataKey,
 			indexKey: sortedSetKeyIndex(zSetName, score, member, meta.Version),
-			score:    encodeScore(score),
+			score:    encodeDataValue(score, meta.Version),
 		}
 		if err == nil {
-			op.oldIndexKey = sortedSetKeyIndex(zSetName, oldScore, member, meta.Version-1)
+			op.oldIndexKey = sortedSetKeyIndex(zSetName, oldScore, member, oldVersion)
 		}
 		ops = append(ops, op)
 	}
@@ -868,7 +917,7 @@ func (s *BotreonStore) ZScore(zSetName, member string) (float64, bool, error) {
 		}
 		exists = true
 		return item.Value(func(val []byte) error {
-			score = decodeScore(val)
+			score, _ = decodeDataValue(val)
 			return nil
 		})
 	})
@@ -990,6 +1039,16 @@ func (s *BotreonStore) ZCount(zSetName string, minScore, maxScore float64) (int6
 }
 
 // ZIncrBy 实现 Redis ZINCRBY 命令，增加成员的分数
+//
+// Write pattern (optimized): The data value now encodes both score (8 bytes)
+// and version (4 bytes) via encodeDataValue. For existing members, the version
+// is read from the data value directly, eliminating the meta key read.
+//   - Existing member: 1 read (data) + 3 writes (data + index + meta)
+//   - New member: 2 reads (data miss + meta) + 3 writes (data + index + meta)
+//
+// The old index key is identified by the version embedded in the data value.
+// The meta key is still written to update Card for new members and maintain
+// backward compatibility.
 func (s *BotreonStore) ZIncrBy(zSetName, member string, increment float64) (float64, error) {
 	var newScore float64
 	err := s.retryUpdate(func(txn *badger.Txn) error {
@@ -1001,14 +1060,15 @@ func (s *BotreonStore) ZIncrBy(zSetName, member string, increment float64) (floa
 
 		dataKey := sortedSetKeyMember(zSetName, member)
 		var currentScore float64
+		var dataVersion uint32
 		memberExists := false
 
-		// 获取当前分数
+		// 获取当前分数和版本
 		item, err := txn.Get(dataKey)
 		if err == nil {
 			memberExists = true
 			err = item.Value(func(val []byte) error {
-				currentScore = decodeScore(val)
+				currentScore, dataVersion = decodeDataValue(val)
 				return nil
 			})
 			if err != nil {
@@ -1021,7 +1081,7 @@ func (s *BotreonStore) ZIncrBy(zSetName, member string, increment float64) (floa
 		// 计算新分数
 		newScore = currentScore + increment
 
-		// 获取元数据
+		// 获取元数据（仅新成员需要读取 Card）
 		metaKey := sortedSetKeyMeta(zSetName)
 		var meta ZSetsMetaValue
 		item, err = txn.Get(metaKey)
@@ -1039,7 +1099,7 @@ func (s *BotreonStore) ZIncrBy(zSetName, member string, increment float64) (floa
 
 		var oldIndexKey []byte
 		if memberExists {
-			oldIndexKey = sortedSetKeyIndex(zSetName, currentScore, member, meta.Version)
+			oldIndexKey = sortedSetKeyIndex(zSetName, currentScore, member, dataVersion)
 		} else {
 			meta.Card++
 		}
@@ -1052,8 +1112,8 @@ func (s *BotreonStore) ZIncrBy(zSetName, member string, increment float64) (floa
 			}
 		}
 
-		// 设置新数据键和索引键
-		if err := txn.Set(dataKey, encodeScore(newScore)); err != nil {
+		// 设置新数据键（包含 score + version）和索引键
+		if err := txn.Set(dataKey, encodeDataValue(newScore, meta.Version)); err != nil {
 			return err
 		}
 		newIndexKey := sortedSetKeyIndex(zSetName, newScore, member, meta.Version)
@@ -1643,7 +1703,7 @@ func (s *BotreonStore) ZMScore(zSetName string, members ...string) ([]float64, e
 				return err
 			}
 			err = item.Value(func(val []byte) error {
-				scores[i] = decodeScore(val)
+				scores[i], _ = decodeDataValue(val)
 				return nil
 			})
 			if err != nil {
@@ -1918,6 +1978,13 @@ func (s *BotreonStore) ZScan(zSetName string, cursor uint64, pattern string, cou
 // If count > 0: returns up to count distinct members (no repeats).
 // If count < 0: returns -count members, allowing repeats.
 // If count == 0: returns 1 random member.
+//
+// Limitation: Currently loads ALL members into memory before sampling.
+// BadgerDB does not support random-access iteration (no skip-list or
+// reservoir sampling at the DB level). For very large sorted sets
+// (>100K members), this causes a memory spike proportional to cardinality.
+// Optimization: implement reservoir sampling with a cursor-based scan
+// to bound memory to O(count) instead of O(N).
 func (s *BotreonStore) ZRandMember(zSetName string, count int) ([]ZSetMember, error) {
 	var members []ZSetMember
 

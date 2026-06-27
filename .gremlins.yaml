@@ -1,0 +1,30 @@
+# Gremlins mutation testing configuration for BoltDB
+# https://github.com/go-gremlins/gremlins
+
+# Mutant types — disable expensive/low-signal categories for this codebase
+arithmetic-base: true
+conditionals-boundary: true
+conditionals-negation: true
+invert-assignments: false     # noisy for retry loops and error paths
+invert-bitwise: false         # rare in this codebase
+invert-loop-conditions: false # often intentional sentinel patterns
+invert-logical: true
+invert-negate-returns: true
+invert-string-literal: false  # mostly constant strings
+invert-negate-conditions: true
+
+# Exclude generated and test-only files
+exclude-files:
+  - ".*_test\\.go$"
+  - ".*_mock\\.go$"
+  - ".*_gen\\.go$"
+  - "internal/proto/"          # protocol constants, not business logic
+
+# Quality gates
+threshold-efficacy: 70.0      # ≥70% of non-trivial mutants must be killed
+threshold-mcover: 50.0        # ≥50% of source must be covered by mutation tests
+
+# Performance
+workers: 4
+test-cpu: 2
+timeout-coefficient: 3        # 3x normal test timeout for mutation runs

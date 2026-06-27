@@ -1171,6 +1171,97 @@ func TestDeterministicConflict_SetNXConcurrent(t *testing.T) {
 	}
 }
 
+// TestConcurrentSET_EventualConsistency verifies that concurrent non-NX SET
+// operations on the same key all succeed (no errors) and the final value is
+// exactly one of the written values — eventual consistency under contention.
+func TestConcurrentSET_EventualConsistency(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "set:consistency"
+	const goroutines = 200
+
+	// Pre-populate
+	if err := s.Set(key, "initial"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+
+	written := make([]string, goroutines)
+	var wg sync.WaitGroup
+	errs := make([]error, goroutines)
+	for i := range goroutines {
+		wg.Add(1)
+		written[i] = fmt.Sprintf("val:%d", i)
+		go func(idx int) {
+			defer wg.Done()
+			errs[idx] = s.Set(key, written[idx])
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d Set: %v", i, err)
+		}
+	}
+
+	val, err := s.Get(key)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if val == "" {
+		t.Fatal("Get: expected non-empty value after concurrent SET")
+	}
+
+	// Verify final value is one of the written values (eventual consistency)
+	found := false
+	for _, w := range written {
+		if val == w {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("final value %q is not one of the written values", val)
+	}
+}
+
+// TestConcurrentSET_DistinctKeys verifies that concurrent SET on distinct keys
+// never cross-contaminate values.
+func TestConcurrentSET_DistinctKeys(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	const keys = 50
+
+	var wg sync.WaitGroup
+	errs := make([]error, keys)
+	for i := range keys {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			errs[idx] = s.Set(fmt.Sprintf("set:distinct:%d", idx), fmt.Sprintf("value:%d", idx))
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d Set: %v", i, err)
+		}
+	}
+
+	// Verify each key has the correct value
+	for i := 0; i < keys; i++ {
+		val, err := s.Get(fmt.Sprintf("set:distinct:%d", i))
+		if err != nil {
+			t.Fatalf("Get key %d: %v", i, err)
+		}
+		want := fmt.Sprintf("value:%d", i)
+		if val != want {
+			t.Errorf("key %d: got %q, want %q", i, val, want)
+		}
+	}
+}
+
 // TestDeterministicConflict_ZUnionStoreWithSourceConflict verifies ZUNIONSTORE
 // stays correct while concurrent ZADD on source keys causes txn conflicts.
 func TestDeterministicConflict_ZUnionStoreWithSourceConflict(t *testing.T) {
@@ -1631,7 +1722,103 @@ func TestDeterministicConflict_JSONArrAppendConcurrent(t *testing.T) {
 	}
 }
 
-// TestDeterministicConflict_INCRBYConcurrent verifies concurrent INCRBY on the
+// TestConcurrentINCR_PreciseCount verifies that N goroutines each calling
+// INCR (not INCRBY) on the same key produce an exact final value of N.
+// This is a stricter variant of TestDeterministicConflict_INCRBYConcurrent
+// using INCR directly and higher concurrency.
+func TestConcurrentINCR_PreciseCount(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	key := "incr:precise:count"
+	const goroutines = 200
+
+	// Start from 0 — INCR returns 1 on first call, so final must be goroutines.
+	for i := 0; i < goroutines; i++ {
+		if err := s.Set(key, "0"); err != nil {
+			t.Fatalf("Set: %v", err)
+		}
+		break // only need one Set
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, goroutines)
+	for i := range goroutines {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, errs[idx] = s.INCR(key)
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d INCR: %v", i, err)
+		}
+	}
+
+	val, err := s.Get(key)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	want := strconv.FormatInt(int64(goroutines), 10)
+	if val != want {
+		t.Errorf("final value: got %q, want %q", val, want)
+	}
+}
+
+// TestConcurrentINCR_MultipleKeys verifies that concurrent INCR on distinct
+// keys never cross-contaminate values.
+func TestConcurrentINCR_MultipleKeys(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	const keys = 10
+	const opsPerKey = 50
+
+	// Initialize all keys to 0
+	for i := 0; i < keys; i++ {
+		key := fmt.Sprintf("incr:multi:%d", i)
+		if err := s.Set(key, "0"); err != nil {
+			t.Fatalf("Set %q: %v", key, err)
+		}
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, keys*opsPerKey)
+	idx := 0
+	for i := 0; i < keys; i++ {
+		key := fmt.Sprintf("incr:multi:%d", i)
+		for j := 0; j < opsPerKey; j++ {
+			wg.Add(1)
+			go func(k string, eidx int) {
+				defer wg.Done()
+				_, errs[eidx] = s.INCR(k)
+			}(key, idx)
+			idx++
+		}
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d: %v", i, err)
+		}
+	}
+
+	for i := 0; i < keys; i++ {
+		key := fmt.Sprintf("incr:multi:%d", i)
+		val, err := s.Get(key)
+		if err != nil {
+			t.Fatalf("Get %q: %v", key, err)
+		}
+		want := strconv.FormatInt(int64(opsPerKey), 10)
+		if val != want {
+			t.Errorf("key %q: got %q, want %q", key, val, want)
+		}
+	}
+}
+
+// TestConcurrentINCRBYConcurrent verifies concurrent INCRBY on the
 // same string key converges to the exact accumulated value.
 func TestDeterministicConflict_INCRBYConcurrent(t *testing.T) {
 	t.Parallel()
