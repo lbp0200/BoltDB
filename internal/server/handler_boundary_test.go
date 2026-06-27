@@ -784,3 +784,118 @@ func TestBoundary_ZRangeByScore_EmptyResult(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, 0, len(arr.Args))
 }
+
+// TestBoundary_SETEX_TTLEdgeCases verifies SETEX behavior at TTL boundaries.
+func TestBoundary_SETEX_TTLEdgeCases(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	tests := []struct {
+		name    string
+		ttl     string
+		wantErr bool
+	}{
+		{"negative_ttl", "-1", true},
+		{"zero_ttl", "0", true},
+		{"min_valid_ttl", "1", false},
+		{"large_ttl", "31536000", false}, // 1 year
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := handler.executeCommand(state, "SETEX",
+				[][]byte{[]byte("setex:" + tt.name), []byte(tt.ttl), []byte("v")},
+				"127.0.0.1:12345")
+			_, isErr := resp.(*proto.Error)
+			if tt.wantErr && !isErr {
+				t.Errorf("SETEX TTL=%s: expected error, got: %v", tt.ttl, resp)
+			}
+			if !tt.wantErr && isErr {
+				t.Errorf("SETEX TTL=%s: unexpected error: %v", tt.ttl, resp)
+			}
+		})
+	}
+}
+
+// TestBoundary_PSETEX_TTLEdgeCases verifies PSETEX behavior at TTL boundaries.
+func TestBoundary_PSETEX_TTLEdgeCases(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	tests := []struct {
+		name    string
+		ttl     string
+		wantErr bool
+	}{
+		{"negative_ms", "-100", true},
+		{"zero_ms", "0", true},
+		{"min_valid_ms", "1", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := handler.executeCommand(state, "PSETEX",
+				[][]byte{[]byte("psetex:" + tt.name), []byte(tt.ttl), []byte("v")},
+				"127.0.0.1:12345")
+			_, isErr := resp.(*proto.Error)
+			if tt.wantErr && !isErr {
+				t.Errorf("PSETEX TTL=%s: expected error, got: %v", tt.ttl, resp)
+			}
+			if !tt.wantErr && isErr {
+				t.Errorf("PSETEX TTL=%s: unexpected error: %v", tt.ttl, resp)
+			}
+		})
+	}
+}
+
+// TestBoundary_RENAME_CrossType verifies RENAME between different key types.
+func TestBoundary_RENAME_CrossType(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// RENAME string → new key
+	handler.executeCommand(state, "SET", [][]byte{[]byte("r:src"), []byte("hello")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(state, "RENAME", [][]byte{[]byte("r:src"), []byte("r:dst")}, "127.0.0.1:12345")
+	_, isErr := resp.(*proto.Error)
+	assert.False(t, isErr)
+
+	// Verify old key is gone
+	getOld := handler.executeCommand(state, "GET", [][]byte{[]byte("r:src")}, "127.0.0.1:12345")
+	switch v := getOld.(type) {
+	case *proto.BulkString:
+		assert.Equal(t, "", string(*v))
+	case *proto.NilArray:
+		// expected
+	default:
+		t.Errorf("GET old key: expected BulkString or NilArray, got %T", getOld)
+	}
+
+	// Verify new key has the value
+	getNew := handler.executeCommand(state, "GET", [][]byte{[]byte("r:dst")}, "127.0.0.1:12345")
+	bs, ok := getNew.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "hello", string(*bs))
+}
+
+// TestBoundary_RENAME_SameKey_PreservesValue verifies RENAME k k doesn't destroy data.
+func TestBoundary_RENAME_SameKey_PreservesValue(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Set a value, rename to itself, verify value unchanged
+	handler.executeCommand(state, "SET", [][]byte{[]byte("preserve"), []byte("secret")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(state, "RENAME", [][]byte{[]byte("preserve"), []byte("preserve")}, "127.0.0.1:12345")
+	_, isErr := resp.(*proto.Error)
+	if isErr {
+		t.Errorf("RENAME same key should not error, got: %v", resp)
+	}
+
+	getResp := handler.executeCommand(state, "GET", [][]byte{[]byte("preserve")}, "127.0.0.1:12345")
+	bs, ok := getResp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "secret", string(*bs))
+}
