@@ -94,6 +94,9 @@ func TestConnectionInterrupt_DuringCommand(t *testing.T) {
 		t.Errorf("goroutine leak after interrupt-during-command: %d (baseline=%d, final=%d)",
 			leak, baseline, final)
 	}
+
+	// Verify server is still functional after interrupt-during-command
+	verifyServerLiveness(t, srv)
 }
 
 // TestConnectionInterrupt_DuringBigResponse disconnects while the server is
@@ -135,6 +138,16 @@ func TestConnectionInterrupt_DuringBigResponse(t *testing.T) {
 		t.Errorf("goroutine leak after big-response interrupt: %d (baseline=%d, final=%d)",
 			leak, baseline, final)
 	}
+
+	// Verify list data is still intact after interrupted reads
+	length, err := srv.Client.LLen(ctx, "biglist").Result()
+	if err != nil {
+		t.Fatalf("LLen after big-response interrupt: %v", err)
+	}
+	if length != 1000 {
+		t.Errorf("LLen after interrupt = %d, want 1000 (data integrity check)", length)
+	}
+	verifyServerLiveness(t, srv)
 }
 
 // TestConnectionInterrupt_GarbageData sends random binary data that doesn't
@@ -163,6 +176,9 @@ func TestConnectionInterrupt_GarbageData(t *testing.T) {
 		t.Errorf("goroutine leak after garbage data: %d (baseline=%d, final=%d)",
 			leak, baseline, final)
 	}
+
+	// Verify server is still functional after garbage data
+	verifyServerLiveness(t, srv)
 }
 
 // TestConnectionInterrupt_PartialRESP sends an incomplete RESP command
@@ -188,6 +204,9 @@ func TestConnectionInterrupt_PartialRESP(t *testing.T) {
 		t.Errorf("goroutine leak after partial RESP: %d (baseline=%d, final=%d)",
 			leak, baseline, final)
 	}
+
+	// Verify server is still functional after partial RESP
+	verifyServerLiveness(t, srv)
 }
 
 // TestConnectionInterrupt_PipelinedCommands sends multiple commands in one
@@ -214,6 +233,9 @@ func TestConnectionInterrupt_PipelinedCommands(t *testing.T) {
 		t.Errorf("goroutine leak after pipelined interrupt: %d (baseline=%d, final=%d)",
 			leak, baseline, final)
 	}
+
+	// Verify server is functional; pipelined SETs may or may not have persisted
+	verifyServerLiveness(t, srv)
 }
 
 // TestConnectionInterrupt_RapidConnectDisconnect performs rapid connect/close
@@ -238,6 +260,9 @@ func TestConnectionInterrupt_RapidConnectDisconnect(t *testing.T) {
 		t.Errorf("goroutine leak after rapid connect/disconnect: %d (baseline=%d, final=%d)",
 			leak, baseline, final)
 	}
+
+	// Verify server is functional after rapid connect/disconnect
+	verifyServerLiveness(t, srv)
 }
 
 // TestConnectionInterrupt_ServerSurvivesAndServesNewClients verifies that after
@@ -342,6 +367,9 @@ func TestConnectionInterrupt_ConcurrentInterrupts(t *testing.T) {
 		t.Errorf("goroutine leak after concurrent interrupts: %d (baseline=%d, final=%d)",
 			leak, baseline, final)
 	}
+
+	// Verify server is functional after concurrent interrupts
+	verifyServerLiveness(t, srv)
 }
 
 // TestConnectionInterrupt_EmptyConnection opens a connection and immediately
@@ -366,6 +394,9 @@ func TestConnectionInterrupt_EmptyConnection(t *testing.T) {
 		t.Errorf("goroutine leak after empty connections: %d (baseline=%d, final=%d)",
 			leak, baseline, final)
 	}
+
+	// Verify server is functional after empty connections
+	verifyServerLiveness(t, srv)
 }
 
 // TestConnectionInterrupt_BlankLineThenClose sends just \r\n (empty RESP line)
@@ -389,6 +420,9 @@ func TestConnectionInterrupt_BlankLineThenClose(t *testing.T) {
 		t.Errorf("goroutine leak after blank lines: %d (baseline=%d, final=%d)",
 			leak, baseline, final)
 	}
+
+	// Verify server is functional after blank lines
+	verifyServerLiveness(t, srv)
 }
 
 // TestConnectionInterrupt_MultipleCmdThenClose sends multiple valid commands
@@ -466,12 +500,23 @@ func TestConnectionInterrupt_SlowReadDuringResponse(t *testing.T) {
 		t.Errorf("goroutine leak after slow read: %d (baseline=%d, final=%d)",
 			leak, baseline, final)
 	}
+
+	// Verify list data is still intact after slow-read interruption
+	length, err := srv.Client.LLen(ctx, "slowlist").Result()
+	if err != nil {
+		t.Fatalf("LLen after slow read: %v", err)
+	}
+	if length != 500 {
+		t.Errorf("LLen after slow read = %d, want 500 (data integrity check)", length)
+	}
+	verifyServerLiveness(t, srv)
 }
 
 // TestConnectionInterrupt_MassiveConcurrentStress combines many goroutines
 // doing connect → SET → close in parallel to stress the server.
 func TestConnectionInterrupt_MassiveConcurrentStress(t *testing.T) {
 	srv := StartIsolatedServer(t)
+	ctx := context.Background()
 	baseline := baselineGoroutines(t)
 
 	const goroutines = 100
@@ -506,10 +551,13 @@ func TestConnectionInterrupt_MassiveConcurrentStress(t *testing.T) {
 			leak, baseline, final)
 	}
 
-	// Verify server still alive
-	pingCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := srv.Client.Ping(pingCtx).Err(); err != nil {
-		t.Fatalf("server dead after stress: %v", err)
+	// Verify server is functional and data persisted after massive stress
+	val, err := srv.Client.Get(ctx, "stress").Result()
+	if err != nil {
+		t.Fatalf("GET stress key after massive stress: %v", err)
 	}
+	if val != "val" {
+		t.Errorf("stress key = %q, want %q", val, "val")
+	}
+	verifyServerLiveness(t, srv)
 }

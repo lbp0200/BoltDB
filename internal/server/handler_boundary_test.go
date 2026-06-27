@@ -19,6 +19,8 @@ func TestBoundary_EmptyCommandName(t *testing.T) {
 	resp := handler.executeCommand(state, "", nil, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
+	// Empty command dispatched as unknown command by executeCommand
+	// (the RESP parser path returns "ERR no command" at handler_core.go:499)
 	assert.True(t, strings.Contains(string(*errResp), "ERR"))
 }
 
@@ -31,7 +33,7 @@ func TestBoundary_UnknownCommand(t *testing.T) {
 	resp := handler.executeCommand(state, "NONEXISTENT_CMD", [][]byte{[]byte("arg")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
-	assert.True(t, strings.Contains(string(*errResp), "ERR"))
+	assert.True(t, strings.Contains(string(*errResp), "ERR unknown command"))
 }
 
 // TestBoundary_INCR_NonExistentKey verifies INCR on a nonexistent key starts from 0.
@@ -205,7 +207,7 @@ func TestBoundary_ZADD_InvalidScore(t *testing.T) {
 	resp := handler.executeCommand(state, "ZADD", [][]byte{[]byte("myzset"), []byte("not_a_number"), []byte("member1")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
-	assert.True(t, strings.Contains(string(*errResp), "ERR"))
+	assert.True(t, strings.Contains(string(*errResp), "ERR value is not a valid float"))
 }
 
 // TestBoundary_ZADD_EmptyKey verifies ZADD with empty key succeeds.
@@ -516,7 +518,7 @@ func TestBoundary_INCRBY_NonIntegerArg(t *testing.T) {
 	resp := handler.executeCommand(state, "INCRBY", [][]byte{[]byte("k"), []byte("abc")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
-	assert.True(t, strings.Contains(string(*errResp), "ERR"))
+	assert.True(t, strings.Contains(string(*errResp), "ERR value is not an integer or out of range"))
 }
 
 // TestBoundary_INCRBY_WrongType verifies INCRBY on a hash key returns WRONGTYPE.
@@ -553,10 +555,13 @@ func TestBoundary_RENAME_SameKey(t *testing.T) {
 
 	handler.executeCommand(state, "SET", [][]byte{[]byte("k"), []byte("v")}, "127.0.0.1:12345")
 
-	// RENAME to the same key should be OK in Redis
 	resp := handler.executeCommand(state, "RENAME", [][]byte{[]byte("k"), []byte("k")}, "127.0.0.1:12345")
-	// Either OK or error is acceptable, just shouldn't panic
-	_ = resp
+	// Redis accepts RENAME to the same key (returns +OK)
+	ss, ok := resp.(*proto.SimpleString)
+	if !ok {
+		t.Fatalf("RENAME same key should return +OK, got: %v", resp)
+	}
+	assert.Equal(t, "OK", string(*ss))
 }
 
 // TestBoundary_RENAME_NonExistentKey verifies RENAME on nonexistent key returns error.
@@ -568,7 +573,7 @@ func TestBoundary_RENAME_NonExistentKey(t *testing.T) {
 	resp := handler.executeCommand(state, "RENAME", [][]byte{[]byte("ghost"), []byte("new")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
-	assert.True(t, strings.Contains(string(*errResp), "ERR"))
+	assert.True(t, strings.Contains(string(*errResp), "ERR no such key"))
 }
 
 // TestBoundary_PING_WithArg verifies PING returns PONG even with an argument.
@@ -623,7 +628,7 @@ func TestBoundary_INCRBYFLOAT_NonFloatArg(t *testing.T) {
 	resp := handler.executeCommand(state, "INCRBYFLOAT", [][]byte{[]byte("k"), []byte("not_a_float")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
-	assert.True(t, strings.Contains(string(*errResp), "ERR"))
+	assert.True(t, strings.Contains(string(*errResp), "ERR value is not a valid float"))
 }
 
 // TestBoundary_Expire_NonExistentKey verifies EXPIRE on nonexistent key returns 0.
@@ -648,7 +653,7 @@ func TestBoundary_SET_InvalidExpiry(t *testing.T) {
 	resp := handler.executeCommand(state, "SET", [][]byte{[]byte("k"), []byte("v"), []byte("EX"), []byte("abc")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
-	assert.True(t, strings.Contains(string(*errResp), "ERR"))
+	assert.True(t, strings.Contains(string(*errResp), "ERR value is not an integer or out of range"))
 }
 
 // TestBoundary_ZRANGE_EmptySet verifies ZRANGE on empty sorted set returns empty array.
@@ -736,11 +741,11 @@ func TestBoundary_SetEX_ZeroTTL(t *testing.T) {
 
 	resp := handler.executeCommand(state, "SETEX", [][]byte{[]byte("k"), []byte("0"), []byte("v")}, "127.0.0.1:12345")
 	// Redis rejects TTL <= 0 for SETEX
-	_, isErr := resp.(*proto.Error)
+	errResp, isErr := resp.(*proto.Error)
 	if !isErr {
-		// Some implementations may accept 0 — verify value is not persisted with 0 TTL
-		_ = resp
+		t.Fatalf("SETEX with TTL=0 should return error, got: %v", resp)
 	}
+	assert.True(t, strings.Contains(string(*errResp), "ERR invalid expire time"))
 }
 
 // TestBoundary_IncrBy_ManyGoroutines verifies INCRBY with large increments.

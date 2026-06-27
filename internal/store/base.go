@@ -644,6 +644,10 @@ func (s *BotreonStore) checkTypeBeforeOp(key string, expectedType string) error 
 
 // RENAME 实现 Redis RENAME 命令，重命名键
 func (s *BotreonStore) Rename(key, newKey string) error {
+	// Redis compatibility: RENAME with same source and dest is a no-op (+OK)
+	if key == newKey {
+		return nil
+	}
 	// 清除读缓存
 	if s.readCache != nil {
 		s.readCache.Delete(key)

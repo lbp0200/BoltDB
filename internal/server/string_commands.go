@@ -374,6 +374,10 @@ func (h *Handler) handleSETEX(state *connState, args [][]byte, remoteAddr string
 	if err != nil {
 		return proto.NewError("ERR invalid integer")
 	}
+	// Redis compatibility: SETEX rejects TTL <= 0
+	if seconds <= 0 {
+		return proto.NewError("ERR invalid expire time in 'setex' command")
+	}
 	h.markDirtyKeys(state, key)
 	if err := h.Db.SetEX(key, value, seconds); err != nil {
 		return wrapStoreError(err)
@@ -390,6 +394,10 @@ func (h *Handler) handlePSETEX(state *connState, args [][]byte, remoteAddr strin
 	milliseconds, err := strconv.ParseInt(string(args[1]), 10, 64)
 	if err != nil {
 		return proto.NewError("ERR invalid integer")
+	}
+	// Redis compatibility: PSETEX rejects TTL <= 0
+	if milliseconds <= 0 {
+		return proto.NewError("ERR invalid expire time in 'psetex' command")
 	}
 	h.markDirtyKeys(state, key)
 	if err := h.Db.PSETEX(key, value, milliseconds); err != nil {

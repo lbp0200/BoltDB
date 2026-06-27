@@ -151,6 +151,9 @@ func TestDeterministicConflict_RetryExhaustion(t *testing.T) {
 	// This should fail because maxRetries is low and conflict is continuous
 	err := deterministicConflictWrite(s, key, 1)
 	if err == nil {
+		// Under heavy concurrent writes with maxRetries=1, the retry should
+		// almost always exhaust. If it succeeds, it means no conflict occurred
+		// during the brief window — acceptable but worth noting.
 		t.Log("note: retry succeeded despite low maxRetries (conflict probability depends on timing)")
 	}
 }
@@ -293,8 +296,8 @@ func TestDeterministicConflict_LRemWithSourceConflict(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LLen: %v", err)
 	}
-	if length < 4 {
-		t.Errorf("LLen: got %d, want at least 4", length)
+	if length != 8 {
+		t.Errorf("LLen: got %d, want 8 (6 initial - 2 removed + 4 pushed)", length)
 	}
 }
 
@@ -322,12 +325,18 @@ func TestDeterministicConflict_HSetSameField(t *testing.T) {
 		}
 	}
 
-	// Verify HGet returns the last set value
+	// Verify HGet returns the last set value (must be a valid integer in [0, goroutines-1])
 	val, err := s.HGet("hash:conflict", "field")
 	if err != nil {
 		t.Fatalf("HGet: %v", err)
 	}
-	t.Logf("final HGet value: %s (expected one of 0..%d)", val, goroutines-1)
+	valInt, convErr := strconv.Atoi(string(val))
+	if convErr != nil {
+		t.Fatalf("HGet returned non-integer %q: %v", val, convErr)
+	}
+	if valInt < 0 || valInt >= goroutines {
+		t.Errorf("HGet value %d out of range [0, %d)", valInt, goroutines)
+	}
 }
 
 // TestDeterministicConflict_SPopConcurrent verifies that concurrent SPop calls
@@ -1323,7 +1332,7 @@ func TestDeterministicConflict_ZUnionStoreWithSourceConflict(t *testing.T) {
 		t.Fatalf("ZCard: %v", err)
 	}
 	if card < 3 {
-		t.Errorf("ZCard: got %d, want at least 3", card)
+		t.Errorf("ZCard: got %d, want at least 3 (union of {a,b} ∪ {b,c} + concurrent adds)", card)
 	}
 }
 
@@ -1461,7 +1470,7 @@ func TestDeterministicConflict_ZDiffStoreWithSourceConflict(t *testing.T) {
 		t.Fatalf("ZCard: %v", err)
 	}
 	if card < 2 {
-		t.Errorf("ZCard: got %d, want at least 2", card)
+		t.Errorf("ZCard: got %d, want at least 2 ({a,b,c} − {b,d} = {a,c} + concurrent adds)", card)
 	}
 }
 
@@ -1518,7 +1527,7 @@ func TestDeterministicConflict_GeoSearchStoreWithSourceConflict(t *testing.T) {
 		t.Fatalf("ZCard: %v", err)
 	}
 	if card < 1 {
-		t.Errorf("ZCard: got %d, want at least 1", card)
+		t.Errorf("ZCard: got %d, want at least 1 (within 500km + concurrent adds)", card)
 	}
 }
 
@@ -2124,7 +2133,7 @@ func TestDeterministicConflict_LPushXWithSourceConflict(t *testing.T) {
 		t.Fatalf("LPUSHX: %v", pushErr)
 	}
 	if length < 2 {
-		t.Errorf("LPUSHX length: got %d, want at least 2", length)
+		t.Errorf("LPUSHX length: got %d, want at least 2 (1 initial + 1 LPUSHX push + concurrent adds)", length)
 	}
 
 	listLen, err := s.LLen(key)
@@ -2190,6 +2199,7 @@ func TestDeterministicConflict_ZRevRankConcurrent(t *testing.T) {
 
 	var wg sync.WaitGroup
 	errs := make([]error, goroutines*2) // half ZAdd, half ZRevRank
+	ranks := make([]int64, goroutines)   // capture ZRevRank results
 
 	// 先添加初始成员
 	members := make([]ZSetMember, 10)
@@ -2211,7 +2221,8 @@ func TestDeterministicConflict_ZRevRankConcurrent(t *testing.T) {
 		// ZRevRank goroutine
 		go func(idx int) {
 			defer wg.Done()
-			_, err := s.ZRevRank(key, fmt.Sprintf("m%d", idx%10))
+			rank, err := s.ZRevRank(key, fmt.Sprintf("m%d", idx%10))
+			ranks[idx] = rank
 			errs[goroutines+idx] = err
 		}(i)
 	}
@@ -2220,6 +2231,12 @@ func TestDeterministicConflict_ZRevRankConcurrent(t *testing.T) {
 	for i, err := range errs {
 		if err != nil {
 			t.Errorf("goroutine %d: %v", i, err)
+		}
+	}
+	// All returned ranks must be valid: either -1 (not found) or >= 0
+	for i, rank := range ranks {
+		if rank < -1 {
+			t.Errorf("goroutine %d ZRevRank: got %d, want >= -1", i, rank)
 		}
 	}
 
