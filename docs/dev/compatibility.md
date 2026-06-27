@@ -8,9 +8,9 @@ All items below have been verified via automated compatibility test suites
 
 | Command | Issue | Fix | Since |
 |---------|-------|-----|-------|
-| `RENAME k k` | Destructive: deleted source then failed to copy | Added early return for `key == newKey` (no-op, returns +OK) | Current |
-| `SETEX k 0 v` | Accepted TTL=0 and stored value | Added `seconds <= 0` validation → `ERR invalid expire time` | Current |
-| `PSETEX k 0 v` | Accepted TTL=0 and stored value | Added `milliseconds <= 0` validation → `ERR invalid expire time` | Current |
+| `RENAME k k` | Destructive: deleted source then failed to copy | Added early return for `key == newKey` (no-op, returns +OK) | `TestBoundary_RENAME_SameKey`, `TestBoundary_RENAME_SameKey_PreservesValue` |
+| `SETEX k 0 v` | Accepted TTL=0 and stored value | Added `seconds <= 0` validation → `ERR invalid expire time` | `TestBoundary_SetEX_ZeroTTL`, `TestBoundary_SETEX_TTLEdgeCases` |
+| `PSETEX k 0 v` | Accepted TTL=0 and stored value | Added `milliseconds <= 0` validation → `ERR invalid expire time` | `TestBoundary_PSETEX_TTLEdgeCases` |
 
 ## Known Deviations (by design)
 
