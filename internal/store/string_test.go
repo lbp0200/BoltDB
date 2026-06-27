@@ -470,10 +470,12 @@ func TestSetBit(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 0, oldBit) // 新位，旧值是0
 
-	// 验证扩展
+	// 验证扩展 — bit 10 = byte 1, offset 2 from MSB (big-endian) = 0x20
 	value, err = store.Get("key2")
 	assert.NoError(t, err)
-	assert.True(t, len(value) >= 2) // 至少2字节
+	assert.Equal(t, 2, len(value)) // 恰好 2 字节
+	assert.Equal(t, byte(0x00), value[0])
+	assert.Equal(t, byte(0x20), value[1]) // byte 1 bit 2 from MSB
 }
 
 // TestBitCount 测试 BITCOUNT 命令
@@ -615,9 +617,9 @@ func TestBitLen(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 16, length) // 2 bytes = 16 bits
 
-	// Test non-existent key (might return 0 or error depending on implementation)
+	// Test non-existent key (should return 0)
 	length, _ = store.BitLen("nonexistent")
-	_ = length // just ensure it doesn't panic
+	assert.Equal(t, 0, length)
 }
 
 // TestBitFieldDebug 测试 BITFIELD 调试
@@ -690,22 +692,31 @@ func TestBitField(t *testing.T) {
 	t.Parallel()
 	store := setupTestStore(t)
 
-	// Test GET operation on non-existent key
+	// Test GET operation on non-existent key — should return 0
 	result, err := store.BitField("key", []string{"GET", "u8", "0"})
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(result))
+	got, ok := result[0].(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), got)
 
-	// Test SET operation
+	// Test SET operation — returns old value (0 for new key)
 	result, err = store.BitField("key", []string{"SET", "u8", "0", "255"})
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(result))
+	got, ok = result[0].(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), got)
 
-	// Verify the SET worked by GET
+	// Verify the SET worked by GET — should return 255
 	result, err = store.BitField("key", []string{"GET", "u8", "0"})
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(result))
+	got, ok = result[0].(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(255), got)
 
-	// Test INCRBY operation
+	// Test INCRBY operation — 255 + 1 wraps around for u8
 	result, err = store.BitField("key", []string{"INCRBY", "u8", "0", "1"})
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(result))
@@ -713,15 +724,28 @@ func TestBitField(t *testing.T) {
 	// Test with signed integers
 	result, err = store.BitField("signed", []string{"SET", "i8", "0", "127"})
 	assert.NoError(t, err)
+	got, ok = result[0].(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), got)
 
 	result, err = store.BitField("signed", []string{"GET", "i8", "0"})
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(result))
+	got, ok = result[0].(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(127), got)
 
-	// Test multiple operations
-	result, err = store.BitField("multi", []string{"SET", "u8", "0", "10", "GET", "u8", "1"})
+	// Test multiple operations — SET returns old, GET returns current
+	result, err = store.BitField("multi", []string{"SET", "u8", "0", "10", "GET", "u8", "0"})
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(result))
+	// First result: old value of byte 0 (0 for new key)
+	gotOld, ok := result[0].(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), gotOld)
+	// Second result: current value after SET (10)
+	gotNew, ok := result[1].(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(10), gotNew)
 }
 
 // TestBitFieldOverflow 测试 BITFIELD 溢出情况
@@ -733,11 +757,14 @@ func TestBitFieldOverflow(t *testing.T) {
 	err := store.Set("key16", "ab")
 	assert.NoError(t, err)
 
-	// GET beyond the string length
+	// GET u16 at bit offset 8 — reads bits 8-23 (byte 1 value + beyond)
+	// "ab" = 0x61 0x62, so byte 1 = 0x62 = 98
 	result, err := store.BitField("key16", []string{"GET", "u16", "8"})
 	assert.NoError(t, err)
-	// Should return 0 for bits beyond the string
-	_ = result
+	assert.Equal(t, 1, len(result))
+	got, ok := result[0].(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(98), got) // byte 1 = 'b' = 0x62 = 98
 }
 
 // TestSetWrongType tests that SET returns ErrWrongType when key exists with different type

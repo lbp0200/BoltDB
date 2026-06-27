@@ -49,7 +49,7 @@ func TestHGet(t *testing.T) {
 	// 获取存在的字段
 	val, err := store.HGet(key, "name")
 	assert.NoError(t, err)
-	assert.NotNil(t, val)
+	assert.Equal(t, []byte("Alice"), val)
 
 	// 获取不存在的字段
 	val, err = store.HGet(key, "nonexistent")
@@ -135,9 +135,9 @@ func TestHGetAll(t *testing.T) {
 	data, err = store.HGetAll(key)
 	assert.NoError(t, err)
 	assert.Equal(t, 3, len(data))
-	assert.NotNil(t, data["name"])
-	assert.NotNil(t, data["age"])
-	assert.NotNil(t, data["city"])
+	assert.Equal(t, []byte("Alice"), data["name"])
+	assert.Equal(t, []byte("30"), data["age"])
+	assert.Equal(t, []byte("Beijing"), data["city"])
 }
 
 func TestHExists(t *testing.T) {
@@ -245,10 +245,10 @@ func TestHMSet(t *testing.T) {
 
 	// 验证字段值
 	name, _ := store.HGet(key, "name")
-	assert.NotNil(t, name)
+	assert.Equal(t, []byte("Alice"), name)
 
 	age, _ := store.HGet(key, "age")
-	assert.NotNil(t, age)
+	assert.Equal(t, []byte("30"), age)
 
 	// 更新现有字段
 	fieldValues2 := map[string]interface{}{
@@ -257,6 +257,12 @@ func TestHMSet(t *testing.T) {
 	}
 	err = store.HMSet(key, fieldValues2)
 	assert.NoError(t, err)
+
+	// 验证更新后的字段值
+	age, _ = store.HGet(key, "age")
+	assert.Equal(t, []byte("31"), age)
+	city, _ := store.HGet(key, "city")
+	assert.Equal(t, []byte("Shanghai"), city)
 
 	// 验证字段数量不变
 	count, _ = store.HLen(key)
@@ -277,16 +283,16 @@ func TestHMGet(t *testing.T) {
 	values, err := store.HMGet(key, "name", "age")
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(values))
-	assert.NotNil(t, values[0])
-	assert.NotNil(t, values[1])
+	assert.Equal(t, []byte("Alice"), values[0])
+	assert.Equal(t, []byte("30"), values[1])
 
 	// 批量获取混合字段（存在和不存在）
 	values, err = store.HMGet(key, "name", "nonexistent", "age")
 	assert.NoError(t, err)
 	assert.Equal(t, 3, len(values))
-	assert.NotNil(t, values[0])
+	assert.Equal(t, []byte("Alice"), values[0])
 	assert.Nil(t, values[1]) // 不存在的字段返回nil
-	assert.NotNil(t, values[2])
+	assert.Equal(t, []byte("30"), values[2])
 }
 
 func TestHSetNX(t *testing.T) {
@@ -311,7 +317,7 @@ func TestHSetNX(t *testing.T) {
 
 	// 验证字段值未改变
 	val, _ := store.HGet(key, "name")
-	assert.NotNil(t, val)
+	assert.Equal(t, []byte("Alice"), val)
 
 	// 设置另一个不存在的字段
 	success, err = store.HSetNX(key, "age", 30)
@@ -342,7 +348,7 @@ func TestHIncrBy(t *testing.T) {
 
 	// 验证字段值
 	val, _ := store.HGet(key, "count")
-	assert.NotNil(t, val)
+	assert.Equal(t, []byte("6"), val)
 
 	// 对已存在的非整数字段增加（应该失败）
 	store.HSet(key, "name", "Alice")
@@ -373,7 +379,7 @@ func TestHIncrByFloat(t *testing.T) {
 
 	// 验证字段值
 	val, _ := store.HGet(key, "score")
-	assert.NotNil(t, val)
+	assert.Equal(t, []byte("3"), val)
 
 	// 对已存在的非浮点数字段增加（应该失败）
 	store.HSet(key, "name", "Alice")
@@ -404,7 +410,7 @@ func TestHStrLen(t *testing.T) {
 
 	length, err = store.HStrLen(key, "age")
 	assert.NoError(t, err)
-	assert.True(t, length > 0) // 数字转换为字符串后的长度
+	assert.Equal(t, 2, length) // "30" 的长度
 
 	length, err = store.HStrLen(key, "empty")
 	assert.NoError(t, err)
@@ -428,7 +434,7 @@ func TestHashEdgeCases(t *testing.T) {
 	store.HSet("special", "field:with:colons", "value1")
 	store.HSet("special", "field with spaces", "value2")
 	val, _ := store.HGet("special", "field:with:colons")
-	assert.NotNil(t, val)
+	assert.Equal(t, []byte("value1"), val)
 
 	// 测试空值
 	store.HSet("empty", "field", "")
@@ -466,9 +472,9 @@ func TestHashOperations(t *testing.T) {
 	// 使用HMGet批量获取
 	values, _ := store.HMGet(key, "name", "age", "city")
 	assert.Equal(t, 3, len(values))
-	assert.NotNil(t, values[0])
-	assert.NotNil(t, values[1])
-	assert.NotNil(t, values[2])
+	assert.Equal(t, []byte("Alice"), values[0])
+	assert.Equal(t, []byte("31"), values[1])
+	assert.Equal(t, []byte("Beijing"), values[2])
 
 	// 使用HKeys获取所有字段名
 	fields, _ := store.HKeys(key)
@@ -517,7 +523,7 @@ func TestHRandField(t *testing.T) {
 	fields, _, err = store.HRandField("myhash", 10, false)
 	assert.NoError(t, err)
 	// Should return all 3 fields (or more depending on implementation)
-	assert.True(t, len(fields) >= 3)
+	assert.Equal(t, 3, len(fields)) // count > size 时应返回全部字段
 }
 
 // TestHGetAllFields tests the hGetAllFields helper

@@ -320,15 +320,19 @@ func TestZRange(t *testing.T) {
 	assert.Equal(t, "member3", members[1].Member)
 	assert.Equal(t, "member1", members[2].Member) // 最高分数
 
-	// 获取范围
+	// 获取范围 [0,1] 应包含最低的两个分数成员
 	members, err = store.ZRange(zSetName, 0, 1)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(members))
+	assert.Equal(t, "member2", members[0].Member) // score -2.0
+	assert.Equal(t, "member3", members[1].Member) // score  0.0
 
-	// 负索引
+	// 负索引 [-2,-1] 应包含最高的两个分数成员
 	members, err = store.ZRange(zSetName, -2, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(members))
+	assert.Equal(t, "member3", members[0].Member) // score  0.0
+	assert.Equal(t, "member1", members[1].Member) // score  1.5
 }
 
 func TestZRevRange(t *testing.T) {
@@ -463,6 +467,8 @@ func TestZRemRangeByRank(t *testing.T) {
 
 	members, _ := store.ZRange(zSetName, 0, -1)
 	assert.Equal(t, 2, len(members))
+	assert.Equal(t, "member1", members[0].Member) // score 1.0
+	assert.Equal(t, "member4", members[1].Member) // score 4.0
 }
 
 func TestZRemRangeByScore(t *testing.T) {
@@ -487,6 +493,11 @@ func TestZRemRangeByScore(t *testing.T) {
 	// 验证剩余成员
 	card, _ := store.ZCard(zSetName)
 	assert.Equal(t, int64(2), card)
+
+	members, _ := store.ZRange(zSetName, 0, -1)
+	assert.Equal(t, 2, len(members))
+	assert.Equal(t, "member1", members[0].Member) // score 1.0
+	assert.Equal(t, "member4", members[1].Member) // score 4.0
 }
 
 func TestZPopMax(t *testing.T) {
@@ -642,22 +653,29 @@ func TestSortedSetOperations(t *testing.T) {
 
 	// 获取排名
 	rank, _ := store.ZRank(zSetName, "member1")
-	assert.True(t, rank >= 0)
+	assert.Equal(t, int64(1), rank)
 
 	// 获取反向排名
 	revRank, _ := store.ZRevRank(zSetName, "member1")
-	assert.True(t, revRank >= 0)
+	assert.Equal(t, int64(1), revRank)
 
 	// 范围查询
 	members, _ := store.ZRange(zSetName, 0, -1)
-	assert.Equal(t, 3, len(members))
+	// 验证排序正确
+	assert.Equal(t, "member2", members[0].Member) // score 2.0
+	assert.Equal(t, "member1", members[1].Member) // score 2.5 (incremented from 1.0)
+	assert.Equal(t, "member3", members[2].Member) // score 3.0
 
-	// 分数范围查询
+	// 分数范围查询：[1.0, 3.0] 应包含所有三个成员（member1 从 1.0 升到 2.5）
 	scoreMembers, _ := store.ZRangeByScore(zSetName, 1.0, 3.0, 0, 0, false, false)
-	assert.True(t, len(scoreMembers) > 0)
+	assert.Equal(t, 3, len(scoreMembers))
+	assert.Equal(t, "member2", scoreMembers[0].Member)
+	assert.Equal(t, "member1", scoreMembers[1].Member)
+	assert.Equal(t, "member3", scoreMembers[2].Member)
 
 	// 删除成员
-	_, _ = store.ZRem(zSetName, "member2")
+	_, err := store.ZRem(zSetName, "member2")
+	assert.NoError(t, err)
 	card, _ := store.ZCard(zSetName)
 	assert.Equal(t, int64(2), card)
 }
@@ -901,7 +919,7 @@ func TestBZPopMax(t *testing.T) {
 
 	// Verify element was removed
 	count, _ := store.ZCard("zset")
-	assert.Equal(t, uint64(2), count)
+	assert.Equal(t, int64(2), count)
 }
 
 // TestBZPopMin 测试 BZPOPMIN 命令
@@ -925,7 +943,7 @@ func TestBZPopMin(t *testing.T) {
 
 	// Verify element was removed
 	count, _ := store.ZCard("zset")
-	assert.Equal(t, uint64(2), count)
+	assert.Equal(t, int64(2), count)
 }
 
 // TestZScan 测试 ZSCAN 命令
@@ -940,15 +958,24 @@ func TestZScan(t *testing.T) {
 		})
 	}
 
-	// Test ZScan
-	result, err := store.ZScan("zset", 0, "*member1*", 10)
+	// Test ZScan with pattern match — members are "membera", "memberb", etc.
+	result, err := store.ZScan("zset", 0, "*membera*", 10)
 	assert.NoError(t, err)
-	_ = result
+	assert.True(t, len(result.Members) > 0)
+	// Verify matched result contains expected member
+	found := false
+	for _, m := range result.Members {
+		if m.Member == "membera" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found)
 
 	// Test with non-existent key
 	result, err = store.ZScan("nonexistent", 0, "*", 10)
 	assert.NoError(t, err)
-	_ = result
+	assert.Equal(t, 0, len(result.Members))
 }
 
 func TestRegisterAndRecheckZMax_NoData(t *testing.T) {

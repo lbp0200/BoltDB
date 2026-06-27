@@ -152,7 +152,7 @@ func TestGeoRadius(t *testing.T) {
 	// Search by radius
 	results, err := store.GeoRadius("mygeo", 2.3521, 48.8566, 500, "km", 10, false, false, false)
 	assert.NoError(t, err)
-	assert.True(t, len(results) > 0)
+	assert.Equal(t, 2, len(results)) // Paris + London within 500km
 }
 
 // TestGeoMembers tests GeoMembers function
@@ -207,5 +207,5 @@ func TestGeoRadiusByMember(t *testing.T) {
 	// Search by member radius
 	results, err := store.GeoRadiusByMember("mygeo", "Paris", 500, "km", 10, false, false, false)
 	assert.NoError(t, err)
-	assert.True(t, len(results) > 0)
+	assert.Equal(t, 2, len(results)) // Paris + London within 500km
 }

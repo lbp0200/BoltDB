@@ -155,7 +155,7 @@ func TestSentinel_GetRunID(t *testing.T) {
 	defer sentinel.Stop()
 
 	runID := sentinel.GetRunID()
-	assert.True(t, len(runID) > 0)
+	assert.Equal(t, 40, len(runID)) // 20 random bytes → 40 hex chars
 }
 
 // TestSentinel_GetConfigEpoch tests GetConfigEpoch

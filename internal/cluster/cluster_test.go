@@ -185,7 +185,7 @@ func TestClusterCommands(t *testing.T) {
 	assert.NoError(t, err)
 	slotsArr, ok := slots.([][]interface{})
 	assert.True(t, ok)
-	assert.True(t, len(slotsArr) > 0)
+	assert.Equal(t, 1, len(slotsArr)) // 1 merged slot range (0-16383)
 }
 
 func TestClusterMeet(t *testing.T) {
@@ -200,7 +200,7 @@ func TestClusterMeet(t *testing.T) {
 	assert.Equal(t, "OK", result)
 
 	// 验证节点已添加
-	assert.True(t, len(cluster.Nodes) > 1)
+	assert.Equal(t, 2, len(cluster.Nodes)) // myself + meet target
 }
 
 func TestClusterAddSlots(t *testing.T) {
@@ -416,7 +416,7 @@ func TestHandleReplicate(t *testing.T) {
 
 	// Verify this node is now a slave
 	myself := cluster.GetMyself()
-	assert.True(t, len(myself.Flags) > 0)
+	assert.Equal(t, 2, len(myself.Flags)) // "slave" + "myself"
 	assert.Equal(t, "slave", myself.Flags[0])
 
 	// Test CLUSTER REPLICATE with unknown node
@@ -605,7 +605,7 @@ func TestHandleCalls(t *testing.T) {
 	calls, ok := result.([]interface{})
 	assert.True(t, ok)
 	// Should have at least myself in the result
-	assert.True(t, len(calls) >= 4) // at least one node with 4 fields
+	assert.Equal(t, 4, len(calls)) // 1 node × 4 fields (ID, CommandsProcessed, NetInputBytes, NetOutputBytes)
 }
 
 func TestHandleTotalKeys(t *testing.T) {

@@ -278,7 +278,7 @@ func TestZScan(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, 2, len(arr)) // [cursor, [members...]]
 	cursor, _ := arr[0].(int64)
-	assert.True(t, cursor >= 0)
+	assert.Equal(t, int64(0), cursor)
 
 	members, ok := arr[1].([]interface{})
 	assert.True(t, ok)

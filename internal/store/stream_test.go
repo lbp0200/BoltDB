@@ -301,7 +301,8 @@ func TestStreamXReadGroupBlockingTimeout(t *testing.T) {
 	t.Parallel()
 	store := setupTestStore(t)
 
-	_ = store.XGroupCreate("mystream", "mygroup", "0")
+	err := store.XGroupCreate("mystream", "mygroup", "0")
+	assert.NoError(t, err)
 
 	result, err := store.XReadGroup(context.Background(), "mygroup", "consumer1", 10, 100, "mystream", ">")
 	assert.NoError(t, err)
@@ -314,15 +315,18 @@ func TestStreamXReadGroup(t *testing.T) {
 	store := setupTestStore(t)
 
 	// Add entries
-	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+	id, err := store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+	assert.NoError(t, err)
+	assert.Equal(t, "1000000000000-0", id)
 
 	// Create group
-	_ = store.XGroupCreate("mystream", "mygroup", "0")
+	err = store.XGroupCreate("mystream", "mygroup", "0")
+	assert.NoError(t, err)
 
 	// Read from group
 	results, err := store.XReadGroup(nil, "mygroup", "myconsumer", 10, 0, "mystream", ">")
 	assert.NoError(t, err)
-	assert.True(t, len(results) >= 0)
+	assert.Equal(t, 1, len(results))
 }
 
 // TestStreamXPending tests XPending function
@@ -331,18 +335,22 @@ func TestStreamXPending(t *testing.T) {
 	store := setupTestStore(t)
 
 	// Add entries
-	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+	id, err := store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+	assert.NoError(t, err)
+	assert.Equal(t, "1000000000000-0", id)
 
 	// Create group
-	_ = store.XGroupCreate("mystream", "mygroup", "0")
+	err = store.XGroupCreate("mystream", "mygroup", "0")
+	assert.NoError(t, err)
 
 	// Read from group (this will create pending entries)
-	_, _ = store.XReadGroup(nil, "mygroup", "myconsumer", 10, 0, "mystream", ">")
+	_, err = store.XReadGroup(nil, "mygroup", "myconsumer", 10, 0, "mystream", ">")
+	assert.NoError(t, err)
 
 	// Get pending info
 	pending, err := store.XPending("mystream", "mygroup")
 	assert.NoError(t, err)
-	assert.True(t, len(pending) >= 0)
+	assert.Equal(t, 1, len(pending))
 }
 
 // TestStreamXClaim tests XClaim function
@@ -351,16 +359,20 @@ func TestStreamXClaim(t *testing.T) {
 	store := setupTestStore(t)
 
 	// Add entries
-	_, _ = store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+	id, err := store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+	assert.NoError(t, err)
+	assert.Equal(t, "1000000000000-0", id)
 
 	// Create group and read
-	_ = store.XGroupCreate("mystream", "mygroup", "0")
-	_, _ = store.XReadGroup(nil, "mygroup", "consumer1", 10, 0, "mystream", ">")
+	err = store.XGroupCreate("mystream", "mygroup", "0")
+	assert.NoError(t, err)
+	_, err = store.XReadGroup(nil, "mygroup", "consumer1", 10, 0, "mystream", ">")
+	assert.NoError(t, err)
 
 	// Claim for another consumer
 	claimed, err := store.XClaim("mystream", "mygroup", "consumer2", 0, "1000000000000-0")
 	assert.NoError(t, err)
-	assert.True(t, len(claimed) >= 0)
+	assert.Equal(t, 1, len(claimed))
 }
 
 // TestStreamXTrim tests XTrim function

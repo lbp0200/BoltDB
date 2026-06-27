@@ -647,14 +647,21 @@ func TestSScan(t *testing.T) {
 		store.SAdd("myset", fmt.Sprintf("member%d", i))
 	}
 
-	// Test SScan - should return some members
+	// Test SScan - should return some members matching pattern
 	result, err := store.SScan("myset", 0, "*member5*", 10)
 	assert.NoError(t, err)
-	// Result contains cursor and members
-	_ = result
+	assert.True(t, len(result.Members) > 0)
+	found := false
+	for _, m := range result.Members {
+		if m == "member5" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found)
 
 	// Test with non-existent key
 	result, err = store.SScan("nonexistent", 0, "*", 10)
 	assert.NoError(t, err)
-	_ = result
+	assert.Equal(t, 0, len(result.Members))
 }

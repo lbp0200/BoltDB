@@ -386,7 +386,7 @@ func TestPublishSubscribeIntegration(t *testing.T) {
 
 	count, err := pubClient.Publish(ctx, "integration_test", "test_message").Result()
 	assert.NoError(t, err)
-	assert.True(t, count >= 0)
+	assert.True(t, count >= 1)
 }
 
 // TestTimeoutUnsubscribe 测试超时取消订阅（保留原始测试结构）

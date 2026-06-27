@@ -20,7 +20,7 @@ func TestGeoSearch_Coverage(t *testing.T) {
 
 	results, err := s.GeoSearch("geo1", 116.4, 39.9, 1000, "km", 10, false, false, false)
 	assert.NoError(t, err)
-	assert.True(t, len(results) > 0)
+	assert.Equal(t, 1, len(results)) // only p1 within 1000km (p2 ~1071km away)
 }
 
 func TestGeoSearch_WithDistHashCoord_Coverage(t *testing.T) {
@@ -351,8 +351,7 @@ func TestDecompressZSTD_Coverage(t *testing.T) {
 
 	decompressed, err := decompressZSTD(compressed)
 	assert.NoError(t, err)
-	assert.True(t, len(decompressed) > 0)
-	assert.Equal(t, string(original), string(decompressed))
+	assert.Equal(t, string(original), string(decompressed)) // exact round-trip
 }
 
 func TestReadValueInTxn_Coverage(t *testing.T) {

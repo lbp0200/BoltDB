@@ -188,7 +188,7 @@ func TestGenerateNodeID(t *testing.T) {
 	t.Parallel()
 	id1, err := generateNodeID()
 	assert.NoError(t, err)
-	assert.True(t, len(id1) > 0)
+	assert.Equal(t, 40, len(id1)) // 20 random bytes → 40 hex chars
 
 	// IDs should be unique
 	id2, err := generateNodeID()

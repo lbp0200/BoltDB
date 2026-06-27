@@ -23,7 +23,7 @@ func TestSentinel_GenerateRunID(t *testing.T) {
 	runID := s.GetRunID()
 
 	assert.NotEqual(t, "", runID)
-	assert.True(t, len(runID) > 0)
+	assert.Equal(t, 40, len(runID)) // 20 random bytes → 40 hex chars
 }
 
 func TestSentinel_AddMaster(t *testing.T) {

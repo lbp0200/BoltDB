@@ -400,6 +400,12 @@ func TestListEdgeCases(t *testing.T) {
 	}
 	length, _ = store.LLen(key)
 	assert.Equal(t, uint64(100), length)
+
+	// 验证首尾元素内容
+	head, _ := store.LIndex(key, 0)
+	assert.Equal(t, "item", head)
+	tail, _ := store.LIndex(key, 99)
+	assert.Equal(t, "item", tail)
 }
 
 func TestLPUSHX(t *testing.T) {

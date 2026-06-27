@@ -37,7 +37,7 @@ func TestBackupManager_ListBackups_WithFiles(t *testing.T) {
 
 	backups, err := ListBackups(tmpDir)
 	assert.NoError(t, err)
-	assert.True(t, len(backups) >= 0)
+	assert.Equal(t, 2, len(backups))
 }
 
 // TestBackupManager_CopyBackup tests CopyBackup function

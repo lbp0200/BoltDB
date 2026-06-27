@@ -237,7 +237,7 @@ func TestTime_Coverage(t *testing.T) {
 	sec, nsec, err := s.Time()
 	assert.NoError(t, err)
 	assert.True(t, sec > 0)
-	assert.True(t, nsec >= 0)
+	assert.True(t, nsec >= 0 && nsec < 1e9)
 }
 
 func TestMemoryUsage_Coverage(t *testing.T) {

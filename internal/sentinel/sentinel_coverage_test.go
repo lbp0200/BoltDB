@@ -325,4 +325,5 @@ func TestMasterInstance_GetBestSlave_Coverage(t *testing.T) {
 	// Should return the slave
 	best = master.GetBestSlave()
 	assert.NotNil(t, best)
+	assert.Equal(t, "slave1", best.ID)
 }

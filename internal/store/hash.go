@@ -811,6 +811,10 @@ func (s *BotreonStore) hGetAllFields(txn *badger.Txn, key string) ([]hashField, 
 		k := item.Key()
 		// key格式: hash:myhash:fieldname
 		fieldName := string(k[len(prefix):])
+		// 跳过内部元数据键
+		if fieldName == "__count__" {
+			continue
+		}
 		var fieldValue []byte
 		err := item.Value(func(val []byte) error {
 			fieldValue = val

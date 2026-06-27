@@ -132,7 +132,7 @@ func TestCluster_GetClusterNodes(t *testing.T) {
 
 	// Get cluster nodes (returns formatted node lines like Redis CLUSTER NODES)
 	nodes := cluster.GetClusterNodes()
-	assert.True(t, len(nodes) > 0)
+	assert.Equal(t, 2, len(nodes)) // myself + node1
 	// Verify node1 appears in one of the node lines
 	found := false
 	for _, line := range nodes {

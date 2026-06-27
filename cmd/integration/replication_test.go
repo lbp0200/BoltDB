@@ -50,7 +50,8 @@ func TestReplicationCommandProp(t *testing.T) {
 
 	// 添加一些数据
 	for i := 0; i < 10; i++ {
-		_ = sharedClient.Set(ctx, "prop_key_"+string(rune('a'+i)), "value_"+string(rune('a'+i)), 0).Err()
+		err := sharedClient.Set(ctx, "prop_key_"+string(rune('a'+i)), "value_"+string(rune('a'+i)), 0).Err()
+		assert.NoError(t, err)
 	}
 
 	// INFO replication - 检查复制偏移量
@@ -90,7 +91,8 @@ func TestReplicationMultipleSlaves(t *testing.T) {
 	ctx := context.Background()
 
 	// 主节点上添加数据
-	_ = sharedClient.Set(ctx, "multi_slave_test", "value", 0).Err()
+	err := sharedClient.Set(ctx, "multi_slave_test", "value", 0).Err()
+	assert.NoError(t, err)
 
 	// INFO replication - 获取从节点数量
 	result, err := sharedClient.Do(ctx, "INFO", "replication").Result()
@@ -147,7 +149,8 @@ func TestReplicationStress(t *testing.T) {
 	// 快速添加大量数据
 	for i := 0; i < 100; i++ {
 		key := "stress_key_" + string(rune('a'+i%26)) + "_" + string(rune('0'+i/26))
-		_ = sharedClient.Set(ctx, key, "stress_value_"+string(rune('a'+i)), 0).Err()
+		err := sharedClient.Set(ctx, key, "stress_value_"+string(rune('a'+i)), 0).Err()
+		assert.NoError(t, err)
 	}
 
 	// 检查复制偏移量增长
@@ -167,19 +170,24 @@ func TestReplicationWithDifferentTypes(t *testing.T) {
 	ctx := context.Background()
 
 	// String
-	_ = sharedClient.Set(ctx, "type_string", "value", 0).Err()
+	err := sharedClient.Set(ctx, "type_string", "value", 0).Err()
+	assert.NoError(t, err)
 
 	// List
-	_ = sharedClient.RPush(ctx, "type_list", "a", "b", "c").Err()
+	err = sharedClient.RPush(ctx, "type_list", "a", "b", "c").Err()
+	assert.NoError(t, err)
 
 	// Hash
-	_ = sharedClient.HSet(ctx, "type_hash", "field", "value").Err()
+	err = sharedClient.HSet(ctx, "type_hash", "field", "value").Err()
+	assert.NoError(t, err)
 
 	// Set
-	_ = sharedClient.SAdd(ctx, "type_set", "a", "b", "c").Err()
+	err = sharedClient.SAdd(ctx, "type_set", "a", "b", "c").Err()
+	assert.NoError(t, err)
 
 	// ZSet
-	_ = sharedClient.ZAdd(ctx, "type_zset", redis.Z{Score: 1, Member: "a"}).Err()
+	err = sharedClient.ZAdd(ctx, "type_zset", redis.Z{Score: 1, Member: "a"}).Err()
+	assert.NoError(t, err)
 
 	// 检查所有类型都被记录
 	result, err := sharedClient.Do(ctx, "INFO", "replication").Result()

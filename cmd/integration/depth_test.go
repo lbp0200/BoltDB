@@ -252,8 +252,9 @@ func TestListConcurrent_PushPopRace(t *testing.T) {
 	wg.Wait()
 
 	// List should have some elements (not empty due to race)
-	llen, _ := sharedClient.LLen(ctx, "race_list").Result()
-	assert.True(t, llen >= 0)
+	llen, err := sharedClient.LLen(ctx, "race_list").Result()
+	assert.NoError(t, err)
+	assert.True(t, llen > 0)
 }
 
 // TestListConcurrent_MultipleBlockingPops tests BLPOP behavior
@@ -311,7 +312,8 @@ func TestHashConcurrent_HgetHsetRace(t *testing.T) {
 	wg.Wait()
 
 	// Hash should have some fields
-	hlen, _ := sharedClient.HLen(ctx, "race_hash").Result()
+	hlen, err := sharedClient.HLen(ctx, "race_hash").Result()
+	assert.NoError(t, err)
 	assert.True(t, hlen > 0)
 }
 
@@ -511,8 +513,9 @@ func TestSetConcurrent_SaddSremRace(t *testing.T) {
 	wg.Wait()
 
 	// Set should have some members
-	card, _ := sharedClient.SCard(ctx, "race_set").Result()
-	assert.True(t, card >= 0)
+	card, err := sharedClient.SCard(ctx, "race_set").Result()
+	assert.NoError(t, err)
+	assert.True(t, card > 0)
 }
 
 // TestSetConcurrent_SismemberRace tests concurrent SISMEMBER on same set
@@ -612,8 +615,9 @@ func TestSortedSetConcurrent_ZaddZremRace(t *testing.T) {
 	wg.Wait()
 
 	// ZSet should have some members (not empty due to race)
-	card, _ := sharedClient.ZCard(ctx, "race_zset").Result()
-	assert.True(t, card >= 0)
+	card, err := sharedClient.ZCard(ctx, "race_zset").Result()
+	assert.NoError(t, err)
+	assert.True(t, card > 0)
 }
 
 // TestSortedSetConcurrent_ZscoreRace tests concurrent ZSCORE operations
@@ -1226,7 +1230,7 @@ func TestSetConcurrent_HighScaleSadd(t *testing.T) {
 	}
 	wg.Wait()
 
-	card, _ := sharedClient.SCard(ctx, "hsc_set").Result()
-	t.Logf("high-scale set: card=%d", card)
-	assert.True(t, card >= 0)
+	card, err := sharedClient.SCard(ctx, "hsc_set").Result()
+	assert.NoError(t, err)
+	assert.True(t, card > 0)
 }

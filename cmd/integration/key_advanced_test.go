@@ -29,7 +29,7 @@ func TestScan(t *testing.T) {
 	assert.Equal(t, 2, len(arr)) // [cursor, keys]
 
 	cursor, _ := arr[0].(int64)
-	assert.True(t, cursor >= 0)
+	assert.Equal(t, int64(0), cursor)
 
 	keys, ok := arr[1].([]interface{})
 	assert.True(t, ok)
@@ -57,10 +57,12 @@ func TestScanMatch(t *testing.T) {
 	arr, ok := result.([]interface{})
 	assert.True(t, ok)
 
-	keys, _ := arr[1].([]interface{})
+	keys, ok := arr[1].([]interface{})
+	assert.True(t, ok)
 	// 只应该返回匹配的键
 	for _, key := range keys {
-		keyStr, _ := key.(string)
+		keyStr, ok := key.(string)
+		assert.True(t, ok)
 		assert.True(t, len(keyStr) > 0)
 	}
 }
@@ -87,7 +89,7 @@ func TestScanCount(t *testing.T) {
 	keys, ok := arr[1].([]interface{})
 	assert.True(t, ok)
 	// 指定COUNT=20
-	assert.True(t, len(keys) >= 0)
+	assert.True(t, len(keys) > 0)
 }
 
 // TestScanType 测试 SCAN TYPE 命令
