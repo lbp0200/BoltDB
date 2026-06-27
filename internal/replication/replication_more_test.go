@@ -55,7 +55,7 @@ func TestGenerateRDB_EmptyStore(t *testing.T) {
 
 	data, err := GenerateRDB(testStore)
 	assert.NoError(t, err)
-	assert.True(t, len(data) > 0)
+	assert.True(t, len(data) >= 9) // minimum RDB = 9-byte "REDIS0009" header
 }
 
 // TestGenerateRDB_WithData tests GenerateRDB with data
@@ -69,7 +69,7 @@ func TestGenerateRDB_WithData(t *testing.T) {
 
 	data, err := GenerateRDB(testStore)
 	assert.NoError(t, err)
-	assert.True(t, len(data) > 0)
+	assert.True(t, len(data) >= 9) // minimum RDB = 9-byte "REDIS0009" header
 }
 
 // TestLoadRDBWithStore_EmptyData tests LoadRDBWithStore with empty data
@@ -107,7 +107,7 @@ func TestReplicationBacklog_Additional(t *testing.T) {
 	// Get range
 	data, err := backlog.GetRange(0, 20)
 	assert.NoError(t, err)
-	assert.True(t, len(data) >= 0)
+	assert.Equal(t, 18, len(data)) // "test data" (9) + "more data" (9) = 18 bytes
 }
 
 // TestReplicationManager_Stop tests ReplicationManager Stop

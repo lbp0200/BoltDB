@@ -141,7 +141,7 @@ func TestInterfaceToBytes(t *testing.T) {
 	data := "hello world"
 	bytes, err := InterfaceToBytes(data)
 	assert.NoError(t, err)
-	assert.True(t, len(bytes) > 0)
+	assert.True(t, len(bytes) > len(data)) // gob adds header overhead
 
 	// Test with int
 	data2 := 42
@@ -153,5 +153,5 @@ func TestInterfaceToBytes(t *testing.T) {
 	data3 := map[string]int{"a": 1, "b": 2}
 	bytes3, err := InterfaceToBytes(data3)
 	assert.NoError(t, err)
-	assert.True(t, len(bytes3) > 0)
+	assert.True(t, len(bytes3) > 10) // JSON map has random key order, check minimum length
 }

@@ -103,8 +103,7 @@ func TestRDBEncoder_Bytes(t *testing.T) {
 	enc.WriteStringKeyValue("key", "value", 0)
 
 	data := enc.Bytes()
-	assert.True(t, len(data) > 0)
-	assert.Equal(t, "REDIS0009", string(data[:9]))
+	assert.Equal(t, "REDIS0009", string(data[:9])) // valid RDB header
 }
 
 func TestRDBEncoder_WriteTo(t *testing.T) {
@@ -118,7 +117,7 @@ func TestRDBEncoder_WriteTo(t *testing.T) {
 	var buf bytes.Buffer
 	n, err := enc.WriteTo(&buf)
 	assert.NoError(t, err)
-	assert.True(t, n > 0)
+	assert.Equal(t, len(originalData), int(n))
 	assert.Equal(t, originalData, buf.Bytes())
 }
 

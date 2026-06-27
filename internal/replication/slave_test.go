@@ -2,6 +2,7 @@ package replication
 
 import (
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,7 +60,6 @@ func TestSlaveConnection_New(t *testing.T) {
 
 	assert.NotEqual(t, "", slave.ID)
 	assert.NotEqual(t, "", slave.Addr)
-	assert.True(t, len(slave.Addr) > 0)
 	assert.Equal(t, int64(0), slave.GetReplOffset())
 	assert.False(t, slave.IsReady())
 }
@@ -182,7 +182,7 @@ func TestSendFullResync(t *testing.T) {
 	assert.NoError(t, err)
 
 	// 验证写入的数据包含 FULLRESYNC
-	assert.True(t, len(conn.writeBuffer) > 0)
+	assert.True(t, strings.Contains(string(conn.writeBuffer), "FULLRESYNC"))
 }
 
 // TestSendContinueResync tests SendContinueResync function
@@ -195,7 +195,7 @@ func TestSendContinueResync(t *testing.T) {
 	assert.NoError(t, err)
 
 	// 验证写入的数据包含 CONTINUE
-	assert.True(t, len(conn.writeBuffer) > 0)
+	assert.True(t, strings.Contains(string(conn.writeBuffer), "CONTINUE"))
 }
 
 // TestSendBacklogData tests SendBacklogData function
@@ -259,7 +259,7 @@ func TestSlaveConnection_SendResponse(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify data was written
-	assert.True(t, len(conn.writeBuffer) > 0)
+	assert.True(t, strings.Contains(string(conn.writeBuffer), "+OK"))
 }
 
 // TestSlaveConnection_SendRDB_Empty tests SendRDB with empty data

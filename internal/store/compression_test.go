@@ -262,7 +262,7 @@ func TestCompressionBackwardCompatibility(t *testing.T) {
 	// 读取新数据
 	value2, err := store2.Get("key2")
 	assert.NoError(t, err)
-	assert.True(t, len(value2) > 0)
+	assert.Equal(t, strings.Repeat("large value ", 100), value2)
 }
 
 func TestCompressionSnappy(t *testing.T) {

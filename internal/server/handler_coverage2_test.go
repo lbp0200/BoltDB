@@ -173,7 +173,7 @@ func TestExecuteCommand_SCAN_Coverage(t *testing.T) {
 	// Use the Store's Scan method directly to verify
 	result, err := handler.Db.Scan(0, "*", 10)
 	assert.NoError(t, err)
-	assert.True(t, len(result.Keys) >= 2)     // Should find at least scankey1 and scankey2
+	assert.Equal(t, 2, len(result.Keys))     // Should find at least scankey1 and scankey2
 	assert.Equal(t, uint64(0), result.Cursor) // First scan should return cursor 0
 }
 
@@ -559,12 +559,9 @@ func TestExecuteCommand_BLPOP_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "BLPOP", [][]byte{[]byte("blpoptest"), []byte("1")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) >= 2)
-	// BLPOP returns [key, value]
-	if len(arr.Args) >= 2 {
-		assert.Equal(t, "blpoptest", string(arr.Args[0]))
-		assert.Equal(t, "value", string(arr.Args[1]))
-	}
+	assert.Equal(t, 2, len(arr.Args))
+	assert.Equal(t, "blpoptest", string(arr.Args[0]))
+	assert.Equal(t, "value", string(arr.Args[1]))
 }
 
 // TestExecuteCommand_BRPOP_Coverage tests BRPOP command
@@ -578,12 +575,9 @@ func TestExecuteCommand_BRPOP_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "BRPOP", [][]byte{[]byte("brpoptest"), []byte("1")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) >= 2)
-	// BRPOP returns [key, value]
-	if len(arr.Args) >= 2 {
-		assert.Equal(t, "brpoptest", string(arr.Args[0]))
-		assert.Equal(t, "value", string(arr.Args[1]))
-	}
+	assert.Equal(t, 2, len(arr.Args))
+	assert.Equal(t, "brpoptest", string(arr.Args[0]))
+	assert.Equal(t, "value", string(arr.Args[1]))
 }
 
 // TestExecuteCommand_BRPOPLPUSH_Coverage tests BRPOPLPUSH command
@@ -617,13 +611,10 @@ func TestExecuteCommand_BZPOPMAX_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "BZPOPMAX", [][]byte{[]byte("bzpopmaxtest"), []byte("1")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) >= 3)
-	// BZPOPMAX returns [key, element, score]
-	if len(arr.Args) >= 3 {
-		assert.Equal(t, "bzpopmaxtest", string(arr.Args[0]))
-		assert.Equal(t, "member", string(arr.Args[1]))
-		assert.Equal(t, "1", string(arr.Args[2]))
-	}
+	assert.Equal(t, 3, len(arr.Args))
+	assert.Equal(t, "bzpopmaxtest", string(arr.Args[0]))
+	assert.Equal(t, "member", string(arr.Args[1]))
+	assert.Equal(t, "1", string(arr.Args[2]))
 }
 
 // TestExecuteCommand_BZPOPMIN_Coverage tests BZPOPMIN command
@@ -637,13 +628,10 @@ func TestExecuteCommand_BZPOPMIN_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "BZPOPMIN", [][]byte{[]byte("bzpopmintest"), []byte("1")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) >= 3)
-	// BZPOPMIN returns [key, element, score]
-	if len(arr.Args) >= 3 {
-		assert.Equal(t, "bzpopmintest", string(arr.Args[0]))
-		assert.Equal(t, "member", string(arr.Args[1]))
-		assert.Equal(t, "1", string(arr.Args[2]))
-	}
+	assert.Equal(t, 3, len(arr.Args))
+	assert.Equal(t, "bzpopmintest", string(arr.Args[0]))
+	assert.Equal(t, "member", string(arr.Args[1]))
+	assert.Equal(t, "1", string(arr.Args[2]))
 }
 
 // TestExecuteCommand_LPUSHX_Coverage tests LPUSHX command
@@ -774,41 +762,31 @@ func TestExecuteCommand_XREAD_BLOCK_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "XREAD", [][]byte{[]byte("BLOCK"), []byte("1000"), []byte("STREAMS"), []byte("blockstream"), []byte("0")}, "127.0.0.1:12345")
 	narr, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(narr.Elems) >= 1)
-	if len(narr.Elems) >= 1 {
-		streamResult, ok := narr.Elems[0].(*proto.NestedArray)
+	assert.Equal(t, 1, len(narr.Elems))
+	streamResult, ok := narr.Elems[0].(*proto.NestedArray)
+	assert.True(t, ok)
+		assert.Equal(t, 2, len(streamResult.Elems))
+		streamKey, ok := streamResult.Elems[0].(*proto.BulkString)
 		assert.True(t, ok)
-		assert.True(t, len(streamResult.Elems) >= 2)
-		if len(streamResult.Elems) >= 2 {
-			streamKey, ok := streamResult.Elems[0].(*proto.BulkString)
-			assert.True(t, ok)
-			assert.Equal(t, "blockstream", string(*streamKey))
-			entries, ok := streamResult.Elems[1].(*proto.NestedArray)
-			assert.True(t, ok)
-			assert.True(t, len(entries.Elems) >= 1)
-			if len(entries.Elems) >= 1 {
-				entry, ok := entries.Elems[0].(*proto.NestedArray)
-				assert.True(t, ok)
-				assert.True(t, len(entry.Elems) >= 2)
-				if len(entry.Elems) >= 2 {
-					entryID, ok := entry.Elems[0].(*proto.BulkString)
-					assert.True(t, ok)
-					assert.Equal(t, "1", string(*entryID))
-					fields, ok := entry.Elems[1].(*proto.NestedArray)
-					assert.True(t, ok)
-					assert.True(t, len(fields.Elems) >= 2)
-					if len(fields.Elems) >= 2 {
-						fieldName, ok := fields.Elems[0].(*proto.BulkString)
-						assert.True(t, ok)
-						assert.Equal(t, "field", string(*fieldName))
-						fieldVal, ok := fields.Elems[1].(*proto.BulkString)
-						assert.True(t, ok)
-						assert.Equal(t, "value", string(*fieldVal))
-					}
-				}
-			}
-		}
-	}
+		assert.Equal(t, "blockstream", string(*streamKey))
+		entries, ok := streamResult.Elems[1].(*proto.NestedArray)
+		assert.True(t, ok)
+		assert.Equal(t, 1, len(entries.Elems))
+		entry, ok := entries.Elems[0].(*proto.NestedArray)
+		assert.True(t, ok)
+		assert.Equal(t, 2, len(entry.Elems))
+		entryID, ok := entry.Elems[0].(*proto.BulkString)
+		assert.True(t, ok)
+		assert.Equal(t, "1", string(*entryID))
+		fields, ok := entry.Elems[1].(*proto.NestedArray)
+		assert.True(t, ok)
+		assert.Equal(t, 2, len(fields.Elems))
+		fieldName, ok := fields.Elems[0].(*proto.BulkString)
+		assert.True(t, ok)
+		assert.Equal(t, "field", string(*fieldName))
+		fieldVal, ok := fields.Elems[1].(*proto.BulkString)
+		assert.True(t, ok)
+		assert.Equal(t, "value", string(*fieldVal))
 }
 
 // TestExecuteCommand_LINSERT_BEFORE_Coverage tests LINSERT with BEFORE
@@ -994,8 +972,7 @@ func TestExecuteCommand_ZPOPMAX_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "ZPOPMAX", [][]byte{[]byte("zpopmaxtest")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) >= 2)
-	// ZPOPMAX returns [member, score] - should pop "b" (score 2)
+	assert.Equal(t, 2, len(arr.Args))
 	assert.Equal(t, "b", string(arr.Args[0]))
 	assert.Equal(t, "2", string(arr.Args[1]))
 	// Verify b was removed from zset
@@ -1015,8 +992,7 @@ func TestExecuteCommand_ZPOPMIN_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "ZPOPMIN", [][]byte{[]byte("zpopmintest")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) >= 2)
-	// ZPOPMIN returns [member, score] - should pop "a" (score 1)
+	assert.Equal(t, 2, len(arr.Args))
 	assert.Equal(t, "a", string(arr.Args[0]))
 	assert.Equal(t, "1", string(arr.Args[1]))
 	// Verify a was removed from zset
@@ -1575,8 +1551,7 @@ func TestExecuteCommand_ZINCRBY_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "ZINCRBY", [][]byte{[]byte("zincrbytest"), []byte("2"), []byte("member")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
-	assert.True(t, len(*bs) > 0)
-	// Verify score was incremented to 3
+	assert.Equal(t, "3", string(*bs))
 	score, _, err := handler.Db.ZScore("zincrbytest", "member")
 	assert.NoError(t, err)
 	assert.Equal(t, 3.0, score)
@@ -2063,7 +2038,7 @@ func TestExecuteCommand_INCRBYFLOAT_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "INCRBYFLOAT", [][]byte{[]byte("incrbyfloatkey"), []byte("2.5")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
-	assert.True(t, len(*bs) > 0)
+	assert.Equal(t, "13", string(*bs))
 }
 
 // TestExecuteCommand_GETSET_Coverage tests GETSET command
@@ -2146,7 +2121,7 @@ func TestExecuteCommand_KEYS_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "KEYS", [][]byte{[]byte("key*")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) >= 1)
+	assert.Equal(t, 1, len(arr.Args))
 }
 
 // TestExecuteCommand_SWAPDB_Coverage tests SWAPDB command
