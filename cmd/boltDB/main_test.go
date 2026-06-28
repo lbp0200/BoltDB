@@ -169,7 +169,7 @@ func TestStringCommands(t *testing.T) {
 	// APPEND
 	length, err := testClient.Append(ctx, "key1", "_appended").Result()
 	assert.NoError(t, err)
-	assert.True(t, length > 0)
+	assert.Equal(t, int64(19), length)
 
 	val, err = testClient.Get(ctx, "key1").Result()
 	assert.NoError(t, err)
@@ -384,7 +384,7 @@ func TestSetCommands(t *testing.T) {
 
 	intersection, err := testClient.SInter(ctx, "set1", "set2").Result()
 	assert.NoError(t, err)
-	assert.True(t, len(intersection) >= 2) // 至少包含 b 和 c
+	assert.Equal(t, 2, len(intersection))
 }
 
 // TestSortedSetCommands 测试SortedSet类型命令

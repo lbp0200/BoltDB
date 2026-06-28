@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,7 +78,7 @@ func TestRESPShape_SSCAN(t *testing.T) {
 	// Element 1: array of members
 	membersArr, ok := na.Elems[1].(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(membersArr.Elems) >= 1)
+	assert.Equal(t, 2, len(membersArr.Elems))
 }
 
 // TestRESPShape_HSCAN verifies HSCAN returns [cursor, [field, val, field, val...]]
@@ -95,7 +96,7 @@ func TestRESPShape_HSCAN(t *testing.T) {
 	// Element 1: array of field-value pairs
 	fvArr, ok := na.Elems[1].(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(fvArr.Elems) >= 2)
+	assert.Equal(t, 4, len(fvArr.Elems))
 
 	// Each pair should be bulk strings
 	shapeBulkString(t, fvArr.Elems[0], 1)
@@ -118,7 +119,7 @@ func TestRESPShape_ZSCAN(t *testing.T) {
 	// Element 1: members as Array of [member, score, ...]
 	membersArr, ok := na.Elems[1].(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, len(membersArr.Args) >= 2)
+	assert.Equal(t, 4, len(membersArr.Args))
 }
 
 // TestRESPShape_GEOPOS verifies GEOPOS returns [ [lon, lat], ... ] or nil
@@ -158,7 +159,7 @@ func TestRESPShape_GEOSEARCH_WITHCOORD(t *testing.T) {
 	// Each element is [member, [lon, lat]]
 	entry, ok := na.Elems[0].(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(entry.Elems) >= 2)
+	assert.Equal(t, 2, len(entry.Elems))
 	shapeBulkString(t, entry.Elems[0], 1) // member name
 	coord, ok := entry.Elems[1].(*proto.NestedArray)
 	assert.True(t, ok)
@@ -177,7 +178,7 @@ func TestRESPShape_GEORADIUS_WITHCOORD(t *testing.T) {
 	na := shapeNestedArray(t, resp, 1)
 	entry, ok := na.Elems[0].(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(entry.Elems) >= 2)
+	assert.Equal(t, 2, len(entry.Elems))
 	shapeBulkString(t, entry.Elems[0], 1)
 	coord, ok := entry.Elems[1].(*proto.NestedArray)
 	assert.True(t, ok)
@@ -192,7 +193,7 @@ func TestRESPShape_XINFO_CONSUMERS(t *testing.T) {
 
 	// Create stream + group + consumer
 	id := handler.executeCommand(state, "XADD", [][]byte{[]byte("xistream"), []byte("1-0"), []byte("f"), []byte("v")}, "127.0.0.1:12345").(*proto.BulkString)
-	_ = id
+	assert.Equal(t, "1-0", string(*id))
 	handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATE"), []byte("xistream"), []byte("g1"), []byte("0")}, "127.0.0.1:12345")
 	handler.executeCommand(state, "XREADGROUP", [][]byte{[]byte("GROUP"), []byte("g1"), []byte("c1"), []byte("STREAMS"), []byte("xistream"), []byte(">")}, "127.0.0.1:12345")
 
@@ -224,15 +225,15 @@ func TestRESPShape_XAUTOCLAIM(t *testing.T) {
 	// Element 1: array of entries
 	entriesArr, ok := na.Elems[1].(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(entriesArr.Elems) >= 1)
+	assert.Equal(t, 1, len(entriesArr.Elems))
 	// Each entry is [id, [fields...]]
 	entry, ok := entriesArr.Elems[0].(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(entry.Elems) >= 2)
+	assert.Equal(t, 2, len(entry.Elems))
 	shapeBulkString(t, entry.Elems[0], 1) // id
 	fields, ok := entry.Elems[1].(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(fields.Elems) >= 2) // at least one field pair
+	assert.Equal(t, 2, len(fields.Elems)) // 1 field pair
 }
 
 // TestRESPShape_XAUTOCLAIM_JUSTID verifies XAUTOCLAIM JUSTID returns [nextID, [id, id, ...]]
@@ -250,7 +251,7 @@ func TestRESPShape_XAUTOCLAIM_JUSTID(t *testing.T) {
 	shapeBulkString(t, na.Elems[0], 1)
 	entriesArr, ok := na.Elems[1].(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(entriesArr.Elems) >= 1)
+	assert.Equal(t, 1, len(entriesArr.Elems))
 	// With JUSTID, entries are bulk strings, not sub-arrays
 	shapeBulkString(t, entriesArr.Elems[0], 1)
 }
@@ -284,7 +285,7 @@ func TestRESPShape_GEORADIUS_FlatNoModifier(t *testing.T) {
 	// Without modifiers — flat Array of member names
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) >= 1)
+	assert.Equal(t, 1, len(arr.Args))
 	assert.Equal(t, "SF", string(arr.Args[0]))
 }
 
@@ -305,7 +306,7 @@ func TestRESPShape_XREAD(t *testing.T) {
 	shapeBulkString(t, streamArr.Elems[0], 1) // stream key
 	entriesArr, ok := streamArr.Elems[1].(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(entriesArr.Elems) >= 1)
+	assert.Equal(t, 1, len(entriesArr.Elems))
 	// Each entry: [id, [fields...]]
 	entry, ok := entriesArr.Elems[0].(*proto.NestedArray)
 	assert.True(t, ok)
@@ -313,7 +314,7 @@ func TestRESPShape_XREAD(t *testing.T) {
 	shapeBulkString(t, entry.Elems[0], 1) // id
 	fieldsArr, ok := entry.Elems[1].(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(fieldsArr.Elems) >= 2)
+	assert.Equal(t, 2, len(fieldsArr.Elems))
 }
 
 // TestRESPShape_XRANGE verifies XRANGE returns [ [id, [fields...]], ... ]
@@ -332,7 +333,7 @@ func TestRESPShape_XRANGE(t *testing.T) {
 	shapeBulkString(t, entry.Elems[0], 1)
 	fieldsArr, ok := entry.Elems[1].(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(fieldsArr.Elems) >= 2)
+	assert.Equal(t, 2, len(fieldsArr.Elems))
 }
 
 // TestRESPShape_ExistsKey verifies EXISTS returns Integer
@@ -460,7 +461,7 @@ func TestRESPShape_XREADGROUP(t *testing.T) {
 	shapeBulkString(t, streamArr.Elems[0], 1)
 	entriesArr, ok := streamArr.Elems[1].(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(entriesArr.Elems) >= 1)
+	assert.Equal(t, 1, len(entriesArr.Elems))
 	entry, ok := entriesArr.Elems[0].(*proto.NestedArray)
 	assert.True(t, ok)
 	assert.True(t, len(entry.Elems) == 2)
@@ -538,7 +539,7 @@ func TestRESPShape_WrongType(t *testing.T) {
 	resp := handler.executeCommand(state, "GET", [][]byte{[]byte("wtk")}, "127.0.0.1:12345")
 	errStr, ok := resp.(*proto.Error)
 	assert.True(t, ok)
-	assert.True(t, len(string(*errStr)) > 0)
+	assert.True(t, strings.Contains(string(*errStr), "WRONGTYPE"))
 }
 
 func TestRESPShape_GetNonExistent(t *testing.T) {
@@ -564,7 +565,7 @@ func TestRESPShape_LMPOP(t *testing.T) {
 	shapeBulkString(t, na.Elems[0], 1) // key name
 	innerArr, ok := na.Elems[1].(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, len(innerArr.Args) >= 1)
+	assert.Equal(t, 2, len(innerArr.Args))
 
 	// Non-existent key returns NilArray
 	resp = handler.executeCommand(state, "LMPOP", [][]byte{[]byte("1"), []byte("nosuchkey"), []byte("LEFT")}, "127.0.0.1:12345")
@@ -1099,13 +1100,13 @@ func TestRESPShape_LCS(t *testing.T) {
 	resp := handler.executeCommand(state, "LCS", [][]byte{[]byte("lcs1"), []byte("lcs2")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
-	assert.True(t, len(*bs) > 0)
+	assert.Equal(t, "hello r", string(*bs)) // LCS of "hello world" and "hello there"
 
 	// With LEN — Integer
 	resp = handler.executeCommand(state, "LCS", [][]byte{[]byte("lcs1"), []byte("lcs2"), []byte("LEN")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.True(t, int64(*integer) > 0)
+	assert.Equal(t, int64(7), int64(*integer)) // "hello r" = 7 chars
 }
 
 // TestRESPShape_ZINTER verifies ZINTER returns Array
@@ -1120,7 +1121,7 @@ func TestRESPShape_ZINTER(t *testing.T) {
 	resp := handler.executeCommand(state, "ZINTER", [][]byte{[]byte("2"), []byte("zint1"), []byte("zint2")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) >= 1)
+	assert.Equal(t, 1, len(arr.Args))
 	// WITHSCORES returns alternating member/score
 	resp = handler.executeCommand(state, "ZINTER", [][]byte{[]byte("2"), []byte("zint1"), []byte("zint2"), []byte("WITHSCORES")}, "127.0.0.1:12345")
 	arr, ok = resp.(*proto.Array)
@@ -1140,7 +1141,7 @@ func TestRESPShape_ZUNION(t *testing.T) {
 	resp := handler.executeCommand(state, "ZUNION", [][]byte{[]byte("2"), []byte("zun1"), []byte("zun2")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) >= 2) // a, b, c = 3 members
+	assert.Equal(t, 3, len(arr.Args)) // a, b, c = 3 members
 }
 
 func setupTestClusterHandler(t *testing.T) (*Handler, *connState) {

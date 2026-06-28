@@ -2920,14 +2920,14 @@ func TestLCSIntegration(t *testing.T) {
 	assert.NoError(t, err)
 	lcs, ok := val.(string)
 	assert.True(t, ok)
-	assert.Equal(t, "hello ", lcs) // LCS of "hello world" and "hello there"
+	assert.Equal(t, "hello r", lcs) // LCS of "hello world" and "hello there"
 
 	// LCS LEN → Integer
 	val, err = sharedClient.Do(ctx, "LCS", "lcs_a", "lcs_b", "LEN").Result()
 	assert.NoError(t, err)
 	length, ok := val.(int64)
 	assert.True(t, ok)
-	assert.Equal(t, int64(6), length) // "hello " is 6 bytes
+	assert.Equal(t, int64(7), length) // "hello r" is 7 bytes
 
 	// LCS with non-existent key → error
 	_, err = sharedClient.Do(ctx, "LCS", "lcs_a", "nonexistent").Result()

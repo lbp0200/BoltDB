@@ -206,7 +206,7 @@ func TestServerKeyCommands(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
-				assert.True(t, int64(*integer) >= -1)
+				assert.True(t, int64(*integer) > 0)
 			},
 		},
 		// PTTL
@@ -217,7 +217,7 @@ func TestServerKeyCommands(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
-				assert.True(t, int64(*integer) >= -1)
+				assert.True(t, int64(*integer) > 0)
 			},
 		},
 		// PERSIST
