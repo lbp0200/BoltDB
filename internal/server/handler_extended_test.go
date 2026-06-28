@@ -1,6 +1,7 @@
 package server
 
 import (
+	"regexp"
 	"testing"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
@@ -27,7 +28,7 @@ func TestServerBitCommands(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
-				assert.True(t, int64(*integer) >= 0)
+				assert.Equal(t, int64(0), int64(*integer))
 			},
 		},
 		// GETBIT
@@ -38,7 +39,7 @@ func TestServerBitCommands(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
-				assert.True(t, int64(*integer) >= 0)
+				assert.Equal(t, int64(1), int64(*integer))
 			},
 		},
 		// BITCOUNT
@@ -49,7 +50,7 @@ func TestServerBitCommands(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
-				assert.True(t, int64(*integer) >= 0)
+				assert.Equal(t, int64(1), int64(*integer))
 			},
 		},
 		// BITPOS
@@ -71,7 +72,7 @@ func TestServerBitCommands(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
-				assert.True(t, int64(*integer) >= 0)
+				assert.True(t, int64(*integer) >= 0) // BITOP AND returns result length
 			},
 		},
 	}
@@ -141,7 +142,7 @@ func TestServerGeoCommands(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
-				assert.True(t, int64(*integer) >= 0)
+				assert.Equal(t, int64(1), int64(*integer))
 			},
 		},
 		// GEODIST
@@ -163,7 +164,7 @@ func TestServerGeoCommands(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
-				assert.True(t, len(arr.Args) > 0)
+				assert.Equal(t, 1, len(arr.Args))
 			},
 		},
 	}
@@ -196,7 +197,7 @@ func TestServerStreamCommands(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				bulk, ok := resp.(*proto.BulkString)
 				assert.True(t, ok)
-				assert.True(t, len(string(*bulk)) > 0)
+				assert.True(t, regexp.MustCompile("^[0-9]+-[0-9]+$").MatchString(string(*bulk)))
 			},
 		},
 		// XLEN
@@ -207,7 +208,7 @@ func TestServerStreamCommands(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
-				assert.True(t, int64(*integer) >= 0)
+				assert.Equal(t, int64(1), int64(*integer))
 			},
 		},
 		// XRANGE
@@ -319,7 +320,7 @@ func TestServerObjectCommands(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
-				assert.True(t, int64(*integer) >= 0)
+				assert.True(t, int64(*integer) >= 1)
 			},
 		},
 		// OBJECT ENCODING

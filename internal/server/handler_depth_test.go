@@ -674,7 +674,7 @@ func TestHashBoundary_HrandfieldBasic(t *testing.T) {
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
 	assert.Equal(t, 1, len(arr.Args))
-	assert.True(t, len(string(arr.Args[0])) > 0)
+	assert.True(t, string(arr.Args[0]) == "field1" || string(arr.Args[0]) == "field2" || string(arr.Args[0]) == "field3")
 }
 
 // TestHashBoundary_HrandfieldWithValues tests HRANDFIELD with WITHVALUES
@@ -1135,7 +1135,7 @@ func TestReplicationBoundary_RoleMaster(t *testing.T) {
 	resp := handler.executeCommand(state, "ROLE", [][]byte{}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) >= 1)
+	assert.Equal(t, 2, len(arr.Args)) // ROLE returns [role, replication-id]
 	assert.Equal(t, []byte("master"), arr.Args[0])
 }
 
@@ -1222,7 +1222,7 @@ func TestSentinelBoundary_ReplconfGetack(t *testing.T) {
 	resp := handler.executeCommand(state, "REPLCONF", [][]byte{[]byte("GETACK"), []byte("*")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) >= 3)
+	assert.Equal(t, 3, len(arr.Args))
 	assert.Equal(t, []byte("REPLCONF"), arr.Args[0])
 	assert.Equal(t, []byte("ACK"), arr.Args[1])
 }

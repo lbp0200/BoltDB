@@ -38,7 +38,7 @@ func TestExecuteCommand_JSON_GET_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "JSON.GET", [][]byte{[]byte("jget")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
-	assert.True(t, len(string(*bs)) > 0)
+	assert.Equal(t, `{"a":1}`, string(*bs))
 }
 
 func TestExecuteCommand_JSON_GET_WrongArgs_Coverage(t *testing.T) {
@@ -132,7 +132,7 @@ func TestExecuteCommand_JSON_NUMINCRBY_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "JSON.NUMINCRBY", [][]byte{[]byte("jnum"), []byte("$"), []byte("3")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
-	assert.True(t, len(string(*bs)) > 0)
+	assert.Equal(t, "8", string(*bs))
 }
 
 func TestExecuteCommand_JSON_NUMMULTBY_Coverage(t *testing.T) {
@@ -144,7 +144,7 @@ func TestExecuteCommand_JSON_NUMMULTBY_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "JSON.NUMMULTBY", [][]byte{[]byte("jmult"), []byte("$"), []byte("2")}, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
-	assert.True(t, len(string(*bs)) > 0)
+	assert.Equal(t, "20", string(*bs))
 }
 
 func TestExecuteCommand_JSON_ARRLEN_Coverage(t *testing.T) {

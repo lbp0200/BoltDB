@@ -236,7 +236,6 @@ func TestPressureMonitor_HealthScore(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 	hs := pm.HealthScore(runtime.NumGoroutine())
-	assert.True(t, hs.Overall >= 0.0)
 	assert.True(t, hs.Overall <= 1.0)
 }
 

@@ -39,7 +39,7 @@ func TestNewGossipProtocol_WithConfig(t *testing.T) {
 		PingInterval: 1000 * time.Millisecond,
 	}
 	gp := NewGossipProtocol(sentinel, config)
-	assert.True(t, gp != nil)
+	assert.NotNil(t, gp)
 }
 
 // TestGossipProtocol_GetPort tests GetPort
@@ -50,9 +50,8 @@ func TestGossipProtocol_GetPort(t *testing.T) {
 
 	gp := NewGossipProtocol(sentinel, nil)
 	port := gp.GetPort()
-	// Port should be non-zero when started, but before start it may be 0
+	// Port may be 0 before start — just verify it's a valid int
 	_ = port
-	assert.True(t, true)
 }
 
 // TestGossipProtocol_FormatHello tests formatHello
@@ -64,7 +63,6 @@ func TestGossipProtocol_FormatHello(t *testing.T) {
 	gp := NewGossipProtocol(sentinel, nil)
 	hello := gp.formatHello()
 	// Hello should start with HELLO prefix
-	assert.True(t, len(hello) > 0)
 	assert.True(t, len(hello) > 6 && hello[:6] == "HELLO ")
 }
 
@@ -202,8 +200,7 @@ func TestGossipProtocol_sendMessage(t *testing.T) {
 
 	// Test sending a message
 	err = gp.sendMessage(conn, "test message")
-	_ = err
-	assert.True(t, true)
+	assert.NoError(t, err)
 }
 
 // TestGossipProtocol_BroadcastSdown tests BroadcastSdown method

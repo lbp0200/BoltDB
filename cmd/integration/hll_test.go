@@ -38,7 +38,7 @@ func TestPFCount(t *testing.T) {
 	ctx := context.Background()
 
 	// 添加测试数据
-	_ = sharedClient.Do(ctx, "PFADD", "hllcount", "a", "b", "c", "d", "e").Err()
+	assert.NoError(t, sharedClient.Do(ctx, "PFADD", "hllcount", "a", "b", "c", "d", "e").Err())
 
 	// PFCOUNT - 获取基数估计
 	result, err := sharedClient.Do(ctx, "PFCOUNT", "hllcount").Result()
@@ -46,7 +46,7 @@ func TestPFCount(t *testing.T) {
 	assert.Equal(t, int64(5), result)
 
 	// 添加更多元素
-	_ = sharedClient.Do(ctx, "PFADD", "hllcount", "f", "g", "h", "i", "j").Err()
+	assert.NoError(t, sharedClient.Do(ctx, "PFADD", "hllcount", "f", "g", "h", "i", "j").Err())
 
 	result, err = sharedClient.Do(ctx, "PFCOUNT", "hllcount").Result()
 	assert.NoError(t, err)
@@ -66,8 +66,8 @@ func TestPFCountMultiple(t *testing.T) {
 	ctx := context.Background()
 
 	// 创建两个HyperLogLog
-	_ = sharedClient.Do(ctx, "PFADD", "hll1", "a", "b", "c").Err()
-	_ = sharedClient.Do(ctx, "PFADD", "hll2", "d", "e", "f").Err()
+	assert.NoError(t, sharedClient.Do(ctx, "PFADD", "hll1", "a", "b", "c").Err())
+	assert.NoError(t, sharedClient.Do(ctx, "PFADD", "hll2", "d", "e", "f").Err())
 
 	// PFCOUNT 多键 - 合并基数
 	result, err := sharedClient.Do(ctx, "PFCOUNT", "hll1", "hll2").Result()
@@ -90,8 +90,8 @@ func TestPFMerge(t *testing.T) {
 	ctx := context.Background()
 
 	// 创建两个HyperLogLog
-	_ = sharedClient.Do(ctx, "PFADD", "hllsource1", "a", "b", "c").Err()
-	_ = sharedClient.Do(ctx, "PFADD", "hllsource2", "d", "e", "f").Err()
+	assert.NoError(t, sharedClient.Do(ctx, "PFADD", "hllsource1", "a", "b", "c").Err())
+	assert.NoError(t, sharedClient.Do(ctx, "PFADD", "hllsource2", "d", "e", "f").Err())
 
 	// PFMERGE - 合并到目标
 	result, err := sharedClient.Do(ctx, "PFMERGE", "hlldest", "hllsource1", "hllsource2").Result()
@@ -104,7 +104,7 @@ func TestPFMerge(t *testing.T) {
 	assert.Equal(t, int64(6), count)
 
 	// PFMERGE - 包含重复元素
-	_ = sharedClient.Do(ctx, "PFADD", "hllsource3", "a", "b", "c", "d", "e").Err()
+	assert.NoError(t, sharedClient.Do(ctx, "PFADD", "hllsource3", "a", "b", "c", "d", "e").Err())
 	result, err = sharedClient.Do(ctx, "PFMERGE", "hllmerge2", "hllsource1", "hllsource3").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, "OK", result)
@@ -147,7 +147,7 @@ func TestPFInfo(t *testing.T) {
 	ctx := context.Background()
 
 	// 创建HyperLogLog
-	_ = sharedClient.Do(ctx, "PFADD", "hllinfo", "a", "b", "c").Err()
+	assert.NoError(t, sharedClient.Do(ctx, "PFADD", "hllinfo", "a", "b", "c").Err())
 
 	// PFINFO - 获取信息
 	result, err := sharedClient.Do(ctx, "PFINFO", "hllinfo").Result()

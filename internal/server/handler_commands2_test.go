@@ -32,7 +32,7 @@ func TestServerListCommands2(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
-				assert.True(t, int64(*integer) >= 0)
+				assert.Equal(t, int64(2), int64(*integer))
 			},
 		},
 		// LINDEX
@@ -80,7 +80,7 @@ func TestServerSetCommands2(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
-				assert.True(t, int64(*integer) >= 0)
+				assert.Equal(t, int64(2), int64(*integer))
 			},
 		},
 		// SISMEMBER
@@ -101,7 +101,7 @@ func TestServerSetCommands2(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
-				assert.True(t, len(arr.Args) > 0)
+				assert.Equal(t, 2, len(arr.Args))
 			},
 		},
 	}
@@ -140,7 +140,7 @@ func TestServerSortedSetCommands2(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
-				assert.True(t, int64(*integer) >= 0)
+				assert.Equal(t, int64(2), int64(*integer))
 			},
 		},
 		// ZSCORE
@@ -188,7 +188,7 @@ func TestServerHashCommands2(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
-				assert.True(t, int64(*integer) >= 0)
+				assert.Equal(t, int64(2), int64(*integer))
 			},
 		},
 		// HEXISTS
@@ -209,7 +209,7 @@ func TestServerHashCommands2(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
-				assert.True(t, len(arr.Args) > 0)
+				assert.Equal(t, 2, len(arr.Args))
 			},
 		},
 	}

@@ -2,6 +2,7 @@ package server
 
 import (
 	"testing"
+	"strings"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/zeebo/assert"
@@ -24,7 +25,7 @@ func TestServerInfoCommand(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				bulk, ok := resp.(*proto.BulkString)
 				assert.True(t, ok)
-				assert.True(t, len(string(*bulk)) > 0)
+				assert.True(t, strings.Contains(string(*bulk), "redis_version"))
 			},
 		},
 		{
@@ -33,7 +34,7 @@ func TestServerInfoCommand(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				bulk, ok := resp.(*proto.BulkString)
 				assert.True(t, ok)
-				assert.True(t, len(string(*bulk)) > 0)
+				assert.True(t, strings.Contains(string(*bulk), "redis_version"))
 			},
 		},
 		{
@@ -69,7 +70,7 @@ func TestServerInfoCommand(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				bulk, ok := resp.(*proto.BulkString)
 				assert.True(t, ok)
-				assert.True(t, len(string(*bulk)) > 0)
+				assert.True(t, strings.Contains(string(*bulk), "redis_version"))
 			},
 		},
 	}
@@ -205,5 +206,5 @@ func TestServerSlowLogCommands(t *testing.T) {
 	resp := handler.executeCommand(state, "SLOWLOG", [][]byte{[]byte("LEN")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.True(t, int64(*integer) >= 0)
+	assert.Equal(t, int64(0), int64(*integer))
 }

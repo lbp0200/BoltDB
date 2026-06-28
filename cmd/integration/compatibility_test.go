@@ -192,7 +192,7 @@ func TestCompatTxWATCHOptimisticLocking(t *testing.T) {
 	ctx := context.Background()
 	sharedClient.Set(ctx, "watch:key", "original", 0)
 
-	var execResult interface{}
+	var execResult error
 	err := sharedClient.Watch(ctx, func(tx *redis.Tx) error {
 		sharedClient.Set(ctx, "watch:key", "modified_by_other", 0)
 
@@ -214,7 +214,7 @@ func TestCompatTxWATCHOptimisticLocking(t *testing.T) {
 	val, err := sharedClient.Get(ctx, "watch:key").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, "modified_by_other", val)
-	_ = execResult
+	assert.Error(t, execResult)
 }
 
 func TestCompatTxWATCHNoConflict(t *testing.T) {

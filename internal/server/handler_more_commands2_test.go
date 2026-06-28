@@ -127,7 +127,7 @@ func TestServerHyperLogLogCommands(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
-				assert.True(t, len(arr.Args) > 0)
+				assert.True(t, len(arr.Args) >= 2)
 			},
 		},
 	}
@@ -205,7 +205,7 @@ func TestServerStreamCommands2(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
-				assert.True(t, len(arr.Args) > 0)
+				assert.True(t, len(arr.Args) >= 2)
 			},
 		},
 		// XPENDING
@@ -252,7 +252,7 @@ func TestServerSetCommands3(t *testing.T) {
 			check: func(t *testing.T, resp proto.RESP) {
 				arr, ok := resp.(*proto.Array)
 				assert.True(t, ok)
-				assert.True(t, len(arr.Args) > 0) // intersection of {a,b,c} and {b,c,d} = {b,c}
+				assert.Equal(t, 2, len(arr.Args)) // intersection of {a,b,c} and {b,c,d} = {b,c}
 			},
 		},
 		// SUNION

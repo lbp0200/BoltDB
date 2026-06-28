@@ -103,7 +103,7 @@ func TestExecuteCommand_PFINFO_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "PFINFO", [][]byte{[]byte("myhyperloglog")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) > 0)
+	assert.True(t, len(arr.Args) >= 2)
 }
 
 // TestExecuteCommand_SWAPDB_Coverage2 tests SWAPDB command
@@ -138,5 +138,5 @@ func TestExecuteCommand_RANDOMKEY_Coverage2(t *testing.T) {
 	resp := handler.executeCommand(state, "RANDOMKEY", nil, "127.0.0.1:12345")
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
-	assert.True(t, len(*bs) > 0)
+	assert.True(t, string(*bs) == "key1" || string(*bs) == "key2")
 }
