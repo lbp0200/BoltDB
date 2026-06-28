@@ -16,7 +16,7 @@ func TestZRangeByScore(t *testing.T) {
 	ctx := context.Background()
 
 	// 准备测试数据
-	_ = sharedClient.ZAdd(ctx, "zrangescore", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err()
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zrangescore", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err())
 
 	// ZRANGEBYSCORE - 按分数范围获取
 	members, err := sharedClient.ZRangeByScore(ctx, "zrangescore", &redis.ZRangeBy{
@@ -51,7 +51,7 @@ func TestZRevRangeByScore(t *testing.T) {
 	ctx := context.Background()
 
 	// 准备测试数据
-	_ = sharedClient.ZAdd(ctx, "zrevscore", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err()
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zrevscore", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err())
 
 	// ZREVRANGEBYSCORE - 逆序按分数范围获取
 	members, err := sharedClient.ZRevRangeByScore(ctx, "zrevscore", &redis.ZRangeBy{
@@ -80,7 +80,7 @@ func TestZRemRangeByRank(t *testing.T) {
 	ctx := context.Background()
 
 	// 准备测试数据
-	_ = sharedClient.ZAdd(ctx, "zremrank", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err()
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zremrank", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err())
 
 	// ZREMRANGEBYRANK - 按排名删除 (删除排名0到1，即a和b)
 	count, err := sharedClient.ZRemRangeByRank(ctx, "zremrank", 0, 1).Result()
@@ -100,7 +100,7 @@ func TestZRemRangeByScore(t *testing.T) {
 	ctx := context.Background()
 
 	// 准备测试数据
-	_ = sharedClient.ZAdd(ctx, "zremscore", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err()
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zremscore", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err())
 
 	// ZREMRANGEBYSCORE - 按分数范围删除
 	count, err := sharedClient.ZRemRangeByScore(ctx, "zremscore", "10", "20").Result()
@@ -112,7 +112,7 @@ func TestZRemRangeByScore(t *testing.T) {
 	assert.Equal(t, []string{"c"}, members)
 
 	// ZREMRANGEBYSCORE - 不包含边界
-	_ = sharedClient.ZAdd(ctx, "zremscore2", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err()
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zremscore2", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err())
 	count, err = sharedClient.ZRemRangeByScore(ctx, "zremscore2", "(10", "(30").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), count) // 只有b被删除
@@ -126,7 +126,7 @@ func TestZPopMaxMin(t *testing.T) {
 	ctx := context.Background()
 
 	// 准备测试数据
-	_ = sharedClient.ZAdd(ctx, "zpopmaxmin", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err()
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zpopmaxmin", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err())
 
 	// ZPOPMAX - 弹出最大值的成员
 	result, err := sharedClient.ZPopMax(ctx, "zpopmaxmin").Result()
@@ -155,7 +155,7 @@ func TestBZPopMaxMin(t *testing.T) {
 	ctx := context.Background()
 
 	// 准备测试数据
-	_ = sharedClient.ZAdd(ctx, "bzpop", redis.Z{Score: 10, Member: "a"}).Err()
+	assert.NoError(t, sharedClient.ZAdd(ctx, "bzpop", redis.Z{Score: 10, Member: "a"}).Err())
 
 	// BZPOPMIN - 阻塞弹出最小值
 	result, err := sharedClient.BZPopMin(ctx, 0, "bzpop").Result()
@@ -165,7 +165,7 @@ func TestBZPopMaxMin(t *testing.T) {
 	assert.Equal(t, float64(10), result.Score)
 
 	// BZPOPMAX - 阻塞弹出最大值
-	_ = sharedClient.ZAdd(ctx, "bzpop2", redis.Z{Score: 100, Member: "max"}).Err()
+	assert.NoError(t, sharedClient.ZAdd(ctx, "bzpop2", redis.Z{Score: 100, Member: "max"}).Err())
 	result, err = sharedClient.BZPopMax(ctx, 0, "bzpop2").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, "bzpop2", result.Key)
@@ -181,7 +181,7 @@ func TestZLex(t *testing.T) {
 	ctx := context.Background()
 
 	// 准备测试数据 (相同分数，按字典序排序)
-	_ = sharedClient.ZAdd(ctx, "zlex", redis.Z{Score: 0, Member: "a"}, redis.Z{Score: 0, Member: "b"}, redis.Z{Score: 0, Member: "c"}, redis.Z{Score: 0, Member: "d"}).Err()
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zlex", redis.Z{Score: 0, Member: "a"}, redis.Z{Score: 0, Member: "b"}, redis.Z{Score: 0, Member: "c"}, redis.Z{Score: 0, Member: "d"}).Err())
 
 	// ZLEXCOUNT - 字典范围计数
 	count, err := sharedClient.ZLexCount(ctx, "zlex", "[b", "[d").Result()
@@ -222,7 +222,7 @@ func TestZRevRangeByLex(t *testing.T) {
 	ctx := context.Background()
 
 	// 准备测试数据 (相同分数)
-	_ = sharedClient.ZAdd(ctx, "zrevlex", redis.Z{Score: 0, Member: "a"}, redis.Z{Score: 0, Member: "b"}, redis.Z{Score: 0, Member: "c"}, redis.Z{Score: 0, Member: "d"}).Err()
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zrevlex", redis.Z{Score: 0, Member: "a"}, redis.Z{Score: 0, Member: "b"}, redis.Z{Score: 0, Member: "c"}, redis.Z{Score: 0, Member: "d"}).Err())
 
 	// ZREVRANGEBYLEX - 逆序按字典范围获取
 	result, err := sharedClient.Do(ctx, "ZREVRANGEBYLEX", "zrevlex", "[d", "[b").Result()
@@ -248,7 +248,7 @@ func TestZRemRangeByLex(t *testing.T) {
 	ctx := context.Background()
 
 	// 准备测试数据
-	_ = sharedClient.ZAdd(ctx, "zremlex", redis.Z{Score: 0, Member: "a"}, redis.Z{Score: 0, Member: "b"}, redis.Z{Score: 0, Member: "c"}, redis.Z{Score: 0, Member: "d"}).Err()
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zremlex", redis.Z{Score: 0, Member: "a"}, redis.Z{Score: 0, Member: "b"}, redis.Z{Score: 0, Member: "c"}, redis.Z{Score: 0, Member: "d"}).Err())
 
 	// ZREMRANGEBYLEX - 按字典范围删除
 	count, err := sharedClient.Do(ctx, "ZREMRANGEBYLEX", "zremlex", "[b", "[c").Result()
@@ -268,7 +268,7 @@ func TestZScan(t *testing.T) {
 	ctx := context.Background()
 
 	// 准备测试数据
-	_ = sharedClient.ZAdd(ctx, "zscan", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err()
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zscan", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err())
 
 	// ZSCAN - 迭代扫描
 	result, err := sharedClient.Do(ctx, "ZSCAN", "zscan", "0").Result()
@@ -305,7 +305,7 @@ func TestZRangeWithScores(t *testing.T) {
 	ctx := context.Background()
 
 	// 准备测试数据
-	_ = sharedClient.ZAdd(ctx, "zrangews", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err()
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zrangews", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err())
 
 	// ZRANGE WITHSCORES
 	result, err := sharedClient.ZRangeWithScores(ctx, "zrangews", 0, -1).Result()
@@ -330,7 +330,7 @@ func TestZRangeByRankWithScores(t *testing.T) {
 	ctx := context.Background()
 
 	// 准备测试数据
-	_ = sharedClient.ZAdd(ctx, "zrankws", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err()
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zrankws", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err())
 
 	// ZRANGEBYRANK with WITHSCORES - 需要用原始命令
 	result, err := sharedClient.Do(ctx, "ZRANGE", "zrankws", "0", "1", "WITHSCORES").Result()

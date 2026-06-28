@@ -1076,11 +1076,9 @@ func TestExecuteCommand_GEOHASH_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "GEOHASH", [][]byte{[]byte("mygeo"), []byte("SF")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) > 0)
+	assert.Equal(t, 1, len(arr.Args)) // querying 1 member
 	// Verify returned hash is a non-empty string
-	if len(arr.Args) > 0 {
-		assert.True(t, len(arr.Args[0]) > 0)
-	}
+	assert.True(t, len(arr.Args[0]) > 0)
 }
 
 // TestExecuteCommand_GEOPOS tests GEOPOS command
@@ -1095,15 +1093,11 @@ func TestExecuteCommand_GEOPOS_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "GEOPOS", [][]byte{[]byte("mygeo"), []byte("SF")}, "127.0.0.1:12345")
 	nested, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(nested.Elems) > 0)
+	assert.Equal(t, 1, len(nested.Elems)) // querying 1 member
 	// Verify position returned as nested [lon, lat] array
-	if len(nested.Elems) > 0 {
-		coord, ok := nested.Elems[0].(*proto.NestedArray)
-		assert.True(t, ok)
-		if ok {
-			assert.Equal(t, 2, len(coord.Elems))
-		}
-	}
+	coord, ok := nested.Elems[0].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(coord.Elems))
 }
 
 // TestExecuteCommand_GEOSEARCH tests GEOSEARCH command

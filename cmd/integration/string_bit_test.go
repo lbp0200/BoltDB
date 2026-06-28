@@ -46,7 +46,7 @@ func TestBitCount(t *testing.T) {
 
 	// 设置一个字符串，其二进制表示中有几个位被设置
 	// "f" = 0x66 = 01100110，有4个位被设置
-	_ = sharedClient.Set(ctx, "bitcountkey", "f", 0).Err()
+	assert.NoError(t, sharedClient.Set(ctx, "bitcountkey", "f", 0).Err())
 
 	count, err := sharedClient.BitCount(ctx, "bitcountkey", nil).Result()
 	assert.NoError(t, err)
@@ -68,8 +68,8 @@ func TestBitOp(t *testing.T) {
 	// 准备测试数据
 	// "a" = 0x61 = 01100001
 	// "b" = 0x62 = 01100010
-	_ = sharedClient.Set(ctx, "bitop1", "a", 0).Err()
-	_ = sharedClient.Set(ctx, "bitop2", "b", 0).Err()
+	assert.NoError(t, sharedClient.Set(ctx, "bitop1", "a", 0).Err())
+	assert.NoError(t, sharedClient.Set(ctx, "bitop2", "b", 0).Err())
 
 	// BITAND - 按位与
 	result, err := sharedClient.Do(ctx, "BITOP", "AND", "bitandresult", "bitop1", "bitop2").Result()
@@ -99,7 +99,7 @@ func TestBitOp(t *testing.T) {
 	assert.Equal(t, "\x03", val)
 
 	// BITNOT - 按位取反
-	_ = sharedClient.Set(ctx, "bitnotkey", "\x00", 0).Err()
+	assert.NoError(t, sharedClient.Set(ctx, "bitnotkey", "\x00", 0).Err())
 	result, err = sharedClient.Do(ctx, "BITOP", "NOT", "bitnotresult", "bitnotkey").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), result)
@@ -176,7 +176,7 @@ func TestBitPos(t *testing.T) {
 	ctx := context.Background()
 
 	// "\x00\x00\x00" - 所有位都是0
-	_ = sharedClient.Set(ctx, "bitposkey", "\x00\x00\x00", 0).Err()
+	assert.NoError(t, sharedClient.Set(ctx, "bitposkey", "\x00\x00\x00", 0).Err())
 
 	// 查找第一个设置为1的位 (应该返回-1或超出范围)
 	result, err := sharedClient.Do(ctx, "BITPOS", "bitposkey", "1").Result()
@@ -185,7 +185,7 @@ func TestBitPos(t *testing.T) {
 	assert.Equal(t, int64(-1), result)
 
 	// "\xff\x00\x00" - 第一个字节全是1，后两个是0
-	_ = sharedClient.Set(ctx, "bitposkey2", "\xff\x00\x00", 0).Err()
+	assert.NoError(t, sharedClient.Set(ctx, "bitposkey2", "\xff\x00\x00", 0).Err())
 
 	// 查找第一个0位，应该在第8位
 	result, err = sharedClient.Do(ctx, "BITPOS", "bitposkey2", "0").Result()
@@ -193,7 +193,7 @@ func TestBitPos(t *testing.T) {
 	assert.Equal(t, int64(8), result)
 
 	// "\x80\x00\x00" - 只有第一位是1
-	_ = sharedClient.Set(ctx, "bitposkey3", "\x80\x00\x00", 0).Err()
+	assert.NoError(t, sharedClient.Set(ctx, "bitposkey3", "\x80\x00\x00", 0).Err())
 
 	result, err = sharedClient.Do(ctx, "BITPOS", "bitposkey3", "1").Result()
 	assert.NoError(t, err)
@@ -208,14 +208,14 @@ func TestBitLen(t *testing.T) {
 	ctx := context.Background()
 
 	// "hello" = 5字节 = 40位
-	_ = sharedClient.Set(ctx, "bitlenkey", "hello", 0).Err()
+	assert.NoError(t, sharedClient.Set(ctx, "bitlenkey", "hello", 0).Err())
 
 	result, err := sharedClient.Do(ctx, "BITLEN", "bitlenkey").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(40), result)
 
 	// 空字符串
-	_ = sharedClient.Set(ctx, "bitlenkey2", "", 0).Err()
+	assert.NoError(t, sharedClient.Set(ctx, "bitlenkey2", "", 0).Err())
 	result, err = sharedClient.Do(ctx, "BITLEN", "bitlenkey2").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), result)

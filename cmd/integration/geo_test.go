@@ -77,7 +77,7 @@ func TestGeoHash(t *testing.T) {
 	ctx := context.Background()
 
 	// 添加测试数据
-	_ = sharedClient.Do(ctx, "GEOADD", "mygeohash", "116.40", "39.90", "beijing").Err()
+	assert.NoError(t, sharedClient.Do(ctx, "GEOADD", "mygeohash", "116.40", "39.90", "beijing").Err())
 
 	// GEOHASH - 获取geohash
 	result, err := sharedClient.Do(ctx, "GEOHASH", "mygeohash", "beijing").Result()
@@ -90,7 +90,7 @@ func TestGeoHash(t *testing.T) {
 	hash, ok := arr[0].(string)
 	assert.True(t, ok)
 	// 北京的geohash应该是有效的
-	assert.True(t, len(hash) > 0)
+	assert.True(t, len(hash) > 0) // geohash is a non-empty string
 }
 
 // TestGeoDist 测试 GEODIST 命令
@@ -148,10 +148,10 @@ func TestGeoSearchWithModifiers(t *testing.T) {
 	result, err := sharedClient.Do(ctx, "GEOSEARCH", "searchmod", "FROMLONLAT", "116.40", "39.90", "BYRADIUS", "2000", "km", "WITHCOORD").Result()
 	assert.NoError(t, err)
 	arr := result.([]interface{})
-	assert.True(t, len(arr) > 0)
+	assert.Equal(t, 2, len(arr)) // 2 cities within 2000km
 	for _, elem := range arr {
 		entry := elem.([]interface{})
-		assert.True(t, len(entry) >= 2)
+		assert.Equal(t, 2, len(entry)) // WITHCOORD: [member, [lon, lat]]
 		coord := entry[1].([]interface{})
 		assert.Equal(t, 2, len(coord))
 	}
@@ -160,30 +160,30 @@ func TestGeoSearchWithModifiers(t *testing.T) {
 	result, err = sharedClient.Do(ctx, "GEOSEARCH", "searchmod", "FROMLONLAT", "116.40", "39.90", "BYRADIUS", "2000", "km", "WITHDIST").Result()
 	assert.NoError(t, err)
 	arr = result.([]interface{})
-	assert.True(t, len(arr) > 0)
+	assert.Equal(t, 2, len(arr))
 	for _, elem := range arr {
 		entry := elem.([]interface{})
-		assert.True(t, len(entry) >= 2)
+		assert.Equal(t, 2, len(entry)) // WITHDIST: [member, dist]
 	}
 
 	// WITHHASH — 返回 nested [member, hash]
 	result, err = sharedClient.Do(ctx, "GEOSEARCH", "searchmod", "FROMLONLAT", "116.40", "39.90", "BYRADIUS", "2000", "km", "WITHHASH").Result()
 	assert.NoError(t, err)
 	arr = result.([]interface{})
-	assert.True(t, len(arr) > 0)
+	assert.Equal(t, 2, len(arr))
 	for _, elem := range arr {
 		entry := elem.([]interface{})
-		assert.True(t, len(entry) >= 2)
+		assert.Equal(t, 2, len(entry)) // WITHHASH: [member, hash]
 	}
 
 	// WITHDIST WITHCOORD — 返回 nested [member, dist, [lon, lat]]
 	result, err = sharedClient.Do(ctx, "GEOSEARCH", "searchmod", "FROMLONLAT", "116.40", "39.90", "BYRADIUS", "2000", "km", "WITHDIST", "WITHCOORD").Result()
 	assert.NoError(t, err)
 	arr = result.([]interface{})
-	assert.True(t, len(arr) > 0)
+	assert.Equal(t, 2, len(arr))
 	for _, elem := range arr {
 		entry := elem.([]interface{})
-		assert.True(t, len(entry) >= 3)
+		assert.Equal(t, 3, len(entry)) // WITHDIST+WITHCOORD: [member, dist, [lon, lat]]
 		coord := entry[2].([]interface{})
 		assert.Equal(t, 2, len(coord))
 	}
