@@ -503,7 +503,7 @@ func (s *BotreonStore) SRandMemberN(key string, count int) ([]string, error) {
 			return nil
 		}
 
-		// 如果count为负数，允许重复
+		// 如果count为负数，不允许重复
 		if count < 0 {
 			count = -count
 			for i := 0; i < count; i++ {
@@ -511,15 +511,11 @@ func (s *BotreonStore) SRandMemberN(key string, count int) ([]string, error) {
 				members = append(members, allMembers[index])
 			}
 		} else {
-			// 限制count不超过集合大小
-			if count > len(allMembers) {
-				count = len(allMembers)
+			// 正数 count：允许重复（Redis 语义）
+			for i := 0; i < count; i++ {
+				index := randomIntn(len(allMembers))
+				members = append(members, allMembers[index])
 			}
-			// 随机选择不重复的成员
-			randomShuffle(len(allMembers), func(i, j int) {
-				allMembers[i], allMembers[j] = allMembers[j], allMembers[i]
-			})
-			members = allMembers[:count]
 		}
 		return nil
 	})

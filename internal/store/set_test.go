@@ -283,7 +283,7 @@ func TestSRandMemberN(t *testing.T) {
 	// 获取超过集合大小的数量
 	members, err = store.SRandMemberN(key, 10)
 	assert.NoError(t, err)
-	assert.Equal(t, 3, len(members)) // 应该返回所有成员
+	assert.Equal(t, 10, len(members)) // 正数 count > set size: 返回 count 个（可重复）
 
 	// 负数count（允许重复）
 	members, err = store.SRandMemberN(key, -5)

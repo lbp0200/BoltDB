@@ -860,7 +860,7 @@ def test_zdiff_zunion_zmscore(r):
     check("ZMSCORE len", 3, len(scores))
     check("ZMSCORE a=1", 1.0, scores[0])
     check("ZMSCORE b=2", 2.0, scores[1])
-    check("ZMSCORE missing is number", True, scores[2] is not None)
+    check("ZMSCORE missing=None", None, scores[2])
 
     # ZRANDMEMBER
     member = r.zrandmember("py:zd1")
@@ -1023,9 +1023,9 @@ def test_srandmember_count(r):
     members = r.srandmember("py:srandset", 3)
     check("SRANDMEMBER count=3", 3, len(members))
 
-    # With count > len — BoltDB returns unique members
+    # With count > len — Redis returns count elements (may have duplicates)
     members = r.srandmember("py:srandset", 100)
-    check("SRANDMEMBER count>len", True, len(members) >= 1)
+    check("SRANDMEMBER count>len", 100, len(members))
 
     # Negative count (guarantees duplicates)
     members = r.srandmember("py:srandset", -10)

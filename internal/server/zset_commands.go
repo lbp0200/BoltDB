@@ -478,9 +478,26 @@ func (h *Handler) handleZMSCORE(state *connState, args [][]byte, remoteAddr stri
 	if err != nil {
 		return wrapStoreError(err)
 	}
+	// Check if key exists at all — Redis returns nil for non-existent key
+	card, _ := h.Db.ZCard(key)
+	if card == 0 {
+		return proto.NewBulkString(nil)
+	}
+
+	// Build response: nil for missing members, string score for found members
 	results := make([][]byte, len(scores))
 	for i, s := range scores {
-		results[i] = []byte(strconv.FormatFloat(s, 'f', -1, 64))
+		if s == 0.0 {
+			// Check if this member actually exists (0.0 could be a valid score)
+			_, found, _ := h.Db.ZScore(key, members[i])
+			if !found {
+				results[i] = nil // nil bytes = nil BulkString in RESP
+			} else {
+				results[i] = []byte(strconv.FormatFloat(s, 'f', -1, 64))
+			}
+		} else {
+			results[i] = []byte(strconv.FormatFloat(s, 'f', -1, 64))
+		}
 	}
 	return &proto.Array{Args: results}
 }
