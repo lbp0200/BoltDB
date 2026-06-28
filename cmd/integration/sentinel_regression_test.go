@@ -36,7 +36,7 @@ func startBoltNode(t *testing.T) *testBoltNode {
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
-	_ = db.NextStartup()
+	assert.NoError(t, db.NextStartup())
 
 	replMgr := replication.NewReplicationManager(db)
 	backupMgr := backup.NewBackupManager(db, dbPath+"/backup")
@@ -348,12 +348,12 @@ func TestSentinelGossipStability(t *testing.T) {
 	p3 := "127.0.0.1:" + strconv.Itoa(gp3.GetPort())
 
 	// full mesh: all three connected to each other
-	_ = gp1.AddPeer(p2, "test-runid-1")
-	_ = gp1.AddPeer(p3, "test-runid-1")
-	_ = gp2.AddPeer(p1, "test-runid-2")
-	_ = gp2.AddPeer(p3, "test-runid-2")
-	_ = gp3.AddPeer(p1, "test-runid-3")
-	_ = gp3.AddPeer(p2, "test-runid-3")
+	assert.NoError(t, gp1.AddPeer(p2, "test-runid-1"))
+	assert.NoError(t, gp1.AddPeer(p3, "test-runid-1"))
+	assert.NoError(t, gp2.AddPeer(p1, "test-runid-2"))
+	assert.NoError(t, gp2.AddPeer(p3, "test-runid-2"))
+	assert.NoError(t, gp3.AddPeer(p1, "test-runid-3"))
+	assert.NoError(t, gp3.AddPeer(p2, "test-runid-3"))
 
 	time.Sleep(2 * time.Second)
 
@@ -458,8 +458,8 @@ func TestSentinelSplitBrainRegression(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	pA := "127.0.0.1:" + strconv.Itoa(gpA.GetPort())
 	pB := "127.0.0.1:" + strconv.Itoa(gpB.GetPort())
-	_ = gpA.AddPeer(pB, "sentinel-A")
-	_ = gpB.AddPeer(pA, "sentinel-B")
+	assert.NoError(t, gpA.AddPeer(pB, "sentinel-A"))
+	assert.NoError(t, gpB.AddPeer(pA, "sentinel-B"))
 	time.Sleep(2 * time.Second)
 
 	sA.Start()

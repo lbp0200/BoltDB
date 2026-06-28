@@ -561,7 +561,8 @@ func TestSetExtended(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, true, moved)
 
-	card, _ = sharedClient.SCard(ctx, "setmove1").Result()
+	card, err = sharedClient.SCard(ctx, "setmove1").Result()
+	assert.NoError(t, err)
 	assert.Equal(t, int64(1), card)
 }
 
@@ -887,16 +888,21 @@ func TestTransactionExtended(t *testing.T) {
 	assert.True(t, strings.Contains(err.Error(), "DISCARD without MULTI"))
 
 	// ========== Transaction with multiple commands ==========
-	_, _ = sharedClient.Do(ctx, "MULTI").Result()
-	_ = sharedClient.Set(ctx, "mkey1", "val1", 0).Err()
-	_ = sharedClient.Set(ctx, "mkey2", "val2", 0).Err()
-	_ = sharedClient.Set(ctx, "mkey3", "val3", 0).Err()
-	_, _ = sharedClient.Do(ctx, "EXEC").Result()
+	_, err = sharedClient.Do(ctx, "MULTI").Result()
+	assert.NoError(t, err)
+	assert.NoError(t, sharedClient.Set(ctx, "mkey1", "val1", 0).Err())
+	assert.NoError(t, sharedClient.Set(ctx, "mkey2", "val2", 0).Err())
+	assert.NoError(t, sharedClient.Set(ctx, "mkey3", "val3", 0).Err())
+	_, err = sharedClient.Do(ctx, "EXEC").Result()
+	assert.NoError(t, err)
 
 	// Verify all commands were executed
-	val1, _ := sharedClient.Get(ctx, "mkey1").Result()
-	val2, _ := sharedClient.Get(ctx, "mkey2").Result()
-	val3, _ := sharedClient.Get(ctx, "mkey3").Result()
+	val1, err := sharedClient.Get(ctx, "mkey1").Result()
+	assert.NoError(t, err)
+	val2, err := sharedClient.Get(ctx, "mkey2").Result()
+	assert.NoError(t, err)
+	val3, err := sharedClient.Get(ctx, "mkey3").Result()
+	assert.NoError(t, err)
 	assert.Equal(t, "val1", val1)
 	assert.Equal(t, "val2", val2)
 	assert.Equal(t, "val3", val3)
@@ -944,7 +950,8 @@ func TestCOPY(t *testing.T) {
 	result, err = sharedClient.Do(ctx, "COPY", "srcstring", "dstexists", "REPLACE").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), result)
-	val, _ = sharedClient.Get(ctx, "dstexists").Result()
+	val, err = sharedClient.Get(ctx, "dstexists").Result()
+	assert.NoError(t, err)
 	assert.Equal(t, "value", val)
 
 	// COPY List
@@ -1062,7 +1069,7 @@ func TestHashAdvancedCommands(t *testing.T) {
 	arr, ok = result.([]interface{})
 	assert.True(t, ok)
 	// count >= 字段数量时，返回所有字段（至少5个）
-	assert.True(t, len(arr) >= 5)
+	assert.Equal(t, 5, len(arr)) // exactly 5 fields (f1-f5), count=10 returns all
 }
 
 // TestSortedSetAdvancedCommands 测试SortedSet高级命令（ZUNIONSTORE, ZINTERSTORE, ZDIFFSTORE）
@@ -1105,18 +1112,20 @@ func TestSortedSetAdvancedCommands(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), result) // 只有 {b}
 
-	members, _ = sharedClient.ZRange(ctx, "zinterresult", 0, -1).Result()
+	members, err = sharedClient.ZRange(ctx, "zinterresult", 0, -1).Result()
+	assert.NoError(t, err)
 	assert.Equal(t, []string{"b"}, members)
 
 	// ZDIFFSTORE - 差集
-	_ = sharedClient.ZAdd(ctx, "zdiff1", redis.Z{Score: 1, Member: "a"}, redis.Z{Score: 2, Member: "b"}, redis.Z{Score: 3, Member: "c"}).Err()
-	_ = sharedClient.ZAdd(ctx, "zdiff2", redis.Z{Score: 2, Member: "b"}).Err()
-	_ = sharedClient.Del(ctx, "zdiffresult").Err()
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zdiff1", redis.Z{Score: 1, Member: "a"}, redis.Z{Score: 2, Member: "b"}, redis.Z{Score: 3, Member: "c"}).Err())
+	assert.NoError(t, sharedClient.ZAdd(ctx, "zdiff2", redis.Z{Score: 2, Member: "b"}).Err())
+	assert.NoError(t, sharedClient.Del(ctx, "zdiffresult").Err())
 	result, err = sharedClient.ZDiffStore(ctx, "zdiffresult", "zdiff1", "zdiff2").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(2), result) // {a, c}
 
-	members, _ = sharedClient.ZRange(ctx, "zdiffresult", 0, -1).Result()
+	members, err = sharedClient.ZRange(ctx, "zdiffresult", 0, -1).Result()
+	assert.NoError(t, err)
 	assert.Equal(t, 2, len(members))
 }
 
@@ -2360,15 +2369,15 @@ func TestMGetWrongTypeRegression(t *testing.T) {
 	ctx := context.Background()
 
 	// --- Sub-test 1: MGET mixed string + hash returns error, no garbled data ---
-	_ = sharedClient.Set(ctx, "mget_str", "hello", 0)
-	_ = sharedClient.HSet(ctx, "mget_hash", "field", "value")
+	assert.NoError(t, sharedClient.Set(ctx, "mget_str", "hello", 0).Err())
+	assert.NoError(t, sharedClient.HSet(ctx, "mget_hash", "field", "value").Err())
 
 	_, err := sharedClient.MGet(ctx, "mget_str", "mget_hash").Result()
 	assert.Error(t, err)
 	assert.True(t, strings.Contains(err.Error(), "WRONGTYPE"))
 
 	// --- Sub-test 2: MGET with non-existent keys still OK ---
-	_ = sharedClient.Set(ctx, "mget_ok", "ok", 0)
+	assert.NoError(t, sharedClient.Set(ctx, "mget_ok", "ok", 0).Err())
 	vals, err := sharedClient.MGet(ctx, "mget_ok", "mget_nope").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(vals))
@@ -2376,9 +2385,9 @@ func TestMGetWrongTypeRegression(t *testing.T) {
 	assert.Nil(t, vals[1])
 
 	// --- Sub-test 3: All non-string types rejected ---
-	_ = sharedClient.LPush(ctx, "mget_list", "a")
-	_ = sharedClient.SAdd(ctx, "mget_set", "x")
-	_ = sharedClient.ZAdd(ctx, "mget_zset", redis.Z{Score: 1, Member: "m"})
+	assert.NoError(t, sharedClient.LPush(ctx, "mget_list", "a").Err())
+	assert.NoError(t, sharedClient.SAdd(ctx, "mget_set", "x").Err())
+	assert.NoError(t, sharedClient.ZAdd(ctx, "mget_zset", redis.Z{Score: 1, Member: "m"}).Err())
 
 	_, err = sharedClient.MGet(ctx, "mget_str", "mget_list").Result()
 	assert.Error(t, err)
@@ -2911,14 +2920,14 @@ func TestLCSIntegration(t *testing.T) {
 	assert.NoError(t, err)
 	lcs, ok := val.(string)
 	assert.True(t, ok)
-	assert.True(t, len(lcs) > 0)
+	assert.Equal(t, "hello ", lcs) // LCS of "hello world" and "hello there"
 
 	// LCS LEN → Integer
 	val, err = sharedClient.Do(ctx, "LCS", "lcs_a", "lcs_b", "LEN").Result()
 	assert.NoError(t, err)
 	length, ok := val.(int64)
 	assert.True(t, ok)
-	assert.True(t, length > 0)
+	assert.Equal(t, int64(6), length) // "hello " is 6 bytes
 
 	// LCS with non-existent key → error
 	_, err = sharedClient.Do(ctx, "LCS", "lcs_a", "nonexistent").Result()
@@ -2967,9 +2976,7 @@ func TestZINTERIntegration(t *testing.T) {
 	assert.NoError(t, err)
 	members, ok := val.([]interface{})
 	assert.True(t, ok)
-	assert.True(t, len(members) >= 1)
-
-	// ZINTER WITHSCORES → alternating member/score
+	assert.Equal(t, 1, len(members)) // {a,b} ∩ {a,c} = {a}
 	val, err = sharedClient.Do(ctx, "ZINTER", "2", "zi_a", "zi_b", "WITHSCORES").Result()
 	assert.NoError(t, err)
 	withScores, ok := val.([]interface{})

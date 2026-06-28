@@ -166,7 +166,8 @@ func TestLastSave(t *testing.T) {
 	ctx := context.Background()
 
 	// 先执行 BGSAVE 来设置 lastSaveTime
-	_, _ = sharedClient.Do(ctx, "BGSAVE").Result()
+	_, err := sharedClient.Do(ctx, "BGSAVE").Result()
+	assert.NoError(t, err)
 	time.Sleep(100 * time.Millisecond) // 等待后台保存完成
 
 	// LASTSAVE - 获取最后保存时间
@@ -221,7 +222,7 @@ func TestClientID(t *testing.T) {
 
 	id, ok := result.(int64)
 	assert.True(t, ok)
-	assert.True(t, id > 0)
+	assert.True(t, id >= 1) // CLIENT ID is always >= 1
 }
 
 // TestClientInfo 测试 CLIENT INFO 命令

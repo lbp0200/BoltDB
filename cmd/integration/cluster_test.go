@@ -142,7 +142,7 @@ func TestClusterBasic(t *testing.T) {
 		t.Fatalf("unexpected type for CLUSTER NODES: %T", nodes)
 	}
 	// 节点应该包含自身
-	assert.True(t, len(nodesStr) > 0)
+	assert.True(t, strings.Contains(nodesStr, "myself"))
 
 	// 测试 CLUSTER SLOTS - 跳过严格验证，因为格式可能因实现而异
 	_, err = clusterClient.Do(ctx, "CLUSTER", "SLOTS").Result()
@@ -374,8 +374,8 @@ func TestClusterDel(t *testing.T) {
 	ctx := context.Background()
 
 	// 准备测试数据
-	_ = clusterClient.Set(ctx, "key1", "value1", 0).Err()
-	_ = clusterClient.Set(ctx, "key2", "value2", 0).Err()
+	assert.NoError(t, clusterClient.Set(ctx, "key1", "value1", 0).Err())
+	assert.NoError(t, clusterClient.Set(ctx, "key2", "value2", 0).Err())
 
 	// DEL 单个键
 	deleted, err := clusterClient.Del(ctx, "key1").Result()
@@ -396,7 +396,7 @@ func TestClusterExists(t *testing.T) {
 	ctx := context.Background()
 
 	// 准备测试数据
-	_ = clusterClient.Set(ctx, "key1", "value1", 0).Err()
+	assert.NoError(t, clusterClient.Set(ctx, "key1", "value1", 0).Err())
 
 	// EXISTS 单个键
 	exists, err := clusterClient.Exists(ctx, "key1").Result()
@@ -417,7 +417,7 @@ func TestClusterExpire(t *testing.T) {
 	ctx := context.Background()
 
 	// 准备测试数据
-	_ = clusterClient.Set(ctx, "expirekey", "value", 0).Err()
+	assert.NoError(t, clusterClient.Set(ctx, "expirekey", "value", 0).Err())
 
 	// EXPIRE
 	set, err := clusterClient.Expire(ctx, "expirekey", 10*time.Second).Result()
