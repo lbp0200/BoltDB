@@ -594,14 +594,14 @@ func (h *Handler) setKeyWithOpts(state *connState, key, value string, ttl time.D
 		if get {
 			return nilBulkString(state.respVersion)
 		}
-		return &proto.Null{}
+		return nilBulkString(state.respVersion)
 	}
 
 	if xx && !exists {
 		if get {
 			return nilBulkString(state.respVersion)
 		}
-		return &proto.Null{}
+		return nilBulkString(state.respVersion)
 	}
 
 	if keepTTL {

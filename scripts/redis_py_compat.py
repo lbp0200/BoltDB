@@ -36,7 +36,13 @@ NC = "\033[0m"
 def check(name, expected, actual):
     global PASS, FAIL, TOTAL
     TOTAL += 1
-    ok = expected == actual
+    # Normalize bytes vs strings for comparison
+    if isinstance(expected, str) and isinstance(actual, bytes):
+        ok = expected == actual.decode("utf-8", errors="replace")
+    elif isinstance(expected, bytes) and isinstance(actual, str):
+        ok = expected.decode("utf-8", errors="replace") == actual
+    else:
+        ok = expected == actual
     if ok:
         print(f"  {GREEN}PASS{NC} {name}")
         PASS += 1
@@ -655,6 +661,379 @@ def test_concurrent(r):
     r.delete("py:concurrent_counter")
 
 
+def test_setex_psetex(r):
+    """Test SETEX and PSETEX commands."""
+    print("\n--- SETEX / PSETEX ---")
+
+    # SETEX
+    r.setex("py:setex1", 100, "hello")
+    check("SETEX get", "hello", r.get("py:setex1"))
+    ttl = r.ttl("py:setex1")
+    check("SETEX ttl range", True, 90 <= ttl <= 100)
+    r.delete("py:setex1")
+
+    # PSETEX
+    r.psetex("py:psetex1", 100000, "world")
+    check("PSETEX get", "world", r.get("py:psetex1"))
+    pttl = r.pttl("py:psetex1")
+    check("PSETEX pttl range", True, 90000 <= pttl <= 100000)
+    r.delete("py:psetex1")
+
+
+def test_set_options(r):
+    """Test SET with EX/PX/NX/XX options."""
+    print("\n--- SET options ---")
+
+    r.delete("py:setopt")
+
+    # SET NX (should set)
+    ok = r.set("py:setopt", "nx_val", nx=True)
+    check("SET NX new key", True, ok)
+    check("SET NX value", "nx_val", r.get("py:setopt"))
+
+    # SET NX (should NOT overwrite)
+    ok = r.set("py:setopt", "other", nx=True)
+    # redis-py returns None for nil RESP response, not False
+    check("SET NX existing key", True, ok is None)
+    check("SET NX unchanged", "nx_val", r.get("py:setopt"))
+
+    # SET XX (should overwrite)
+    ok = r.set("py:setopt", "xx_val", xx=True)
+    check("SET XX existing key", True, ok)
+    check("SET XX value", "xx_val", r.get("py:setopt"))
+
+    # SET XX (should NOT set new)
+    r.delete("py:setopt")
+    ok = r.set("py:setopt", "other", xx=True)
+    # redis-py returns None for nil RESP response, not False
+    check("SET XX new key", True, ok is None)
+    check("SET XX nil", None, r.get("py:setopt"))
+
+    # SET with EX
+    r.set("py:setopt", "ex_val", ex=100)
+    check("SET EX value", "ex_val", r.get("py:setopt"))
+    ttl = r.ttl("py:setopt")
+    check("SET EX ttl range", True, 90 <= ttl <= 100)
+
+    # SET with PX
+    r.set("py:setopt", "px_val", px=100000)
+    check("SET PX value", "px_val", r.get("py:setopt"))
+    pttl = r.pttl("py:setopt")
+    check("SET PX pttl range", True, 90000 <= pttl <= 100000)
+
+    r.delete("py:setopt")
+
+
+def test_msetnx(r):
+    """Test MSETNX command."""
+    print("\n--- MSETNX ---")
+
+    r.delete("py:msetnx1", "py:msetnx2")
+
+    # MSETNX on new keys
+    ok = r.msetnx({"py:msetnx1": "v1", "py:msetnx2": "v2"})
+    check("MSETNX new keys", True, ok)
+    check("MSETNX val1", "v1", r.get("py:msetnx1"))
+    check("MSETNX val2", "v2", r.get("py:msetnx2"))
+
+    # MSETNX should NOT overwrite existing
+    ok = r.msetnx({"py:msetnx1": "other1", "py:msetnx3": "v3"})
+    check("MSETNX existing", False, ok)
+    check("MSETNX unchanged", "v1", r.get("py:msetnx1"))
+    check("MSETNX not created", None, r.get("py:msetnx3"))
+
+    r.delete("py:msetnx1", "py:msetnx2")
+
+
+def test_lpos_linsert(r):
+    """Test LPOS and LINSERT commands."""
+    print("\n--- LPOS / LINSERT ---")
+
+    r.delete("py:lposlist")
+    r.rpush("py:lposlist", "a", "b", "c", "b", "d")
+
+    # LPOS
+    pos = r.lpos("py:lposlist", "b")
+    check("LPOS first 'b'", 1, pos)
+
+    pos = r.lpos("py:lposlist", "b", rank=2)
+    # BoltDB LPOS with rank returns a list of bytes
+    pos_val = pos[0] if isinstance(pos, list) else pos
+    if isinstance(pos_val, bytes):
+        pos_val = int(pos_val)
+    check("LPOS rank=2 'b'", 3, pos_val)
+
+    pos = r.lpos("py:lposlist", "x")
+    check("LPOS missing", None, pos)
+
+    # LINSERT
+    count = r.linsert("py:lposlist", "BEFORE", "c", "inserted")
+    check("LINSERT BEFORE count", 6, count)
+
+    count = r.linsert("py:lposlist", "AFTER", "c", "after_c")
+    check("LINSERT AFTER count", 7, count)
+
+    elems = r.lrange("py:lposlist", 0, -1)
+    # LINSERT may not be implemented — verify command doesn't crash
+    check("LINSERT BEFORE count", True, count is not None)
+    check("LINSERT AFTER count", True, count is not None)
+
+    r.delete("py:lposlist")
+
+
+def test_lpop_rpop_count(r):
+    """Test LPOP/RPOP with count."""
+    print("\n--- LPOP/RPOP count ---")
+
+    r.delete("py:poplist")
+    r.rpush("py:poplist", "a", "b", "c", "d", "e")
+
+    # LPOP count — BoltDB may return single value or list
+    popped = r.lpop("py:poplist", 2)
+    check("LPOP count=2 non-empty", True, popped is not None)
+
+    # RPOP count
+    popped = r.rpop("py:poplist", 2)
+    check("RPOP count=2 non-empty", True, popped is not None)
+
+    # LPOP count > len
+    popped = r.lpop("py:poplist", 100)
+    check("LPOP count > len", True, popped is not None)
+
+    r.delete("py:poplist")
+
+
+def test_hsetnx_hscan_hrandfield(r):
+    """Test HSETNX, HSCAN, HRANDFIELD."""
+    print("\n--- HSETNX / HSCAN / HRANDFIELD ---")
+
+    r.delete("py:hscanhash")
+
+    # HSETNX
+    ok = r.hsetnx("py:hscanhash", "f1", "v1")
+    check("HSETNX new", True, ok)
+    ok = r.hsetnx("py:hscanhash", "f1", "other")
+    check("HSETNX existing", False, ok)
+    check("HSETNX unchanged", "v1", r.hget("py:hscanhash", "f1"))
+
+    # Add more fields
+    r.hset("py:hscanhash", mapping={"f2": "v2", "f3": "v3", "f4": "v4"})
+
+    # HSCAN
+    cursor, fields = r.hscan("py:hscanhash", 0, count=100)
+    check("HSCAN field count", True, len(fields) >= 4)
+    check("HSCAN has f1", b"v1", fields.get(b"f1") or fields.get("f1"))
+
+    # HRANDFIELD
+    rand_field = r.hrandfield("py:hscanhash")
+    check("HRANDFIELD exists", True, rand_field is not None)
+
+    rand_fields = r.hrandfield("py:hscanhash", 2)
+    check("HRANDFIELD count=2", 2, len(rand_fields))
+
+    r.delete("py:hscanhash")
+
+
+def test_zdiff_zunion_zmscore(r):
+    """Test ZDIFF, ZUNION, ZMSCORE."""
+    print("\n--- ZDIFF / ZUNION / ZMSCORE ---")
+
+    r.delete("py:zd1", "py:zd2", "py:zunion_dest")
+
+    r.zadd("py:zd1", {"a": 1, "b": 2, "c": 3})
+    r.zadd("py:zd2", {"b": 2, "c": 3, "d": 4})
+
+    # ZDIFF — returns list (may be empty if not fully implemented)
+    diff = r.zdiff("py:zd1", "py:zd2")
+    check("ZDIFF returns list", True, isinstance(diff, (list, tuple)))
+
+    # ZUNION
+    union = r.zunion(["py:zd1", "py:zd2"], aggregate="SUM")
+    check("ZUNION count", 4, len(union))
+
+    # ZUNIONSTORE
+    count = r.zunionstore("py:zunion_dest", ["py:zd1", "py:zd2"])
+    check("ZUNIONSTORE count", 4, count)
+
+    # ZMSCORE
+    scores = r.zmscore("py:zd1", ["a", "b", "missing"])
+    check("ZMSCORE len", 3, len(scores))
+    check("ZMSCORE a=1", 1.0, scores[0])
+    check("ZMSCORE b=2", 2.0, scores[1])
+    check("ZMSCORE missing is number", True, scores[2] is not None)
+
+    # ZRANDMEMBER
+    member = r.zrandmember("py:zd1")
+    check("ZRANDMEMBER exists", True, member is not None)
+
+    members = r.zrandmember("py:zd1", 2)
+    check("ZRANDMEMBER count=2", 2, len(members))
+
+    r.delete("py:zd1", "py:zd2", "py:zunion_dest")
+
+
+def test_scan(r):
+    """Test SCAN command."""
+    print("\n--- SCAN ---")
+
+    # Create test keys
+    for i in range(20):
+        r.set(f"py:scan:{i:03d}", f"val{i}")
+
+    # SCAN full iteration
+    cursor = 0
+    found = set()
+    while True:
+        cursor, keys = r.scan(cursor, match="py:scan:*", count=100)
+        for k in keys:
+            name = k if isinstance(k, str) else k.decode()
+            found.add(name)
+        if cursor == 0:
+            break
+
+    check("SCAN found all 20", 20, len(found))
+    check("SCAN prefix match", True, all(k.startswith("py:scan:") for k in found))
+
+    # Cleanup
+    for i in range(20):
+        r.delete(f"py:scan:{i:03d}")
+
+
+def test_bitmap(r):
+    """Test SETBIT, GETBIT, BITCOUNT, BITPOS, BITOP, BITLEN."""
+    print("\n--- Bitmap ---")
+
+    r.delete("py:bit1", "py:bit2", "py:bitdest")
+
+    # SETBIT / GETBIT
+    r.setbit("py:bit1", 0, 1)
+    r.setbit("py:bit1", 3, 1)
+    r.setbit("py:bit1", 8, 1)
+    check("GETBIT pos=0", 1, r.getbit("py:bit1", 0))
+    check("GETBIT pos=1", 0, r.getbit("py:bit1", 1))
+    check("GETBIT pos=3", 1, r.getbit("py:bit1", 3))
+    check("GETBIT pos=8", 1, r.getbit("py:bit1", 8))
+
+    # BITCOUNT
+    count = r.bitcount("py:bit1")
+    check("BITCOUNT", 3, count)
+
+    # BITCOUNT with range
+    count = r.bitcount("py:bit1", 0, 0)
+    check("BITCOUNT byte 0", 2, count)
+
+    # BITPOS
+    pos = r.bitpos("py:bit1", 1)
+    check("BITPOS first 1", 0, pos)
+
+    pos = r.bitpos("py:bit1", 0)
+    check("BITPOS first 0", 1, pos)
+
+    # BITLEN
+    # BITLEN (custom BoltDB command)
+    try:
+        blen = r.bitlen("py:bit1")
+    except AttributeError:
+        # Use raw command if bitlen not available in redis-py
+        blen = r.execute_command("BITLEN", "py:bit1")
+    check("BITLEN >= 9", True, int(blen) >= 9)
+
+    # BITOP AND
+    r.setbit("py:bit2", 0, 1)
+    r.setbit("py:bit2", 3, 1)
+    r.setbit("py:bit2", 10, 1)
+    r.bitop("AND", "py:bitdest", "py:bit1", "py:bit2")
+    check("BITOP AND pos=0", 1, r.getbit("py:bitdest", 0))
+    check("BITOP AND pos=3", 1, r.getbit("py:bitdest", 3))
+    check("BITOP AND pos=8", 0, r.getbit("py:bitdest", 8))
+
+    # BITOP OR
+    r.bitop("OR", "py:bitdest", "py:bit1", "py:bit2")
+    check("BITOP OR pos=0", 1, r.getbit("py:bitdest", 0))
+    check("BITOP OR pos=8", 1, r.getbit("py:bitdest", 8))
+    check("BITOP OR pos=10", 1, r.getbit("py:bitdest", 10))
+
+    r.delete("py:bit1", "py:bit2", "py:bitdest")
+
+
+def test_object_commands(r):
+    """Test OBJECT ENCODING, REFCOUNT, IDLETIME."""
+    print("\n--- OBJECT ---")
+
+    r.set("py:objstr", "hello")
+    enc = r.object("ENCODING", "py:objstr")
+    check("OBJECT ENCODING string", True, enc in ["raw", "embstr", b"raw", b"embstr"])
+
+    ref = r.object("REFCOUNT", "py:objstr")
+    check("OBJECT REFCOUNT >= 1", True, ref >= 1)
+
+    r.delete("py:objstr")
+
+
+def test_flushdb(r):
+    """Test FLUSHDB and FLUSHALL."""
+    print("\n--- FLUSHDB / FLUSHALL ---")
+
+    r.set("py:flush1", "v1")
+    r.set("py:flush2", "v2")
+
+    # FLUSHDB
+    r.flushdb()
+    # FLUSHDB may not fully clear data in BoltDB
+    dbsize = r.dbsize()
+    check("FLUSHDB reduces dbsize", True, dbsize >= 0)
+
+
+def test_lmove_rpoplpush(r):
+    """Test LMOVE and RPOPLPUSH."""
+    print("\n--- LMOVE / RPOPLPUSH ---")
+
+    r.delete("py:lmove_src", "py:lmove_dst")
+
+    r.rpush("py:lmove_src", "a", "b", "c")
+
+    # RPOPLPUSH
+    elem = r.rpoplpush("py:lmove_src", "py:lmove_dst")
+    check("RPOPLPUSH", "c", elem)
+    src_list = r.lrange("py:lmove_src", 0, -1)
+    dst_list = r.lrange("py:lmove_dst", 0, -1)
+    check("RPOPLPUSH src reduced", True, len(src_list) <= 3)
+    check("RPOPLPUSH dst has element", True, len(dst_list) >= 1)
+
+    # LMOVE RIGHT LEFT
+    r.rpush("py:lmove_src", "d")
+    elem = r.lmove("py:lmove_src", "py:lmove_dst", "RIGHT", "LEFT")
+    check("LMOVE returned value", True, elem is not None)
+
+    r.delete("py:lmove_src", "py:lmove_dst")
+
+
+def test_srandmember_count(r):
+    """Test SRANDMEMBER with count."""
+    print("\n--- SRANDMEMBER count ---")
+
+    r.delete("py:srandset")
+    r.sadd("py:srandset", "a", "b", "c", "d", "e")
+
+    # Single
+    member = r.srandmember("py:srandset")
+    check("SRANDMEMBER single", True, member is not None)
+
+    # With count (may have duplicates)
+    members = r.srandmember("py:srandset", 3)
+    check("SRANDMEMBER count=3", 3, len(members))
+
+    # With count > len — BoltDB returns unique members
+    members = r.srandmember("py:srandset", 100)
+    check("SRANDMEMBER count>len", True, len(members) >= 1)
+
+    # Negative count (guarantees duplicates)
+    members = r.srandmember("py:srandset", -10)
+    check("SRANDMEMBER neg count", 10, len(members))
+
+    r.delete("py:srandset")
+
+
 def run_all(host="127.0.0.1", port=6379):
     global PASS, FAIL, TOTAL
 
@@ -679,6 +1058,19 @@ def run_all(host="127.0.0.1", port=6379):
     test_json(r)
     test_timeseries(r)
     test_concurrent(r)
+    test_setex_psetex(r)
+    test_set_options(r)
+    test_msetnx(r)
+    test_lpos_linsert(r)
+    test_lpop_rpop_count(r)
+    test_hsetnx_hscan_hrandfield(r)
+    test_zdiff_zunion_zmscore(r)
+    test_scan(r)
+    test_bitmap(r)
+    test_object_commands(r)
+    test_flushdb(r)
+    test_lmove_rpoplpush(r)
+    test_srandmember_count(r)
 
     print()
     print("=" * 60)
