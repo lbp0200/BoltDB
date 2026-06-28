@@ -256,7 +256,7 @@ func TestLRUCache_ConcurrentAccess(t *testing.T) {
 	}
 
 	wg.Wait()
-	assert.True(t, cache.Size() >= 0)
+	assert.True(t, cache.Size() <= 26) // 26 unique keys (a-z), cache can't have more
 }
 
 func TestLRUCache_ConcurrentSetAndDelete(t *testing.T) {

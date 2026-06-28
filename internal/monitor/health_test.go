@@ -207,7 +207,7 @@ func TestComputeRecoveryTimeHealth_FastRecovery(t *testing.T) {
 		{Timestamp: now.Add(4 * time.Second), LastL0Score: 5.0},
 	}
 	dur, health := computeRecoveryTimeHealth(samples)
-	assert.True(t, dur > 0)
+	assert.Equal(t, 2*time.Second, dur) // dropped from 20 to 5 in 2s
 	assert.Equal(t, 1.0, health)
 }
 
@@ -220,7 +220,7 @@ func TestComputeRecoveryTimeHealth_SlowRecovery(t *testing.T) {
 		{Timestamp: now.Add(30 * time.Second), LastL0Score: 5.0},
 	}
 	dur, health := computeRecoveryTimeHealth(samples)
-	assert.True(t, dur > 0)
+	assert.Equal(t, 29*time.Second, dur) // dropped from 20 to 5 in 29s
 	assert.True(t, health < 1.0)
 }
 
@@ -236,7 +236,7 @@ func TestComputeRecoveryTimeHealth_NoRecovery(t *testing.T) {
 	}
 	dur, health := computeRecoveryTimeHealth(samples)
 	assert.Equal(t, 0.0, health)
-	assert.True(t, dur > 0)
+	assert.True(t, dur > 0) // duration is non-zero even though health=0 (still high pressure)
 }
 
 func TestComputeRecoveryTimeHealth_NeverPeaked(t *testing.T) {

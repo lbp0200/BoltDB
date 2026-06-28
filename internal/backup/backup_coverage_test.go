@@ -75,7 +75,7 @@ func TestBadgerBackupManager_IncrementalBackup_PathTraversal(t *testing.T) {
 	// Try path traversal in backup dir
 	invalidDir := t.TempDir() + "/../../../etc"
 	_, err = bbm.IncrementalBackup(invalidDir, 0)
-	// Should either succeed or fail gracefully
+	// Path traversal: may succeed (OS resolves) or fail (permission denied) — both acceptable
 	_ = err
 }
 

@@ -18,7 +18,7 @@ func TestLoadRDB_Valid(t *testing.T) {
 	// First generate valid RDB data
 	rdbData, err := GenerateRDB(testStore)
 	assert.NoError(t, err)
-	assert.True(t, len(rdbData) > 0)
+	assert.True(t, len(rdbData) >= 9) // valid RDB = "REDIS0009" header (9 bytes)
 
 	// Load the RDB data - use LoadRDBWithStore since LoadRDB is not exported
 	err = LoadRDBWithStore(rdbData, testStore)
@@ -270,7 +270,7 @@ func TestLoadRDB_TruncatedData(t *testing.T) {
 
 	// Truncated RDB data - may or may not error depending on implementation
 	err := LoadRDBWithStore([]byte("REDIS0009"), testStore)
-	// Just verify it doesn't panic
+	// Just verify it doesn't panic — error is acceptable for truncated data
 	_ = err
 }
 
@@ -286,7 +286,7 @@ func TestWriteKeyValue(t *testing.T) {
 	// Generate RDB should include this key
 	rdbData, err := GenerateRDB(testStore)
 	assert.NoError(t, err)
-	assert.True(t, len(rdbData) > 0)
+	assert.True(t, len(rdbData) >= 9) // valid RDB = "REDIS0009" header (9 bytes)
 
 	// Verify RDB contains the key
 	assert.True(t, bytes.Contains(rdbData, []byte("testkey")))
@@ -379,7 +379,7 @@ func TestGenerateRDB_MultipleKeys(t *testing.T) {
 	rdbData, err := GenerateRDB(testStore)
 	assert.NoError(t, err)
 	// Just verify it generated some data
-	assert.True(t, len(rdbData) > 0)
+	assert.True(t, len(rdbData) >= 9) // valid RDB = "REDIS0009" header (9 bytes)
 }
 
 // TestLoadRDB_Overwrite tests LoadRDB overwrites existing data
@@ -418,7 +418,7 @@ func TestWriteKeyValue_StringType(t *testing.T) {
 	assert.NoError(t, err)
 
 	rdbData := enc.Bytes()
-	assert.True(t, len(rdbData) > 0)
+	assert.True(t, len(rdbData) >= 9) // valid RDB = "REDIS0009" header (9 bytes)
 }
 
 // TestWriteKeyValue_WithTTL tests WriteKeyValue with TTL
@@ -430,7 +430,7 @@ func TestWriteKeyValue_WithTTL(t *testing.T) {
 	assert.NoError(t, err)
 
 	rdbData := enc.Bytes()
-	assert.True(t, len(rdbData) > 0)
+	assert.True(t, len(rdbData) >= 9) // valid RDB = "REDIS0009" header (9 bytes)
 }
 
 // TestWriteKeyValue_ListType tests WriteKeyValue with list type
@@ -441,7 +441,7 @@ func TestWriteKeyValue_ListType(t *testing.T) {
 	assert.NoError(t, err)
 
 	rdbData := enc.Bytes()
-	assert.True(t, len(rdbData) > 0)
+	assert.True(t, len(rdbData) >= 9) // valid RDB = "REDIS0009" header (9 bytes)
 }
 
 // TestWriteKeyValue_SetType tests WriteKeyValue with set type
@@ -452,7 +452,7 @@ func TestWriteKeyValue_SetType(t *testing.T) {
 	assert.NoError(t, err)
 
 	rdbData := enc.Bytes()
-	assert.True(t, len(rdbData) > 0)
+	assert.True(t, len(rdbData) >= 9) // valid RDB = "REDIS0009" header (9 bytes)
 }
 
 // TestWriteKeyValue_HashType tests WriteKeyValue with hash type
@@ -463,7 +463,7 @@ func TestWriteKeyValue_HashType(t *testing.T) {
 	assert.NoError(t, err)
 
 	rdbData := enc.Bytes()
-	assert.True(t, len(rdbData) > 0)
+	assert.True(t, len(rdbData) >= 9) // valid RDB = "REDIS0009" header (9 bytes)
 }
 
 // TestWriteKeyValue_ZSetType tests WriteKeyValue with sorted set type
@@ -476,7 +476,7 @@ func TestWriteKeyValue_ZSetType(t *testing.T) {
 	assert.NoError(t, err)
 
 	rdbData := enc.Bytes()
-	assert.True(t, len(rdbData) > 0)
+	assert.True(t, len(rdbData) >= 9) // valid RDB = "REDIS0009" header (9 bytes)
 }
 
 // TestWriteKeyValue_LargeList tests WriteKeyValue with large list (triggers 14-bit and 32-bit length encoding)
@@ -492,7 +492,7 @@ func TestWriteKeyValue_LargeList(t *testing.T) {
 	assert.NoError(t, err)
 
 	rdbData := enc.Bytes()
-	assert.True(t, len(rdbData) > 0)
+	assert.True(t, len(rdbData) >= 9) // valid RDB = "REDIS0009" header (9 bytes)
 }
 
 // TestWriteKeyValue_LargeHash tests WriteKeyValue with large hash
@@ -508,7 +508,7 @@ func TestWriteKeyValue_LargeHash(t *testing.T) {
 	assert.NoError(t, err)
 
 	rdbData := enc.Bytes()
-	assert.True(t, len(rdbData) > 0)
+	assert.True(t, len(rdbData) >= 9) // valid RDB = "REDIS0009" header (9 bytes)
 }
 
 // TestWriteKeyValue_LargeSet tests WriteKeyValue with large set
@@ -524,7 +524,7 @@ func TestWriteKeyValue_LargeSet(t *testing.T) {
 	assert.NoError(t, err)
 
 	rdbData := enc.Bytes()
-	assert.True(t, len(rdbData) > 0)
+	assert.True(t, len(rdbData) >= 9) // valid RDB = "REDIS0009" header (9 bytes)
 }
 
 // TestLoadRDB_WithGeoData tests RDB round-trip for GEO data

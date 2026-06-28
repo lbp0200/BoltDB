@@ -18,7 +18,7 @@ func TestExpire_TTL_Persist_Coverage(t *testing.T) {
 
 	ttl, err := s.TTL("k1")
 	assert.NoError(t, err)
-	assert.True(t, ttl > 0)
+	assert.True(t, ttl >= 98 && ttl <= 100) // Expire set to 100s, TTL decays over time
 
 	ok, err = s.Persist("k1")
 	assert.NoError(t, err)
@@ -126,7 +126,7 @@ func TestRename_WithTTL(t *testing.T) {
 	// 验证 TTL 已设置
 	ttlBefore, err := s.TTL("old_ttl")
 	assert.NoError(t, err)
-	assert.True(t, ttlBefore > 0)
+	assert.True(t, ttlBefore > 0 && ttlBefore <= 7200) // within EXPIRE range
 
 	// RENAME
 	err = s.Rename("old_ttl", "new_ttl")
@@ -247,7 +247,7 @@ func TestMemoryUsage_Coverage(t *testing.T) {
 
 	usage, err := s.MemoryUsage("mu1")
 	assert.NoError(t, err)
-	assert.True(t, usage > 0)
+	assert.True(t, usage > int64(len("hello world")))
 }
 
 func TestMemoryUsage_Nonexistent_Coverage(t *testing.T) {
@@ -265,7 +265,7 @@ func TestObjectRefCount_Coverage(t *testing.T) {
 
 	refcnt, err := s.ObjectRefCount("orc1")
 	assert.NoError(t, err)
-	assert.True(t, refcnt > 0)
+	assert.Equal(t, int64(1), refcnt)
 }
 
 func TestObjectEncoding_Coverage(t *testing.T) {
@@ -285,7 +285,7 @@ func TestObjectIdleTime_Coverage(t *testing.T) {
 
 	idle, err := s.ObjectIdleTime("oit1")
 	assert.NoError(t, err)
-	assert.True(t, idle >= 0)
+	assert.Equal(t, int64(0), idle) // key was just SET, idle should be ~0
 }
 
 func TestCloseWithTimeout_Coverage(t *testing.T) {
@@ -418,7 +418,7 @@ func TestIterateRawKeys_Coverage(t *testing.T) {
 		return true
 	})
 	assert.NoError(t, err)
-	assert.True(t, count > 0)
+	assert.Equal(t, int64(1), count) // set exactly 1 key
 }
 
 
