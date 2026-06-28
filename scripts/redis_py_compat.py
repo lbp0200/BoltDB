@@ -979,9 +979,9 @@ def test_flushdb(r):
 
     # FLUSHDB
     r.flushdb()
-    # FLUSHDB may not fully clear data in BoltDB
-    dbsize = r.dbsize()
-    check("FLUSHDB reduces dbsize", True, dbsize >= 0)
+    check("FLUSHDB key1 gone", None, r.get("py:flush1"))
+    check("FLUSHDB key2 gone", None, r.get("py:flush2"))
+    check("DBSIZE after FLUSHDB", 0, r.dbsize())
 
 
 def test_lmove_rpoplpush(r):

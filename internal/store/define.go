@@ -444,7 +444,11 @@ func (s *BotreonStore) IterateRawKeys(fn func(rawKey string) bool) error {
 // FlushDB 删除数据库中的所有键
 // NOTE: 使用 ClearAllData 替代 DropAll 以避免在集成测试中遇到 DropAll 的阻塞问题
 func (s *BotreonStore) FlushDB() error {
-	return s.ClearAllData()
+	if err := s.ClearAllData(); err != nil {
+		return err
+	}
+	s.ClearCaches()
+	return nil
 }
 
 // ClearAllData 安全地清空所有数据，用于测试隔离
