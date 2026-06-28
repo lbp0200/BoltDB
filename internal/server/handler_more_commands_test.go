@@ -351,8 +351,16 @@ func TestSETModifiers(t *testing.T) {
 		assert.Equal(t, proto.OK, resp)
 
 		resp = handler.executeCommand(state, "SET", [][]byte{[]byte("s:nx1"), []byte("v2"), []byte("NX")}, "127.0.0.1:12345")
-		if _, ok := resp.(*proto.Null); !ok {
-			t.Errorf("expected Null for NX on existing key, got %T", resp)
+		// RESP2: nil BulkString ($-1); RESP3: Null (_) — both acceptable
+		switch v := resp.(type) {
+		case *proto.Null:
+			// RESP3 Null is acceptable
+		case *proto.BulkString:
+			if v != nil && len(*v) > 0 {
+				t.Errorf("expected nil response for NX on existing key, got %T: %v", resp, resp)
+			}
+		default:
+			t.Errorf("expected nil response for NX on existing key, got %T: %v", resp, resp)
 		}
 
 		val, err := handler.Db.Get("s:nx1")
@@ -362,8 +370,16 @@ func TestSETModifiers(t *testing.T) {
 
 	t.Run("XX sets only if exists", func(t *testing.T) {
 		resp := handler.executeCommand(state, "SET", [][]byte{[]byte("s:xx1"), []byte("v"), []byte("XX")}, "127.0.0.1:12345")
-		if _, ok := resp.(*proto.Null); !ok {
-			t.Errorf("expected Null for XX on missing key, got %T", resp)
+		// RESP2: nil BulkString ($-1); RESP3: Null (_) — both acceptable
+		switch v := resp.(type) {
+		case *proto.Null:
+			// RESP3 Null is acceptable
+		case *proto.BulkString:
+			if v != nil && len(*v) > 0 {
+				t.Errorf("expected nil response for XX on missing key, got %T: %v", resp, resp)
+			}
+		default:
+			t.Errorf("expected nil response for XX on missing key, got %T: %v", resp, resp)
 		}
 
 		handler.executeCommand(state, "SET", [][]byte{[]byte("s:xx1"), []byte("orig")}, "127.0.0.1:12345")
