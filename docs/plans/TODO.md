@@ -87,10 +87,18 @@
 
 ### 结果
 
-| 包 | 可运行变异体 | 未覆盖 | Mutator 覆盖率 | 状态 |
-|----|------------|--------|---------------|------|
-| `internal/server` | 2,330 | 649 | 78.21% | dry-run 完成 |
-| `internal/store` | — | — | — | TIMED OUT |
+| 包 | 可运行变异体 | 存活 | 未覆盖 | 测试有效性 | Mutator 覆盖率 | 耗时 |
+|----|------------|------|--------|-----------|---------------|------|
+| `internal/server` | 2,412 | **0** | 567 | **100.00%** | 80.97% | 35.7 min |
+| `internal/store` | 2,789 | **0** | 549 | **100.00%** | 83.55% | 37.4 min |
+| **合计** | **5,201** | **0** | **1,116** | **100.00%** | **82.3%** | **73.1 min** |
+
+### 结论
+
+- **测试有效性 100%**：5,201 个变异体全部被杀死，0 个存活
+- **Mutator 覆盖率 82.3%**：1,116 个变异体未被测试覆盖（代码路径未触达）
+- 未覆盖变异体集中在：选项解析循环、参数边界校验、时间/数值转换、复制传播路径
+- **无核心算法 bug**
 
 ### 发现：TIMED OUT 是系统性瓶颈
 
@@ -102,27 +110,24 @@
 
 ### 下一步
 
-已选择方案 B+C 组合：在远程服务器后台运行，降低 timeout，无 -race。
+两个包均已完成（2026-06-29，远程服务器 10.1.2.16）。
 
-**执行状态：** 🟢 已启动（2026-06-29）
-- 远程主机：10.1.2.16（8核 31GB RAM）
-- 配置：`timeout-coefficient: 1`, `test-cpu: 1`, `workers: 4`
-- 分两阶段：先 `internal/server`，再 `internal/store`
-- 预计耗时：12-24 小时
+- Server：35.7 min，2,412 mutations，100% efficacy，80.97% mcover
+- Store：37.4 min，2,789 mutations，100% efficacy，83.55% mcover
 
-**不定期检查命令：**
+**查看结果命令：**
 ```bash
-bash scripts/remote-mutation-test.sh --status   # 检查是否在跑 + 最新日志
-bash scripts/remote-mutation-test.sh --logs      # 实时跟踪日志
-bash scripts/remote-mutation-test.sh --results   # 查看已完成包的结果
-bash scripts/remote-mutation-test.sh --stop      # 停止运行
+ssh bolt-remote "python3 -c \"import json; d=json.load(open('/home/elex-gm0135/projects/bolt/.gremlins-report-server.json')); print(f'Server: {d[\"mutants_killed\"]}/{d[\"mutants_total\"]} killed, {d[\"test_efficacy\"]}% efficacy, {d[\"mutations_coverage\"]:.1f}% mcover')\""
+ssh bolt-remote "python3 -c \"import json; d=json.load(open('/home/elex-gm0135/projects/bolt/.gremlins-report-store.json')); print(f'Store: {d[\"mutants_killed\"]}/{d[\"mutants_total\"]} killed, {d[\"test_efficacy\"]}% efficacy, {d[\"mutations_coverage\"]:.1f}% mcover')\""
 ```
 
 **结果文件：**
-- `internal/server`: `.gremlins-report-server.json`
-- `internal/store`: `.gremlins-report-store.json`
+- `internal/server`: `.gremlins-report-server.json`（2,412 mutations, 100% efficacy）
+- `internal/store`: `.gremlins-report-store.json`（2,789 mutations, 100% efficacy）
 
-### NOT COVERED 变异体分析（2026-06-29 中期快照）
+### NOT COVERED 变异体分析（最终结果）
+
+Server（567 未覆盖）+ Store（549 未覆盖）= 1,116 个未覆盖变异体。
 
 | 文件 | NOT COVERED | 主要变异类型 |
 |------|------------|-------------|
@@ -138,6 +143,7 @@ bash scripts/remote-mutation-test.sh --stop      # 停止运行
 | bitmap_commands.go | 4 | NEGATION(4) |
 | admin_commands.go | 4 | INVERT(2), ARITHMETIC(2) |
 | hash_commands.go | 2 | NEGATION(2) |
+| store 层 | ~549 | 各数据类型边界路径 |
 
 **结论：无核心算法 bug。** 未杀变异体全部在：
 1. 选项解析循环指针递增（GEO/SORT/CLIENT）
