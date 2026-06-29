@@ -259,14 +259,14 @@ Server（567 未覆盖）+ Store（549 未覆盖）= 1,116 个未覆盖变异体
 - [x] `TestRegressionWriteDeadlineStorm`：写入超时风暴 — FULLRESYNC 期间持续写入，验证无 reconnect 风暴
 - [x] `TestRegressionSplitBrainConvergence`：脑裂收敛 — 双 slave 分区后恢复，验证单调收敛
 
-### P1：待做
-- [ ] `TestRegressionConcurrentFullresyncWriteStorm`：并发 FULLRESYNC + 写入风暴
-- [ ] `TestRegressionClientBufferOverflow`：慢客户端 buffer 溢出
+### P1：已完成 ✅
+- [x] `TestRegressionConcurrentFullresyncWriteStorm`：并发 FULLRESYNC + 写入风暴 — 12 writers + 3 partition cycles
+- [x] `TestRegressionClientBufferOverflow`：慢客户端 buffer 溢出 — subscriber flood + channel-full 处理
 
-### P2：待做
-- [ ] `TestRegressionDiskPressureDegradation`：磁盘压力下优雅降级
-- [ ] `TestRegressionRdbConcurrentConfigChange`：BGSAVE 期间配置变更
-- [ ] `TestRegressionPubSubFanOutStorm`：PubSub 扇出风暴
+### P2：已完成 ✅
+- [x] `TestRegressionDiskPressureDegradation`：磁盘压力下优雅降级 — 30 writers sustained, L0 recovery
+- [x] `TestRegressionRdbConcurrentConfigChange`：BGSAVE 期间配置变更 — 3× BGSAVE + CONFIG SET during writes
+- [x] `TestRegressionPubSubFanOutStorm`：PubSub 扇出风暴 — 50 subscribers + 10 publishers flood (87.6 MB)
 
 ---
 

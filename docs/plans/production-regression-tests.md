@@ -119,6 +119,6 @@
 
 1. ✅ 运行现有 12 个回归测试，确认基线
 2. ✅ 补充 P0 级别的 3 个回归测试（Failover Oscillation / Write Deadline Storm / Split-Brain Convergence）
-3. 补充 P1 级别的 2 个回归测试
-4. 补充 P2 级别的 3 个回归测试
+3. ✅ 补充 P1 级别的 2 个回归测试（Concurrent Fullresync Write Storm / Client Buffer Overflow）
+4. ✅ 补充 P2 级别的 3 个回归测试（Disk Pressure / RDB Config Change / PubSub Fan-Out）
 5. 所有测试纳入 Tier B（post-merge）自动运行
