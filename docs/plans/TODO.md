@@ -244,6 +244,26 @@ bash scripts/remote-mutation-test.sh --stop      # 停止运行
 
 ---
 
+## Phase 11：生产事故回归测试
+
+基于 `docs/plans/production-regression-tests.md`，补充未覆盖的生产事故回归测试。
+
+### P0：已完成 ✅
+- [x] `TestRegressionFailoverOscillation`：Sentinel 振荡 — kill master 后恢复，验证无震荡循环
+- [x] `TestRegressionWriteDeadlineStorm`：写入超时风暴 — FULLRESYNC 期间持续写入，验证无 reconnect 风暴
+- [x] `TestRegressionSplitBrainConvergence`：脑裂收敛 — 双 slave 分区后恢复，验证单调收敛
+
+### P1：待做
+- [ ] `TestRegressionConcurrentFullresyncWriteStorm`：并发 FULLRESYNC + 写入风暴
+- [ ] `TestRegressionClientBufferOverflow`：慢客户端 buffer 溢出
+
+### P2：待做
+- [ ] `TestRegressionDiskPressureDegradation`：磁盘压力下优雅降级
+- [ ] `TestRegressionRdbConcurrentConfigChange`：BGSAVE 期间配置变更
+- [ ] `TestRegressionPubSubFanOutStorm`：PubSub 扇出风暴
+
+---
+
 ## 架构边界（已决策：不做）
 
 | 边界 | 原因 |

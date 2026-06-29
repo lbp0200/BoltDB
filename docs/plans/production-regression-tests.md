@@ -13,6 +13,9 @@
 | Deterministic Replay | `TestRegressionCanonical*` (SPOP/XADD/EXPIRE) | ✅ 已有 |
 | Duplicate Window | `TestRegressionDuplicateWindowMeasurement` | ✅ 已有 |
 | PSYNC Reconnect | `TestRegressionPsyncReconnectNoLoss` | ✅ 已有 |
+| Failover Oscillation | `TestRegressionFailoverOscillation` | ✅ 已写 (v8.32.0) |
+| Replication Write Deadline | `TestRegressionWriteDeadlineStorm` | ✅ 已写 (v8.32.0) |
+| Split-Brain Convergence | `TestRegressionSplitBrainConvergence` | ✅ 已写 (v8.32.0) |
 
 ## 未覆盖的生产事故
 
@@ -114,8 +117,8 @@
 
 ## 执行计划
 
-1. 先运行现有 12 个回归测试，确认基线
-2. 补充 P0 级别的 3 个回归测试
+1. ✅ 运行现有 12 个回归测试，确认基线
+2. ✅ 补充 P0 级别的 3 个回归测试（Failover Oscillation / Write Deadline Storm / Split-Brain Convergence）
 3. 补充 P1 级别的 2 个回归测试
 4. 补充 P2 级别的 3 个回归测试
 5. 所有测试纳入 Tier B（post-merge）自动运行
