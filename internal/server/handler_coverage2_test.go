@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
@@ -166,15 +167,19 @@ func TestExecuteCommand_SCAN_Coverage(t *testing.T) {
 	handler.Db.Set("scankey2", "value2")
 
 	resp := handler.executeCommand(state, "SCAN", [][]byte{[]byte("0")}, "127.0.0.1:12345")
-	// SCAN returns RawString with format: *2\r\n$1\r\n0\r\n*2\r\n$8\r\nscankey1\r\n$8\r\nscankey2\r\n
-	// Verify response is not nil and implements RESP interface
+	// SCAN returns a RawString with pre-serialized RESP array [cursor, [keys...]]
 	assert.NotNil(t, resp)
+	s := resp.String()
+	// Verify the serialized response contains both keys
+	assert.True(t, strings.Contains(s, "scankey1"))
+	assert.True(t, strings.Contains(s, "scankey2"))
+	assert.True(t, strings.Contains(s, "0"))
 
-	// Use the Store's Scan method directly to verify
+	// Also verify via Store directly for completeness
 	result, err := handler.Db.Scan(0, "*", 10)
 	assert.NoError(t, err)
-	assert.Equal(t, 2, len(result.Keys))     // Should find at least scankey1 and scankey2
-	assert.Equal(t, uint64(0), result.Cursor) // First scan should return cursor 0
+	assert.Equal(t, 2, len(result.Keys))
+	assert.Equal(t, uint64(0), result.Cursor)
 }
 
 // TestExecuteCommand_SORT_Coverage tests SORT command

@@ -442,18 +442,10 @@ func zRangeMembersByRankInTxn(txn *badger.Txn, zSetName string, start, stop int6
 
 // zRankInTxn returns the forward rank of a member, or -1 if not found.
 //
-// Complexity: O(rank) average case, O(N) worst case (member not found or rank ≈ N).
-// The BadgerDB index is sorted by (score, member), so iteration naturally
-// terminates early once we pass the target position — no full scan needed
-// for members in the lower half. For members in the upper half (rank > N/2),
-// the scan continues further. This is acceptable because:
-//   - Most ZRANK queries target recently-added or frequently-accessed members
-//   - An O(N) worst case with early-termination average is better than the
-//     constant overhead of maintaining a rank cache on every ZADD/ZREM
-//
-// If upper-half ZRANK becomes a confirmed hotspot, the path forward is
-// bidirectional scan: compute reverseRank from the end, then
-// rank = card - 1 - reverseRank. This caps cost at O(min(rank, N-rank)).
+// Complexity: O(min(rank, N-rank)) via bidirectional scan.
+// Reads meta to get Card, then scans forward. If the member is in the upper
+// half (not found by Card/2 iterations), switches to reverse scan and computes
+// rank = Card - 1 - reverseRank.
 func zRankInTxn(txn *badger.Txn, zSetName, member string) (int64, error) {
 	dataKey := sortedSetKeyMember(zSetName, member)
 	item, err := txn.Get(dataKey)
@@ -473,15 +465,39 @@ func zRankInTxn(txn *badger.Txn, zSetName, member string) (int64, error) {
 		return 0, err
 	}
 
+	// Read Card from meta for bidirectional decision
+	metaKey := sortedSetKeyMeta(zSetName)
+	metaItem, err := txn.Get(metaKey)
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return -1, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	var card int64
+	err = metaItem.Value(func(val []byte) error {
+		meta, mErr := decodeMeta(val)
+		if mErr != nil {
+			return mErr
+		}
+		card = meta.Card
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
 	opts := badger.DefaultIteratorOptions
 	prefix := keyBadgerGet(prefixKeySortedSetBytes, []byte(zSetName+sortedSetIndex))
 	opts.Prefix = prefix
 	opts.PrefetchValues = false
 
+	// Forward scan with early abort at midpoint
 	it := txn.NewIterator(opts)
 	defer it.Close()
 
 	var rank int64
+	midpoint := card / 2
 	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 		memberScore, memberName, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
 		if !ok {
@@ -489,11 +505,48 @@ func zRankInTxn(txn *badger.Txn, zSetName, member string) (int64, error) {
 		}
 		if memberScore < score || (memberScore == score && memberName < member) {
 			rank++
+			// If we've passed the midpoint without finding, switch to reverse
+			if rank > midpoint && midpoint > 0 {
+				it.Close()
+				return zRankReverseScan(txn, opts, prefix, score, member, card)
+			}
 			continue
 		}
 		if memberScore == score && memberName == member {
 			return rank, nil
 		}
+		return -1, nil
+	}
+	return -1, nil
+}
+
+// zRankReverseScan counts entries after the target from the end, then computes
+// rank = card - 1 - reverseRank.
+func zRankReverseScan(txn *badger.Txn, opts badger.IteratorOptions, prefix []byte, score float64, member string, card int64) (int64, error) {
+	opts.Reverse = true
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	// Seek to the very end (last key with this prefix)
+	endPrefix := append(prefix, 0xFF)
+	it.Seek(endPrefix)
+
+	var reverseRank int64
+	for it.ValidForPrefix(prefix) {
+		memberScore, memberName, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
+		if !ok {
+			it.Next() // in reverse mode, Next() moves backwards
+			continue
+		}
+		if memberScore > score || (memberScore == score && memberName > member) {
+			reverseRank++
+			it.Next()
+			continue
+		}
+		if memberScore == score && memberName == member {
+			return card - 1 - reverseRank, nil
+		}
+		// Passed the target going backwards — not found
 		return -1, nil
 	}
 	return -1, nil
@@ -2017,36 +2070,68 @@ func (s *BotreonStore) ZRandMember(zSetName string, count int) ([]ZSetMember, er
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
-		var allMembers []ZSetMember
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			score, member, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
-			if ok {
-				allMembers = append(allMembers, ZSetMember{Member: member, Score: score})
-			}
-		}
-
-		if len(allMembers) == 0 {
-			return nil
-		}
-
 		if count == 0 {
-			idx := randomIntn(len(allMembers))
-			members = append(members, allMembers[idx])
+			// Reservoir sampling: size 1, single pass — O(1) memory
+			var reservoir ZSetMember
+			found := false
+			i := 0
+			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+				score, member, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
+				if !ok {
+					continue
+				}
+				if !found {
+					reservoir = ZSetMember{Member: member, Score: score}
+					found = true
+				} else {
+					j := randomIntn(i + 1)
+					if j == 0 {
+						reservoir = ZSetMember{Member: member, Score: score}
+					}
+				}
+				i++
+			}
+			if found {
+				members = append(members, reservoir)
+			}
 		} else if count < 0 {
-			n := -count
-			for i := 0; i < n; i++ {
-				idx := randomIntn(len(allMembers))
-				members = append(members, allMembers[idx])
+			// Allow repeats: reservoir of size 1, repeated |count| times
+			// First, collect all members for repeated random access
+			var allMembers []ZSetMember
+			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+				score, member, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
+				if ok {
+					allMembers = append(allMembers, ZSetMember{Member: member, Score: score})
+				}
+			}
+			if len(allMembers) > 0 {
+				n := -count
+				for i := 0; i < n; i++ {
+					idx := randomIntn(len(allMembers))
+					members = append(members, allMembers[idx])
+				}
 			}
 		} else {
+			// Distinct: Algorithm R reservoir sampling — O(count) memory
 			n := count
-			if n > len(allMembers) {
-				n = len(allMembers)
+			reservoir := make([]ZSetMember, 0, n)
+			i := 0
+			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+				score, member, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
+				if !ok {
+					continue
+				}
+				if i < n {
+					reservoir = append(reservoir, ZSetMember{Member: member, Score: score})
+				} else {
+					j := randomIntn(i + 1)
+					if j < n {
+						reservoir[j] = ZSetMember{Member: member, Score: score}
+					}
+				}
+				i++
 			}
-			randomShuffle(len(allMembers), func(i, j int) {
-				allMembers[i], allMembers[j] = allMembers[j], allMembers[i]
-			})
-			members = allMembers[:n]
+			members = reservoir
 		}
 		return nil
 	})

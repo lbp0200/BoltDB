@@ -454,29 +454,52 @@ func (s *BotreonStore) APPEND(key string, value string) (int, error) {
 	s.keyLockMgr.Lock(key)
 	defer s.keyLockMgr.Unlock(key)
 
-	// 先读取旧值（在 View 事务中）
-	var existingValue string
-	err := s.db.View(func(txn *badger.Txn) error {
+	// Single transaction: read old value + write new value (eliminates View→Update gap)
+	var newLength int
+	var finalValue string
+	err := s.retryUpdate(func(txn *badger.Txn) error {
 		strKey := s.stringKey(key)
+		var existingValue string
 		item, err := txn.Get([]byte(strKey))
 		if err == nil {
-			val, err := s.getValueWithDecompression(item)
-			if err != nil {
-				return err
+			val, vErr := s.getValueWithDecompression(item)
+			if vErr != nil {
+				return vErr
 			}
 			existingValue = string(val)
 		} else if !errors.Is(err, badger.ErrKeyNotFound) {
 			return err
 		}
-		return nil
-	})
-	if err != nil {
-		return 0, err
+
+		newValue := existingValue + value
+		newLength = len(newValue)
+
+		// Check type
+		badgerTypeKey := TypeOfKeyGet(key)
+		typeItem, tErr := txn.Get(badgerTypeKey)
+		if tErr == nil {
+			typeVal, vErr := typeItem.ValueCopy(nil)
+			if vErr != nil {
+				return vErr
+			}
+			keyType := string(typeVal)
+			if keyType != "" && keyType != KeyTypeString {
+				return ErrWrongType
+			}
+		} else if !errors.Is(tErr, badger.ErrKeyNotFound) {
+			return tErr
+		}
+
+		if err := txn.Set(badgerTypeKey, []byte(KeyTypeString)); err != nil {
+			return err
+		}
+		finalValue = newValue
+		return s.setValueWithCompression(txn, []byte(strKey), []byte(newValue))
+	}, 30)
+	if err == nil && s.readCache != nil {
+		s.readCache.Set(key, []byte(finalValue))
 	}
-	// 然后写入新值
-	newValue := existingValue + value
-	newLength := len(newValue)
-	return newLength, s.Set(key, newValue)
+	return newLength, err
 }
 
 // StrLen 实现 Redis STRLEN 命令，获取字符串长度

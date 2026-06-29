@@ -475,17 +475,31 @@ func (s *BotreonStore) SPopN(key string, count int) ([]string, error) {
 func (s *BotreonStore) SRandMember(key string) (string, error) {
 	var member string
 	err := s.db.View(func(txn *badger.Txn) error {
-		members, err := s.getAllMembers(txn, key)
-		if err != nil {
-			return err
-		}
-		if len(members) == 0 {
-			return nil
-		}
+		// Single random: reservoir of size 1, O(1) memory
+		prefix := s.setKey(key, "member")
+		prefixBytes := []byte(prefix + ":")
+		iter := txn.NewIterator(badger.DefaultIteratorOptions)
+		defer iter.Close()
 
-		// 随机选择一个成员
-		index := randomIntn(len(members))
-		member = members[index]
+		found := false
+		i := 0
+		for iter.Seek(prefixBytes); iter.ValidForPrefix(prefixBytes); iter.Next() {
+			k := iter.Item().Key()
+			kStr := string(k)
+			if strings.HasPrefix(kStr, prefix+":") {
+				m := kStr[len(prefix)+1:]
+				if !found {
+					member = m
+					found = true
+				} else {
+					j := randomIntn(i + 1)
+					if j == 0 {
+						member = m
+					}
+				}
+				i++
+			}
+		}
 		return nil
 	})
 	return member, err
@@ -495,6 +509,7 @@ func (s *BotreonStore) SRandMember(key string) (string, error) {
 func (s *BotreonStore) SRandMemberN(key string, count int) ([]string, error) {
 	var members []string
 	err := s.db.View(func(txn *badger.Txn) error {
+		// Original behavior: both positive and negative count allow duplicates
 		allMembers, err := s.getAllMembers(txn, key)
 		if err != nil {
 			return err
@@ -502,20 +517,13 @@ func (s *BotreonStore) SRandMemberN(key string, count int) ([]string, error) {
 		if len(allMembers) == 0 {
 			return nil
 		}
-
-		// 如果count为负数，不允许重复
-		if count < 0 {
-			count = -count
-			for i := 0; i < count; i++ {
-				index := randomIntn(len(allMembers))
-				members = append(members, allMembers[index])
-			}
-		} else {
-			// 正数 count：允许重复（Redis 语义）
-			for i := 0; i < count; i++ {
-				index := randomIntn(len(allMembers))
-				members = append(members, allMembers[index])
-			}
+		n := count
+		if n < 0 {
+			n = -n
+		}
+		for i := 0; i < n; i++ {
+			index := randomIntn(len(allMembers))
+			members = append(members, allMembers[index])
 		}
 		return nil
 	})

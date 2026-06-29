@@ -3,6 +3,9 @@ package server
 import (
 	"strings"
 	"testing"
+
+	"github.com/lbp0200/BoltDB/internal/proto"
+	"github.com/stretchr/testify/assert"
 )
 
 // truncateFuzz limits fuzz input size.
@@ -24,6 +27,13 @@ func filterEmptyArgs(args ...string) [][]byte {
 		}
 	}
 	return result
+}
+
+// assertNotNil is a lightweight fuzz helper: verify the command returned a
+// non-nil RESP value (i.e. didn't panic or produce an unexpected nil).
+func assertNotNil(t *testing.T, resp proto.RESP) {
+	t.Helper()
+	assert.NotNil(t, resp)
 }
 
 // FuzzCommandDispatch fuzzes the server command handler with random command names.
@@ -48,7 +58,8 @@ func FuzzCommandDispatch(f *testing.F) {
 		handler, state := setupTestHandler(t)
 		defer handler.Db.Close()
 
-		_ = handler.executeCommand(state, cmd, nil, "127.0.0.1:12345")
+		resp := handler.executeCommand(state, cmd, nil, "127.0.0.1:12345")
+		assertNotNil(t, resp)
 	})
 }
 
@@ -77,13 +88,25 @@ func FuzzKnownCmdRandomArgs(f *testing.F) {
 		handler, state := setupTestHandler(t)
 		defer handler.Db.Close()
 
-		_ = handler.executeCommand(state, cmd, [][]byte{[]byte(arg1), []byte(arg2)}, "127.0.0.1:12345")
+		resp := handler.executeCommand(state, cmd, [][]byte{[]byte(arg1), []byte(arg2)}, "127.0.0.1:12345")
+		assertNotNil(t, resp)
 
 		if arg1 != "" {
-			_ = handler.executeCommand(state, "GET", [][]byte{[]byte(arg1)}, "127.0.0.1:12345")
-			_ = handler.executeCommand(state, "TYPE", [][]byte{[]byte(arg1)}, "127.0.0.1:12345")
-			_ = handler.executeCommand(state, "EXISTS", [][]byte{[]byte(arg1)}, "127.0.0.1:12345")
-			_ = handler.executeCommand(state, "DEL", [][]byte{[]byte(arg1)}, "127.0.0.1:12345")
+			getResp := handler.executeCommand(state, "GET", [][]byte{[]byte(arg1)}, "127.0.0.1:12345")
+			assertNotNil(t, getResp)
+
+			typeResp := handler.executeCommand(state, "TYPE", [][]byte{[]byte(arg1)}, "127.0.0.1:12345")
+			assertNotNil(t, typeResp)
+			_, ok := typeResp.(*proto.SimpleString)
+			assert.True(t, ok, "TYPE must return SimpleString, got %T", typeResp)
+
+			existsResp := handler.executeCommand(state, "EXISTS", [][]byte{[]byte(arg1)}, "127.0.0.1:12345")
+			assertNotNil(t, existsResp)
+			_, isInt := existsResp.(*proto.Integer)
+			assert.True(t, isInt, "EXISTS must return Integer, got %T", existsResp)
+
+			delResp := handler.executeCommand(state, "DEL", [][]byte{[]byte(arg1)}, "127.0.0.1:12345")
+			assertNotNil(t, delResp)
 		}
 	})
 }
@@ -106,10 +129,16 @@ func FuzzCommandPipeline(f *testing.F) {
 
 		addr := "127.0.0.1:12345"
 
-		_ = handler.executeCommand(state, cmd1, filterEmptyArgs(arg1a, arg1b), addr)
-		_ = handler.executeCommand(state, cmd2, filterEmptyArgs(arg2a, arg2b), addr)
-		_ = handler.executeCommand(state, cmd3, filterEmptyArgs(arg3a, arg3b), addr)
-		_ = handler.executeCommand(state, "FLUSHDB", nil, addr)
+		resp1 := handler.executeCommand(state, cmd1, filterEmptyArgs(arg1a, arg1b), addr)
+		assertNotNil(t, resp1)
+		resp2 := handler.executeCommand(state, cmd2, filterEmptyArgs(arg2a, arg2b), addr)
+		assertNotNil(t, resp2)
+		resp3 := handler.executeCommand(state, cmd3, filterEmptyArgs(arg3a, arg3b), addr)
+		assertNotNil(t, resp3)
+		flushResp := handler.executeCommand(state, "FLUSHDB", nil, addr)
+		assertNotNil(t, flushResp)
+		_, isOK := flushResp.(*proto.SimpleString)
+		assert.True(t, isOK, "FLUSHDB must return SimpleString, got %T", flushResp)
 	})
 }
 
@@ -135,26 +164,42 @@ func FuzzServerTypeConfusion(f *testing.F) {
 		addr := "127.0.0.1:12345"
 
 		// Phase 1: String
-		_ = handler.executeCommand(state, "SET", [][]byte{[]byte(key), []byte(strVal)}, addr)
+		setResp := handler.executeCommand(state, "SET", [][]byte{[]byte(key), []byte(strVal)}, addr)
+		assertNotNil(t, setResp)
+		_, isOK := setResp.(*proto.SimpleString)
+		assert.True(t, isOK, "SET must return SimpleString, got %T", setResp)
+
 		// Phase 2: Hash on string key
-		_ = handler.executeCommand(state, "HSET", [][]byte{[]byte(key), []byte(field), []byte(strVal)}, addr)
-		_ = handler.executeCommand(state, "HGET", [][]byte{[]byte(key), []byte(field)}, addr)
+		assertNotNil(t, handler.executeCommand(state, "HSET", [][]byte{[]byte(key), []byte(field), []byte(strVal)}, addr))
+		assertNotNil(t, handler.executeCommand(state, "HGET", [][]byte{[]byte(key), []byte(field)}, addr))
+
 		// Phase 3: List on string key
-		_ = handler.executeCommand(state, "LPUSH", [][]byte{[]byte(key), []byte(listElem)}, addr)
-		_ = handler.executeCommand(state, "LLEN", [][]byte{[]byte(key)}, addr)
+		assertNotNil(t, handler.executeCommand(state, "LPUSH", [][]byte{[]byte(key), []byte(listElem)}, addr))
+		assertNotNil(t, handler.executeCommand(state, "LLEN", [][]byte{[]byte(key)}, addr))
+
 		// Phase 4: Set on string key
-		_ = handler.executeCommand(state, "SADD", [][]byte{[]byte(key), []byte(member)}, addr)
-		_ = handler.executeCommand(state, "SCARD", [][]byte{[]byte(key)}, addr)
+		assertNotNil(t, handler.executeCommand(state, "SADD", [][]byte{[]byte(key), []byte(member)}, addr))
+		assertNotNil(t, handler.executeCommand(state, "SCARD", [][]byte{[]byte(key)}, addr))
+
 		// Phase 5: ZSet on string key
-		_ = handler.executeCommand(state, "ZADD", [][]byte{[]byte(key), []byte("1.0"), []byte(member)}, addr)
-		_ = handler.executeCommand(state, "ZCARD", [][]byte{[]byte(key)}, addr)
+		assertNotNil(t, handler.executeCommand(state, "ZADD", [][]byte{[]byte(key), []byte("1.0"), []byte(member)}, addr))
+		assertNotNil(t, handler.executeCommand(state, "ZCARD", [][]byte{[]byte(key)}, addr))
+
 		// Phase 6: Cleanup
-		_ = handler.executeCommand(state, "DEL", [][]byte{[]byte(key)}, addr)
-		_ = handler.executeCommand(state, "TYPE", [][]byte{[]byte(key)}, addr)
-		// Phase 7: Expire/Persist
-		_ = handler.executeCommand(state, "EXPIRE", [][]byte{[]byte(key), []byte("100")}, addr)
-		_ = handler.executeCommand(state, "TTL", [][]byte{[]byte(key)}, addr)
-		_ = handler.executeCommand(state, "PERSIST", [][]byte{[]byte(key)}, addr)
+		assertNotNil(t, handler.executeCommand(state, "DEL", [][]byte{[]byte(key)}, addr))
+
+		typeResp := handler.executeCommand(state, "TYPE", [][]byte{[]byte(key)}, addr)
+		assertNotNil(t, typeResp)
+		ss, ok := typeResp.(*proto.SimpleString)
+		assert.True(t, ok, "TYPE must return SimpleString, got %T", typeResp)
+		if ok {
+			assert.Equal(t, "none", string(*ss), "key should be deleted after DEL")
+		}
+
+		// Phase 7: Expire/Persist on non-existent key
+		assertNotNil(t, handler.executeCommand(state, "EXPIRE", [][]byte{[]byte(key), []byte("100")}, addr))
+		assertNotNil(t, handler.executeCommand(state, "TTL", [][]byte{[]byte(key)}, addr))
+		assertNotNil(t, handler.executeCommand(state, "PERSIST", [][]byte{[]byte(key)}, addr))
 	})
 }
 
@@ -173,13 +218,21 @@ func FuzzSpecialCharKeys(f *testing.F) {
 		defer handler.Db.Close()
 		addr := "127.0.0.1:12345"
 
-		_ = handler.executeCommand(state, "SET", [][]byte{[]byte(key), []byte(value)}, addr)
-		_ = handler.executeCommand(state, "GET", [][]byte{[]byte(key)}, addr)
-		_ = handler.executeCommand(state, "HSET", [][]byte{[]byte(key), []byte("f"), []byte(value)}, addr)
-		_ = handler.executeCommand(state, "SADD", [][]byte{[]byte(key), []byte(value)}, addr)
-		_ = handler.executeCommand(state, "LPUSH", [][]byte{[]byte(key), []byte(value)}, addr)
-		_ = handler.executeCommand(state, "ZADD", [][]byte{[]byte(key), []byte("1.0"), []byte(value)}, addr)
-		_ = handler.executeCommand(state, "DEL", [][]byte{[]byte(key)}, addr)
+		setResp := handler.executeCommand(state, "SET", [][]byte{[]byte(key), []byte(value)}, addr)
+		assertNotNil(t, setResp)
+
+		getResp := handler.executeCommand(state, "GET", [][]byte{[]byte(key)}, addr)
+		assertNotNil(t, getResp)
+		bs, ok := getResp.(*proto.BulkString)
+		if ok && *bs != nil {
+			assert.Equal(t, value, string(*bs), "GET must return the value that was SET")
+		}
+
+		assertNotNil(t, handler.executeCommand(state, "HSET", [][]byte{[]byte(key), []byte("f"), []byte(value)}, addr))
+		assertNotNil(t, handler.executeCommand(state, "SADD", [][]byte{[]byte(key), []byte(value)}, addr))
+		assertNotNil(t, handler.executeCommand(state, "LPUSH", [][]byte{[]byte(key), []byte(value)}, addr))
+		assertNotNil(t, handler.executeCommand(state, "ZADD", [][]byte{[]byte(key), []byte("1.0"), []byte(value)}, addr))
+		assertNotNil(t, handler.executeCommand(state, "DEL", [][]byte{[]byte(key)}, addr))
 	})
 }
 
@@ -197,9 +250,29 @@ func FuzzTransactionOps(f *testing.F) {
 		addr := "127.0.0.1:12345"
 
 		// MULTI + queue + DISCARD (safe, no EXEC)
-		_ = handler.executeCommand(state, "MULTI", nil, addr)
-		_ = handler.executeCommand(state, cmd1, filterEmptyArgs(arg1a, arg1b), addr)
-		_ = handler.executeCommand(state, "DISCARD", nil, addr)
+		multiResp := handler.executeCommand(state, "MULTI", nil, addr)
+		assertNotNil(t, multiResp)
+		ss, ok := multiResp.(*proto.SimpleString)
+		assert.True(t, ok, "MULTI must return SimpleString, got %T", multiResp)
+		if ok {
+			assert.Equal(t, "OK", string(*ss))
+		}
+
+		queueResp := handler.executeCommand(state, cmd1, filterEmptyArgs(arg1a, arg1b), addr)
+		assertNotNil(t, queueResp)
+		queuedStr, qok := queueResp.(*proto.SimpleString)
+		assert.True(t, qok, "queued command must return SimpleString QUEUED, got %T", queueResp)
+		if qok {
+			assert.Equal(t, "QUEUED", string(*queuedStr))
+		}
+
+		discardResp := handler.executeCommand(state, "DISCARD", nil, addr)
+		assertNotNil(t, discardResp)
+		dss, dok := discardResp.(*proto.SimpleString)
+		assert.True(t, dok, "DISCARD must return SimpleString, got %T", discardResp)
+		if dok {
+			assert.Equal(t, "OK", string(*dss))
+		}
 	})
 }
 
@@ -220,7 +293,10 @@ func FuzzInfoCommand(f *testing.F) {
 		section = truncFuzz(section)
 		handler, state := setupTestHandler(t)
 		defer handler.Db.Close()
-		_ = handler.executeCommand(state, "INFO", [][]byte{[]byte(section)}, "127.0.0.1:12345")
+		resp := handler.executeCommand(state, "INFO", [][]byte{[]byte(section)}, "127.0.0.1:12345")
+		assertNotNil(t, resp)
+		_, ok := resp.(*proto.BulkString)
+		assert.True(t, ok, "INFO must return BulkString, got %T", resp)
 	})
 }
 
@@ -240,7 +316,8 @@ func FuzzSlowlogFuzz(f *testing.F) {
 		if arg != "" {
 			args = append(args, []byte(arg))
 		}
-		_ = handler.executeCommand(state, "SLOWLOG", args, "127.0.0.1:12345")
+		resp := handler.executeCommand(state, "SLOWLOG", args, "127.0.0.1:12345")
+		assertNotNil(t, resp)
 	})
 }
 
@@ -257,7 +334,8 @@ func FuzzClusterCommands(f *testing.F) {
 		subcmd = truncFuzz(strings.ToUpper(subcmd))
 		handler, state := setupTestHandler(t)
 		defer handler.Db.Close()
-		_ = handler.executeCommand(state, "CLUSTER", [][]byte{[]byte(subcmd)}, "127.0.0.1:12345")
+		resp := handler.executeCommand(state, "CLUSTER", [][]byte{[]byte(subcmd)}, "127.0.0.1:12345")
+		assertNotNil(t, resp)
 	})
 }
 
@@ -280,12 +358,24 @@ func FuzzStreamCommands(f *testing.F) {
 		defer handler.Db.Close()
 		addr := "127.0.0.1:12345"
 
-		_ = handler.executeCommand(state, "XADD", [][]byte{[]byte(stream), []byte(id), []byte(field), []byte(value)}, addr)
-		_ = handler.executeCommand(state, "XLEN", [][]byte{[]byte(stream)}, addr)
-		_ = handler.executeCommand(state, "XRANGE", [][]byte{[]byte(stream), []byte("-"), []byte("+")}, addr)
-		_ = handler.executeCommand(state, "XREVRANGE", [][]byte{[]byte(stream), []byte("+"), []byte("-")}, addr)
-		_ = handler.executeCommand(state, "XINFO", [][]byte{[]byte("STREAM"), []byte(stream)}, addr)
-		_ = handler.executeCommand(state, "DEL", [][]byte{[]byte(stream)}, addr)
+		xaddResp := handler.executeCommand(state, "XADD", [][]byte{[]byte(stream), []byte(id), []byte(field), []byte(value)}, addr)
+		assertNotNil(t, xaddResp)
+		// XADD returns a BulkString with the entry ID
+		bs, ok := xaddResp.(*proto.BulkString)
+		assert.True(t, ok, "XADD must return BulkString, got %T", xaddResp)
+		if ok {
+			assert.NotEmpty(t, string(*bs), "XADD must return a non-empty entry ID")
+		}
+
+		xlenResp := handler.executeCommand(state, "XLEN", [][]byte{[]byte(stream)}, addr)
+		assertNotNil(t, xlenResp)
+		_, isInt := xlenResp.(*proto.Integer)
+		assert.True(t, isInt, "XLEN must return Integer, got %T", xlenResp)
+
+		assertNotNil(t, handler.executeCommand(state, "XRANGE", [][]byte{[]byte(stream), []byte("-"), []byte("+")}, addr))
+		assertNotNil(t, handler.executeCommand(state, "XREVRANGE", [][]byte{[]byte(stream), []byte("+"), []byte("-")}, addr))
+		assertNotNil(t, handler.executeCommand(state, "XINFO", [][]byte{[]byte("STREAM"), []byte(stream)}, addr))
+		assertNotNil(t, handler.executeCommand(state, "DEL", [][]byte{[]byte(stream)}, addr))
 	})
 }
 
@@ -309,15 +399,22 @@ func FuzzGeospatialCommands(f *testing.F) {
 		defer handler.Db.Close()
 		addr := "127.0.0.1:12345"
 
-		_ = handler.executeCommand(state, "GEOADD", [][]byte{[]byte(key), []byte(lon), []byte(lat), []byte(member)}, addr)
-		_ = handler.executeCommand(state, "GEOPOS", [][]byte{[]byte(key), []byte(member)}, addr)
-		_ = handler.executeCommand(state, "GEODIST", [][]byte{[]byte(key), []byte(member), []byte(member)}, addr)
-		_ = handler.executeCommand(state, "GEOHASH", [][]byte{[]byte(key), []byte(member)}, addr)
-		_ = handler.executeCommand(state, "GEOSEARCH", [][]byte{
+		geoaddResp := handler.executeCommand(state, "GEOADD", [][]byte{[]byte(key), []byte(lon), []byte(lat), []byte(member)}, addr)
+		assertNotNil(t, geoaddResp)
+		// GEOADD returns Integer on success, Error on invalid coords
+		if _, isErr := geoaddResp.(*proto.Error); !isErr {
+			_, isInt := geoaddResp.(*proto.Integer)
+			assert.True(t, isInt, "GEOADD must return Integer or Error, got %T", geoaddResp)
+		}
+
+		assertNotNil(t, handler.executeCommand(state, "GEOPOS", [][]byte{[]byte(key), []byte(member)}, addr))
+		assertNotNil(t, handler.executeCommand(state, "GEODIST", [][]byte{[]byte(key), []byte(member), []byte(member)}, addr))
+		assertNotNil(t, handler.executeCommand(state, "GEOHASH", [][]byte{[]byte(key), []byte(member)}, addr))
+		assertNotNil(t, handler.executeCommand(state, "GEOSEARCH", [][]byte{
 			[]byte(key), []byte("FROMLONLAT"), []byte(lon), []byte(lat),
 			[]byte("BYRADIUS"), []byte("100000"), []byte("km"),
-		}, addr)
-		_ = handler.executeCommand(state, "DEL", [][]byte{[]byte(key)}, addr)
+		}, addr))
+		assertNotNil(t, handler.executeCommand(state, "DEL", [][]byte{[]byte(key)}, addr))
 	})
 }
 
@@ -339,12 +436,20 @@ func FuzzHyperLogLog(f *testing.F) {
 		defer handler.Db.Close()
 		addr := "127.0.0.1:12345"
 
-		_ = handler.executeCommand(state, "PFADD", [][]byte{[]byte(key), []byte(value)}, addr)
-		_ = handler.executeCommand(state, "PFCOUNT", [][]byte{[]byte(key)}, addr)
+		pfaddResp := handler.executeCommand(state, "PFADD", [][]byte{[]byte(key), []byte(value)}, addr)
+		assertNotNil(t, pfaddResp)
+		_, isInt := pfaddResp.(*proto.Integer)
+		assert.True(t, isInt, "PFADD must return Integer, got %T", pfaddResp)
+
+		pfcountResp := handler.executeCommand(state, "PFCOUNT", [][]byte{[]byte(key)}, addr)
+		assertNotNil(t, pfcountResp)
+		_, isInt2 := pfcountResp.(*proto.Integer)
+		assert.True(t, isInt2, "PFCOUNT must return Integer, got %T", pfcountResp)
+
 		key2 := key + "_merge"
-		_ = handler.executeCommand(state, "PFADD", [][]byte{[]byte(key2), []byte(value)}, addr)
-		_ = handler.executeCommand(state, "PFMERGE", [][]byte{[]byte(key), []byte(key2)}, addr)
-		_ = handler.executeCommand(state, "DEL", [][]byte{[]byte(key), []byte(key2)}, addr)
+		assertNotNil(t, handler.executeCommand(state, "PFADD", [][]byte{[]byte(key2), []byte(value)}, addr))
+		assertNotNil(t, handler.executeCommand(state, "PFMERGE", [][]byte{[]byte(key), []byte(key2)}, addr))
+		assertNotNil(t, handler.executeCommand(state, "DEL", [][]byte{[]byte(key), []byte(key2)}, addr))
 	})
 }
 
@@ -364,18 +469,23 @@ func FuzzEmptyAndNilArgs(f *testing.F) {
 		defer handler.Db.Close()
 		addr := "127.0.0.1:12345"
 
-		_ = handler.executeCommand(state, cmd, nil, addr)
-		_ = handler.executeCommand(state, cmd, [][]byte{[]byte("")}, addr)
-		_ = handler.executeCommand(state, cmd, [][]byte{[]byte(""), []byte(""), []byte("")}, addr)
-		_ = handler.executeCommand(state, cmd, [][]byte{[]byte(""), []byte("value")}, addr)
-		_ = handler.executeCommand(state, cmd, [][]byte{[]byte("key"), []byte("")}, addr)
+		// Empty args should produce errors, not panics
+		assertNotNil(t, handler.executeCommand(state, cmd, nil, addr))
+		assertNotNil(t, handler.executeCommand(state, cmd, [][]byte{[]byte("")}, addr))
+		assertNotNil(t, handler.executeCommand(state, cmd, [][]byte{[]byte(""), []byte(""), []byte("")}, addr))
+		assertNotNil(t, handler.executeCommand(state, cmd, [][]byte{[]byte(""), []byte("value")}, addr))
+		assertNotNil(t, handler.executeCommand(state, cmd, [][]byte{[]byte("key"), []byte("")}, addr))
 
 		manyEmpty := make([][]byte, 64)
 		for i := range manyEmpty {
 			manyEmpty[i] = []byte("")
 		}
-		_ = handler.executeCommand(state, cmd, manyEmpty, addr)
-		_ = handler.executeCommand(state, "FLUSHDB", nil, addr)
+		assertNotNil(t, handler.executeCommand(state, cmd, manyEmpty, addr))
+
+		flushResp := handler.executeCommand(state, "FLUSHDB", nil, addr)
+		assertNotNil(t, flushResp)
+		_, isOK := flushResp.(*proto.SimpleString)
+		assert.True(t, isOK, "FLUSHDB must return SimpleString, got %T", flushResp)
 	})
 }
 
@@ -397,21 +507,23 @@ func FuzzLCSCommand(f *testing.F) {
 		addr := "127.0.0.1:12345"
 
 		if key1 != "" {
-			_ = handler.executeCommand(state, "SET", [][]byte{[]byte(key1), []byte("hello world")}, addr)
+			setResp := handler.executeCommand(state, "SET", [][]byte{[]byte(key1), []byte("hello world")}, addr)
+			assertNotNil(t, setResp)
 		}
 		if key2 != "" {
-			_ = handler.executeCommand(state, "SET", [][]byte{[]byte(key2), []byte("hello there")}, addr)
+			setResp := handler.executeCommand(state, "SET", [][]byte{[]byte(key2), []byte("hello there")}, addr)
+			assertNotNil(t, setResp)
 		}
 
 		args := [][]byte{[]byte(key1), []byte(key2)}
 		if modifier != "" {
 			args = append(args, []byte(modifier))
 		}
-		_ = handler.executeCommand(state, "LCS", args, addr)
+		resp := handler.executeCommand(state, "LCS", args, addr)
+		assertNotNil(t, resp)
 	})
 }
 
-// FuzzWaitCommand fuzzes WAIT command.
 // FuzzObjectCommands fuzzes OBJECT subcommands.
 func FuzzObjectCommands(f *testing.F) {
 	f.Add("REFCOUNT", "mykey")
@@ -429,9 +541,11 @@ func FuzzObjectCommands(f *testing.F) {
 		addr := "127.0.0.1:12345"
 
 		if key != "" {
-			_ = handler.executeCommand(state, "SET", [][]byte{[]byte(key), []byte("value")}, addr)
+			setResp := handler.executeCommand(state, "SET", [][]byte{[]byte(key), []byte("value")}, addr)
+			assertNotNil(t, setResp)
 		}
-		_ = handler.executeCommand(state, "OBJECT", [][]byte{[]byte(subcmd), []byte(key)}, addr)
+		resp := handler.executeCommand(state, "OBJECT", [][]byte{[]byte(subcmd), []byte(key)}, addr)
+		assertNotNil(t, resp)
 	})
 }
 
@@ -451,13 +565,15 @@ func FuzzMemoryCommands(f *testing.F) {
 		addr := "127.0.0.1:12345"
 
 		if key != "" {
-			_ = handler.executeCommand(state, "SET", [][]byte{[]byte(key), []byte("value")}, addr)
+			setResp := handler.executeCommand(state, "SET", [][]byte{[]byte(key), []byte("value")}, addr)
+			assertNotNil(t, setResp)
 		}
 		args := [][]byte{[]byte(subcmd)}
 		if key != "" {
 			args = append(args, []byte(key))
 		}
-		_ = handler.executeCommand(state, "MEMORY", args, addr)
+		resp := handler.executeCommand(state, "MEMORY", args, addr)
+		assertNotNil(t, resp)
 	})
 }
 
@@ -478,7 +594,10 @@ func FuzzSortCommand(f *testing.F) {
 		defer handler.Db.Close()
 		addr := "127.0.0.1:12345"
 
-		_ = handler.executeCommand(state, "RPUSH", [][]byte{[]byte(key), []byte("3"), []byte("1"), []byte("2")}, addr)
+		pushResp := handler.executeCommand(state, "RPUSH", [][]byte{[]byte(key), []byte("3"), []byte("1"), []byte("2")}, addr)
+		assertNotNil(t, pushResp)
+		_, isInt := pushResp.(*proto.Integer)
+		assert.True(t, isInt, "RPUSH must return Integer, got %T", pushResp)
 
 		args := [][]byte{[]byte(key)}
 		if order == "ASC" || order == "DESC" {
@@ -491,8 +610,8 @@ func FuzzSortCommand(f *testing.F) {
 			args = append(args, []byte("LIMIT"), []byte(offset), []byte(count))
 		}
 
-		_ = handler.executeCommand(state, "SORT", args, addr)
-		_ = handler.executeCommand(state, "SORT_RO", args, addr)
+		assertNotNil(t, handler.executeCommand(state, "SORT", args, addr))
+		assertNotNil(t, handler.executeCommand(state, "SORT_RO", args, addr))
 	})
 }
 
@@ -510,12 +629,29 @@ func FuzzDbsizeCommand(f *testing.F) {
 		addr := "127.0.0.1:12345"
 
 		if key != "" {
-			_ = handler.executeCommand(state, "SET", [][]byte{[]byte(key), []byte(value)}, addr)
+			setResp := handler.executeCommand(state, "SET", [][]byte{[]byte(key), []byte(value)}, addr)
+			assertNotNil(t, setResp)
 		}
-		_ = handler.executeCommand(state, "DBSIZE", nil, addr)
+
+		dbsizeResp := handler.executeCommand(state, "DBSIZE", nil, addr)
+		assertNotNil(t, dbsizeResp)
+		di, ok := dbsizeResp.(*proto.Integer)
+		assert.True(t, ok, "DBSIZE must return Integer, got %T", dbsizeResp)
+		if ok {
+			assert.GreaterOrEqual(t, int64(*di), int64(0), "DBSIZE must be non-negative")
+		}
+
 		if key != "" {
-			_ = handler.executeCommand(state, "DEL", [][]byte{[]byte(key)}, addr)
+			delResp := handler.executeCommand(state, "DEL", [][]byte{[]byte(key)}, addr)
+			assertNotNil(t, delResp)
 		}
-		_ = handler.executeCommand(state, "DBSIZE", nil, addr)
+
+		dbsizeAfter := handler.executeCommand(state, "DBSIZE", nil, addr)
+		assertNotNil(t, dbsizeAfter)
+		di2, ok2 := dbsizeAfter.(*proto.Integer)
+		assert.True(t, ok2, "DBSIZE must return Integer, got %T", dbsizeAfter)
+		if ok && ok2 {
+			assert.LessOrEqual(t, int64(*di2), int64(*di), "DBSIZE should not increase after DEL")
+		}
 	})
 }

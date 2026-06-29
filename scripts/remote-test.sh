@@ -59,6 +59,9 @@ rsync -az --delete \
     --exclude 'build' \
     --exclude 'tmp' \
     --exclude '*.test' \
+    --exclude 'mutation-test*.log' \
+    --exclude '.mutation-test.pid' \
+    --exclude '.gremlins-report-*.json' \
     -e "ssh $SSH_OPTS -i \"$REMOTE_KEY\" -l $REMOTE_USER" \
     /Users/lbp/Projects/BoltDB/ \
     "$REMOTE_HOST:$REMOTE_DIR/"

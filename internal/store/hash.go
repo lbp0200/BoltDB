@@ -745,35 +745,22 @@ func (s *BotreonStore) HRandField(key string, count int, withValues bool) ([]str
 	var fields []string
 	var values []string
 	err := s.db.View(func(txn *badger.Txn) error {
-		// 获取所有字段
-		allFields, err := s.hGetAllFields(txn, key)
-		if err != nil {
-			return err
+		if count >= 0 && count != 0 {
+			// Count > 0: distinct via reservoir sampling; count == 0: single random
+			// Count >= len(fields): need full scan anyway
+			// Use streaming iteration with reservoir sampling for count > 0
+			return s.hRandFieldReservoir(txn, key, count, withValues, &fields, &values)
 		}
-		if len(allFields) == 0 {
-			return nil
-		}
-
-		// 根据 count 和 withValues 处理
-		if count > 0 && count < len(allFields) {
-			// 需要随机选择 count 个不重复的字段
-			selected := make(map[int]bool)
-			for len(selected) < count {
-				idx := int(randomFloat64() * float64(len(allFields)))
-				if !selected[idx] {
-					selected[idx] = true
-					fields = append(fields, allFields[idx].Field)
-					if withValues {
-						values = append(values, string(allFields[idx].Value))
-					}
-				}
+		if count < 0 {
+			// Allow repeats: collect all fields first (needed for repeated random access)
+			allFields, err := s.hGetAllFields(txn, key)
+			if err != nil {
+				return err
 			}
-		} else if count < 0 {
-			// 需要随机选择 -count 个字段（可以重复）
+			if len(allFields) == 0 {
+				return nil
+			}
 			realCount := -count
-			if realCount > len(allFields) {
-				realCount = len(allFields)
-			}
 			for i := 0; i < realCount; i++ {
 				idx := int(randomFloat64() * float64(len(allFields)))
 				fields = append(fields, allFields[idx].Field)
@@ -781,18 +768,111 @@ func (s *BotreonStore) HRandField(key string, count int, withValues bool) ([]str
 					values = append(values, string(allFields[idx].Value))
 				}
 			}
-		} else {
-			// count >= len(allFields)，返回所有字段
-			for _, f := range allFields {
-				fields = append(fields, f.Field)
-				if withValues {
-					values = append(values, string(f.Value))
-				}
+			return nil
+		}
+		// count == 0: return all fields
+		allFields, err := s.hGetAllFields(txn, key)
+		if err != nil {
+			return err
+		}
+		for _, f := range allFields {
+			fields = append(fields, f.Field)
+			if withValues {
+				values = append(values, string(f.Value))
 			}
 		}
 		return nil
 	})
 	return fields, values, err
+}
+
+// hRandFieldReservoir uses reservoir sampling to select random fields without loading all into memory.
+func (s *BotreonStore) hRandFieldReservoir(txn *badger.Txn, key string, count int, withValues bool, fields *[]string, values *[]string) error {
+	prefix := s.hashKey(key, "")
+	opts := badger.DefaultIteratorOptions
+	opts.Prefix = prefix
+	opts.PrefetchValues = false
+
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	if count == 0 {
+		// Single random field: reservoir of size 1
+		var foundField string
+		var foundValue []byte
+		hasValue := false
+		i := 0
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			field, val, ok := s.parseHashIteratorKey(it, prefix)
+			if !ok {
+				continue
+			}
+			if !hasValue {
+				foundField = field
+				foundValue = val
+				hasValue = true
+			} else {
+				j := randomIntn(i + 1)
+				if j == 0 {
+					foundField = field
+					foundValue = val
+				}
+			}
+			i++
+		}
+		if hasValue {
+			*fields = append(*fields, foundField)
+			if withValues {
+				*values = append(*values, string(foundValue))
+			}
+		}
+		return nil
+	}
+
+	// count > 0: distinct via Algorithm R reservoir sampling
+	reservoir := make([]hashField, 0, count)
+	i := 0
+	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+		field, val, ok := s.parseHashIteratorKey(it, prefix)
+		if !ok {
+			continue
+		}
+		if i < count {
+			reservoir = append(reservoir, hashField{Field: field, Value: val})
+		} else {
+			j := randomIntn(i + 1)
+			if j < count {
+				reservoir[j] = hashField{Field: field, Value: val}
+			}
+		}
+		i++
+	}
+
+	// If we found fewer fields than count, return all
+	if len(reservoir) < count {
+		count = len(reservoir)
+	}
+	for j := 0; j < count; j++ {
+		*fields = append(*fields, reservoir[j].Field)
+		if withValues {
+			*values = append(*values, string(reservoir[j].Value))
+		}
+	}
+	return nil
+}
+
+// parseHashIteratorKey extracts field and value from a hash iterator item.
+func (s *BotreonStore) parseHashIteratorKey(it *badger.Iterator, prefix []byte) (string, []byte, bool) {
+	key := it.Item().Key()
+	remainder := string(key[len(prefix):])
+	if remainder == "__count__" {
+		return "", nil, false
+	}
+	val, err := it.Item().ValueCopy(nil)
+	if err != nil {
+		return "", nil, false
+	}
+	return remainder, val, true
 }
 
 // hGetAllFields 获取哈希表中的所有字段（内部方法）

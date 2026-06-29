@@ -52,7 +52,7 @@ func TestBuildPubSubPush_PMessage_Coverage(t *testing.T) {
 	assert.Equal(t, "testdata", string(*na.Elems[3].(*proto.BulkString)))
 }
 
-// runPubSubLoop coverage: 39.2% — test early return when subscriber is nil
+// runPubSubLoop coverage: test early return when subscriber is nil
 
 func TestRunPubSubLoop_NilSubscriber_Coverage(t *testing.T) {
 	t.Parallel()
@@ -60,7 +60,18 @@ func TestRunPubSubLoop_NilSubscriber_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	state.subscriber = nil
-	handler.runPubSubLoop(nil, nil, nil, nil, state, "127.0.0.1:12345")
+	done := make(chan struct{})
+	go func() {
+		handler.runPubSubLoop(nil, nil, nil, nil, state, "127.0.0.1:12345")
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// runPubSubLoop returned promptly — nil subscriber handled correctly
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("runPubSubLoop did not return within 500ms with nil subscriber — possible deadlock")
+	}
 }
 
 // broadcastToMonitors coverage: 80% — test with active monitor clients

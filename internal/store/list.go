@@ -326,6 +326,11 @@ func (s *BotreonStore) getNodeByIndex(txn *badger.Txn, key string, index int64) 
 	if err != nil {
 		return "", "", err
 	}
+	return s.getNodeByIndexWithMeta(txn, key, index, length, start)
+}
+
+// getNodeByIndexWithMeta 根据索引获取节点ID和值，接受预取的元数据以避免重复读取
+func (s *BotreonStore) getNodeByIndexWithMeta(txn *badger.Txn, key string, index int64, length uint64, start string) (string, string, error) {
 	if length == 0 {
 		return "", "", nil
 	}
@@ -368,7 +373,7 @@ func (s *BotreonStore) getNodeByIndex(txn *badger.Txn, key string, index int64) 
 			currentIndex++
 		}
 	} else {
-		// 从尾部开始
+		// 从尾部开始 — 需要 end 元数据
 		_, _, end, metaErr := s.listGetMetaTxn(txn, key)
 		if metaErr != nil {
 			return "", "", metaErr
@@ -605,66 +610,153 @@ func (s *BotreonStore) LRange(key string, start, stop int64) ([]string, error) {
 			return nil
 		}
 
-		// 找到起始节点
-		currentNodeID := startID
-		currentIndex := int64(0)
-		visitedStart := make(map[string]bool)
-		for currentIndex < start {
-			// 防止循环链表导致的无限循环
-			if visitedStart[currentNodeID] {
-				return nil
+		count := stop - start + 1
+
+		// 判断从哪一端遍历更高效
+		// #nosec G115 - length is bounded by practical list size limits
+		if stop > int64(length)/2 {
+			// 从尾部反向遍历更高效 — 需要 endID
+			_, _, endID, err2 := s.listGetMetaTxn(txn, key)
+			if err2 != nil {
+				return err2
 			}
-			visitedStart[currentNodeID] = true
+			r, err := s.lRangeReverse(txn, key, start, stop, count, length, endID)
+			result = r
+			return err
+		}
+
+		// 从头部正向遍历
+		r, err := s.lRangeForward(txn, key, start, stop, startID)
+		result = r
+		return err
+	})
+	return result, err
+}
+
+// lRangeForward 从头部正向遍历 LRange
+func (s *BotreonStore) lRangeForward(txn *badger.Txn, key string, start, stop int64, startID string) ([]string, error) {
+	var result []string
+	// 找到起始节点
+	currentNodeID := startID
+	currentIndex := int64(0)
+	visitedStart := make(map[string]bool)
+	for currentIndex < start {
+		if visitedStart[currentNodeID] {
+			return result, nil
+		}
+		visitedStart[currentNodeID] = true
+		nextKey := s.listKey(key, currentNodeID, "next")
+		item, err := txn.Get([]byte(nextKey))
+		if err != nil {
+			return result, err
+		}
+		nextVal, err := item.ValueCopy(nil)
+		if err != nil {
+			return result, err
+		}
+		currentNodeID = string(nextVal)
+		currentIndex++
+	}
+
+	// 收集范围内的值
+	visited := make(map[string]bool)
+	for currentIndex <= stop {
+		if visited[currentNodeID] {
+			break
+		}
+		visited[currentNodeID] = true
+
+		nodeKey := s.listKey(key, currentNodeID)
+		item, err := txn.Get([]byte(nodeKey))
+		if err != nil {
+			return result, err
+		}
+		valueBytes, err := item.ValueCopy(nil)
+		if err != nil {
+			return result, err
+		}
+		result = append(result, string(valueBytes))
+
+		if currentIndex < stop {
 			nextKey := s.listKey(key, currentNodeID, "next")
-			item, err := txn.Get([]byte(nextKey))
+			item, err = txn.Get([]byte(nextKey))
 			if err != nil {
-				return err
+				return result, err
 			}
 			nextVal, err := item.ValueCopy(nil)
 			if err != nil {
-				return err
+				return result, err
 			}
 			currentNodeID = string(nextVal)
-			currentIndex++
 		}
+		currentIndex++
+	}
+	return result, nil
+}
 
-		// 收集范围内的值
-		visited := make(map[string]bool)
-		for currentIndex <= stop {
-			// 防止循环链表导致的无限循环
-			if visited[currentNodeID] {
-				break
-			}
-			visited[currentNodeID] = true
-
-			nodeKey := s.listKey(key, currentNodeID)
-			item, err := txn.Get([]byte(nodeKey))
-			if err != nil {
-				return err
-			}
-			valueBytes, err := item.ValueCopy(nil)
-			if err != nil {
-				return err
-			}
-			result = append(result, string(valueBytes))
-
-			if currentIndex < stop {
-				nextKey := s.listKey(key, currentNodeID, "next")
-				item, err = txn.Get([]byte(nextKey))
-				if err != nil {
-					return err
-				}
-				nextVal, err := item.ValueCopy(nil)
-				if err != nil {
-					return err
-				}
-				currentNodeID = string(nextVal)
-			}
-			currentIndex++
+// lRangeReverse 从尾部反向遍历 LRange，收集结果后反转
+func (s *BotreonStore) lRangeReverse(txn *badger.Txn, key string, start, stop int64, count int64, length uint64, endID string) ([]string, error) {
+	currentNodeID := endID
+	// #nosec G115 - length is bounded by practical list size limits
+	stepsFromEnd := int64(length-1) - stop
+	visitedStart := make(map[string]bool)
+	for i := int64(0); i < stepsFromEnd; i++ {
+		if visitedStart[currentNodeID] {
+			return nil, nil
 		}
-		return nil
-	})
-	return result, err
+		visitedStart[currentNodeID] = true
+		prevKey := s.listKey(key, currentNodeID, "prev")
+		item, err := txn.Get([]byte(prevKey))
+		if err != nil {
+			return nil, err
+		}
+		prevVal, err := item.ValueCopy(nil)
+		if err != nil {
+			return nil, err
+		}
+		currentNodeID = string(prevVal)
+	}
+
+	// 收集 [stop, stop-1, ..., start]
+	tmp := make([]string, 0, count)
+	visited := make(map[string]bool)
+	for i := int64(0); i < count; i++ {
+		if visited[currentNodeID] {
+			break
+		}
+		visited[currentNodeID] = true
+
+		nodeKey := s.listKey(key, currentNodeID)
+		item, err := txn.Get([]byte(nodeKey))
+		if err != nil {
+			return nil, err
+		}
+		valueBytes, err := item.ValueCopy(nil)
+		if err != nil {
+			return nil, err
+		}
+		tmp = append(tmp, string(valueBytes))
+
+		if i < count-1 {
+			prevKey := s.listKey(key, currentNodeID, "prev")
+			item, err = txn.Get([]byte(prevKey))
+			if err != nil {
+				return nil, err
+			}
+			prevVal, err := item.ValueCopy(nil)
+			if err != nil {
+				return nil, err
+			}
+			currentNodeID = string(prevVal)
+		}
+	}
+
+	// 反转: [stop, ..., start] → [start, ..., stop]
+	result := make([]string, len(tmp))
+	for i := len(tmp) - 1; i >= 0; i-- {
+		result[len(tmp)-1-i] = tmp[i]
+	}
+	return result, nil
 }
 
 // LSET 实现 Redis LSET 命令
@@ -693,7 +785,7 @@ func (s *BotreonStore) LPos(key string, element string, rank, count, maxlen int6
 	var results []int64
 
 	err := s.db.View(func(txn *badger.Txn) error {
-		length, _, _, err := s.listGetMetaTxn(txn, key)
+		length, startID, _, err := s.listGetMetaTxn(txn, key)
 		if err != nil {
 			return nil // 列表不存在，返回空
 		}
@@ -718,29 +810,83 @@ func (s *BotreonStore) LPos(key string, element string, rank, count, maxlen int6
 			}
 		}
 
+		// 单次链表遍历，避免循环调用 getNodeByIndex 的 O(N²) 问题
+		// 先定位到 startIdx 节点
+		currentNodeID := startID
+		{
+			visitedSeek := make(map[string]bool)
+			for i := int64(0); i < startIdx; i++ {
+				if visitedSeek[currentNodeID] {
+					return nil
+				}
+				visitedSeek[currentNodeID] = true
+				nextKey := s.listKey(key, currentNodeID, "next")
+				item, err := txn.Get([]byte(nextKey))
+				if err != nil {
+					return nil
+				}
+				nextVal, err := item.ValueCopy(nil)
+				if err != nil {
+					return nil
+				}
+				currentNodeID = string(nextVal)
+			}
+		}
+
+		// 单次遍历收集匹配
 		matches := int64(0)
 		found := int64(0)
-		for i := startIdx; i < scanLen; i++ {
-			_, val, err := s.getNodeByIndex(txn, key, i)
-			if err != nil {
-				continue
+		currentIndex := startIdx
+		visited := make(map[string]bool)
+		for currentIndex < scanLen {
+			if visited[currentNodeID] {
+				break
 			}
+			visited[currentNodeID] = true
+
+			// 读取节点值
+			nodeKey := s.listKey(key, currentNodeID)
+			item, err := txn.Get([]byte(nodeKey))
+			if err != nil {
+				break
+			}
+			valueBytes, err := item.ValueCopy(nil)
+			if err != nil {
+				break
+			}
+			val := string(valueBytes)
+
 			if val == element {
 				matches++
 				// 检查是否达到 rank
 				if rank > 0 && matches < rank {
-					continue
-				}
-				if rank < 0 && matches < -rank {
-					continue
-				}
-				found++
-				results = append(results, i)
+					// 跳过
+				} else if rank < 0 && matches < -rank {
+					// 跳过
+				} else {
+					found++
+					results = append(results, currentIndex)
 
-				// 如果只需要一个结果，或者达到了 count 限制
-				if (count == 0 && rank == 0) || (count > 0 && found >= count) {
+					// 如果只需要一个结果，或者达到了 count 限制
+					if (count == 0 && rank == 0) || (count > 0 && found >= count) {
+						break
+					}
+				}
+			}
+
+			// 移动到下一个节点
+			currentIndex++
+			if currentIndex < scanLen {
+				nextKey := s.listKey(key, currentNodeID, "next")
+				item, err := txn.Get([]byte(nextKey))
+				if err != nil {
 					break
 				}
+				nextVal, err := item.ValueCopy(nil)
+				if err != nil {
+					break
+				}
+				currentNodeID = string(nextVal)
 			}
 		}
 

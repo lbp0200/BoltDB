@@ -57,13 +57,6 @@ func TestExecuteCommand_ROLE_Master_Coverage(t *testing.T) {
 	assert.Equal(t, "master", string(arr.Args[0]))
 }
 
-// TestExecuteCommand_ROLE_Slave tests ROLE command for slave
-// Note: This test is skipped because handler.Replication is nil in the basic setup
-func TestExecuteCommand_ROLE_Slave_Coverage(t *testing.T) {
-	t.Parallel()
-	t.Skip("Skipping - handler.Replication is nil in basic setup")
-}
-
 // TestExecuteCommand_CLIENT_LIST tests CLIENT LIST command
 func TestExecuteCommand_CLIENT_LIST_Coverage(t *testing.T) {
 	t.Parallel()
@@ -170,6 +163,12 @@ func TestExecuteCommand_FLUSHALL_Coverage(t *testing.T) {
 
 	resp := handler.executeCommand(state, "FLUSHALL", nil, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
+
+	// Verify database is empty
+	dbsize := handler.executeCommand(state, "DBSIZE", nil, "127.0.0.1:12345")
+	integer, ok := dbsize.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
 }
 
 // TestExecuteCommand_LASTSAVE tests LASTSAVE command
@@ -1566,8 +1565,9 @@ func TestExecuteCommand_HGET_Coverage(t *testing.T) {
 
 	handler.executeCommand(state, "HSET", [][]byte{[]byte("myhash"), []byte("field1"), []byte("value1")}, "127.0.0.1:12345")
 	resp := handler.executeCommand(state, "HGET", [][]byte{[]byte("myhash"), []byte("field1")}, "127.0.0.1:12345")
-	_, ok := resp.(*proto.BulkString)
+	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
+	assert.Equal(t, "value1", string(*bs))
 }
 
 // TestExecuteCommand_HDEL tests HDEL command
@@ -1646,8 +1646,9 @@ func TestExecuteCommand_ZSCORE_Coverage(t *testing.T) {
 
 	handler.executeCommand(state, "ZADD", [][]byte{[]byte("myzset"), []byte("1"), []byte("member1")}, "127.0.0.1:12345")
 	resp := handler.executeCommand(state, "ZSCORE", [][]byte{[]byte("myzset"), []byte("member1")}, "127.0.0.1:12345")
-	_, ok := resp.(*proto.BulkString)
+	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
+	assert.Equal(t, "1", string(*bs))
 }
 
 // TestExecuteCommand_ZRANGE tests ZRANGE command

@@ -170,13 +170,6 @@ func TestMarkDirtyKeys_WithWatchers_Coverage(t *testing.T) {
 	assert.True(t, exists)
 }
 
-func TestMarkDirtyKeys_NoWatchers_Coverage(t *testing.T) {
-	t.Parallel()
-	handler, _ := setupTestHandler(t)
-	defer handler.Db.Close()
-	handler.markDirtyKeys(&connState{}, "nonexistent")
-}
-
 // Signal types: PubSubQuitSignal.String() 0%, MultiResponse.String() 0%
 
 func TestPubSubQuitSignal_String_Coverage(t *testing.T) {

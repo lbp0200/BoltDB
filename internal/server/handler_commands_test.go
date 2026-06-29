@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
@@ -17,6 +18,11 @@ func TestServerStringCommands(t *testing.T) {
 	handler.executeCommand(state, "SET", [][]byte{[]byte("key1"), []byte("hello")}, "127.0.0.1:12345")
 	handler.executeCommand(state, "SET", [][]byte{[]byte("counter"), []byte("0")}, "127.0.0.1:12345")
 	handler.executeCommand(state, "SET", [][]byte{[]byte("floatkey"), []byte("0")}, "127.0.0.1:12345")
+	// Cross-type keys for WRONGTYPE tests
+	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("mylist"), []byte("elem")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "HSET", [][]byte{[]byte("myhash"), []byte("f"), []byte("v")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SADD", [][]byte{[]byte("myset"), []byte("m")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "ZADD", [][]byte{[]byte("myzset"), []byte("1"), []byte("m")}, "127.0.0.1:12345")
 
 	tests := []struct {
 		name  string
@@ -127,6 +133,78 @@ func TestServerStringCommands(t *testing.T) {
 				integer, ok := resp.(*proto.Integer)
 				assert.True(t, ok)
 				assert.Equal(t, int64(1), int64(*integer))
+			},
+		},
+		// --- Negative: wrong-arity ---
+		{
+			name: "SET wrong arity",
+			cmd:  "SET",
+			args: [][]byte{},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "wrong number of arguments"))
+			},
+		},
+		{
+			name: "GET wrong arity",
+			cmd:  "GET",
+			args: [][]byte{},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "wrong number of arguments"))
+			},
+		},
+		// --- Negative: WRONGTYPE ---
+		{
+			name: "INCR on list key",
+			cmd:  "INCR",
+			args: [][]byte{[]byte("mylist")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "WRONGTYPE"))
+			},
+		},
+		{
+			name: "INCR on hash key",
+			cmd:  "INCR",
+			args: [][]byte{[]byte("myhash")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "WRONGTYPE"))
+			},
+		},
+		{
+			name: "INCR on set key",
+			cmd:  "INCR",
+			args: [][]byte{[]byte("myset")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "WRONGTYPE"))
+			},
+		},
+		{
+			name: "INCR on zset key",
+			cmd:  "INCR",
+			args: [][]byte{[]byte("myzset")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "WRONGTYPE"))
+			},
+		},
+		{
+			name: "DECR on list key",
+			cmd:  "DECR",
+			args: [][]byte{[]byte("mylist")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "WRONGTYPE"))
 			},
 		},
 	}
@@ -261,6 +339,58 @@ func TestServerKeyCommands(t *testing.T) {
 				assert.True(t, ok)
 			},
 		},
+		// --- Negative: wrong-arity ---
+		{
+			name: "EXPIRE wrong arity",
+			cmd:  "EXPIRE",
+			args: [][]byte{[]byte("testkey")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "wrong number of arguments"))
+			},
+		},
+		{
+			name: "RENAME wrong arity",
+			cmd:  "RENAME",
+			args: [][]byte{[]byte("onlyone")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "wrong number of arguments"))
+			},
+		},
+		// --- Negative: non-existent key ---
+		{
+			name: "EXPIRE non-existent key",
+			cmd:  "EXPIRE",
+			args: [][]byte{[]byte("doesnotexist"), []byte("60")},
+			check: func(t *testing.T, resp proto.RESP) {
+				integer, ok := resp.(*proto.Integer)
+				assert.True(t, ok)
+				assert.Equal(t, int64(0), int64(*integer))
+			},
+		},
+		{
+			name: "TTL non-existent key",
+			cmd:  "TTL",
+			args: [][]byte{[]byte("doesnotexist")},
+			check: func(t *testing.T, resp proto.RESP) {
+				integer, ok := resp.(*proto.Integer)
+				assert.True(t, ok)
+				assert.Equal(t, int64(-2), int64(*integer))
+			},
+		},
+		{
+			name: "RENAME non-existent key",
+			cmd:  "RENAME",
+			args: [][]byte{[]byte("doesnotexist"), []byte("newkey")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "no such key"))
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -276,6 +406,9 @@ func TestServerHashCommands(t *testing.T) {
 	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
+
+	// Cross-type key for WRONGTYPE tests
+	handler.executeCommand(state, "SET", [][]byte{[]byte("strkey"), []byte("val")}, "127.0.0.1:12345")
 
 	tests := []struct {
 		name  string
@@ -413,6 +546,58 @@ func TestServerHashCommands(t *testing.T) {
 				assert.Equal(t, 4, len(arr.Args))
 			},
 		},
+		// --- Negative: wrong-arity ---
+		{
+			name: "HSET wrong arity",
+			cmd:  "HSET",
+			args: [][]byte{[]byte("myhash"), []byte("f")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "wrong number of arguments"))
+			},
+		},
+		{
+			name: "HGET wrong arity",
+			cmd:  "HGET",
+			args: [][]byte{[]byte("myhash")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "wrong number of arguments"))
+			},
+		},
+		// --- Negative: WRONGTYPE ---
+		{
+			name: "HGET on string key",
+			cmd:  "HGET",
+			args: [][]byte{[]byte("strkey"), []byte("f")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "WRONGTYPE"))
+			},
+		},
+		{
+			name: "HSET on string key",
+			cmd:  "HSET",
+			args: [][]byte{[]byte("strkey"), []byte("f"), []byte("v")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "WRONGTYPE"))
+			},
+		},
+		{
+			name: "HLEN on string key",
+			cmd:  "HLEN",
+			args: [][]byte{[]byte("strkey")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "WRONGTYPE"))
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -428,6 +613,9 @@ func TestServerSetCommands(t *testing.T) {
 	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
+
+	// Cross-type key for WRONGTYPE tests
+	handler.executeCommand(state, "SET", [][]byte{[]byte("strkey"), []byte("val")}, "127.0.0.1:12345")
 
 	tests := []struct {
 		name  string
@@ -501,6 +689,58 @@ func TestServerSetCommands(t *testing.T) {
 				assert.Equal(t, int64(1), int64(*integer))
 			},
 		},
+		// --- Negative: wrong-arity ---
+		{
+			name: "SADD wrong arity",
+			cmd:  "SADD",
+			args: [][]byte{[]byte("myset")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "wrong number of arguments"))
+			},
+		},
+		{
+			name: "SCARD wrong arity",
+			cmd:  "SCARD",
+			args: [][]byte{},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "wrong number of arguments"))
+			},
+		},
+		// --- Negative: WRONGTYPE ---
+		{
+			name: "SADD on string key",
+			cmd:  "SADD",
+			args: [][]byte{[]byte("strkey"), []byte("m")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "WRONGTYPE"))
+			},
+		},
+		{
+			name: "SCARD on string key",
+			cmd:  "SCARD",
+			args: [][]byte{[]byte("strkey")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "WRONGTYPE"))
+			},
+		},
+		{
+			name: "SISMEMBER on string key",
+			cmd:  "SISMEMBER",
+			args: [][]byte{[]byte("strkey"), []byte("m")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "WRONGTYPE"))
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -516,6 +756,9 @@ func TestServerSortedSetCommands(t *testing.T) {
 	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
+
+	// Cross-type key for WRONGTYPE tests
+	handler.executeCommand(state, "SET", [][]byte{[]byte("strkey"), []byte("val")}, "127.0.0.1:12345")
 
 	tests := []struct {
 		name  string
@@ -622,6 +865,58 @@ func TestServerSortedSetCommands(t *testing.T) {
 				assert.Equal(t, int64(1), int64(*integer))
 			},
 		},
+		// --- Negative: wrong-arity ---
+		{
+			name: "ZADD wrong arity",
+			cmd:  "ZADD",
+			args: [][]byte{[]byte("myzset")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "wrong number of arguments"))
+			},
+		},
+		{
+			name: "ZSCORE wrong arity",
+			cmd:  "ZSCORE",
+			args: [][]byte{[]byte("myzset")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "wrong number of arguments"))
+			},
+		},
+		// --- Negative: WRONGTYPE ---
+		{
+			name: "ZADD on string key",
+			cmd:  "ZADD",
+			args: [][]byte{[]byte("strkey"), []byte("1"), []byte("m")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "WRONGTYPE"))
+			},
+		},
+		{
+			name: "ZSCORE on string key",
+			cmd:  "ZSCORE",
+			args: [][]byte{[]byte("strkey"), []byte("m")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "WRONGTYPE"))
+			},
+		},
+		{
+			name: "ZCARD on string key",
+			cmd:  "ZCARD",
+			args: [][]byte{[]byte("strkey")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "WRONGTYPE"))
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -637,6 +932,9 @@ func TestServerListCommands(t *testing.T) {
 	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
+
+	// Cross-type key for WRONGTYPE tests
+	handler.executeCommand(state, "SET", [][]byte{[]byte("strkey"), []byte("val")}, "127.0.0.1:12345")
 
 	tests := []struct {
 		name  string
@@ -719,6 +1017,48 @@ func TestServerListCommands(t *testing.T) {
 				bulk, ok := resp.(*proto.BulkString)
 				assert.True(t, ok)
 				assert.Equal(t, "value2", string(*bulk))
+			},
+		},
+		// --- Negative: wrong-arity ---
+		{
+			name: "LPUSH wrong arity",
+			cmd:  "LPUSH",
+			args: [][]byte{[]byte("mylist")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "wrong number of arguments"))
+			},
+		},
+		// --- Negative: WRONGTYPE ---
+		{
+			name: "LPUSH on string key",
+			cmd:  "LPUSH",
+			args: [][]byte{[]byte("strkey"), []byte("v")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "WRONGTYPE"))
+			},
+		},
+		{
+			name: "LLEN on string key",
+			cmd:  "LLEN",
+			args: [][]byte{[]byte("strkey")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "WRONGTYPE"))
+			},
+		},
+		{
+			name: "LPOP on string key",
+			cmd:  "LPOP",
+			args: [][]byte{[]byte("strkey")},
+			check: func(t *testing.T, resp proto.RESP) {
+				err, ok := resp.(*proto.Error)
+				assert.True(t, ok)
+				assert.True(t, strings.Contains(string(*err), "WRONGTYPE"))
 			},
 		},
 	}

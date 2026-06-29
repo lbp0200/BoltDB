@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
@@ -13,10 +14,11 @@ func TestExecuteCommand_DUMP_NonExistent_Coverage(t *testing.T) {
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	// DUMP on non-existent key
+	// DUMP on non-existent key returns nil BulkString
 	resp := handler.executeCommand(state, "DUMP", [][]byte{[]byte("nonexistent")}, "127.0.0.1:12345")
-	_, ok := resp.(*proto.BulkString)
+	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
+	assert.True(t, *bs == nil)
 }
 
 // TestExecuteCommand_OBJECT_REFCOUNT_Coverage tests OBJECT REFCOUNT command
@@ -28,10 +30,11 @@ func TestExecuteCommand_OBJECT_REFCOUNT_Coverage(t *testing.T) {
 	// Set a key
 	handler.executeCommand(state, "SET", [][]byte{[]byte("testkey"), []byte("testvalue")}, "127.0.0.1:12345")
 
-	// OBJECT REFCOUNT
+	// OBJECT REFCOUNT returns the number of references (always 1 for a normal key)
 	resp := handler.executeCommand(state, "OBJECT", [][]byte{[]byte("REFCOUNT"), []byte("testkey")}, "127.0.0.1:12345")
-	_, ok := resp.(*proto.Integer)
+	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
 }
 
 // TestExecuteCommand_CLIENT_NOEVICT2_Coverage tests CLIENT NOEVICT command
@@ -59,7 +62,7 @@ func TestExecuteCommand_CLIENT_NOEVICT_Error_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "CLIENT", [][]byte{[]byte("NOEVICT")}, "127.0.0.1:12345")
 	err, ok := resp.(*proto.Error)
 	assert.True(t, ok)
-	assert.True(t, len(string(*err)) > 0)
+	assert.True(t, strings.Contains(string(*err), "wrong number of arguments"))
 }
 
 // TestExecuteCommand_CLIENT_TRACKING_Coverage2 tests CLIENT TRACKING command
@@ -87,7 +90,7 @@ func TestExecuteCommand_CLIENT_TRACKING_Error_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "CLIENT", [][]byte{[]byte("TRACKING"), []byte("INVALID")}, "127.0.0.1:12345")
 	err, ok := resp.(*proto.Error)
 	assert.True(t, ok)
-	assert.True(t, len(string(*err)) > 0)
+	assert.True(t, strings.Contains(string(*err), "ERR"))
 }
 
 // TestExecuteCommand_PFINFO_Coverage tests PFINFO command
