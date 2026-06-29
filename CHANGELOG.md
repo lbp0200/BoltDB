@@ -1,5 +1,46 @@
 # Changelog
 
+## v8.32.0 (2026-06-29) — Bug Fixes, Handler Refactor, Test Hardening, Store Optimizations
+
+> **6 个 Redis 兼容性 bug 修复。handler.go 8824 行按命令族拆分为 24 个文件。94 处弱断言加固 + 30 个 fuzz tests。Store 层核心算法优化（List 双向遍历、蓄水池采样、APPEND 事务合并）。**
+
+### Bug 修复
+
+- **FLUSHDB 缓存残留**：FLUSHDB 不清除本地缓存导致数据残留
+- **ZMSCORE/SRANDMEMBER 兼容性**：修复 3 个 Redis 兼容性 bug
+- **SET NX/XX nil 响应**：兼容 redis-py，NX/XX 失败时返回 nil 而非空字符串
+- **TTL 双格式批量修复**：EXPIREAT/PEXPIREAT 格式统一 + SET 修饰符（EX/PX/EXAT/PXAT/NX/XX/KEEPTTL）完善
+- **hGetAllFields 元数据泄漏**：HGETALL 返回字段包含内部元数据前缀
+- **6 条缺失命令实现**：补齐 Redis 兼容性缺口
+
+### 重构
+
+- **handler.go 按族拆分**：8824 行拆为 24 个文件（`handler_core.go`、`handler_dispatch.go`、`string_commands.go`、`hash_commands.go`、`list_commands.go`、`set_commands.go`、`sorted_set_commands.go`、`stream_commands.go`、`geo_commands.go`、`pubsub_commands.go`、`replication_commands.go` 等），无单文件超 1136 行
+
+### 测试质量加固
+
+- **弱断言修复**：94 处 `len > 0` / `>= 0` → 精确值验证
+- **Store 层 fuzz**：12 个 fuzz 函数（FuzzStringOps、FuzzHashOps、FuzzSetOps、FuzzListOps、FuzzSortedSetOps、FuzzTypeConfusion 等）
+- **Server 层 fuzz**：18 个 fuzz 函数（FuzzCommandDispatch、FuzzKnownCmdRandomArgs、FuzzCommandPipeline、FuzzSpecialCharKeys、FuzzTransactionOps 等）
+- **Redis 兼容性**：229 tests 增强，覆盖 SET/TTL/RENAME 边界
+- **元数据泄漏回归**：8 个 `__count__` 泄漏回归测试
+- **Mutation kill tests**：Phase 9-10 补充 mutation testing 中 NOT COVERED 的变异体
+
+### Store 算法优化
+
+- **List 双向遍历**：LRange 当 `stop > length/2` 时从尾部反向遍历
+- **LPos O(N²) → O(N)**：替换循环调用 `getNodeByIndex`，改为直接沿 `:next`/`:prev` 指针遍历
+- **ZRank 双向扫描**：rank > Card/2 时从尾部反向扫描
+- **蓄水池采样**：ZRandMember/HRandField/SRandMember 从全量加载改为 O(K) 内存蓄水池
+- **APPEND 事务合并**：View 读 + Update 写合并为单个 Update 事务
+
+### 文档
+
+- **生产事故回归测试计划**：`docs/plans/production-regression-tests.md`，覆盖 8 个未测试的生产事故场景
+- **TODO 更新**：标记 Phase 1-10 完成项
+
+---
+
 ## v8.31.0 (2026-06-25) — Store Atomicity, Cluster Race Fixes, Sentinel AUTH
 
 > **Store 层大规模 TOCTOU/嵌套事务修复，配套并发冲突测试套件。Cluster gossip 数据竞争全部消除。Cluster Bus 真实 TCP Gossip、Sentinel AUTH、DEBUG 命令、遗留命名清理。**
