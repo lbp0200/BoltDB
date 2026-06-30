@@ -931,3 +931,229 @@ func (h *Handler) handleXTRIM(state *connState, args [][]byte, remoteAddr string
 	}
 	return proto.NewInteger(trimmed)
 }
+
+// handleXACKDEL 实现 XACKDEL 命令（Redis 8.2+），确认并条件删除流条目
+// XACKDEL key group [KEEPREF | DELREF | ACKED] IDS numids id [id ...]
+func (h *Handler) handleXACKDEL(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 4 {
+		return proto.NewError("ERR wrong number of arguments for 'XACKDEL' command")
+	}
+	key := string(args[0])
+	group := string(args[1])
+
+	// Parse optional mode: KEEPREF | DELREF | ACKED
+	mode := "KEEPREF"
+	nextArg := strings.ToUpper(string(args[2]))
+	if nextArg == "KEEPREF" || nextArg == "DELREF" || nextArg == "ACKED" {
+		mode = nextArg
+		// IDS keyword expected next
+		if len(args) < 6 {
+			return proto.NewError("ERR wrong number of arguments for 'XACKDEL' command")
+		}
+		if strings.ToUpper(string(args[3])) != "IDS" {
+			return proto.NewError("ERR syntax error")
+		}
+		// Parse numids and ids
+		numIDs, err := strconv.Atoi(string(args[4]))
+		if err != nil || numIDs < 1 {
+			return proto.NewError("ERR value is not an integer or out of range")
+		}
+		if 5+numIDs > len(args) {
+			return proto.NewError("ERR wrong number of arguments for 'XACKDEL' command")
+		}
+		ids := make([]string, numIDs)
+		for i := 0; i < numIDs; i++ {
+			ids[i] = string(args[5+i])
+		}
+		return h.executeXACKDEL(state, key, group, mode, ids)
+	}
+
+	// Without mode keyword: args[2] should be "IDS"
+	if nextArg != "IDS" {
+		return proto.NewError("ERR syntax error")
+	}
+	if len(args) < 4 {
+		return proto.NewError("ERR wrong number of arguments for 'XACKDEL' command")
+	}
+	numIDs, err := strconv.Atoi(string(args[3]))
+	if err != nil || numIDs < 1 {
+		return proto.NewError("ERR value is not an integer or out of range")
+	}
+	if 4+numIDs > len(args) {
+		return proto.NewError("ERR wrong number of arguments for 'XACKDEL' command")
+	}
+	ids := make([]string, numIDs)
+	for i := 0; i < numIDs; i++ {
+		ids[i] = string(args[4+i])
+	}
+	return h.executeXACKDEL(state, key, group, mode, ids)
+}
+
+// executeXACKDEL 执行 XACKDEL 的核心逻辑
+func (h *Handler) executeXACKDEL(state *connState, key, group, mode string, ids []string) proto.RESP {
+	h.markDirtyKeys(state, key)
+
+	// Step 1: Acknowledge in the consumer group
+	acknowledged, err := h.Db.XAck(key, group, ids...)
+	if err != nil {
+		return wrapStoreError(err)
+	}
+	_ = acknowledged // we use per-id results instead
+
+	// Step 2: Delete entries based on mode
+	results := make([]proto.RESP, len(ids))
+	switch mode {
+	case "KEEPREF":
+		// Delete from stream, keep PEL refs in other groups
+		for i, id := range ids {
+			deleted, err := h.Db.XDel(key, id)
+			if err != nil {
+				return wrapStoreError(err)
+			}
+			if deleted > 0 {
+				results[i] = proto.NewInteger(1)
+			} else {
+				results[i] = proto.NewInteger(-1)
+			}
+		}
+	case "DELREF":
+		// Delete from stream + remove PEL refs from ALL groups
+		for i, id := range ids {
+			deleted, err := h.Db.XDel(key, id)
+			if err != nil {
+				return wrapStoreError(err)
+			}
+			if deleted > 0 {
+				results[i] = proto.NewInteger(1)
+			} else {
+				// Even if entry is gone, remove dangling PEL refs
+				_ = h.Db.XAckDelRemoveRefs(key, id)
+				results[i] = proto.NewInteger(1)
+			}
+		}
+	case "ACKED":
+		// Only delete if ALL consumer groups have acknowledged
+		for i, id := range ids {
+			allAcked, err := h.Db.XIsAckedByAllGroups(key, id)
+			if err != nil {
+				return wrapStoreError(err)
+			}
+			if allAcked {
+				deleted, err := h.Db.XDel(key, id)
+				if err != nil {
+					return wrapStoreError(err)
+				}
+				if deleted > 0 {
+					results[i] = proto.NewInteger(1)
+				} else {
+					results[i] = proto.NewInteger(-1)
+				}
+			} else {
+				results[i] = proto.NewInteger(2) // acked but not deleted
+			}
+		}
+	}
+	return &proto.NestedArray{Elems: results}
+}
+
+// handleXDELEX 实现 XDELEX 命令，删除流条目（功能等同 XDEL）
+func (h *Handler) handleXDELEX(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'XDELEX' command")
+	}
+	key := string(args[0])
+	ids := make([]string, len(args)-1)
+	for i := 1; i < len(args); i++ {
+		ids[i-1] = string(args[i])
+	}
+	h.markDirtyKeys(state, key)
+	deleted, err := h.Db.XDel(key, ids...)
+	if err != nil {
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
+		return proto.NewError(fmt.Sprintf("ERR %v", err))
+	}
+	return proto.NewInteger(deleted)
+}
+
+// handleXNACK 实现 XNACK 命令，释放 PEL 消息重新投递
+// XNACK key group consumer id [id ...]
+func (h *Handler) handleXNACK(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 4 {
+		return proto.NewError("ERR wrong number of arguments for 'XNACK' command")
+	}
+	key := string(args[0])
+	group := string(args[1])
+	consumer := string(args[2])
+	ids := make([]string, len(args)-3)
+	for i := 3; i < len(args); i++ {
+		ids[i-3] = string(args[i])
+	}
+	h.markDirtyKeys(state, key)
+	released, err := h.Db.XNack(key, group, consumer, ids...)
+	if err != nil {
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
+		return wrapStoreError(err)
+	}
+	return proto.NewInteger(released)
+}
+
+// handleXSETID 实现 XSETID 命令（内部复制命令）
+// XSETID key last-id [ENTRIESADDED entries-added] [MAXDELETEDID max-deleted-id]
+func (h *Handler) handleXSETID(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'XSETID' command")
+	}
+	key := string(args[0])
+	lastID := string(args[1])
+
+	// Parse optional arguments
+	var entriesAdded int64 = -1
+	var maxDeletedID string
+	i := 2
+	for i < len(args) {
+		opt := strings.ToUpper(string(args[i]))
+		switch opt {
+		case "ENTRIESADDED":
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			var err error
+			entriesAdded, err = strconv.ParseInt(string(args[i+1]), 10, 64)
+			if err != nil {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			i += 2
+		case "MAXDELETEDID":
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			maxDeletedID = string(args[i+1])
+			i += 2
+		default:
+			return proto.NewError("ERR syntax error")
+		}
+	}
+
+	h.markDirtyKeys(state, key)
+	err := h.Db.XSetID(key, lastID, entriesAdded, maxDeletedID)
+	if err != nil {
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
+		return wrapStoreError(err)
+	}
+	return proto.NewSimpleString("OK")
+}
+
+// handleXCFGSET 实现 XCFGSET 命令（IDMP 配置参数，内部命令）
+func (h *Handler) handleXCFGSET(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	// XCFGSET is an internal Redis command; accept and return OK for compatibility
+	if len(args) < 1 {
+		return proto.NewError("ERR wrong number of arguments for 'XCFGSET' command")
+	}
+	return proto.NewSimpleString("OK")
+}

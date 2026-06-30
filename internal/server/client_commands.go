@@ -200,6 +200,41 @@ func (h *Handler) handleCLIENT(state *connState, args [][]byte, remoteAddr strin
 		}
 		// tracking 模式（简化实现）
 		return proto.OK
+	case "SETINFO":
+		// CLIENT SETINFO [LIB-NAME name] [LIB-VER ver]
+		if len(args) < 3 {
+			return proto.NewError("ERR wrong number of arguments for 'CLIENT SETINFO' command")
+		}
+		opt := strings.ToUpper(string(args[1]))
+		if opt != "LIB-NAME" && opt != "LIB-VER" {
+			return proto.NewError("ERR syntax error")
+		}
+		// Store the value (simplified - no persistence)
+		return proto.OK
+	case "NO-TOUCH":
+		// CLIENT NO-TOUCH <ON|OFF>
+		if len(args) < 2 {
+			return proto.NewError("ERR wrong number of arguments for 'CLIENT NO-TOUCH' command")
+		}
+		mode := strings.ToUpper(string(args[1]))
+		if mode != "ON" && mode != "OFF" {
+			return proto.NewError("ERR syntax error")
+		}
+		return proto.OK
+	case "CACHING":
+		// CLIENT CACHING <YES|NO>
+		if len(args) < 2 {
+			return proto.NewError("ERR wrong number of arguments for 'CLIENT CACHING' command")
+		}
+		mode := strings.ToUpper(string(args[1]))
+		if mode != "YES" && mode != "NO" {
+			return proto.NewError("ERR syntax error")
+		}
+		return proto.OK
+	case "GETREDIR":
+		// CLIENT GETREDIR — returns the client ID to which tracking notifications are redirected
+		// 0 means no redirection
+		return proto.NewInteger(0)
 	default:
 		return proto.NewError("ERR syntax error")
 	}

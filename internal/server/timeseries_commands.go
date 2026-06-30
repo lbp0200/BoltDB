@@ -257,3 +257,291 @@ func (h *Handler) handleTS_MGET(state *connState, args [][]byte, remoteAddr stri
 	}
 	return &proto.Array{Args: arr}
 }
+
+// handleTS_REVRANGE 实现 TS.REVRANGE 命令
+func (h *Handler) handleTS_REVRANGE(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 3 {
+		return proto.NewError("ERR wrong number of arguments for 'TS.REVRANGE' command")
+	}
+	key := string(args[0])
+	start := string(args[1])
+	stop := string(args[2])
+	count := int64(-1)
+	if len(args) > 3 {
+		opt := strings.ToUpper(string(args[3]))
+		if opt == "COUNT" && len(args) > 4 {
+			c, err := strconv.ParseInt(string(args[4]), 10, 64)
+			if err != nil {
+				return proto.NewError("ERR invalid COUNT value")
+			}
+			count = c
+		}
+	}
+	results, err := h.Db.TSRevRange(key, start, stop, count)
+	if err != nil {
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
+		return proto.NewError(fmt.Sprintf("ERR %v", err))
+	}
+	arr := make([][]byte, 0, len(results)*2)
+	for _, dp := range results {
+		arr = append(arr, []byte(strconv.FormatInt(dp.Timestamp, 10)))
+		arr = append(arr, []byte(strconv.FormatFloat(dp.Value, 'f', -1, 64)))
+	}
+	return &proto.Array{Args: arr}
+}
+
+// handleTS_MRANGE 实现 TS.MRANGE 命令
+func (h *Handler) handleTS_MRANGE(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 4 {
+		return proto.NewError("ERR wrong number of arguments for 'TS.MRANGE' command")
+	}
+	start := string(args[0])
+	stop := string(args[1])
+	filterArg := strings.ToUpper(string(args[2]))
+	if filterArg != "FILTER" {
+		return proto.NewError("ERR syntax error")
+	}
+	filters := []string{}
+	count := int64(-1)
+	i := 3
+	for i < len(args) {
+		opt := strings.ToUpper(string(args[i]))
+		if opt == "COUNT" && i+1 < len(args) {
+			c, err := strconv.ParseInt(string(args[i+1]), 10, 64)
+			if err != nil {
+				return proto.NewError("ERR invalid COUNT value")
+			}
+			count = c
+			i += 2
+		} else {
+			filters = append(filters, string(args[i]))
+			i++
+		}
+	}
+	keys, err := h.Db.TSQueryIndex(filters)
+	if err != nil {
+		return proto.NewError(fmt.Sprintf("ERR %v", err))
+	}
+	results, err := h.Db.TSMRange(strings.Join(filters, ","), keys, start, stop, count)
+	if err != nil {
+		return proto.NewError(fmt.Sprintf("ERR %v", err))
+	}
+	respElems := make([]proto.RESP, len(results))
+	for i, r := range results {
+		keyName := r[0].(string)
+		dps := r[1].([]store.TimeSeriesDataPoint)
+		arr := make([][]byte, 0, len(dps)*2)
+		for _, dp := range dps {
+			arr = append(arr, []byte(strconv.FormatInt(dp.Timestamp, 10)))
+			arr = append(arr, []byte(strconv.FormatFloat(dp.Value, 'f', -1, 64)))
+		}
+		respElems[i] = &proto.NestedArray{
+			Elems: []proto.RESP{
+				proto.NewBulkString([]byte(keyName)),
+				&proto.Array{Args: arr},
+			},
+		}
+	}
+	return &proto.NestedArray{Elems: respElems}
+}
+
+// handleTS_MREVRANGE 实现 TS.MREVRANGE 命令
+func (h *Handler) handleTS_MREVRANGE(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 4 {
+		return proto.NewError("ERR wrong number of arguments for 'TS.MREVRANGE' command")
+	}
+	start := string(args[0])
+	stop := string(args[1])
+	filterArg := strings.ToUpper(string(args[2]))
+	if filterArg != "FILTER" {
+		return proto.NewError("ERR syntax error")
+	}
+	filters := []string{}
+	count := int64(-1)
+	i := 3
+	for i < len(args) {
+		opt := strings.ToUpper(string(args[i]))
+		if opt == "COUNT" && i+1 < len(args) {
+			c, err := strconv.ParseInt(string(args[i+1]), 10, 64)
+			if err != nil {
+				return proto.NewError("ERR invalid COUNT value")
+			}
+			count = c
+			i += 2
+		} else {
+			filters = append(filters, string(args[i]))
+			i++
+		}
+	}
+	keys, err := h.Db.TSQueryIndex(filters)
+	if err != nil {
+		return proto.NewError(fmt.Sprintf("ERR %v", err))
+	}
+	var results [][]interface{}
+	for _, key := range keys {
+		dps, err := h.Db.TSRevRange(key, start, stop, count)
+		if err != nil {
+			if errors.Is(err, store.ErrKeyNotFound) || errors.Is(err, store.ErrWrongType) {
+				continue
+			}
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		if len(dps) > 0 {
+			results = append(results, []interface{}{key, dps})
+		}
+	}
+	respElems := make([]proto.RESP, len(results))
+	for i, r := range results {
+		keyName := r[0].(string)
+		dps := r[1].([]store.TimeSeriesDataPoint)
+		arr := make([][]byte, 0, len(dps)*2)
+		for _, dp := range dps {
+			arr = append(arr, []byte(strconv.FormatInt(dp.Timestamp, 10)))
+			arr = append(arr, []byte(strconv.FormatFloat(dp.Value, 'f', -1, 64)))
+		}
+		respElems[i] = &proto.NestedArray{
+			Elems: []proto.RESP{
+				proto.NewBulkString([]byte(keyName)),
+				&proto.Array{Args: arr},
+			},
+		}
+	}
+	return &proto.NestedArray{Elems: respElems}
+}
+
+// handleTS_QUERYINDEX 实现 TS.QUERYINDEX 命令
+func (h *Handler) handleTS_QUERYINDEX(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 1 {
+		return proto.NewError("ERR wrong number of arguments for 'TS.QUERYINDEX' command")
+	}
+	filters := make([]string, len(args))
+	for i, arg := range args {
+		filters[i] = string(arg)
+	}
+	keys, err := h.Db.TSQueryIndex(filters)
+	if err != nil {
+		return proto.NewError(fmt.Sprintf("ERR %v", err))
+	}
+	arr := make([][]byte, len(keys))
+	for i, key := range keys {
+		arr[i] = []byte(key)
+	}
+	return &proto.Array{Args: arr}
+}
+
+// handleTS_MADD 实现 TS.MADD 命令
+func (h *Handler) handleTS_MADD(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 3 || len(args)%3 != 0 {
+		return proto.NewError("ERR wrong number of arguments for 'TS.MADD' command")
+	}
+	results := make([]proto.RESP, len(args)/3)
+	for i := 0; i < len(args); i += 3 {
+		key := string(args[i])
+		var timestamp int64
+		if string(args[i+1]) == "*" {
+			timestamp = time.Now().UnixNano() / int64(time.Millisecond)
+		} else {
+			var err error
+			timestamp, err = strconv.ParseInt(string(args[i+1]), 10, 64)
+			if err != nil {
+				return proto.NewError("ERR invalid timestamp")
+			}
+		}
+		value, err := strconv.ParseFloat(string(args[i+2]), 64)
+		if err != nil {
+			return proto.NewError("ERR invalid value")
+		}
+		h.markDirtyKeys(state, key)
+		ts, err := h.Db.TSAdd(key, timestamp, value, store.TSAddOptions{})
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return proto.NewError(fmt.Sprintf("ERR %v", err))
+		}
+		results[i/3] = proto.NewInteger(ts)
+	}
+	return &proto.NestedArray{Elems: results}
+}
+
+// handleTS_INCRBY 实现 TS.INCRBY 命令
+func (h *Handler) handleTS_INCRBY(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'TS.INCRBY' command")
+	}
+	key := string(args[0])
+	value, err := strconv.ParseFloat(string(args[1]), 64)
+	if err != nil {
+		return proto.NewError("ERR invalid value")
+	}
+	var timestamp int64
+	if len(args) > 2 {
+		opt := strings.ToUpper(string(args[2]))
+		if opt == "TIMESTAMP" && len(args) > 3 {
+			timestamp, err = strconv.ParseInt(string(args[3]), 10, 64)
+			if err != nil {
+				return proto.NewError("ERR invalid timestamp")
+			}
+		}
+	}
+	h.markDirtyKeys(state, key)
+	ts, err := h.Db.TSIncrBy(key, timestamp, value)
+	if err != nil {
+		if errors.Is(err, store.ErrKeyNotFound) {
+			return proto.NewError("ERR the key does not exist")
+		}
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
+		return proto.NewError(fmt.Sprintf("ERR %v", err))
+	}
+	return proto.NewInteger(ts)
+}
+
+// handleTS_CREATERULE 实现 TS.CREATERULE 命令
+func (h *Handler) handleTS_CREATERULE(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 5 {
+		return proto.NewError("ERR wrong number of arguments for 'TS.CREATERULE' command")
+	}
+	sourceKey := string(args[0])
+	destKey := string(args[1])
+	aggArg := strings.ToUpper(string(args[2]))
+	if aggArg != "AGGREGATION" {
+		return proto.NewError("ERR syntax error")
+	}
+	aggregator := string(args[3])
+	bucketDuration, err := strconv.ParseInt(string(args[4]), 10, 64)
+	if err != nil {
+		return proto.NewError("ERR invalid bucket duration")
+	}
+	h.markDirtyKeys(state, sourceKey, destKey)
+	if err := h.Db.TSAddRule(sourceKey, destKey, aggregator, bucketDuration); err != nil {
+		return proto.NewError(fmt.Sprintf("ERR %v", err))
+	}
+	return proto.NewSimpleString("OK")
+}
+
+// handleTS_DELETERULE 实现 TS.DELETERULE 命令
+func (h *Handler) handleTS_DELETERULE(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 5 {
+		return proto.NewError("ERR wrong number of arguments for 'TS.DELETERULE' command")
+	}
+	sourceKey := string(args[0])
+	destKey := string(args[1])
+	aggArg := strings.ToUpper(string(args[2]))
+	if aggArg != "AGGREGATION" {
+		return proto.NewError("ERR syntax error")
+	}
+	aggregator := string(args[3])
+	bucketDuration, err := strconv.ParseInt(string(args[4]), 10, 64)
+	if err != nil {
+		return proto.NewError("ERR invalid bucket duration")
+	}
+	h.markDirtyKeys(state, sourceKey, destKey)
+	if err := h.Db.TSDelRule(sourceKey, destKey, aggregator, bucketDuration); err != nil {
+		return proto.NewError(fmt.Sprintf("ERR %v", err))
+	}
+	return proto.NewSimpleString("OK")
+}

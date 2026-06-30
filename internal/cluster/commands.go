@@ -73,6 +73,12 @@ func (cc *ClusterCommands) HandleCommand(args []string) (interface{}, error) {
 		return cc.handleCalls(subArgs)
 	case "TOTALKEYS":
 		return cc.handleTotalKeys(subArgs)
+	case "BUMPEPOCH":
+		return cc.handleBumpEpoch(subArgs)
+	case "COUNT-FAILURE-REPORTS":
+		return cc.handleCountFailureReports(subArgs)
+	case "LINKS":
+		return cc.handleLinks(subArgs)
 	default:
 		return nil, fmt.Errorf("ERR unknown subcommand '%s'", subcommand)
 	}
@@ -638,4 +644,27 @@ func (cc *ClusterCommands) handleTotalKeys(args []string) (int64, error) {
 	// 实际需要扫描整个数据库，统计属于该槽位的键数量
 	// 由于BoltDB/BadgerDB的键不存储槽位信息，这里无法准确统计
 	return 0, nil
+}
+
+// handleBumpEpoch 处理CLUSTER BUMPEPOCH命令
+func (cc *ClusterCommands) handleBumpEpoch(args []string) (string, error) {
+	// Increment the cluster epoch
+	cc.cluster.IncrementEpoch()
+	return "BUMPED", nil
+}
+
+// handleCountFailureReports 处理CLUSTER COUNT-FAILURE-REPORTS命令
+func (cc *ClusterCommands) handleCountFailureReports(args []string) (int64, error) {
+	if len(args) < 1 {
+		return 0, fmt.Errorf("ERR wrong number of arguments for 'CLUSTER COUNT-FAILURE-REPORTS' command")
+	}
+	// Simplified: return 0 (no failure tracking in BoltDB)
+	return 0, nil
+}
+
+// handleLinks 处理CLUSTER LINKS命令
+func (cc *ClusterCommands) handleLinks(args []string) ([][]string, error) {
+	// Return inter-node connection info
+	// Simplified: return empty array (no persistent cluster bus connections tracked)
+	return [][]string{}, nil
 }

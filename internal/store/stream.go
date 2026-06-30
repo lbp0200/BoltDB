@@ -1014,16 +1014,18 @@ func (s *BotreonStore) XTrim(key string, maxLen int64, minID string) (int64, err
 			}
 		}
 
-		// Delete entries
-		for _, id := range entriesToDelete[1:] {
-			if id == "" {
-				continue
+		// Delete entries (skip first — it's the boundary entry we keep)
+		if len(entriesToDelete) > 0 {
+			for _, id := range entriesToDelete[1:] {
+				if id == "" {
+					continue
+				}
+				dataKey := streamDataKey(key, id)
+				if err := txn.Delete(dataKey); err != nil {
+					return err
+				}
+				trimmed++
 			}
-			dataKey := streamDataKey(key, id)
-			if err := txn.Delete(dataKey); err != nil {
-				return err
-			}
-			trimmed++
 		}
 
 		meta.Length -= trimmed
@@ -1423,6 +1425,210 @@ func (s *BotreonStore) XAck(key, group string, ids ...string) (int64, error) {
 	}, 30)
 
 	return acknowledged, err
+}
+
+// XAckDelRemoveRefs removes PEL references for an entry from ALL consumer groups
+// Used by XACKDEL with DELREF mode when the entry itself is already gone
+func (s *BotreonStore) XAckDelRemoveRefs(key, id string) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
+		// Iterate all groups for this stream
+		prefix := []byte("STREAM:" + key + ":group:")
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		var groupKeys [][]byte
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			item := it.Item()
+			keyCopy := make([]byte, len(item.Key()))
+			copy(keyCopy, item.Key())
+			groupKeys = append(groupKeys, keyCopy)
+		}
+
+		for _, gk := range groupKeys {
+			item, err := txn.Get(gk)
+			if err != nil {
+				continue
+			}
+			var groupData *StreamGroup
+			if err := item.Value(func(val []byte) error {
+				return json.Unmarshal(val, &groupData)
+			}); err != nil {
+				continue
+			}
+			if _, exists := groupData.Pending[id]; exists {
+				delete(groupData.Pending, id)
+				data, err := json.Marshal(groupData)
+				if err != nil {
+					return err
+				}
+				if err := txn.Set(gk, data); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}, 30)
+}
+
+// XIsAckedByAllGroups checks if an entry has been acknowledged by ALL consumer groups
+func (s *BotreonStore) XIsAckedByAllGroups(key, id string) (bool, error) {
+	var allAcked bool
+	err := s.db.View(func(txn *badger.Txn) error {
+		// Check if entry exists in stream
+		dataKey := streamDataKey(key, id)
+		_, err := txn.Get(dataKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			allAcked = true // entry doesn't exist, so nothing to check
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		// Check all groups
+		prefix := []byte("STREAM:" + key + ":group:")
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		hasGroups := false
+		allAcked = true
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			hasGroups = true
+			item := it.Item()
+			var groupData *StreamGroup
+			if err := item.Value(func(val []byte) error {
+				return json.Unmarshal(val, &groupData)
+			}); err != nil {
+				continue
+			}
+			if _, exists := groupData.Pending[id]; exists {
+				allAcked = false
+				return nil
+			}
+		}
+		if !hasGroups {
+			allAcked = true
+		}
+		return nil
+	})
+	return allAcked, err
+}
+
+// XNack releases pending messages back to the group's PEL without acknowledging them
+// Making them available for re-delivery by other consumers
+func (s *BotreonStore) XNack(key, group, consumer string, ids ...string) (int64, error) {
+	var released int64
+
+	err := s.retryUpdate(func(txn *badger.Txn) error {
+		released = 0
+		groupKey := streamGroupDataKey(key, group)
+		item, err := txn.Get(groupKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		var groupData *StreamGroup
+		if err := item.Value(func(val []byte) error {
+			return json.Unmarshal(val, &groupData)
+		}); err != nil {
+			return err
+		}
+
+		for _, id := range ids {
+			if entry, exists := groupData.Pending[id]; exists {
+				// Reset the delivery count and consumer to allow re-delivery
+				entry.DeliveryCount = 0
+				entry.Consumer = ""
+				entry.LastDelivery = 0
+				groupData.Pending[id] = entry
+				released++
+			}
+		}
+
+		data, err := json.Marshal(groupData)
+		if err != nil {
+			return err
+		}
+		return txn.Set(groupKey, data)
+	}, 30)
+
+	return released, err
+}
+
+// XSetID sets the last-delivered ID of a stream (internal replication command)
+func (s *BotreonStore) XSetID(key, lastID string, entriesAdded int64, maxDeletedID string) error {
+	return s.retryUpdate(func(txn *badger.Txn) error {
+		metaKey := streamKey(key)
+
+		// Check stream exists
+		item, err := txn.Get(metaKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			// Create stream if it doesn't exist (for replication)
+			meta := &streamMetaData{
+				Length:       0,
+				FirstID:      0,
+				FirstSeq:     0,
+				LastID:       0,
+				LastSeq:      0,
+				MaxDeletedID: 0,
+				MaxDelSeq:    0,
+			}
+			ts, seq, _ := parseStreamID(lastID)
+			meta.LastID = ts
+			meta.LastSeq = seq
+			if entriesAdded >= 0 {
+				meta.Length = entriesAdded
+			}
+			if maxDeletedID != "" {
+				mts, mseq, _ := parseStreamID(maxDeletedID)
+				meta.MaxDeletedID = mts
+				meta.MaxDelSeq = mseq
+			}
+			// Set type key
+			typeKey := TypeOfKeyGet(key)
+			if err := txn.Set(typeKey, []byte(KeyTypeStream)); err != nil {
+				return err
+			}
+			data := encodeStreamMeta(meta)
+			if err := txn.Set(metaKey, data); err != nil {
+				return err
+			}
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		var meta *streamMetaData
+		if err := item.Value(func(val []byte) error {
+			meta, err = decodeStreamMeta(val)
+			return err
+		}); err != nil {
+			return err
+		}
+
+		ts, seq, _ := parseStreamID(lastID)
+		meta.LastID = ts
+		meta.LastSeq = seq
+		if entriesAdded >= 0 {
+			meta.Length = entriesAdded
+		}
+		if maxDeletedID != "" {
+			mts, mseq, _ := parseStreamID(maxDeletedID)
+			meta.MaxDeletedID = mts
+			meta.MaxDelSeq = mseq
+		}
+
+		data := encodeStreamMeta(meta)
+		return txn.Set(metaKey, data)
+	}, 30)
 }
 
 // XPending returns pending information for a group

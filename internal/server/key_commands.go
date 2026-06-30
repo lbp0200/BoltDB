@@ -9,6 +9,33 @@ import (
 	"github.com/lbp0200/BoltDB/internal/proto"
 )
 
+// handleUNLINK 实现 UNLINK 命令（异步删除，语义等同 DEL 但立即返回）
+func (h *Handler) handleUNLINK(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 1 {
+		return proto.NewError("ERR wrong number of arguments for 'UNLINK' command")
+	}
+	keys := make([]string, len(args))
+	for i, arg := range args {
+		keys[i] = string(arg)
+	}
+	// 检查集群重定向
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
+	h.markDirtyKeys(state, keys...)
+	count := int64(0)
+	for _, arg := range args {
+		key := string(arg)
+		deleted, err := h.Db.Del(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
+		count += deleted
+	}
+	// #nosec G115 - count is bounded by practical data size limits
+	return proto.NewInteger(count)
+}
+
 // handleDEL 实现 DEL 命令
 func (h *Handler) handleDEL(state *connState, args [][]byte, remoteAddr string) proto.RESP {
 	if len(args) < 1 {
@@ -160,10 +187,33 @@ func (h *Handler) handleRESTORE(state *connState, args [][]byte, remoteAddr stri
 
 // handleOBJECT 实现 OBJECT 命令
 func (h *Handler) handleOBJECT(state *connState, args [][]byte, remoteAddr string) proto.RESP {
-	if len(args) < 2 {
+	if len(args) < 1 {
 		return proto.NewError("ERR wrong number of arguments for 'OBJECT' command")
 	}
 	subcommand := strings.ToUpper(string(args[0]))
+
+	// HELP doesn't require a key argument
+	if subcommand == "HELP" {
+		response := [][]byte{
+			[]byte("OBJECT <subcommand> [<arg> ...]"),
+			[]byte("Subcommands:"),
+			[]byte("ENCODING"),
+			[]byte("  -- Return the internal encoding of an object."),
+			[]byte("FREQ"),
+			[]byte("  -- Return the access frequency of an object (stub, always 0)."),
+			[]byte("HELP"),
+			[]byte("  -- Return this help text."),
+			[]byte("IDLETIME"),
+			[]byte("  -- Return the idle time of an object."),
+			[]byte("REFCOUNT"),
+			[]byte("  -- Return the reference count of an object."),
+		}
+		return &proto.Array{Args: response}
+	}
+
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'OBJECT' command")
+	}
 	key := string(args[1])
 
 	switch subcommand {

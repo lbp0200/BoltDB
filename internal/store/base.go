@@ -91,6 +91,27 @@ func (s *BotreonStore) Del(key string) (int64, error) {
 			if err := txn.Delete(typeKey); err != nil {
 				return err
 			}
+		case KeyTypeStream:
+			if err := deleteByPrefix(txn, []byte("stream:"+key+":")); err != nil {
+				return err
+			}
+			if err := txn.Delete(typeKey); err != nil {
+				return err
+			}
+		case KeyTypeHyperLogLog:
+			if err := txn.Delete([]byte("hll:" + key)); err != nil {
+				return err
+			}
+			if err := txn.Delete(typeKey); err != nil {
+				return err
+			}
+		case KeyTypeGeo:
+			if err := deleteByPrefix(txn, []byte("geo:"+key+":")); err != nil {
+				return err
+			}
+			if err := txn.Delete(typeKey); err != nil {
+				return err
+			}
 		default:
 			if err := txn.Delete(typeKey); err != nil {
 				return err
@@ -1779,6 +1800,9 @@ func (s *BotreonStore) NextStartup() error {
 		_ = cleanupOrphanedHashData(txn)
 		_ = cleanupOrphanedSetData(txn)
 		_ = cleanupOrphanedZSetData(txn)
+		_ = cleanupOrphanedStreamData(txn)
+		_ = cleanupOrphanedHLLData(txn)
+		_ = cleanupOrphanedGeoData(txn)
 
 		return nil
 	}, 30)
@@ -1837,6 +1861,29 @@ func (s *BotreonStore) checkDataExists(txn *badger.Txn, key, keyType string) (bo
 	case KeyTypeTimeSeries:
 		// TimeSeries检查meta键
 		metaKey := tsMetaKey(key)
+		_, err := txn.Get(metaKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return false, nil
+		}
+		return err == nil, err
+	case KeyTypeStream:
+		// Stream检查meta键
+		metaKey := []byte("stream:" + key + ":meta")
+		_, err := txn.Get(metaKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return false, nil
+		}
+		return err == nil, err
+	case KeyTypeHyperLogLog:
+		hllKey := []byte("hll:" + key)
+		_, err := txn.Get(hllKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return false, nil
+		}
+		return err == nil, err
+	case KeyTypeGeo:
+		// Geo检查meta键
+		metaKey := []byte("geo:" + key + ":meta")
 		_, err := txn.Get(metaKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			return false, nil
@@ -1996,6 +2043,96 @@ func cleanupOrphanedZSetData(txn *badger.Txn) error {
 			// 删除整个zset的数据
 			zsetPrefix := []byte(fmt.Sprintf("%s%s:", prefixKeySortedSetBytes, key))
 			if err := deleteByPrefix(txn, zsetPrefix); err != nil {
+				continue
+			}
+		}
+	}
+	return nil
+}
+
+// cleanupOrphanedStreamData 清理没有TYPE_键的Stream数据
+func cleanupOrphanedStreamData(txn *badger.Txn) error {
+	iter := txn.NewIterator(badger.DefaultIteratorOptions)
+	defer iter.Close()
+
+	prefix := []byte("stream:")
+	for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
+		item := iter.Item()
+		keyBytes := item.KeyCopy(nil)
+		keyStr := string(keyBytes)
+
+		// 格式: stream:key:meta, stream:key:data:id, stream:key:groups, stream:key:group:...
+		parts := strings.SplitN(keyStr, ":", 3)
+		if len(parts) < 2 {
+			continue
+		}
+		key := parts[1]
+
+		// 检查TYPE_键是否存在
+		typeKey := TypeOfKeyGet(key)
+		_, err := txn.Get(typeKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			// 删除整个stream的数据
+			streamPrefix := []byte("stream:" + key + ":")
+			if err := deleteByPrefix(txn, streamPrefix); err != nil {
+				continue
+			}
+		}
+	}
+	return nil
+}
+
+// cleanupOrphanedHLLData 清理没有TYPE_键的HyperLogLog数据
+func cleanupOrphanedHLLData(txn *badger.Txn) error {
+	iter := txn.NewIterator(badger.DefaultIteratorOptions)
+	defer iter.Close()
+
+	prefix := []byte("hll:")
+	for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
+		item := iter.Item()
+		keyBytes := item.KeyCopy(nil)
+		keyStr := string(keyBytes)
+
+		// 格式: hll:key
+		key := strings.TrimPrefix(keyStr, "hll:")
+
+		// 检查TYPE_键是否存在
+		typeKey := TypeOfKeyGet(key)
+		_, err := txn.Get(typeKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			if err := txn.Delete(keyBytes); err != nil {
+				continue
+			}
+		}
+	}
+	return nil
+}
+
+// cleanupOrphanedGeoData 清理没有TYPE_键的Geo数据
+func cleanupOrphanedGeoData(txn *badger.Txn) error {
+	iter := txn.NewIterator(badger.DefaultIteratorOptions)
+	defer iter.Close()
+
+	prefix := []byte("geo:")
+	for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
+		item := iter.Item()
+		keyBytes := item.KeyCopy(nil)
+		keyStr := string(keyBytes)
+
+		// 格式: geo:key:meta, geo:key:index:member, geo:key:members:..., geo:key:hash:...
+		parts := strings.SplitN(keyStr, ":", 3)
+		if len(parts) < 2 {
+			continue
+		}
+		key := parts[1]
+
+		// 检查TYPE_键是否存在
+		typeKey := TypeOfKeyGet(key)
+		_, err := txn.Get(typeKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			// 删除整个geo的数据
+			geoPrefix := []byte("geo:" + key + ":")
+			if err := deleteByPrefix(txn, geoPrefix); err != nil {
 				continue
 			}
 		}

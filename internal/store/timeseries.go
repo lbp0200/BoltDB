@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -610,4 +611,207 @@ func (s *BotreonStore) TimeSeriesType(key string) (bool, error) {
 		return nil
 	})
 	return exists, err
+}
+
+// TSRevRange implements reverse range query for a single time series key
+func (s *BotreonStore) TSRevRange(key string, start, stop string, count int64) ([]TimeSeriesDataPoint, error) {
+	var result []TimeSeriesDataPoint
+
+	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeTimeSeries); err != nil {
+			return err
+		}
+		startTS, err := parseTimestamp(start)
+		if err != nil {
+			return fmt.Errorf("ERR invalid start timestamp: %v", err)
+		}
+		stopTS, err := parseTimestamp(stop)
+		if err != nil {
+			return fmt.Errorf("ERR invalid stop timestamp: %v", err)
+		}
+
+		prefix := tsDataPrefix(key)
+		opts := badger.DefaultIteratorOptions
+		opts.Reverse = true
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		// For reverse iteration, we seek to the end and iterate backwards
+		seekKey := append([]byte{}, prefix...)
+		seekKey = append(seekKey, []byte(fmt.Sprintf("%020d", stopTS))...)
+
+		for it.Seek(seekKey); it.ValidForPrefix(prefix); it.Next() {
+			item := it.Item()
+			keyBytes := item.KeyCopy(nil)
+			tsStr := string(keyBytes[len(prefix):])
+			ts, err := strconv.ParseInt(tsStr, 10, 64)
+			if err != nil {
+				continue
+			}
+			if ts > stopTS {
+				continue
+			}
+			if ts < startTS {
+				break
+			}
+
+			var dataBytes []byte
+			if err := item.Value(func(val []byte) error {
+				dataBytes = make([]byte, len(val))
+				copy(dataBytes, val)
+				return nil
+			}); err != nil {
+				return err
+			}
+
+			value := math.Float64frombits(binary.BigEndian.Uint64(dataBytes[8:]))
+			result = append(result, TimeSeriesDataPoint{
+				Timestamp: ts,
+				Value:     value,
+			})
+
+			if count > 0 && int64(len(result)) >= count {
+				break
+			}
+		}
+		return nil
+	})
+
+	return result, err
+}
+
+// TSMRange implements multi-key range query across multiple time series
+func (s *BotreonStore) TSMRange(filter string, keys []string, start, stop string, count int64) ([][]interface{}, error) {
+	var results [][]interface{}
+
+	for _, key := range keys {
+		dps, err := s.TSRange(key, start, stop, count)
+		if err != nil {
+			if errors.Is(err, ErrKeyNotFound) || errors.Is(err, ErrWrongType) {
+				continue
+			}
+			return nil, err
+		}
+		if len(dps) > 0 {
+			results = append(results, []interface{}{key, dps})
+		}
+	}
+
+	return results, nil
+}
+
+// TSQueryIndex returns all time series keys matching a filter expression
+// Simple filter: key=value (matches labels stored in meta)
+func (s *BotreonStore) TSQueryIndex(filters []string) ([]string, error) {
+	var keys []string
+
+	err := s.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.Prefix = []byte("TS:")
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			keyBytes := item.KeyCopy(nil)
+			keyStr := string(keyBytes)
+
+			// Only match meta keys (not data keys)
+			if strings.HasSuffix(keyStr, ":meta") {
+				// Extract the TS key name
+				tsKey := keyStr[3 : len(keyStr)-5] // Remove "TS:" prefix and ":meta" suffix
+
+				// For simplicity, accept all filters (label matching requires label storage)
+				if len(filters) == 0 {
+					keys = append(keys, tsKey)
+					continue
+				}
+
+				// Check if key exists as time series
+				metaKey := tsMetaKey(tsKey)
+				_, err := txn.Get(metaKey)
+				if err == nil {
+					keys = append(keys, tsKey)
+				}
+			}
+		}
+		return nil
+	})
+
+	return keys, err
+}
+
+// TSIncrBy increments the value of the sample with the maximum existing timestamp
+func (s *BotreonStore) TSIncrBy(key string, timestamp int64, value float64) (int64, error) {
+	// Get current value at timestamp, or the last value if timestamp is "*"
+	var ts int64
+	var currentVal float64
+
+	err := s.db.View(func(txn *badger.Txn) error {
+		if err := checkKeyType(txn, key, KeyTypeTimeSeries); err != nil {
+			return err
+		}
+
+		metaKey := tsMetaKey(key)
+		item, err := txn.Get(metaKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return ErrKeyNotFound
+		}
+		if err != nil {
+			return err
+		}
+
+		var meta *tsMetaData
+		if err := item.Value(func(val []byte) error {
+			meta, err = decodeTSMeta(val)
+			return err
+		}); err != nil {
+			return err
+		}
+
+		ts = timestamp
+		if ts == 0 || ts == -1 {
+			ts = meta.LastTimestamp
+		}
+
+		// Try to get existing value at this timestamp
+		prefix := tsDataPrefix(key)
+		seekKey := append([]byte{}, prefix...)
+		seekKey = append(seekKey, []byte(fmt.Sprintf("%020d", ts))...)
+		it := txn.NewIterator(badger.DefaultIteratorOptions)
+		defer it.Close()
+
+		if it.Seek(seekKey); it.ValidForPrefix(prefix) {
+			item := it.Item()
+			keyBytes := item.KeyCopy(nil)
+			tsStr := string(keyBytes[len(prefix):])
+			existingTS, _ := strconv.ParseInt(tsStr, 10, 64)
+			if existingTS == ts {
+				_ = item.Value(func(val []byte) error {
+					currentVal = math.Float64frombits(binary.BigEndian.Uint64(val[8:]))
+					return nil
+				})
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	newVal := currentVal + value
+	return s.TSAdd(key, ts, newVal, TSAddOptions{})
+}
+
+// TSAddRule creates a compaction rule (stub - not fully implemented)
+func (s *BotreonStore) TSAddRule(sourceKey, destKey, aggregator string, bucketDuration int64) error {
+	// Store rule in metadata (simplified)
+	return nil
+}
+
+// TSDelRule deletes a compaction rule (stub - not fully implemented)
+func (s *BotreonStore) TSDelRule(sourceKey, destKey, aggregator string, bucketDuration int64) error {
+	// Delete rule from metadata (simplified)
+	return nil
 }

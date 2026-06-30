@@ -134,6 +134,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	case "BITFIELD":
 		return h.handleBITFIELD(state, args, remoteAddr)
 
+	case "BITFIELD_RO":
+		return h.handleBITFIELD_RO(state, args, remoteAddr)
+
 	case "BITPOS":
 		return h.handleBITPOS(state, args, remoteAddr)
 
@@ -147,6 +150,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		return h.handleSETRANGE(state, args, remoteAddr)
 
 	// 通用键管理命令
+	case "UNLINK":
+		return h.handleUNLINK(state, args, remoteAddr)
+
 	case "DEL":
 		return h.handleDEL(state, args, remoteAddr)
 
@@ -460,6 +466,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	case "ZMPOP":
 		return h.handleZMPOP(state, args, remoteAddr)
 
+	case "BZMPOP":
+		return h.handleBZMPOP(state, args, remoteAddr)
+
 	case "ZUNIONSTORE":
 		return h.handleZUNIONSTORE(state, args, remoteAddr)
 
@@ -474,6 +483,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 	case "ZINTER":
 		return h.handleZINTER(state, args, remoteAddr)
+
+	case "ZINTERCARD":
+		return h.handleZINTERCARD(state, args, remoteAddr)
 
 	case "ZUNION":
 		return h.handleZUNION(state, args, remoteAddr)
@@ -725,6 +737,21 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	case "XACK":
 		return h.handleXACK(state, args, remoteAddr)
 
+	case "XACKDEL":
+		return h.handleXACKDEL(state, args, remoteAddr)
+
+	case "XDELEX":
+		return h.handleXDELEX(state, args, remoteAddr)
+
+	case "XNACK":
+		return h.handleXNACK(state, args, remoteAddr)
+
+	case "XSETID":
+		return h.handleXSETID(state, args, remoteAddr)
+
+	case "XCFGSET":
+		return h.handleXCFGSET(state, args, remoteAddr)
+
 	case "XGROUP":
 		return h.handleXGROUP(state, args, remoteAddr)
 
@@ -809,6 +836,30 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 	case "TS.MGET":
 		return h.handleTS_MGET(state, args, remoteAddr)
+
+	case "TS.REVRANGE":
+		return h.handleTS_REVRANGE(state, args, remoteAddr)
+
+	case "TS.MRANGE":
+		return h.handleTS_MRANGE(state, args, remoteAddr)
+
+	case "TS.MREVRANGE":
+		return h.handleTS_MREVRANGE(state, args, remoteAddr)
+
+	case "TS.QUERYINDEX":
+		return h.handleTS_QUERYINDEX(state, args, remoteAddr)
+
+	case "TS.MADD":
+		return h.handleTS_MADD(state, args, remoteAddr)
+
+	case "TS.INCRBY":
+		return h.handleTS_INCRBY(state, args, remoteAddr)
+
+	case "TS.CREATERULE":
+		return h.handleTS_CREATERULE(state, args, remoteAddr)
+
+	case "TS.DELETERULE":
+		return h.handleTS_DELETERULE(state, args, remoteAddr)
 
 	case "MIGRATE":
 		return h.handleMIGRATE(state, args, remoteAddr)

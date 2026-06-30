@@ -125,5 +125,78 @@ func (h *Handler) buildInfoResponse(section string) string {
 		builder.WriteString("\n")
 	}
 
+	if section == "" || section == "ALL" || section == "CLIENTS" {
+		builder.WriteString("# Clients\n")
+		builder.WriteString("connected_clients:" + strconv.Itoa(h.ActiveClientCount()) + "\n")
+		builder.WriteString("cluster_connections:0\n")
+		builder.WriteString("maxclients:10000\n")
+		builder.WriteString("blocked_clients:" + strconv.Itoa(h.BlockedClientCount()) + "\n")
+		builder.WriteString("tracking_clients:0\n")
+		builder.WriteString("max_blocking_keys:0\n")
+		builder.WriteString("io_threads_active:0\n")
+		builder.WriteString("\n")
+	}
+
+	if section == "" || section == "ALL" || section == "MEMORY" {
+		builder.WriteString("# Memory\n")
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		builder.WriteString("used_memory:" + strconv.FormatUint(m.Alloc, 10) + "\n")
+		builder.WriteString("used_memory_human:" + formatBytes(m.Alloc) + "\n")
+		builder.WriteString("used_memory_rss:" + strconv.FormatUint(m.Sys, 10) + "\n")
+		builder.WriteString("used_memory_rss_human:" + formatBytes(m.Sys) + "\n")
+		builder.WriteString("mem_fragmentation_ratio:" + strconv.FormatFloat(float64(m.Sys)/float64(m.Alloc), 'f', 2, 64) + "\n")
+		builder.WriteString("maxmemory:0\n")
+		builder.WriteString("maxmemory_human:0B\n")
+		builder.WriteString("maxmemory_policy:noeviction\n")
+		builder.WriteString("\n")
+	}
+
+	if section == "" || section == "ALL" || section == "CPU" {
+		builder.WriteString("# CPU\n")
+		builder.WriteString("used_cpu_sys:0.00\n")
+		builder.WriteString("used_cpu_user:0.00\n")
+		builder.WriteString("used_cpu_sys_children:0.00\n")
+		builder.WriteString("used_cpu_user_children:0.00\n")
+		builder.WriteString("\n")
+	}
+
+	if section == "" || section == "ALL" || section == "KEYSPACE" {
+		builder.WriteString("# Keyspace\n")
+		// Per-DB stats - simplified (no per-DB tracking in BoltDB)
+		builder.WriteString("\n")
+	}
+
+	if section == "" || section == "ALL" || section == "COMMANDSTATS" {
+		builder.WriteString("# Commandstats\n")
+		// No per-command stats in BoltDB (hardcoded for compatibility)
+		builder.WriteString("\n")
+	}
+
+	if section == "" || section == "ALL" || section == "LATENCY" {
+		builder.WriteString("# Latency\n")
+		builder.WriteString(" Latest latency events:\n")
+		builder.WriteString("\n")
+	}
+
 	return builder.String()
+}
+
+// formatBytes formats bytes as human-readable string
+func formatBytes(bytes uint64) string {
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+	)
+	switch {
+	case bytes >= GB:
+		return strconv.FormatFloat(float64(bytes)/float64(GB), 'f', 2, 64) + "G"
+	case bytes >= MB:
+		return strconv.FormatFloat(float64(bytes)/float64(MB), 'f', 2, 64) + "M"
+	case bytes >= KB:
+		return strconv.FormatFloat(float64(bytes)/float64(KB), 'f', 2, 64) + "K"
+	default:
+		return strconv.FormatUint(bytes, 10) + "B"
+	}
 }

@@ -1406,6 +1406,75 @@ func (s *BotreonStore) ZMPop(keys []string, modifier string, count int) (string,
 	return "", nil, nil
 }
 
+// BZMPopBlocking 实现 Redis BZMPOP 命令，阻塞式从多个排序集合弹出成员
+func (s *BotreonStore) BZMPopBlocking(ctx context.Context, keys []string, modifier string, count int, timeout int) (string, []ZSetMember, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	// 先尝试非阻塞弹出
+	key, members, err := s.ZMPop(keys, modifier, count)
+	if err != nil {
+		return "", nil, err
+	}
+	if key != "" && len(members) > 0 {
+		return key, members, nil
+	}
+
+	resultCh := make(chan string, 1)
+	var timerCh <-chan time.Time
+	if timeout > 0 {
+		timer := time.NewTimer(time.Duration(timeout) * time.Second)
+		defer func() {
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+		}()
+		timerCh = timer.C
+	}
+
+	// 注册阻塞并重新检查
+	if modifier == "MAX" {
+		if key, _, ok := s.registerAndRecheckZMax(keys, resultCh); ok {
+			members, err := s.ZPopMax(key, count)
+			if err != nil {
+				return "", nil, err
+			}
+			return key, members, nil
+		}
+	} else {
+		if key, _, ok := s.registerAndRecheckZMin(keys, resultCh); ok {
+			members, err := s.ZPopMin(key, count)
+			if err != nil {
+				return "", nil, err
+			}
+			return key, members, nil
+		}
+	}
+
+	select {
+	case key := <-resultCh:
+		if modifier == "MAX" {
+			members, err = s.ZPopMax(key, count)
+		} else {
+			members, err = s.ZPopMin(key, count)
+		}
+		if err != nil || len(members) == 0 {
+			return "", nil, nil
+		}
+		return key, members, nil
+	case <-timerCh:
+		s.unregisterBlockingZPop(resultCh, keys)
+		return "", nil, nil
+	case <-ctx.Done():
+		s.unregisterBlockingZPop(resultCh, keys)
+		return "", nil, nil
+	}
+}
+
 // ZUnionStore 实现 Redis ZUNIONSTORE 命令，计算并集并存储到目标集合
 func (s *BotreonStore) ZUnionStore(destination string, keys []string, weights []float64, aggregate string) (int64, error) {
 	var count int64
@@ -1511,6 +1580,45 @@ func (s *BotreonStore) ZInter(keys []string, weights []float64, aggregate string
 		return result[i].Member < result[j].Member
 	})
 	return result, nil
+}
+
+// ZInterCard 实现 Redis ZINTERCARD 命令（Redis 7.0+），返回交集基数（不存储结果）
+// limit 参数为 0 表示无限制
+func (s *BotreonStore) ZInterCard(keys []string, limit int64) (int64, error) {
+	var count int64
+	err := s.db.View(func(txn *badger.Txn) error {
+		if len(keys) == 0 {
+			return nil
+		}
+		// 获取第一个集合的所有成员
+		firstMembers, err := zReadZSetMembersInTxn(txn, keys[0])
+		if err != nil {
+			return err
+		}
+		// 统计在所有集合中都存在的成员
+		for _, member := range firstMembers {
+			inAll := true
+			for i := 1; i < len(keys); i++ {
+				memberScoreKey := sortedSetKeyMember(keys[i], member.Member)
+				_, err := txn.Get([]byte(memberScoreKey))
+				if errors.Is(err, badger.ErrKeyNotFound) {
+					inAll = false
+					break
+				}
+				if err != nil {
+					return err
+				}
+			}
+			if inAll {
+				count++
+				if limit > 0 && count >= limit {
+					return nil
+				}
+			}
+		}
+		return nil
+	})
+	return count, err
 }
 
 // ZUnion 实现 Redis ZUNION 命令（Redis 7.0+），返回并集成员

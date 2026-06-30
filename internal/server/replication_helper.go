@@ -10,7 +10,7 @@ func isWriteCommand(cmd string) bool {
 		"GETDEL": true, "GETEX": true,
 		"BITOP": true, "BITFIELD": true,
 		"COPY": true,
-		"DEL":  true, "EXPIRE": true, "EXPIREAT": true,
+		"DEL":  true, "UNLINK": true, "EXPIRE": true, "EXPIREAT": true,
 		"PEXPIRE": true, "PEXPIREAT": true, "PERSIST": true,
 		"RENAME": true, "RENAMENX": true,
 		"LPUSH": true, "RPUSH": true, "LPOP": true, "RPOP": true,
@@ -23,7 +23,7 @@ func isWriteCommand(cmd string) bool {
 		"SADD": true, "SREM": true, "SMOVE": true, "SPOP": true,
 		"SINTERSTORE": true, "SUNIONSTORE": true, "SDIFFSTORE": true,
 		"ZADD": true, "ZREM": true, "ZINCRBY": true,
-		"ZPOPMAX": true, "ZPOPMIN": true, "ZMPOP": true, "LMPOP": true,
+		"ZPOPMAX": true, "ZPOPMIN": true, "ZMPOP": true, "BZMPOP": true, "LMPOP": true,
 		"ZREMRANGEBYRANK": true, "ZREMRANGEBYSCORE": true, "ZREMRANGEBYLEX": true,
 		"ZUNIONSTORE": true, "ZINTERSTORE": true, "ZDIFFSTORE": true,
 		"ZRANGESTORE": true,
@@ -33,6 +33,7 @@ func isWriteCommand(cmd string) bool {
 		// Stream commands
 		"XADD": true, "XDEL": true, "XACK": true,
 		"XCLAIM": true, "XGROUP": true, "XTRIM": true,
+		"XACKDEL": true, "XDELEX": true, "XNACK": true, "XSETID": true, "XCFGSET": true,
 		// Database management
 		"SWAPDB": true, "MOVE": true,
 		// Pub/Sub
@@ -42,6 +43,7 @@ func isWriteCommand(cmd string) bool {
 		"JSON.NUMINCRBY": true, "JSON.NUMMULTBY": true, "JSON.CLEAR": true,
 		// TimeSeries commands
 		"TS.CREATE": true, "TS.ADD": true, "TS.DEL": true,
+		"TS.MADD": true, "TS.INCRBY": true, "TS.CREATERULE": true, "TS.DELETERULE": true,
 		// P1.5 — 修复复制数据丢失（2026-06-15）
 		"RESTORE":    true,
 		"MIGRATE":    true,

@@ -85,6 +85,49 @@ func (h *Handler) handleZINTER(state *connState, args [][]byte, remoteAddr strin
 	return &proto.Array{Args: result}
 }
 
+// handleZINTERCARD 实现 ZINTERCARD 命令（Redis 7.0+），返回交集基数
+func (h *Handler) handleZINTERCARD(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	// ZINTERCARD numkeys key [key ...] [LIMIT limit]
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'ZINTERCARD' command")
+	}
+	numKeys, err := strconv.Atoi(string(args[0]))
+	if err != nil || numKeys < 1 {
+		return proto.NewError("ERR value is not an integer or out of range")
+	}
+	if 1+numKeys > len(args) {
+		return proto.NewError("ERR wrong number of arguments for 'ZINTERCARD' command")
+	}
+	keys := make([]string, numKeys)
+	for i := 0; i < numKeys; i++ {
+		keys[i] = string(args[1+i])
+	}
+	var limit int64
+	i := 1 + numKeys
+	for i < len(args) {
+		if strings.ToUpper(string(args[i])) == "LIMIT" {
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			limit, err = strconv.ParseInt(string(args[i+1]), 10, 64)
+			if err != nil || limit < 0 {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			i += 2
+		} else {
+			return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", args[i]))
+		}
+	}
+	count, err := h.Db.ZInterCard(keys, limit)
+	if err != nil {
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
+		return proto.NewError(fmt.Sprintf("ERR %v", err))
+	}
+	return proto.NewInteger(count)
+}
+
 // handleZUNION 实现 ZUNION 命令（Redis 7.0+）
 func (h *Handler) handleZUNION(state *connState, args [][]byte, remoteAddr string) proto.RESP {
 	if len(args) < 2 {
@@ -816,6 +859,61 @@ func (h *Handler) handleZMPOP(state *connState, args [][]byte, remoteAddr string
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
 		return proto.NewError(fmt.Sprintf("ERR %v", err))
+	}
+	if key == "" || len(members) == 0 {
+		return proto.NilArray{}
+	}
+	result := make([][]byte, 0, 1+len(members)*2)
+	result = append(result, []byte(key))
+	for _, m := range members {
+		result = append(result, []byte(m.Member), []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)))
+	}
+	return &proto.Array{Args: result}
+}
+
+// handleBZMPOP 实现 BZMPOP 命令，阻塞式从多个排序集合弹出成员
+func (h *Handler) handleBZMPOP(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	// BZMPOP timeout numkeys key [key ...] MIN|MAX [COUNT count]
+	if len(args) < 4 {
+		return proto.NewError("ERR wrong number of arguments for 'BZMPOP' command")
+	}
+	timeout, tErr := strconv.Atoi(string(args[0]))
+	if tErr != nil || timeout < 0 {
+		return proto.NewError("ERR timeout is not an integer or out of range")
+	}
+	numKeys, kErr := strconv.Atoi(string(args[1]))
+	if kErr != nil || numKeys < 1 || 2+numKeys+1 > len(args) {
+		return proto.NewError("ERR syntax error")
+	}
+	keys := make([]string, numKeys)
+	for i := 0; i < numKeys; i++ {
+		keys[i] = string(args[2+i])
+	}
+	modifier := strings.ToUpper(string(args[2+numKeys]))
+	if modifier != "MIN" && modifier != "MAX" {
+		return proto.NewError("ERR syntax error")
+	}
+	count := 1
+	if len(args) >= 4+numKeys {
+		if strings.ToUpper(string(args[3+numKeys])) == "COUNT" {
+			if len(args) < 5+numKeys {
+				return proto.NewError("ERR syntax error")
+			}
+			c, cErr := strconv.Atoi(string(args[4+numKeys]))
+			if cErr != nil || c < 1 {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			count = c
+		}
+	}
+	state.blocking.Store(true)
+	key, members, err := h.Db.BZMPopBlocking(state.ctx, keys, modifier, count, timeout)
+	state.blocking.Store(false)
+	if err != nil {
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
+		return proto.NilArray{}
 	}
 	if key == "" || len(members) == 0 {
 		return proto.NilArray{}

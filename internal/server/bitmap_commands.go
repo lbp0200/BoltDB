@@ -141,6 +141,50 @@ func (h *Handler) handleBITFIELD(state *connState, args [][]byte, remoteAddr str
 	return &proto.Array{Args: respArgs}
 }
 
+// handleBITFIELD_RO 实现 BITFIELD_RO 命令（只读版本，仅支持 GET）
+func (h *Handler) handleBITFIELD_RO(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	// BITFIELD_RO key [GET type offset ...]
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'BITFIELD_RO' command")
+	}
+	key := string(args[0])
+	// Validate that all operations are GET
+	operations := make([]string, 0, len(args)-1)
+	for i := 1; i < len(args); i++ {
+		op := strings.ToUpper(string(args[i]))
+		if op != "GET" {
+			return proto.NewError("ERR BITFIELD_RO only supports the GET subcommand")
+		}
+		operations = append(operations, string(args[i]))
+		// Include the type and offset args
+		if i+2 < len(args) {
+			operations = append(operations, string(args[i+1]), string(args[i+2]))
+			i += 2
+		}
+	}
+	results, err := h.Db.BitField(key, operations)
+	if err != nil {
+		return wrapStoreError(err)
+	}
+	// Single operation returns integer, multiple operations return array
+	if len(results) == 1 {
+		if v, ok := results[0].(int64); ok {
+			return proto.NewInteger(v)
+		}
+	}
+	// Convert results to RESP array
+	respArgs := make([][]byte, len(results))
+	for i, r := range results {
+		switch v := r.(type) {
+		case int64:
+			respArgs[i] = []byte(strconv.FormatInt(v, 10))
+		case []interface{}:
+			respArgs[i] = []byte(fmt.Sprintf("%v:%v", v[0], v[1]))
+		}
+	}
+	return &proto.Array{Args: respArgs}
+}
+
 // handleBITPOS 实现 BITPOS 命令
 func (h *Handler) handleBITPOS(state *connState, args [][]byte, remoteAddr string) proto.RESP {
 	// BITPOS key bit [start [end [BYTE | BIT]]]

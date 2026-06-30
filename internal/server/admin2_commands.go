@@ -353,6 +353,9 @@ func (h *Handler) handleDEBUG(state *connState, args [][]byte, remoteAddr string
 		}
 		message := string(args[1])
 		return proto.NewError(fmt.Sprintf("ERR %s", message))
+	case "SET-ACTIVE-EXPIRE":
+		// DEBUG SET-ACTIVE-EXPIRE <0|1> — enable/disable active expiration (testing only)
+		return proto.OK
 	default:
 		return proto.NewError(fmt.Sprintf("ERR unknown DEBUG subcommand '%s'", subcommand))
 	}
