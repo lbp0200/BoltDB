@@ -37,7 +37,15 @@ func HandlePSync(rm *ReplicationManager, replId string, offset int64) (*PSyncRes
 			backlogStart = 0
 		}
 
-		if offset >= backlogStart && offset <= currentOffset {
+		// 重启后 backlog 为空（currentOffset == 0）但请求的 offset > 0：
+		// backlog 中没有可发送的数据，必须降级为 FULLRESYNC。
+		// 不能仅靠 backlogStart/offset 范围判断——空 backlog 的
+		// GetCurrentOffset() == 0，range check 会误判为有效。
+		if backlog.GetCurrentOffset() == 0 && offset > 0 {
+			logger.Logger.Info().
+				Int64("requested_offset", offset).
+				Msg("backlog 为空（重启后），请求的 offset 不可用，降级为全量同步")
+		} else if offset >= backlogStart && offset <= currentOffset {
 			// 可以增量同步
 			logger.Logger.Info().
 				Str("repl_id", replId).

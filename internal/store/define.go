@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -46,6 +47,10 @@ var (
 	prefixKeyTypeBytes       = []byte("TYPE_")
 	prefixKeyJSONBytes       = []byte("JSON:")
 	prefixKeyTimeSeriesBytes = []byte("TS:")
+	// replMetaKey 是复制元数据的存储键（replId 持久化）
+	replMetaKey   = []byte("__REPL_META__:repl_id")
+	replOffsetKey = []byte("__REPL_META__:master_offset")
+	backlogKey    = []byte("__REPL_META__:backlog")
 )
 
 // BlockingResult represents the result of a blocking pop operation
@@ -97,6 +102,12 @@ type BotreonStore struct {
 
 	// 错误注入（仅测试用，nil = 禁用）
 	errorInjector *ErrorInjector
+
+	// closeCh 在 Close()/CloseWithTimeout() 时关闭，用于通知阻塞操作
+	//（BLPOP/BRPOP/BZPOPMIN/BZPOPMAX/XREAD BLOCK）立即退出，
+	// 避免操作结束后 channel 残留。
+	closeCh   chan struct{}
+	closeOnce sync.Once
 }
 
 // SetErrorInjector 设置错误注入器（仅测试用）。传 nil 可禁用。
@@ -440,6 +451,7 @@ func NewBotreonStoreWithCompression(path string, compressionType CompressionType
 		blockingZPopChans:   make(map[string][]chan string),
 		streamBlockingChans: make(map[string][]chan StreamReadResult),
 		l0Cache:             &l0Cache{},
+		closeCh:             make(chan struct{}),
 	}
 	s.backpressure.Store(p)
 	cfg := bpConfig
@@ -448,12 +460,18 @@ func NewBotreonStoreWithCompression(path string, compressionType CompressionType
 }
 
 func (s *BotreonStore) Close() error {
+	s.closeOnce.Do(func() {
+		close(s.closeCh)
+	})
 	return s.db.Close()
 }
 
 // CloseWithTimeout closes the store with a timeout to prevent
 // indefinite blocking due to BadgerDB's doWrites drain bug.
 func (s *BotreonStore) CloseWithTimeout(timeout time.Duration) error {
+	s.closeOnce.Do(func() {
+		close(s.closeCh)
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -490,6 +508,120 @@ func (s *BotreonStore) GetBackpressureConfig() BackpressureConfig {
 // GetDB 获取BadgerDB实例（用于复制和备份）
 func (s *BotreonStore) GetDB() *badger.DB {
 	return s.db
+}
+
+// SaveReplID 持久化复制 ID 到 BadgerDB，重启后保持 replId 不变
+// 从而避免主节点重启导致所有从节点触发 FULLRESYNC。
+func (s *BotreonStore) SaveReplID(id string) error {
+	return s.db.Update(func(txn *badger.Txn) error {
+		return txn.Set(replMetaKey, []byte(id))
+	})
+}
+
+// LoadReplID 从 BadgerDB 读取持久化的复制 ID。
+// 返回空字符串表示没有持久化的 ID（首次启动或旧数据库）。
+func (s *BotreonStore) LoadReplID() (string, error) {
+	var id string
+	err := s.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(replMetaKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return nil // 首次启动，无持久化 replId
+		}
+		if err != nil {
+			return err
+		}
+		val, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		id = string(val)
+		return nil
+	})
+	return id, err
+}
+
+// SaveMasterReplOffset 持久化主节点复制偏移量到 BadgerDB，
+// 确保重启后从节点可以通过 PSYNC CONTINUE 而非 FULLRESYNC 重新连接。
+func (s *BotreonStore) SaveMasterReplOffset(offset int64) error {
+	return s.db.Update(func(txn *badger.Txn) error {
+		buf := make([]byte, 8)
+		binary.BigEndian.PutUint64(buf, uint64(offset))
+		return txn.Set(replOffsetKey, buf)
+	})
+}
+
+// LoadMasterReplOffset 从 BadgerDB 读取持久化的主节点复制偏移量。
+func (s *BotreonStore) LoadMasterReplOffset() (int64, error) {
+	var offset int64
+	err := s.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(replOffsetKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return nil // 首次启动，无持久化偏移量
+		}
+		if err != nil {
+			return err
+		}
+		val, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		if len(val) >= 8 {
+			offset = int64(binary.BigEndian.Uint64(val[:8]))
+		}
+		return nil
+	})
+	return offset, err
+}
+
+// SaveBacklog 持久化 replication backlog 的环形缓冲区、偏移量和大小到 BadgerDB，
+// 确保干净重启后从节点可以通过 PSYNC CONTINUE 增量同步。
+// backlog 最大 512MB；默认 1MB 的持久化开销可接受。
+func (s *BotreonStore) SaveBacklog(offset int64, buffer []byte, size int64) error {
+	// 编码：offset(int64) + size(int64) + buffer([]byte)
+	buf := make([]byte, 16+len(buffer))
+	binary.BigEndian.PutUint64(buf[0:8], uint64(offset))
+	binary.BigEndian.PutUint64(buf[8:16], uint64(size))
+	copy(buf[16:], buffer)
+	return s.db.Update(func(txn *badger.Txn) error {
+		return txn.Set(backlogKey, buf)
+	})
+}
+
+// LoadBacklog 从 BadgerDB 读取持久化的 replication backlog。
+// 返回 (offset, buffer, size, error)。buffer 为 nil 表示首次启动或无持久化数据。
+func (s *BotreonStore) LoadBacklog() (int64, []byte, int64, error) {
+	var offset int64
+	var buffer []byte
+	var size int64
+	err := s.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(backlogKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return nil // 首次启动
+		}
+		if err != nil {
+			return err
+		}
+		val, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		if len(val) < 16 {
+			return nil // 无效数据
+		}
+		offset = int64(binary.BigEndian.Uint64(val[0:8]))
+		size = int64(binary.BigEndian.Uint64(val[8:16]))
+		buffer = make([]byte, len(val)-16)
+		copy(buffer, val[16:])
+		return nil
+	})
+	return offset, buffer, size, err
+}
+
+// DeleteBacklog 删除持久化的 backlog 数据。
+func (s *BotreonStore) DeleteBacklog() error {
+	return s.db.Update(func(txn *badger.Txn) error {
+		return txn.Delete(backlogKey)
+	})
 }
 
 // IterateRawKeys 遍历所有 TYPE_ 记录，对每个逻辑 key 调用 fn。

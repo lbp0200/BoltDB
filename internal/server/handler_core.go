@@ -69,6 +69,12 @@ type Handler struct {
 	// 0 表示不限制
 	OutputBufferLimit int64
 
+	// MaxInputBytes 是每个连接累计读取字节数的上限。
+	// 防止单连接通过发送大量/大 bulk 请求耗尽服务器内存。
+	// 达到上限后后续 ReadRESP 返回错误并断开连接。
+	// 0 表示不限制。
+	MaxInputBytes int64
+
 	// MaxClients 是最大并发连接数限制（0 = 默认 10000）
 	MaxClients int
 
@@ -298,6 +304,13 @@ func (h *Handler) handleConnection(conn net.Conn) {
 	}()
 
 	reader := bufio.NewReader(conn)
+	// 如果配置了 MaxInputBytes，用 CumulativeLimitReader 包装输入流，
+	// 防止单连接通过发送大 bulk 请求耗尽服务器内存。
+	var limitReader *CumulativeLimitReader
+	if h.MaxInputBytes > 0 {
+		limitReader = NewCumulativeLimitReader(conn, h.MaxInputBytes)
+		reader = bufio.NewReader(limitReader)
+	}
 	writer := bufio.NewWriter(conn)
 
 	// 在复制接管时，需要关闭reader/writer以防止defer尝试Flush

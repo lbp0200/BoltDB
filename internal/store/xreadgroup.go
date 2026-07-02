@@ -156,6 +156,9 @@ func (s *BotreonStore) xReadGroupBlocking(ctx context.Context, group, consumer s
 			case <-ctx.Done():
 				s.unregisterStreamBlocking(resultCh, keys)
 				return nil, nil
+			case <-s.closeCh:
+				s.unregisterStreamBlocking(resultCh, keys)
+				return nil, nil
 			case <-resultCh:
 				result, err = s.XReadGroup(ctx, group, consumer, count, -1, keys...)
 				if err != nil {
@@ -186,6 +189,9 @@ func (s *BotreonStore) xReadGroupBlocking(ctx context.Context, group, consumer s
 	}()
 	select {
 	case <-ctx.Done():
+		s.unregisterStreamBlocking(resultCh, keys)
+		return nil, nil
+	case <-s.closeCh:
 		s.unregisterStreamBlocking(resultCh, keys)
 		return nil, nil
 	case <-resultCh:

@@ -34,6 +34,7 @@ var (
 	maxClientsFlag          = flag.Int("maxclients", 10000, "max number of connected clients (0 = unlimited)")
 	idleTimeoutFlag         = flag.Int("timeout", 0, "idle client timeout in seconds (0 = no timeout)")
 	protoMaxBulkLenFlag     = flag.Int64("proto-max-bulk-len", 256*1024*1024, "max bulk string length in bytes (default 256MB)")
+	maxInputBytesFlag       = flag.Int64("max-input-bytes", 0, "per-client cumulative input byte limit (0 = unlimited)")
 	tlsCertFlag             = flag.String("tls-cert", "", "path to TLS certificate PEM file (empty = no TLS)")
 	tlsKeyFlag              = flag.String("tls-key", "", "path to TLS private key PEM file (empty = no TLS)")
 	tlsCAFlag               = flag.String("tls-ca", "", "path to CA certificate PEM file for client verification (optional)")
@@ -146,6 +147,7 @@ func main() {
 		Ctx:               ctx,
 		OutputBufferLimit: *clientOutputBufferLimit,
 		MaxClients:        *maxClientsFlag,
+		MaxInputBytes:     *maxInputBytesFlag,
 		Timeout:           time.Duration(*idleTimeoutFlag) * time.Second,
 	}
 

@@ -188,6 +188,9 @@ func (s *BotreonStore) BLPOPBlocking(ctx context.Context, keys []string, timeout
 	case <-ctx.Done():
 		s.unregisterBlockingPop(resultCh, keys)
 		return "", "", nil
+	case <-s.closeCh:
+		s.unregisterBlockingPop(resultCh, keys)
+		return "", "", nil
 	}
 }
 
@@ -229,6 +232,9 @@ func (s *BotreonStore) BRPOPBlocking(ctx context.Context, keys []string, timeout
 		s.unregisterBlockingPop(resultCh, keys)
 		return "", "", nil
 	case <-ctx.Done():
+		s.unregisterBlockingPop(resultCh, keys)
+		return "", "", nil
+	case <-s.closeCh:
 		s.unregisterBlockingPop(resultCh, keys)
 		return "", "", nil
 	}
@@ -288,6 +294,9 @@ func (s *BotreonStore) BRPOPLPUSHBlocking(ctx context.Context, source, destinati
 			s.unregisterBlockingPop(resultCh, keys)
 			return "", nil
 		case <-ctx.Done():
+			s.unregisterBlockingPop(resultCh, keys)
+			return "", nil
+		case <-s.closeCh:
 			s.unregisterBlockingPop(resultCh, keys)
 			return "", nil
 		}

@@ -33,16 +33,53 @@ type ReplicationManager struct {
 }
 
 // NewReplicationManager 创建新的复制管理器
+// 首次启动时生成新的复制 ID；重启时从 BadgerDB 读取已有的复制 ID，
+// 使从节点可以通过 PSYNC CONTINUE 而非 FULLRESYNC 重新连接。
+// 同时加载持久化的 masterReplOffset，确保重启后 offset 连续。
 func NewReplicationManager(store *store.BotreonStore) *ReplicationManager {
-	replId, _ := generateReplicationID()
+	// 尝试加载已有的 replId
+	replId, err := store.LoadReplID()
+	if err != nil {
+		logger.Logger.Warn().Err(err).Msg("Failed to load persisted replId, generating new one")
+	}
+	if replId == "" {
+		replId, _ = generateReplicationID()
+		// 持久化新生成的 replId
+		if saveErr := store.SaveReplID(replId); saveErr != nil {
+			logger.Logger.Warn().Err(saveErr).Msg("Failed to persist new replId")
+		}
+	}
+
+	// 尝试加载持久化的 masterReplOffset
+	offset, loadOffsetErr := store.LoadMasterReplOffset()
+	if loadOffsetErr != nil {
+		logger.Logger.Warn().Err(loadOffsetErr).Msg("Failed to load persisted masterReplOffset, starting from 0")
+	}
+
 	rm := &ReplicationManager{
 		role:             RoleMaster,
 		slaves:           make(map[string]*SlaveConnection),
 		backlog:          NewReplicationBacklog(DefaultBacklogSize),
-		masterReplOffset: 0,
+		masterReplOffset: offset,
 		replId:           replId,
 		store:            store,
 	}
+
+	// 尝试加载持久化的 backlog（干净重启时保留，避免 FULLRESYNC）
+	if bOff, bBuf, bSize, loadErr := store.LoadBacklog(); loadErr != nil {
+		logger.Logger.Warn().Err(loadErr).Msg("Failed to load persisted backlog")
+	} else if bBuf != nil && int64(len(bBuf)) == bSize {
+		rm.backlog.mu.Lock()
+		rm.backlog.offset = bOff
+		rm.backlog.size = bSize
+		copy(rm.backlog.buffer, bBuf)
+		rm.backlog.mu.Unlock()
+		logger.Logger.Debug().
+			Int64("offset", bOff).
+			Int("bytes", len(bBuf)).
+			Msg("Persisted backlog loaded on startup")
+	}
+
 	return rm
 }
 
@@ -281,6 +318,31 @@ func (rm *ReplicationManager) Stop() {
 		return
 	}
 	rm.stopped = true
+
+	// 在关闭连接前持久化 masterReplOffset，确保干净重启时偏移量连续
+	// DB 在 Stop() 之后才关闭（main.go 关闭序列），写入安全
+	if rm.store != nil {
+		offset := rm.masterReplOffset
+		if saveErr := rm.store.SaveMasterReplOffset(offset); saveErr != nil {
+			logger.Logger.Warn().Err(saveErr).Int64("offset", offset).Msg("failed to persist masterReplOffset on shutdown")
+		} else {
+			logger.Logger.Debug().Int64("offset", offset).Msg("masterReplOffset persisted on shutdown")
+		}
+
+		// 在关闭连接前持久化 backlog（环形缓冲区），使干净重启后从节点可以
+		// 通过 PSYNC CONTINUE 增量同步，避免不必要的 FULLRESYNC。
+		rm.backlog.mu.RLock()
+		bOff := rm.backlog.offset
+		bBuf := make([]byte, len(rm.backlog.buffer))
+		copy(bBuf, rm.backlog.buffer)
+		bSize := rm.backlog.size
+		rm.backlog.mu.RUnlock()
+		if saveErr := rm.store.SaveBacklog(bOff, bBuf, bSize); saveErr != nil {
+			logger.Logger.Warn().Err(saveErr).Msg("failed to persist backlog on shutdown")
+		} else {
+			logger.Logger.Debug().Int("backlog_bytes", len(bBuf)).Msg("backlog persisted on shutdown")
+		}
+	}
 
 	slaves := make([]*SlaveConnection, 0, len(rm.slaves))
 	for _, slave := range rm.slaves {

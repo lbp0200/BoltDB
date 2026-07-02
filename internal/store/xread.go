@@ -127,6 +127,9 @@ func (s *BotreonStore) xReadBlocking(ctx context.Context, count int64, block int
 			case <-ctx.Done():
 				s.unregisterStreamBlocking(resultCh, keys)
 				return nil, nil
+			case <-s.closeCh:
+				s.unregisterStreamBlocking(resultCh, keys)
+				return nil, nil
 			case streamResult := <-resultCh:
 				if len(streamResult.Entries) > 0 {
 					return []map[string][]StreamEntry{{streamResult.Key: streamResult.Entries}}, nil
@@ -156,6 +159,9 @@ func (s *BotreonStore) xReadBlocking(ctx context.Context, count int64, block int
 	}()
 	select {
 	case <-ctx.Done():
+		s.unregisterStreamBlocking(resultCh, keys)
+		return nil, nil
+	case <-s.closeCh:
 		s.unregisterStreamBlocking(resultCh, keys)
 		return nil, nil
 	case streamResult := <-resultCh:

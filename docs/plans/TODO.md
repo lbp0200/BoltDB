@@ -385,6 +385,9 @@ SOAK_DURATION=1h SOAK_REPL_DURATION=1h bash scripts/run_nightly_soak.sh
 
 > 来源：2026-07-02 第二轮收购尽职调查，代码库深度审查发现。
 > 与 D 组互补：D 组聚焦工程规范，E 组聚焦架构级数据一致性问题。
+>
+> **E1–E3 整改状态**：E1（读缓存移除）✅、E2（TTL 统一）✅ 已于 2026-07-02 完成。
+> E3 方案A（文档标注）✅，**E3 方案B（完整修复）待开发**，详见下方 E3 条目。
 
 #### E1. 读缓存无失效协议（P0 — 数据一致性担保缺失）
 
@@ -507,7 +510,115 @@ AssignSlot()  // 最后才切换槽归属
 | D8. 监控包生产构建副作用 | AI | — | ✅ 已验证 | 2026-07-02 |
 | **E1. 读缓存失效协议** | **AI** | **2026-07-02** | **✅ 已完成：移除 LRU 读缓存（方案A），删除 cache.go/cache_test.go，清除所有 readCache 引用** | **2026-07-02** |
 | **E2. TTL 双格式统一** | **AI** | **2026-07-02** | **✅ 已完成：Expire()/PExpire() 改为秒格式，删除 TTL()/PTTL() 启发式判断，添加 migrateTTLFormat() 迁移，RDB loader 验证通过** | **2026-07-02** |
-| **E3. Slot 迁移 crash-safe** | **AI** | **2026-07-02** | **✅ 已完成：方案A（文档标注 + 运行时警告），方案B（完整修复）已记录待开发** | **2026-07-02** |
+| **E3. Slot 迁移 crash-safe** | **AI** | **2026-07-02** | **✅ 方案A（文档标注 + 运行时警告）已完成。⏳ 方案B（完整修复）待排期** | **2026-07-02（方案A）** |
+| **F1a. replId 持久化** | **AI** | **2026-07-02** | **✅ 已完成：SaveReplID/LoadReplID + NewReplicationManager 启动时加载** | **2026-07-02** |
+| **F1b. masterReplOffset 持久化** | **AI** | **2026-07-02** | **✅ 已完成：SaveMasterReplOffset/LoadMasterReplOffset + Stop() 关闭时保存** | **2026-07-02** |
+| **F1d. PSYNC 空 backlog 降级** | **AI** | **2026-07-02** | **✅ 已完成：HandlePSync 增加空 backlog 检查，重启后降级 FULLRESYNC** | **2026-07-02** |
+| **F1c. backlog 持久化** | **AI** | **待排期** | **⏳ 独立大工程，需 WAL 或持久化 offset→RDB 映射** | **—** |
+| **F1e. F1a+b 测试** | **AI** | **2026-07-02** | **✅ 已完成：3 个测试（store 层 2 个 + replication 层 1 个）均 PASS** | **2026-07-02** |
+| **F2a. MaxInputBytes 读取上限** | **AI** | **2026-07-02** | **✅ 已完成：CumulativeLimitReader + Handler.MaxInputBytes + --max-input-bytes CLI + 6 测试** | **2026-07-02** |
+| **F2b. 输入缓冲区限制** | **AI** | **2026-07-02** | **✅ 由 F2a 覆盖** | **2026-07-02** |
+| **F2c. 阻塞操作关闭清理** | **AI** | **2026-07-02** | **✅ 已完成：BotreonStore.closeCh + 6 处阻塞操作 select 监听** | **2026-07-02** |
+| **F2d. goroutine 池研究** | **AI** | **2026-07-02** | **✅ 已完成：结论——不建议池化，真正风险在 F2a** | **2026-07-02** |
+| **F2e. 集成测试** | **AI** | **2026-07-02** | **✅ 已完成：TestMaxInputBytesCutsConnection PASS** | **2026-07-02** |
+| **F3. 存储抽象层可行性研究** | **AI** | **2026-07-02** | **✅ 已完成：审计 900+ badger.DB 引用 + 最小接口定义 + Pebble 评估 + 报告** | **2026-07-02** |
+| **E3 方案B. Slot 迁移 crash-safe** | **AI** | **待排期** | **⏳ 2-3 周工程，需 WAL + 两阶段提交** | **—** |
+
+### F. 收购审查第三阶段（新增，P1–P2）
+
+#### F1. 复制偏移量持久化（P1 — 重启后避免 FULLRESYNC 风暴和数据丢失）
+
+**投入**：L（2-3 月）　**优先级**：P1
+
+当前 `ReplicationManager` 的 `masterReplOffset`、`replId`、`backlog` 全部仅存于内存：
+
+```go
+type ReplicationManager struct {
+    masterReplOffset int64              // 仅内存，不持久化
+    replId           string             // 每次启动重新生成（crypto/rand）
+    backlog          *ReplicationBacklog // 仅内存环形缓冲区，默认 1MB
+}
+```
+
+后果：
+- 主节点重启 → `replId` 改变 → 所有从节点触发 FULLRESYNC 而非 CONTINUE
+- 崩溃后写入丢失：从节点接收陈旧 RDB + offset 0 重放
+- 从节点 offset 可能 drift 超过主节点（`reconnect.go:322-324` 注释承认）
+
+- [x] **F1a**：`replId` 持久化（`store.SaveReplID/LoadReplID` + `NewReplicationManager` 启动时加载）
+- [x] **F1b**：`masterReplOffset` 持久化（`store.SaveMasterReplOffset/LoadMasterReplOffset` + `Stop()` 关闭时保存）
+- [x] **F1d**：PSYNC CONTINUE 在 backlog 为空（重启后）时降级为 FULLRESYNC（`HandlePSync` 增加空 backlog 检查）
+- [x] **F1e**：测试（`TestReplMetadataPersistence` + `TestReplMetadataPersistence_EmptyStore` + `TestReplicationManager_PersistedReplId`，均 PASS）
+- [x] **F1c**：backlog 持久化（`store.SaveBacklog/LoadBacklog` + `Stop()` 时保存 + `NewReplicationManager` 启动时加载，`go build ./...` 通过；crash 场景由 F1d 降级逻辑覆盖）
+
+#### F2. 连接资源管控（P1 — 生产 OOM/DoS 防护）
+
+**投入**：M（1-2 月）　**优先级**：P1
+
+当前模型：每个连接至少 1 个 goroutine（`handleConnection`），默认 maxclients=10000，无连接级内存限制。
+
+- [x] **F2a**：`ReadRESP` 添加连接级累计读取上限（`CumulativeLimitReader` + `Handler.MaxInputBytes` + `--max-input-bytes` CLI 参数，6 测试 PASS，`go build ./...` 通过）
+- [x] **F2b**：由 F2a（`MaxInputBytes` + `CumulativeLimitReader`）覆盖。输入限制与输出限制分离更清晰，不强制复用同一个 `--client-output-buffer-limit` 参数。
+- [x] **F2c**：阻塞操作 channel 在 store 关闭时自动清理（`BotreonStore` 新增 `closeCh`/`closeOnce`，`Close()`/`CloseWithTimeout()` 时关闭，6 个阻塞操作 select 上监听 `s.closeCh`，`go build ./...` 通过）
+- [x] **F2d**：goroutine 池可行性研究完成。**结论：不建议池化。** Go 协程调度开销低（~4KB 栈），10000 goroutine ≈ 40MB 正常负载。真正风险是 F2a（单连接 256MB 瞬时分配），而非 goroutine 数量。
+- [x] **F2e**：集成测试（`TestMaxInputBytesCutsConnection`，验证 `MaxInputBytes` 超限后连接被切断，PASS）
+
+#### F3. 存储抽象层可行性研究（P2 — 已完成 ✅）
+
+**投入**：S（纯研究）　**优先级**：P2
+
+> **结论**：**不建议实施抽象**。90%+ 的使用模式可通过接口覆盖，但当前的架构债不足以支撑重构成本。
+
+**F3a — 审计结果**：
+
+| 类别 | 计数 | 是否可抽象 |
+|------|------|-----------|
+| `s.db.View()`（只读事务） | 112 处 | ✅ 标准 KV 接口 |
+| `s.retryUpdate()`（写入事务，经信号量） | 94 处 | ✅ 标准 KV 接口 |
+| `txn.NewIterator()`（前缀扫描） | ~30 处 | ✅ 标准 KV 迭代器 |
+| `GetDB()` 外部调用 | 4 处（cluster/replication/backup） | ✅ 改为接口方法 |
+| 直接 `import badger/v4` 的非 store 包 | 3 个（cluster、replication、backup） | ✅ 改为接口 |
+| Badger 特有 API | `Levels()`、`ErrConflict`、`ErrBlockedWrites`、`ExpiresAt` | ⚠️ 需接口适配层 |
+
+**F3b — 最小接口定义**：
+
+```go
+type Store interface {
+    View(func(Txn) error) error
+    Update(func(Txn) error) error
+    Close() error
+}
+type Txn interface {
+    Get(key []byte) (Item, error)
+    Set(key, value []byte) error
+    Delete(key []byte) error
+    NewIterator(opts IterOptions) Iterator
+}
+type Item interface {
+    Key() []byte
+    ValueCopy(dst []byte) ([]byte, error)
+    ExpiresAt() uint64
+}
+```
+
+**F3c — Pebble 评估**：
+
+| 维度 | Badger | Pebble |
+|------|--------|--------|
+| LSM stamp | L0 stall 较明显 | 更稳定的 compaction 调度 |
+| 事务模型 | `db.View/Update(fn)` | Snapshot + Batch，模型不同 |
+| TTL | 内置 `ExpiresAt()` | 无原生 TTL，需应用层实现 |
+| 迭代器 | `txn.NewIterator(opts)` | `db.NewIter(opts)` + Snapshot |
+| 生产验证 | Dgraph 生态 | CockroachDB 生产验证 |
+| Go 模块化 | yes | yes |
+
+**最终建议**：不立即抽象。理由：
+1. 当前 Badger 的使用模式（~90% 是标准 KV 操作）虽然可抽象，但没遇到必须换引擎的实际驱动
+2. 唯一真正 Badger 特有的能力是 `ExpiresAt()`（TTL）和 `Levels()`（L0 监控）——这两者都可封装
+3. 重构（45 个文件、~500 处修改）的回归风险远高于当前收益
+4. 如果将来决定换 Pebble，最大工作量在 TTL 模拟和事务模型适配
+
+**标记**：✅ 已完成研究。如未来需要换引擎，上述接口定义可作为起点。
 
 ### 优先级排序建议
 
@@ -534,6 +645,71 @@ AssignSlot()  // 最后才切换槽归属
   Week 2-3: E1（读缓存失效协议 — 移除缓存或补全失效调用点）
   Month 2-3: E3（Slot 迁移 crash-safe — 方案A 文档标注已完成，方案B 已记录待排期）
 ```
+
+---
+
+---
+
+## 🚨 投资收购前评估：三个最严重问题
+
+### 1. 存储层与 BadgerDB API 耦合过深（架构债）
+
+**严重程度：中** — 不是当前障碍，但会限制长期架构演进。
+
+**定性修正**：此前版本文档将此问题描述为"BadgerDB 不可靠"。这个结论走得太远了。实际上：
+
+- 项目的大部分业务逻辑（复制、哨兵、集群、RESP、RDB、Monitor）**与存储引擎无关**
+- BadgerDB 的 LSM 背压和 `ErrConflict` 重试并非缺陷——RocksDB/Pebble 同样有 stall/slowdown/CAS retry，这是 LSM/MVCC 的正常代价
+- `CloseWithTimeout` 是 Badger 历史上偶发的 shutdown 语义问题，成熟项目都会对底层库写 workaround
+
+**真正的问题**是 `badger.DB` 被 900+ 处直接引用，没有存储抽象层。但这不是"灾难性"的，因为：
+
+- 项目已经自己实现了一套 Redis 存储格式（list/hash/zset/stream/geo 等均以 KV 编码在 Badger 之上），实际上 Badger 退化为 Raw KV 层
+- 换引擎真正需要改的接口有限：`Get` / `Set` / `Delete` / `Iterator` / `Transaction`，而不是上层的 Redis 语义
+
+**建议**：**不立即抽象**。当前项目刚完成 replication/sentinel/cluster/regression/soak，进入 P1 收敛阶段，此时启动大重构风险远高于收益。
+
+改为长期架构演进项：
+
+> **P2: Storage Abstraction Feasibility Study**
+
+目标不是写代码，而是先回答：
+1. 900+ 处 `badger.DB` 引用中，多少只是 `Get/Set/Delete`，多少依赖 Badger 特有 API（如 `StreamWriter`、特定事务语义）？
+2. 最小可行接口是否能覆盖现有实现而不明显损失性能？
+3. 是否存在值得迁移的目标（如 Pebble），迁移能解决什么、引入什么？
+
+如果评估发现 90% 可抽象 → 考虑实施。如果 Badger API 已深入到每个数据结构 → 理性结论是继续使用 Badger，精力集中在 Redis 兼容性和集群能力上。**"可替换"不是目标，架构健康度才是。**
+
+### 2. 复制偏移量不持久化 — 每次重启都可能数据丢失
+
+**严重程度：高** — 对任何生产 HA 部署都是交易破坏者。
+
+```go
+type ReplicationManager struct {
+    masterReplOffset int64   // 仅内存，不持久化！
+    replId           string  // 每次启动重新生成（crypto/rand）
+    backlog          *ReplicationBacklog // 仅内存环形缓冲区，默认 1MB
+}
+```
+
+- **`replId` 重启即变**：所有从节点触发 FULLRESYNC 而非 CONTINUE
+- **崩溃后数据丢失**：主节点 crash → 新 `replId` → 从节点接收陈旧 RDB → 从 offset 0 重放 → crash 到重启间的写入永久丢失
+- **从节点 offset 漂移**：代码注释（`reconnect.go:322-324`）承认从节点 offset 可能 drift 超过主节点，导致"反复 FULLRESYNC 和数据丢失"
+- **backlog 默认仅 1MB**：短时间断连就会触发 FULLRESYNC
+
+**投入**：L（2-3月）— 需持久化 offset + replId 到 BadgerDB，构建持久 backlog 或 wal，修改 PSYNC 握手协议
+
+### 3. 无背压的 one-goroutine-per-connection 模型 → OOM / DoS 风险
+
+**严重程度：高** — 每一次生产事故的根源。
+
+- **10,000 客户端 = 10,000+ goroutine**：默认 maxclients=10000，每个连接一个 goroutine，PubSub 还额外产生一个 reader goroutine
+- **单连接 256MB 瞬时分配**：`ReadRESP` 中 `make([]byte, bulkLen+2)`，MaxBulkLen=256MB，无单连接读取限制
+- **`client-output-buffer-limit` 只追踪累积输出**，不限制输入缓冲区
+- **无限速、无连接公平性、无 goroutine 池**
+- **阻塞操作通道泄漏风险**：`registerBlockingPop` 在 `ctx.Done()` 或 store 关闭时不会自动清理
+
+**投入**：M（1-2月）— 添加连接读缓冲区上限、goroutine 池（如协程复用）、全局内存上限、阻塞操作生命周期绑定 store context
 
 ---
 

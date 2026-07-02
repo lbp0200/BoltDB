@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -841,4 +842,52 @@ func TestRealWorldScenario(t *testing.T) {
 	// HGETALL cart:user1
 	resp, err = sendCommand(conn, reader, "HGETALL", "cart:user1")
 	assert.NoError(t, err)
+}
+
+// TestMaxInputBytesCutsConnection verifies that when MaxInputBytes is set,
+// a client connection is cut after exceeding the cumulative input limit.
+func TestMaxInputBytesCutsConnection(t *testing.T) {
+	t.Parallel()
+	db, err := store.NewBadgerStore(t.TempDir())
+	assert.NoError(t, err)
+	defer db.CloseWithTimeout(store.CloseTimeout)
+
+	handler := &Handler{
+		Db:            db,
+		Ctx:           context.Background(),
+		MaxInputBytes: 100, // very low limit — 100 bytes total
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.NoError(t, err)
+	defer listener.Close()
+
+	done := make(chan error, 1)
+	go func() { done <- handler.ServeTCP(listener) }()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	assert.NoError(t, err)
+	defer conn.Close()
+
+	reader := bufio.NewReader(conn)
+
+	// Send a small SET command (~40 bytes in RESP wire format)
+	resp, err := sendCommand(conn, reader, "SET", "key1", "value1")
+	assert.NoError(t, err)
+	assert.Equal(t, "+OK\r\n", resp.String())
+
+	// Send a larger SET command (~50 bytes). Cumulative should now exceed 100.
+	_, err = sendCommand(conn, reader, "SET", "key2", "value2345678901234567890")
+	// After exceeding the limit, ReadRESP should fail → sendCommand returns error
+	if err == nil {
+		// The limit might be hit mid-write or on the *next* read boundary;
+		// try one more command to verify the connection is unusable.
+		_, err = sendCommand(conn, reader, "PING")
+	}
+	assert.Error(t, err)
+
+	// Shutdown the handler
+	listener.Close()
+	handler.Shutdown()
+	<-done
 }

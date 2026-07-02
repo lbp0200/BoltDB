@@ -3,6 +3,7 @@ package replication
 import (
 	"testing"
 
+	"github.com/lbp0200/BoltDB/internal/store"
 	"github.com/zeebo/assert"
 )
 
@@ -166,4 +167,29 @@ func TestReplicationManager_LoadRDB(t *testing.T) {
 
 	err := rm.LoadRDB([]byte{})
 	assert.Error(t, err)
+}
+
+// TestReplicationManager_PersistedReplId verifies that NewReplicationManager
+// loads the persisted replId and masterReplOffset from the store (F1a/F1b).
+func TestReplicationManager_PersistedReplId(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Phase 1: create store with metadata, close
+	s1, err := store.NewBadgerStore(dir)
+	assert.NoError(t, err)
+	err = s1.SaveReplID("persisted-repl-id")
+	assert.NoError(t, err)
+	err = s1.SaveMasterReplOffset(12345)
+	assert.NoError(t, err)
+	assert.NoError(t, s1.Close())
+
+	// Phase 2: create new rm from same store, verify it loads persisted values
+	s2, err := store.NewBadgerStore(dir)
+	assert.NoError(t, err)
+	defer s2.Close()
+	rm := NewReplicationManager(s2)
+	assert.Equal(t, "persisted-repl-id", rm.GetReplicationID())
+	assert.Equal(t, int64(12345), rm.GetMasterReplOffset())
+	rm.Stop()
 }

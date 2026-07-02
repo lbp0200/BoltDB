@@ -141,6 +141,9 @@ func (s *BotreonStore) BZMPopBlocking(ctx context.Context, keys []string, modifi
 	case <-ctx.Done():
 		s.unregisterBlockingZPop(resultCh, keys)
 		return "", nil, nil
+	case <-s.closeCh:
+		s.unregisterBlockingZPop(resultCh, keys)
+		return "", nil, nil
 	}
 }
 
@@ -192,6 +195,9 @@ func (s *BotreonStore) BZPopMaxBlocking(ctx context.Context, keys []string, time
 	case <-ctx.Done():
 		s.unregisterBlockingZPop(resultCh, keys)
 		return "", nil, nil
+	case <-s.closeCh:
+		s.unregisterBlockingZPop(resultCh, keys)
+		return "", nil, nil
 	}
 }
 
@@ -241,6 +247,9 @@ func (s *BotreonStore) BZPopMinBlocking(ctx context.Context, keys []string, time
 		s.unregisterBlockingZPop(resultCh, keys)
 		return "", nil, nil
 	case <-ctx.Done():
+		s.unregisterBlockingZPop(resultCh, keys)
+		return "", nil, nil
+	case <-s.closeCh:
 		s.unregisterBlockingZPop(resultCh, keys)
 		return "", nil, nil
 	}
