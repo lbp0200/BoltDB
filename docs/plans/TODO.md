@@ -17,7 +17,8 @@
 | 槽位视图同步 | ✅ 已实现（epoch 裁决） |
 | Redis 8 命令补齐 | 5/5 批次完成（UNLINK/ZINTERCARD/BITFIELD_RO/BZMPOP + Stream + TimeSeries + Admin + DEBUG） |
 | 全命令准确性测试 | 239/239 命令已覆盖（`TestCommandCompleteness`，16 个数据类型组） |
-| Mutation Testing | 5,201 变异体，100% efficacy，82.3% mcover |
+| Mutation Testing | 5,201 变异体，100% efficacy，82.3% mcover → Store 90.17%（target 90% ✅） |
+| 新增 mutation kill 测试 | ~390 个（2026-07-02），远程全部通过 |
 
 ---
 
@@ -60,25 +61,35 @@
 - [x] 发现并修复 XTRIM panic（`stream.go:1018` 空切片越界）
 - [x] 远程验证通过：9/9 组 PASS
 
-### 3. mcover 提升至 90% 🟡
+### 3. mcover 提升至 90% ✅
 
-**投入**：已完成本轮　**收益**：中——防御性提升
+**投入**：已完成两轮　**收益**：中——防御性提升
 
-**已完成：**
+**第一轮已完成：**
 - [x] 新建 `internal/server/handler_mutation_kill2_test.go`（35 个测试）— handler 层变异体
 - [x] 新建 `internal/store/base_mutation_kill_test.go`（15 个测试）— store 层 Del/NextStartup/FlushDB 变异体
 - [x] 共 50 个新测试，覆盖 ~120 个 NOT COVERED 变异体
 - [x] 远程测试通过：50/50 PASS，无回归
+- [x] 新建 `internal/server/info_handler_core_mutation_kill_test.go`（48 个测试）— info.go + handler_core.go 变异体
+- [x] 新建 `internal/store/base_mutation_kill3_test.go`（66 个测试）— Del JSON/TimeSeries、Rename 全类型覆盖
+- [x] 新建 `internal/server/zset_mutation_kill_test.go`（~80 个测试）— ZSET 全参数验证分支
+- [x] 新建 `internal/server/stream_ts_mutation_kill_test.go`（~60 个测试）— Stream + TimeSeries 全参数验证分支
 
-**Mutation Testing 结果（2026-06-30）：**
-- Server 包：Killed 1,671 / Lived 818 / Not Covered 825
-- Store 包：需重跑验证（新增 15 个测试应减少 lived mutants）
+**第二轮已完成（2026-07-02）：**
+- [x] 新建 `internal/store/mutation_kill_mcover90_test.go`（~80 个测试）— sorted_set decodeDataValue/memberInLexRange、list.go LPos、define.go extractRawKey、string.go/Expire/PExpire/RenameNX/Scan/ObjectEncoding 等
+- [x] 修复 `internal/store/mutation_kill_phase9_test.go` 编译错误（TSExists 不存在 + uint64 类型不匹配）
+- [x] 远程测试通过：`-race -short` 全 PASS
 
-**当前状态**：本轮变异体杀死已完成。如需继续提升 mcover，下一步：
-- 重跑 mutation testing 确认 lived 降幅
-- 补充 `info.go`（14 NOT COVERED）和 `handler_core.go`（18 NOT COVERED）的变异体
+**Mutation Testing 最终结果（2026-07-02）：**
+- Store 包：Runnable 3,110 / Not Covered 339 / **mcover 90.17%**（目标 90% ✅）
+- Efficacy: 100%（所有 runnable 变异体均已杀死）
+- 新增 ~80 个测试（1 个新测试文件 + 1 个修复文件）
 
-### 4. 长时间 Soak 稳定性 🟡
+**当前状态**：mcover 达标 90%。如需继续提升：
+- 针对 store 包剩余 339 NOT COVERED（stream.go 93、sorted_set.go 59、define.go 38、base.go 37、string.go 32）补充测试
+- 剩余 NOT COVERED 多为 corruption paths、blocking operations、dead code，测试难度较高
+
+### 4. 长时间 Soak 稳定性 ✅
 
 **投入**：S（命令已就绪）　**收益**：中——验证 24h+ 运行稳定性
 
@@ -99,6 +110,7 @@ SOAK_DURATION=1h SOAK_REPL_DURATION=1h bash scripts/run_nightly_soak.sh
 - [x] `TestSoakReplication`：主从复制 + 生命周期断连重连
 - [x] `TestClusterSoak`：集群多节点 + 槽位混沌
 - [x] 报告输出到 `/tmp/soak-artifacts/`（Markdown + JSON）
+- [x] 2.16 上运行超过 24h（PID 2057040，自 2026-06-30 起，CPU 102%，内存稳定）
 
 ---
 
@@ -116,7 +128,7 @@ _暂无已知问题。_
 | 完全线性化 FULLRESYNC | 等价于上一条。当前保证：无丢失写、无结构性损坏 |
 | EVAL / SCRIPT (Lua) | Lua 沙箱逃逸风险 + 维护成本，非定位 |
 | Lock Sharding / Lock-Free | 复杂度指数级，有明确瓶颈时再碰 |
-| ACL / FUNCTION / MIGRATE | FUNCTION 随 Lua 排除；MIGRATE 不适用（嵌入式）；ACL 已在 Batch 4 中实现 |
+| ACL (partial) / FUNCTION / MIGRATE | FUNCTION 随 Lua 排除；MIGRATE 不适用（嵌入式）；ACL 仅实现 CAT/LIST/USERS/WHOAMI/HELP，SETUSER/DELUSER 未实现 |
 
 ---
 
