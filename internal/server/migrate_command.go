@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lbp0200/BoltDB/internal/logger"
 	"github.com/lbp0200/BoltDB/internal/proto"
 )
 
@@ -121,7 +122,10 @@ func (h *Handler) handleMIGRATE(state *connState, args [][]byte, remoteAddr stri
 	if !copyKey {
 		for _, migrateKey := range migratedKeys {
 			h.markDirtyKeys(state, migrateKey)
-			_, _ = h.Db.Del(migrateKey)
+			if _, delErr := h.Db.Del(migrateKey); delErr != nil {
+				logger.Logger.Warn().Err(delErr).Str("key", migrateKey).
+					Msg("MIGRATE: failed to delete local key after successful migration")
+			}
 		}
 	}
 	return proto.OK

@@ -10,7 +10,7 @@ import (
 )
 
 // Version 版本号，通过 ldflags 注入
-var Version = "8.31.0"
+var Version = "8.33.0"
 
 // GitCommitID Git commit ID，通过 ldflags 注入
 var GitCommitID = ""
@@ -129,7 +129,7 @@ func (h *Handler) buildInfoResponse(section string) string {
 		builder.WriteString("# Clients\n")
 		builder.WriteString("connected_clients:" + strconv.Itoa(h.ActiveClientCount()) + "\n")
 		builder.WriteString("cluster_connections:0\n")
-		builder.WriteString("maxclients:10000\n")
+		builder.WriteString("maxclients:" + strconv.Itoa(h.GetMaxClients()) + "\n")
 		builder.WriteString("blocked_clients:" + strconv.Itoa(h.BlockedClientCount()) + "\n")
 		builder.WriteString("tracking_clients:0\n")
 		builder.WriteString("max_blocking_keys:0\n")

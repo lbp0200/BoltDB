@@ -2,6 +2,7 @@ package replication
 
 import (
 	"bufio"
+	"crypto/tls"
 	"fmt"
 	"math"
 	"net"
@@ -176,7 +177,7 @@ func (sr *SlaveReconnector) reconnectLoop() {
 func (sr *SlaveReconnector) tryReplicate() error {
 	sr.state.Store(int32(SlaveConnecting))
 
-	masterConn, err := dialMaster(sr.masterAddr)
+	masterConn, err := dialMaster(sr.masterAddr, sr.rm.GetTLSConfig())
 	if err != nil {
 		return fmt.Errorf("connect to master failed: %w", err)
 	}
@@ -373,8 +374,14 @@ func (sr *SlaveReconnector) writeRespToMaster(mc *MasterConnection, data []byte)
 	return mc.Writer.Flush()
 }
 
-func dialMaster(addr string) (*MasterConnection, error) {
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+func dialMaster(addr string, tlsCfg *tls.Config) (*MasterConnection, error) {
+	var conn net.Conn
+	var err error
+	if tlsCfg != nil {
+		conn, err = tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", addr, tlsCfg)
+	} else {
+		conn, err = net.DialTimeout("tcp", addr, 5*time.Second)
+	}
 	if err != nil {
 		return nil, err
 	}

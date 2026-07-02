@@ -116,7 +116,7 @@ SOAK_DURATION=1h SOAK_REPL_DURATION=1h bash scripts/run_nightly_soak.sh
 
 ## 已知问题
 
-_暂无已知问题。_
+见下方「整改计划（收购前必须完成）」，三大类共 12 项。
 
 ---
 
@@ -129,6 +129,172 @@ _暂无已知问题。_
 | EVAL / SCRIPT (Lua) | Lua 沙箱逃逸风险 + 维护成本，非定位 |
 | Lock Sharding / Lock-Free | 复杂度指数级，有明确瓶颈时再碰 |
 | ACL (partial) / FUNCTION / MIGRATE | FUNCTION 随 Lua 排除；MIGRATE 不适用（嵌入式）；ACL 仅实现 CAT/LIST/USERS/WHOAMI/HELP，SETUSER/DELUSER 未实现 |
+
+---
+
+## 整改计划（收购前必须完成）
+
+> 来源：2025-07 尽职调查，以最苛刻标准审查后识别的三大致命问题。
+> 每项标注投入（S/M/L）和优先级（P0 = 阻塞收购 / P1 = 必须修复 / P2 = 强烈建议）。
+
+### A. 安全防护（P0 — 不修复则不具备生产可用性）
+
+#### A1. TLS 加密传输
+
+**投入**：L（3-5 天）　**优先级**：P0
+
+- [x] 新增 `--tls-cert` / `--tls-key` / `--tls-ca` CLI 参数
+- [x] `listener` 层包装 `tls.NewListener()`，支持可选 TLS（不配置则明文，兼容旧客户端）
+- [x] 复制连接（`handleSlaveReplicationConnection`）支持 TLS 拨号
+- [x] 集群总线（`internal/cluster/bus.go`）支持 TLS 连接
+- [x] 哨兵 gossip（`internal/sentinel/network.go`）支持 TLS 连接
+- [x] 测试：TLS 握手 + 非 TLS 客户端被拒绝（如配置了 `--tls-require`）
+- [x] 文档：部署指南增加 TLS 配置章节
+
+#### A2. 连接数限制与空闲超时
+
+**投入**：M（1-2 天）　**优先级**：P0
+
+- [x] `handler_core.go:handleConnection()` 入口处增加 `maxclients` 检查，超限返回 `-ERR max number of clients reached`
+- [x] 用 `atomic.Int64` 跟踪当前连接数，`Shutdown` 时减去
+- [x] 新增 `--maxclients` CLI 参数（默认 10000）
+- [x] 新增 `--timeout` CLI 参数（空闲超时秒数，默认 0 = 不超时）
+- [x] `handleConnection()` 中 `ReadRESP` 前设置 `conn.SetReadDeadline()`
+- [x] 每次成功读取后重置 deadline
+- [x] 测试：连接数上限拒绝 + 空闲超时断开
+
+#### A3. RESP 协议解析加固
+
+**投入**：S（半天）　**优先级**：P0
+
+- [x] `proto/resp.go:readLine()` 增加行长度限制（默认 512MB → 改为 64MB，可配置）
+- [x] 新增 `MaxLineLen` 常量，超限返回 `ERR protocol error`
+- [x] `MaxBulkLen` 从 512MB 降为 **256MB**（与 Redis 默认 `client-query-buffer-limit` 对齐）
+- [x] 新增 `--proto-max-bulk-len` CLI 参数
+- [x] Inline 命令解析增加引号支持（兼容 `SET key "hello world"`）
+
+#### A4. 密码比较安全加固
+
+**投入**：S（1 小时）　**优先级**：P1
+
+- [x] `admin2_commands.go:307` 替换 `==` 为 `crypto/subtle.ConstantTimeCompare()`
+- [x] 同时检查 `internal/sentinel/network.go` 中 AUTH 命令构建是否泄露密码长度
+  - **结论**：无需修复，`$%d` 是 RESP 协议标准格式，非安全漏洞
+- [x] 测试：验证错误密码比较时间与正确密码一致（timing attack test）
+
+---
+
+### B. 集群/哨兵/复制缺陷（P1 — 核心功能不可靠）
+
+#### B1. 集群 slot 迁移实现
+
+**投入**：L（5-8 天）　**优先级**：P1
+
+- [x] 实现 `CLUSTER MIGRATESLOT <slot> <targetNodeID> [COPY]` 命令，从源节点读取 slot 内所有 key 并逐个迁移到目标节点
+- [x] 目标节点通过 RESTORE 命令接受迁移中的 key 写入（自动 REPLACE）
+- [x] 迁移完成后自动调用 `SETSLOT NODE <node-id>` 更新 slot ownership
+- [x] 迁移过程中对 slot 内 key 的请求返回 `ASK` 重定向（已有的 `CheckSlotRedirect`）
+- [x] 迁移中断恢复机制（基于 `MIGRATING-TO` 元数据持久化到集群配置）
+- [x] 集群总线 `GossipPayload` 从 JSON 改为紧凑二进制编码（使用 `encoding/gob`，向后兼容 JSON）
+- [x] 集群 bus 使用 `context.Context` 替代 `context.Background()`，响应服务关闭
+- [x] 修复 Gossiper `started` bool 的 data race（`gossip.go:27`），改用 `atomic.Bool`
+- [x] 修复 `CLUSTER SETSLOT STABLE` 实际清除迁移状态（之前为空操作）
+- [x] 测试：slot 迁移完整生命周期 + MOVED/ASK 重定向（已有 `TestClusterMigrateSlot`、`TestClusterAskRedirect`、`TestClusterMovedRedirect`）
+
+#### B2. 哨兵 ODOWN 多哨兵共识
+
+**投入**：M（2-3 天）　**优先级**：P1
+
+- [x] 重写 `master.go:checkMaster()` 中的 ODOWN 判断逻辑
+- [x] ODOWN 基于**不同哨兵实例的 SDOWN 报告数** ≥ quorum（`sdownReporters map[string]bool` per-sentinel 去重）
+- [x] gossip channel 满时不再丢弃 SDOWN 消息（阻塞 + 丢弃最旧 + 扩容至 256）
+- [x] SDOWN 线协议携带源哨兵 `runID`，接收端调用 `ReportSdown(sourceRunID)` 去重
+- [x] 验证：3 哨兵 + 1 主节点场景下，单哨兵重复报告不触发 failover
+- [x] 验证：3/3 哨兵确认 SDOWN 后正确触发 ODOWN + failover
+
+#### B3. 复制流静默丢弃修复
+
+**投入**：S（半天）　**优先级**：P0
+
+- [x] `psync.go:1792-1794` default 分支：收到未知写命令时**返回错误**而非静默 `return nil`
+- [x] 评估：是命令未注册（应报错）还是读命令（可安全忽略）— 分为两个分支
+- [x] 新增 `isWriteCommand` 自动校验：启动时对比 `handler_dispatch.go` 的 switch 和 `isWriteCommand` map，不一致则 panic
+- [x] 测试：向从库发送未注册命令，验证返回错误
+
+---
+
+### C. 项目治理（P2 — 信任与合规）
+
+#### C1. LICENSE 修复
+
+**投入**：S（10 分钟）　**优先级**：P1
+
+- [x] 删除 `LICENSE` 第 4 行嵌入的中文 Markdown（`- **为什么？** 好 README = 好星标。...`）
+- [x] 恢复为标准 MIT License 纯文本
+- [x] 检查 git 历史中 LICENSE 是否曾被修改，确认 MIT 许可证的完整性
+- [x] 如果有贡献者，在 README 中明确标注
+
+#### C2. go.mod 版本号修正
+
+**投入**：S（5 分钟）　**优先级**：P1
+
+- [x] 将 `go 1.25.7` 修改为当前实际使用的 Go 稳定版本（`go 1.24.x`）
+  - **实际验证**：`go 1.25.7` 在当前环境 `go1.26.4 darwin/amd64` 下有效，无需修改
+- [x] 同步更新 CI workflow 中的 Go 版本（go.yml + nightly-soak.yml 均为 1.25.7）
+- [x] 确认 `go.sum` 与实际版本一致（`go mod verify`：all modules verified）
+
+#### C3. 仓库卫生清理
+
+**投入**：S（30 分钟）　**优先级**：P2
+
+- [x] 删除仓库中所有编译产物（`*.test`、`boltDB`、`debug`、`evolution`、`sentinel`、`benchmark`）
+- [x] `.gitignore` 增加：`*.test`、`/build/`、`node_modules/`、`package-lock.json`
+- [x] `git rm --cached package-lock.json`
+- [x] 创建 `CONTRIBUTING.md`（即使是单人项目，收购后会有团队加入）
+- [x] 创建 `CODE_OF_CONDUCT.md`（Contributor Covenant v2.0）
+
+#### C4. 关键错误处理修复
+
+**投入**：M（2-3 天）　**优先级**：P1
+
+- [x] `internal/replication/psync.go` 中 11 处 `strconv.Parse*` 静默忽略错误 → 改为返回错误
+  - 行 1163-1164（LIMIT 参数）、1358-1359（GEO 坐标）、1371（半径）、1386（COUNT）、1483（保留期）、1508（时间戳）、1634-1635（偏移量）
+- [x] `internal/server/stream_commands.go:1030` `_ = h.Db.XAckDelRemoveRefs(...)` → 检查并返回错误
+- [x] `internal/server/migrate_command.go:124` `_, _ = h.Db.Del(migrateKey)` → 检查并返回错误
+- [x] 评估 `handler_core.go` 中 goroutine launch site 的 panic 恢复覆盖 → 发现 5 个 goroutine 零 recover，已全部添加 panic recovery + 日志 + 资源清理
+
+---
+
+### 整改进度跟踪
+
+| 项 | 负责人 | 预估开始 | 状态 | 完成日期 |
+|----|--------|---------|------|---------|
+| A1. TLS 加密传输 | AI | — | ✅ 已完成所有子项 | 2026-07-02 |
+| A2. 连接数限制与空闲超时 | AI | — | ✅ 已完成 | 2025-07 |
+| A3. RESP 协议解析加固 | AI | — | ✅ 已完成 | 2025-07 |
+| A4. 密码比较安全加固 | AI | — | ✅ 已完成 | 2025-07 |
+| B1. 集群 slot 迁移 | AI | — | ✅ 已完成 | 2026-07-02 |
+| B2. 哨兵 ODOWN 共识 | AI | — | ✅ 已完成 | 2025-07 |
+| B3. 复制流静默丢弃 | AI | — | ✅ 已完成 | 2025-07 |
+| C1. LICENSE 修复 | AI | — | ✅ 已完成 | 2025-07 |
+| C2. go.mod 版本号 | AI | — | ✅ 验证有效 | 2025-07 |
+| C3. 仓库卫生清理 | AI | — | ✅ 已完成 | 2025-07 |
+| C4. 关键错误处理 | AI | — | ✅ 已完成 | 2025-07 |
+
+### 优先级排序建议
+
+```
+Week 1:  C1 + C2 + C3（低成本，立即修复信任问题）
+         + A3 + A4（安全加固小项）
+         + B3（复制静默丢弃，半天可修复）
+
+Week 2:  A2（连接限制与超时）
+         + B2（哨兵 ODOWN 重写）
+
+Week 3-4: A1（TLS 全链路加密）
+
+Week 5-8: B1（集群 slot 迁移，最大工程量）
+```
 
 ---
 

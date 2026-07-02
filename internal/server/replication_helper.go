@@ -1,8 +1,114 @@
 package server
 
+import "fmt"
+
+// allDispatchCommands 包含 handler_dispatch.go switch 中所有已注册的命令。
+// 用于启动时校验 isWriteCommand 一致性。
+var allDispatchCommands = map[string]bool{
+	"PING": true, "COMMAND": true, "QUIT": true, "ROLE": true, "ECHO": true,
+	"ACL": true, "CLIENT": true, "AUTH": true, "HELLO": true,
+	"SET": true, "GET": true, "GETDEL": true, "GETEX": true,
+	"SETEX": true, "PSETEX": true, "SETNX": true, "GETSET": true,
+	"MGET": true, "MSET": true, "MSETNX": true,
+	"INCR": true, "INCRBY": true, "DECR": true, "DECRBY": true,
+	"INCRBYFLOAT": true, "APPEND": true, "STRLEN": true,
+	"SETBIT": true, "GETBIT": true, "BITCOUNT": true, "BITOP": true,
+	"BITFIELD": true, "BITFIELD_RO": true, "BITPOS": true, "BITLEN": true,
+	"GETRANGE": true, "SETRANGE": true,
+	"UNLINK": true, "DEL": true, "EXISTS": true,
+	"PFADD": true, "PFCOUNT": true, "PFMERGE": true, "PFINFO": true,
+	"TYPE": true, "DUMP": true, "RESTORE": true, "OBJECT": true,
+	"EXPIRE": true, "EXPIREAT": true, "PEXPIRE": true, "PEXPIREAT": true,
+	"TTL": true, "PTTL": true, "EXPIRETIME": true, "PEXPIRETIME": true, "PERSIST": true,
+	"RENAME": true, "RENAMENX": true, "COPY": true, "SWAPDB": true,
+	"TOUCH": true, "SHUTDOWN": true,
+	"KEYS": true, "SCAN": true, "RANDOMKEY": true,
+	"LPUSH": true, "RPUSH": true, "LPOP": true, "RPOP": true,
+	"LLEN": true, "LINDEX": true, "LRANGE": true, "LSET": true,
+	"LTRIM": true, "LINSERT": true, "LPOS": true, "LCS": true, "LREM": true,
+	"RPOPLPUSH": true, "LMOVE": true, "BLMOVE": true,
+	"LPUSHX": true, "RPUSHX": true, "BLPOP": true, "BRPOP": true, "BRPOPLPUSH": true,
+	"HSET": true, "HGET": true, "HDEL": true, "HLEN": true,
+	"HGETALL": true, "HEXISTS": true, "HKEYS": true, "HVALS": true,
+	"HMSET": true, "HMGET": true, "HSETNX": true,
+	"HINCRBY": true, "HINCRBYFLOAT": true, "HSTRLEN": true,
+	"HRANDFIELD": true, "HRANDMEMBER": true,
+	"SADD": true, "SREM": true, "SCARD": true, "SISMEMBER": true,
+	"SMEMBERS": true, "SPOP": true, "SRANDMEMBER": true, "SMOVE": true,
+	"SINTER": true, "SUNION": true, "SDIFF": true, "SINTERSTORE": true,
+	"SMISMEMBER": true, "SINTERCARD": true, "SUNIONSTORE": true, "SDIFFSTORE": true, "SSCAN": true,
+	"HSCAN": true,
+	"ZADD":  true, "ZREM": true, "ZREMRANGEBYRANK": true, "ZREMRANGEBYSCORE": true,
+	"ZPOPMAX": true, "ZPOPMIN": true, "BZPOPMAX": true, "BZPOPMIN": true,
+	"ZCARD": true, "ZSCORE": true, "ZRANK": true, "ZREVRANK": true,
+	"ZCOUNT": true, "ZMSCORE": true,
+	"ZRANGE": true, "ZREVRANGE": true, "ZRANGEBYSCORE": true, "ZREVRANGEBYSCORE": true,
+	"ZINCRBY": true, "ZRANDMEMBER": true,
+	"LMPOP": true, "ZMPOP": true, "BZMPOP": true,
+	"ZUNIONSTORE": true, "ZINTERSTORE": true, "ZDIFFSTORE": true,
+	"ZDIFF": true, "ZINTER": true, "ZINTERCARD": true, "ZUNION": true,
+	"ZLEXCOUNT": true, "ZRANGEBYLEX": true, "ZREVRANGEBYLEX": true,
+	"ZREMRANGEBYLEX": true, "ZSCAN": true,
+	"ASKING": true, "CLUSTER": true, "CONFIG": true,
+	"REPLICAOF": true, "SLAVEOF": true, "REPLCONF": true, "INFO": true,
+	"SAVE": true, "BGSAVE": true, "LASTSAVE": true, "DBSIZE": true, "TIME": true,
+	"FLUSHDB": true, "FLUSHALL": true, "SELECT": true, "MOVE": true,
+	"WAIT": true, "SLOWLOG": true, "MEMORY": true, "MODULE": true,
+	"LOLWUT": true, "LATENCY": true, "READONLY": true, "READWRITE": true,
+	"ZRANGESTORE": true, "PUBLISH": true,
+	"SUBSCRIBE": true, "PSUBSCRIBE": true, "UNSUBSCRIBE": true,
+	"PUNSUBSCRIBE": true, "PUBSUB": true,
+	"MULTI": true, "EXEC": true, "DISCARD": true, "WATCH": true, "UNWATCH": true,
+	"GEOADD": true, "GEOPOS": true, "GEOHASH": true, "GEODIST": true,
+	"GEORADIUS": true, "GEOSEARCH": true, "GEOSEARCHSTORE": true,
+	"XADD": true, "XLEN": true, "XREAD": true, "XRANGE": true, "XREVRANGE": true,
+	"XDEL": true, "XACK": true, "XACKDEL": true, "XDELEX": true,
+	"XNACK": true, "XSETID": true, "XCFGSET": true, "XGROUP": true,
+	"XREADGROUP": true, "XCLAIM": true, "XAUTOCLAIM": true,
+	"XPENDING": true, "XINFO": true, "XTRIM": true,
+	"SORT":     true,
+	"JSON.SET": true, "JSON.GET": true, "JSON.DEL": true, "JSON.TYPE": true,
+	"JSON.MGET": true, "JSON.ARRAPPEND": true, "JSON.ARRLEN": true,
+	"JSON.OBJKEYS": true, "JSON.NUMINCRBY": true, "JSON.NUMMULTBY": true,
+	"JSON.CLEAR": true, "JSON.DEBUG": true,
+	"TS.CREATE": true, "TS.ADD": true, "TS.GET": true, "TS.RANGE": true,
+	"TS.DEL": true, "TS.INFO": true, "TS.LEN": true,
+	"TS.MGET": true, "TS.REVRANGE": true, "TS.MRANGE": true, "TS.MREVRANGE": true,
+	"TS.QUERYINDEX": true, "TS.MADD": true, "TS.INCRBY": true,
+	"TS.CREATERULE": true, "TS.DELETERULE": true,
+	"MIGRATE": true, "DEBUG": true, "MONITOR": true,
+}
+
+// ValidateWriteCommandConsistency 启动时校验 isWriteCommand 与 dispatch switch 一致性。
+// 如果 isWriteCommand 中的命令在 dispatch switch 中不存在，说明该命令永远不会被复制——panic。
+func ValidateWriteCommandConsistency() error {
+	writeCmds := getWriteCommandSet()
+	var missing []string
+	for cmd := range writeCmds {
+		if !allDispatchCommands[cmd] {
+			missing = append(missing, cmd)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("isWriteCommand contains commands not in dispatch switch (will never be replicated): %v", missing)
+	}
+	return nil
+}
+
+func init() {
+	if err := ValidateWriteCommandConsistency(); err != nil {
+		panic(err)
+	}
+}
+
 // isWriteCommand 检查是否是写命令
 func isWriteCommand(cmd string) bool {
-	writeCommands := map[string]bool{
+	return getWriteCommandSet()[cmd]
+}
+
+// getWriteCommandSet 返回写命令集合（与 isWriteCommand 相同）
+func getWriteCommandSet() map[string]bool {
+	return map[string]bool{
 		"SET": true, "SETEX": true, "PSETEX": true, "SETNX": true,
 		"GETSET": true, "MSET": true, "MSETNX": true,
 		"INCR": true, "INCRBY": true, "DECR": true, "DECRBY": true,
@@ -28,32 +134,18 @@ func isWriteCommand(cmd string) bool {
 		"ZUNIONSTORE": true, "ZINTERSTORE": true, "ZDIFFSTORE": true,
 		"ZRANGESTORE": true,
 		"PFADD":       true, "PFMERGE": true,
-		// GEO commands
 		"GEOADD": true, "GEOSEARCHSTORE": true,
-		// Stream commands
 		"XADD": true, "XDEL": true, "XACK": true,
 		"XCLAIM": true, "XGROUP": true, "XTRIM": true,
 		"XACKDEL": true, "XDELEX": true, "XNACK": true, "XSETID": true, "XCFGSET": true,
-		// Database management
 		"SWAPDB": true, "MOVE": true,
-		// Pub/Sub
-		"PUBLISH": true,
-		// JSON commands
+		"PUBLISH":  true,
 		"JSON.SET": true, "JSON.DEL": true, "JSON.ARRAPPEND": true,
 		"JSON.NUMINCRBY": true, "JSON.NUMMULTBY": true, "JSON.CLEAR": true,
-		// TimeSeries commands
 		"TS.CREATE": true, "TS.ADD": true, "TS.DEL": true,
 		"TS.MADD": true, "TS.INCRBY": true, "TS.CREATERULE": true, "TS.DELETERULE": true,
-		// P1.5 — 修复复制数据丢失（2026-06-15）
-		"RESTORE":    true,
-		"MIGRATE":    true,
-		"FLUSHDB":    true,
-		"FLUSHALL":   true,
-		"XAUTOCLAIM": true,
-		"SORT":       true,
-		// 2026-06-11: BZPOPMAX/BZPOPMIN 修复 — 阻塞式排序集合弹出未复制
-		"BZPOPMAX": true,
-		"BZPOPMIN": true,
+		"RESTORE": true, "MIGRATE": true, "FLUSHDB": true, "FLUSHALL": true,
+		"XAUTOCLAIM": true, "SORT": true,
+		"BZPOPMAX": true, "BZPOPMIN": true,
 	}
-	return writeCommands[cmd]
 }

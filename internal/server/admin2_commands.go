@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"os"
@@ -304,7 +305,7 @@ func (h *Handler) handleAUTH(state *connState, args [][]byte, remoteAddr string)
 		inputPassword = string(args[0])
 	}
 
-	if inputPassword == password {
+	if subtle.ConstantTimeCompare([]byte(inputPassword), []byte(password)) == 1 {
 		state.authenticated = true
 		return proto.NewSimpleString("OK")
 	}

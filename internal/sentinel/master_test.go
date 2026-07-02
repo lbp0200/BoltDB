@@ -39,11 +39,16 @@ func TestMasterInstance_Sdown(t *testing.T) {
 	// Initial sdown count should be 0
 	assert.Equal(t, 0, master.GetSdownCount())
 
-	// Increment sdown count
-	master.IncrSdownCount()
+	// Report sdown from different sentinels (per-sentinel dedup)
+	master.ReportSdown("sentinel-runid-1")
 	assert.Equal(t, 1, master.GetSdownCount())
 
-	master.IncrSdownCount()
+	// Same sentinel reporting again should not increase count
+	master.ReportSdown("sentinel-runid-1")
+	assert.Equal(t, 1, master.GetSdownCount())
+
+	// Different sentinel reporting should increase count
+	master.ReportSdown("sentinel-runid-2")
 	assert.Equal(t, 2, master.GetSdownCount())
 }
 
@@ -281,7 +286,7 @@ func TestMasterInstance_checkMaster_Recovery(t *testing.T) {
 
 	// Set master to sdown state first
 	master.SetState("sdown")
-	master.IncrSdownCount()
+	master.ReportSdown("sentinel-test-1")
 
 	// Call checkMaster - should recover the master
 	master.checkMaster(sentinel)

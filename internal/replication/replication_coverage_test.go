@@ -1063,7 +1063,7 @@ func TestExecuteReplicatedCommand_Unknown(t *testing.T) {
 	defer testStore.Close()
 
 	err := executeReplicatedCommand(testStore, [][]byte{[]byte("UNKNOWNCMD")})
-	assert.NoError(t, err)
+	assert.Error(t, err) // unknown commands now return error to trigger resync
 
 	err = executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("nonexistent"), []byte("dst")})
 	assert.NoError(t, err)

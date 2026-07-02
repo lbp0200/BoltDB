@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lbp0200/BoltDB/internal/logger"
@@ -23,7 +24,7 @@ type Gossiper struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
-	started bool
+	started atomic.Bool
 }
 
 // NewGossiper creates a new Gossiper for the given cluster.
@@ -40,10 +41,10 @@ func NewGossiper(ctx context.Context, c *Cluster) *Gossiper {
 
 // Start begins the gossip loop. Must be called after cluster is configured.
 func (g *Gossiper) Start() {
-	if g.started {
+	if g.started.Load() {
 		return
 	}
-	g.started = true
+	g.started.Store(true)
 	g.wg.Add(2)
 	go g.gossipLoop()
 	go g.cleanupLoop()
@@ -52,12 +53,12 @@ func (g *Gossiper) Start() {
 
 // Stop terminates the gossip loop.
 func (g *Gossiper) Stop() {
-	if !g.started {
+	if !g.started.Load() {
 		return
 	}
 	g.cancel()
 	g.wg.Wait()
-	g.started = false
+	g.started.Store(false)
 	logger.Logger.Info().Msg("cluster gossip stopped")
 }
 

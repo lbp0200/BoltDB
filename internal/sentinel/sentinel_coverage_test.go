@@ -267,11 +267,16 @@ func TestMasterInstance_SdownCount_Coverage(t *testing.T) {
 	// Initial sdown count should be 0
 	assert.Equal(t, 0, master.GetSdownCount())
 
-	// Increment sdown count
-	master.IncrSdownCount()
+	// Report sdown from different sentinels
+	master.ReportSdown("sentinel-A")
 	assert.Equal(t, 1, master.GetSdownCount())
 
-	master.IncrSdownCount()
+	// Duplicate report from same sentinel should not increase count
+	master.ReportSdown("sentinel-A")
+	assert.Equal(t, 1, master.GetSdownCount())
+
+	// Different sentinel increases count
+	master.ReportSdown("sentinel-B")
 	assert.Equal(t, 2, master.GetSdownCount())
 }
 

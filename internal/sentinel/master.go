@@ -22,8 +22,8 @@ type MasterInstance struct {
 	lastPongTime time.Time
 	downAfter    time.Duration
 	stopCh       chan struct{}
-	// 主观下线计数
-	sdownCount int
+	// 每个哨兵的 SDOWN 报告追踪（key=sourceRunID，value=true 表示该哨兵认为主节点 SDOWN）
+	sdownReporters map[string]bool
 	// 已知哨兵数量
 	knownSentinelCount int
 	// 故障转移冷却
@@ -50,7 +50,7 @@ func NewMasterInstanceWithDownAfter(name, addr string, quorum int, downAfter tim
 		lastPingTime:       now,
 		lastPongTime:       now,
 		stopCh:             make(chan struct{}),
-		sdownCount:         0,
+		sdownReporters:     make(map[string]bool),
 		knownSentinelCount: 1,
 		failoverCooldown:   5 * time.Second,
 	}
@@ -84,7 +84,7 @@ func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
 
 	var shouldBroadcast bool
 	var shouldTriggerFailover bool
-	var sdownCount int
+	var sdownReporterCount int
 
 	mi.mu.Lock()
 
@@ -92,27 +92,28 @@ func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
 		// 连接失败，检查是否超过 downAfter 未收到 pong
 		if mi.state == "ok" && time.Since(mi.lastPongTime) > mi.downAfter {
 			mi.state = "sdown"
-			mi.sdownCount++
+			// 使用本哨兵的 runID 作为报告者（per-sentinel 去重）
+			mi.sdownReporters[sentinel.runID] = true
 			mi.lastPingTime = time.Now()
-			sdownCount = mi.sdownCount
+			sdownReporterCount = len(mi.sdownReporters)
 			sentinel.Metrics.RecordSdown(mi.name)
 			logger.Logger.Warn().
 				Str("master_name", mi.name).
 				Str("master_addr", mi.addr).
-				Int("sdown_count", mi.sdownCount).
+				Int("sdown_reporters", sdownReporterCount).
 				Int("quorum", mi.quorum).
 				Msg("主节点主观下线")
 
 			shouldBroadcast = true
 
-			if mi.sdownCount >= mi.quorum {
+			if sdownReporterCount >= mi.quorum {
 				sentinel.Metrics.RecordODown(mi.name)
 				shouldTriggerFailover = true
 				logger.Logger.Info().
 					Str("master_name", mi.name).
-					Int("sdown_count", mi.sdownCount).
+					Int("sdown_reporters", sdownReporterCount).
 					Int("quorum", mi.quorum).
-					Msg("主节点本地达到客观下线条件")
+					Msg("主节点本地达到客观下线条件（多哨兵共识）")
 			}
 		}
 	} else {
@@ -120,7 +121,7 @@ func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
 
 		if mi.state == "sdown" {
 			mi.state = "ok"
-			mi.sdownCount = 0
+			mi.sdownReporters = make(map[string]bool) // 清除所有报告
 			logger.Logger.Info().
 				Str("master_name", mi.name).
 				Str("master_addr", mi.addr).
@@ -131,7 +132,7 @@ func (mi *MasterInstance) checkMaster(sentinel *Sentinel) {
 	mi.mu.Unlock()
 
 	if shouldBroadcast {
-		sentinel.BroadcastSdown(mi.name, sdownCount)
+		sentinel.BroadcastSdown(mi.name, sdownReporterCount)
 	}
 
 	if shouldTriggerFailover {
@@ -248,18 +249,26 @@ func (mi *MasterInstance) GetQuorum() int {
 	return mi.quorum
 }
 
-// GetSdownCount 获取主观下线计数
+// GetSdownCount 获取当前报告主观下线的哨兵数量
 func (mi *MasterInstance) GetSdownCount() int {
 	mi.mu.RLock()
 	defer mi.mu.RUnlock()
-	return mi.sdownCount
+	return len(mi.sdownReporters)
 }
 
-// IncrSdownCount 增加主观下线计数
-func (mi *MasterInstance) IncrSdownCount() {
+// ReportSdown 记录某个哨兵报告了主观下线（per-sentinel 去重）
+func (mi *MasterInstance) ReportSdown(sourceRunID string) {
 	mi.mu.Lock()
 	defer mi.mu.Unlock()
-	mi.sdownCount++
+	mi.sdownReporters[sourceRunID] = true
+}
+
+// IncrSdownCount 已废弃：保留接口兼容，内部调用 ReportSdown
+func (mi *MasterInstance) IncrSdownCount() {
+	// 此方法已废弃，仅保留接口兼容。新代码应使用 ReportSdown。
+	mi.mu.Lock()
+	defer mi.mu.Unlock()
+	mi.sdownReporters["unknown"] = true
 }
 
 // IsDown 检查是否下线（主观或客观）
@@ -271,12 +280,12 @@ func (mi *MasterInstance) IsDown() bool {
 
 // IsODown 检查是否客观下线
 // 客观下线需要满足：
-// 1. 超过 quorum 数量的哨兵报告主观下线
+// 1. 超过 quorum 数量的不同哨兵报告主观下线（per-sentinel 去重）
 // 2. 多个哨兵之间需要达成共识
 func (mi *MasterInstance) IsODown() bool {
 	mi.mu.RLock()
 	state := mi.state
-	sdownCount := mi.sdownCount
+	sdownReporters := len(mi.sdownReporters)
 	quorum := mi.quorum
 	mi.mu.RUnlock()
 
@@ -285,14 +294,13 @@ func (mi *MasterInstance) IsODown() bool {
 		return true
 	}
 
-	// 检查是否达到quorum
-	// 实际应该从其他哨兵同步sdown状态，这里简化处理
-	if sdownCount >= quorum {
+	// 检查是否达到 quorum（不同哨兵的数量 >= quorum）
+	if sdownReporters >= quorum {
 		logger.Logger.Info().
 			Str("master_name", mi.name).
-			Int("sdown_count", sdownCount).
+			Int("sdown_reporters", sdownReporters).
 			Int("quorum", quorum).
-			Msg("主节点已达到客观下线条件")
+			Msg("主节点已达到客观下线条件（多哨兵共识）")
 		return true
 	}
 

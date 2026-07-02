@@ -95,12 +95,15 @@ func TestSentinel_AddMaster_Duplicate_Coverage(t *testing.T) {
 	assert.True(t, err != nil)
 }
 
-// TestMasterInstance_IncrSdownCount tests IncrSdownCount method
-func TestMasterInstance_IncrSdownCount_Coverage(t *testing.T) {
+// TestMasterInstance_ReportSdown tests ReportSdown method (replaces IncrSdownCount)
+func TestMasterInstance_ReportSdown_Coverage(t *testing.T) {
 	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
-	initial := master.GetSdownCount()
-	master.IncrSdownCount()
-	assert.Equal(t, initial+1, master.GetSdownCount())
+	assert.Equal(t, 0, master.GetSdownCount())
+	master.ReportSdown("sentinel-A")
+	assert.Equal(t, 1, master.GetSdownCount())
+	// Duplicate should not increase
+	master.ReportSdown("sentinel-A")
+	assert.Equal(t, 1, master.GetSdownCount())
 }

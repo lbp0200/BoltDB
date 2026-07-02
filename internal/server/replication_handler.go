@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -206,6 +207,17 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 // 3. 负责关闭连接
 func (h *Handler) handleSlaveReplicationConnection(ctx context.Context, slave *replication.SlaveConnection) {
 	defer h.wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Logger.Error().
+				Str("slave_id", slave.ID).
+				Str("slave_addr", slave.Addr).
+				Interface("panic", r).
+				Str("stack", string(debug.Stack())).
+				Msg("recovered panic in handleSlaveReplicationConnection")
+			_ = slave.Close()
+		}
+	}()
 	if ctx == nil {
 		ctx = context.Background()
 	}

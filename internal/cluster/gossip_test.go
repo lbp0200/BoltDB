@@ -15,10 +15,10 @@ func TestGossip_StartStop(t *testing.T) {
 
 	g := NewGossiper(context.Background(), cluster)
 	g.Start()
-	assert.True(t, g.started)
+	assert.True(t, g.started.Load())
 
 	g.Stop()
-	assert.False(t, g.started)
+	assert.False(t, g.started.Load())
 }
 
 func TestGossip_DoubleStart(t *testing.T) {
@@ -29,7 +29,7 @@ func TestGossip_DoubleStart(t *testing.T) {
 	g := NewGossiper(context.Background(), cluster)
 	g.Start()
 	g.Start()
-	assert.True(t, g.started)
+	assert.True(t, g.started.Load())
 	g.Stop()
 }
 
@@ -42,7 +42,7 @@ func TestGossip_DoubleStop(t *testing.T) {
 	g.Start()
 	g.Stop()
 	g.Stop()
-	assert.False(t, g.started)
+	assert.False(t, g.started.Load())
 }
 
 func TestGossip_StopWithoutStart(t *testing.T) {
@@ -52,7 +52,7 @@ func TestGossip_StopWithoutStart(t *testing.T) {
 
 	g := NewGossiper(context.Background(), cluster)
 	g.Stop()
-	assert.False(t, g.started)
+	assert.False(t, g.started.Load())
 }
 
 func TestGossip_PingNoPeers(t *testing.T) {
@@ -249,5 +249,5 @@ func TestGossip_ContextCancellation(t *testing.T) {
 	g := NewGossiper(context.Background(), cluster)
 	g.Start()
 	g.Stop()
-	assert.False(t, g.started)
+	assert.False(t, g.started.Load())
 }

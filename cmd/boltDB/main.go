@@ -14,6 +14,7 @@ import (
 	"github.com/lbp0200/BoltDB/internal/cluster"
 	"github.com/lbp0200/BoltDB/internal/logger"
 	"github.com/lbp0200/BoltDB/internal/metrics"
+	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/lbp0200/BoltDB/internal/replication"
 	"github.com/lbp0200/BoltDB/internal/server"
 	"github.com/lbp0200/BoltDB/internal/store"
@@ -30,6 +31,13 @@ var (
 	clientOutputBufferLimit = flag.Int64("client-output-buffer-limit", 0, "per-client output buffer hard limit in bytes (0 = unlimited)")
 	replBacklogSizeFlag     = flag.String("repl-backlog-size", "", "replication backlog size (e.g. 100mb, 1gb, default 1mb)")
 	metricsAddrFlag         = flag.String("metrics-addr", "", "metrics HTTP listen addr (e.g. :6338, empty = disabled)")
+	maxClientsFlag          = flag.Int("maxclients", 10000, "max number of connected clients (0 = unlimited)")
+	idleTimeoutFlag         = flag.Int("timeout", 0, "idle client timeout in seconds (0 = no timeout)")
+	protoMaxBulkLenFlag     = flag.Int64("proto-max-bulk-len", 256*1024*1024, "max bulk string length in bytes (default 256MB)")
+	tlsCertFlag             = flag.String("tls-cert", "", "path to TLS certificate PEM file (empty = no TLS)")
+	tlsKeyFlag              = flag.String("tls-key", "", "path to TLS private key PEM file (empty = no TLS)")
+	tlsCAFlag               = flag.String("tls-ca", "", "path to CA certificate PEM file for client verification (optional)")
+	tlsRequireFlag          = flag.Bool("tls-require", false, "reject non-TLS connections when TLS is enabled")
 )
 
 // getEnv returns the value of the environment variable named by key, or
@@ -48,6 +56,9 @@ func main() {
 	if *logLevelFlag != "" {
 		logger.SetLevelFromString(*logLevelFlag)
 	}
+
+	// 设置 RESP 协议限制
+	proto.SetMaxBulkLen(*protoMaxBulkLenFlag)
 
 	db, err := store.NewBotreonStore(*dbPathFlag)
 	if err != nil {
@@ -81,6 +92,29 @@ func main() {
 		logger.Logger.Info().Int64("size", size).Msg("Replication backlog size set")
 	}
 
+	// TLS 配置（提前创建，供 replication 和 listener 使用）
+	tlsCfg := &server.TLSConfig{
+		CertFile: *tlsCertFlag,
+		KeyFile:  *tlsKeyFlag,
+		CAFile:   *tlsCAFlag,
+		Require:  *tlsRequireFlag,
+	}
+	if tlsCfg.IsEnabled() {
+		logger.Logger.Info().Str("cert", *tlsCertFlag).Msg("TLS enabled")
+		if tlsCfg.CAFile != "" {
+			logger.Logger.Info().Str("ca", *tlsCAFlag).Msg("Client certificate verification enabled")
+		}
+	}
+
+	// 设置复制管理器的 TLS 配置
+	if tlsCfg.IsEnabled() {
+		tlsGoCfg, tlsErr := tlsCfg.BuildTLSConfig()
+		if tlsErr != nil {
+			logger.Logger.Fatal().Err(tlsErr).Msg("Failed to build TLS config for replication")
+		}
+		replMgr.SetTLSConfig(tlsGoCfg)
+	}
+
 	// 如果指定了 -replicaof 参数，启动从复制
 	if *replicaofFlag != "" {
 		logger.Logger.Info().Str("master", *replicaofFlag).Msg("Starting slave replication")
@@ -106,6 +140,8 @@ func main() {
 		PubSub:            pubsubMgr,
 		Ctx:               ctx,
 		OutputBufferLimit: *clientOutputBufferLimit,
+		MaxClients:        *maxClientsFlag,
+		Timeout:           time.Duration(*idleTimeoutFlag) * time.Second,
 	}
 
 	// 初始化 metrics 采集
@@ -150,11 +186,29 @@ func main() {
 		c.Gossip = cluster.NewGossiper(ctx, c)
 		// 启动 gossip 循环
 		c.Gossip.Start()
+		// 使用服务器生命周期 context 替代 context.Background()
+		c.Bus.SetContext(ctx)
+		// 传递 TLS 配置给集群总线
+		if tlsCfg.IsEnabled() {
+			tlsGoCfg, tlsErr := tlsCfg.BuildTLSConfig()
+			if tlsErr == nil {
+				c.Bus.SetTLSConfig(tlsGoCfg)
+			}
+		}
 		logger.Logger.Info().Msg("Cluster mode enabled")
 	}
 	ln, err := net.Listen("tcp", *addrFlag)
 	if err != nil {
 		logger.Logger.Fatal().Err(err).Str("addr", *addrFlag).Msg("Failed to listen")
+	}
+
+	// TLS 包装 listener（使用提前创建的 tlsCfg）
+	if tlsCfg.IsEnabled() {
+		tlsGoCfg, tlsErr := tlsCfg.BuildTLSConfig()
+		if tlsErr != nil {
+			logger.Logger.Fatal().Err(tlsErr).Msg("Failed to build TLS config")
+		}
+		ln = server.WrapListener(ln, tlsGoCfg)
 	}
 	// 获取实际监听端口
 	tcpAddr := ln.Addr().(*net.TCPAddr)

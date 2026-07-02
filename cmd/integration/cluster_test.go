@@ -1064,6 +1064,155 @@ func TestClusterAskRedirect(t *testing.T) {
 	t.Logf("ASKING + GET on node2: %s (no redirect = ASKING+IMPORTING works)", getStr)
 }
 
+// TestClusterMigrateSlot verifies the CLUSTER MIGRATESLOT command.
+// 1. Two nodes with MEET
+// 2. Write keys to a slot on node1
+// 3. Mark slot MIGRATING on node1, IMPORTING on node2
+// 4. CLUSTER MIGRATESLOT migrates all keys
+// 5. Verify keys exist on node2, deleted from node1
+// 6. Verify slot ownership transferred to node2
+func TestClusterMigrateSlot(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping MIGRATESLOT test in short mode")
+	}
+
+	node1 := startClusterNode(t)
+	defer node1.stop()
+
+	node2 := startClusterNode(t)
+	defer node2.stop()
+
+	ctx := context.Background()
+
+	// MEET from node1 to node2
+	_, err := node1.client.Do(ctx, "CLUSTER", "MEET", "127.0.0.1", fmt.Sprintf("%d", node2.port)).Result()
+	assert.NoError(t, err)
+
+	time.Sleep(2 * time.Second)
+
+	// Pick a key whose slot is on node1 (default: all slots on node1)
+	testKeys := []string{
+		fmt.Sprintf("ms:{test}:key1:%d", time.Now().UnixNano()),
+		fmt.Sprintf("ms:{test}:key2:%d", time.Now().UnixNano()),
+		fmt.Sprintf("ms:{test}:key3:%d", time.Now().UnixNano()),
+	}
+	targetSlot := cluster.Slot(testKeys[0])
+
+	// Verify all test keys are in the same slot
+	for _, k := range testKeys {
+		if cluster.Slot(k) != targetSlot {
+			t.Fatalf("key %s should be in slot %d, got %d", k, targetSlot, cluster.Slot(k))
+		}
+	}
+
+	// Verify slot is owned by node1
+	owner := node1.handler.Cluster.GetSlotOwner(targetSlot)
+	if owner == nil || owner.ID != node1.nodeID {
+		t.Fatalf("slot %d should be owned by node1, got owner=%v", targetSlot,
+			func() string {
+				if owner == nil {
+					return "nil"
+				}
+				return owner.ID
+			}())
+	}
+	t.Logf("slot %d owned by node1: %s", targetSlot, node1.nodeID)
+
+	// Write test keys on node1
+	for _, k := range testKeys {
+		err := node1.client.Set(ctx, k, "migrate-slot-value", 0).Err()
+		assert.NoError(t, err)
+	}
+
+	// Verify keys exist on node1
+	for _, k := range testKeys {
+		val, err := node1.client.Get(ctx, k).Result()
+		assert.NoError(t, err)
+		assert.Equal(t, "migrate-slot-value", val)
+	}
+
+	// Set the slot as MIGRATING on node1
+	_, err = node1.client.Do(ctx, "CLUSTER", "SETSLOT", fmt.Sprintf("%d", targetSlot), "MIGRATING", node2.nodeID).Result()
+	assert.NoError(t, err)
+
+	// Set the slot as IMPORTING on node2
+	_, err = node2.client.Do(ctx, "CLUSTER", "SETSLOT", fmt.Sprintf("%d", targetSlot), "IMPORTING", node1.nodeID).Result()
+	assert.NoError(t, err)
+
+	// Verify migration state
+	if !node1.handler.Cluster.IsMigratingSlot(targetSlot) {
+		t.Fatal("node1 should have slot as MIGRATING")
+	}
+	if !node2.handler.Cluster.IsImportingSlot(targetSlot) {
+		t.Fatal("node2 should have slot as IMPORTING")
+	}
+
+	// Execute CLUSTER MIGRATESLOT from node1
+	t.Logf("starting slot migration: slot %d → node2 (%s)", targetSlot, node2.nodeID)
+	_, err = node1.client.Do(ctx, "CLUSTER", "MIGRATESLOT", fmt.Sprintf("%d", targetSlot), node2.nodeID).Result()
+	if err != nil {
+		t.Fatalf("MIGRATESLOT failed: %v", err)
+	}
+	t.Log("MIGRATESLOT completed successfully")
+
+	// Wait for gossip to propagate ownership change
+	time.Sleep(3 * time.Second)
+
+	// Verify keys exist on node2
+	for _, k := range testKeys {
+		val, err := node2.client.Get(ctx, k).Result()
+		if err != nil {
+			t.Fatalf("key %s should exist on node2: %v", k, err)
+		}
+		assert.Equal(t, "migrate-slot-value", val)
+	}
+	t.Log("all keys verified on node2")
+
+	// Verify keys no longer exist on node1
+	for _, k := range testKeys {
+		_, err := node1.client.Get(ctx, k).Result()
+		if err == nil {
+			t.Fatalf("key %s should have been deleted from node1", k)
+		}
+	}
+	t.Log("all keys deleted from node1 (non-COPY mode)")
+
+	// Verify slot ownership transferred to node2
+	owner1 := node1.handler.Cluster.GetSlotOwner(targetSlot)
+	if owner1 == nil || owner1.ID != node2.nodeID {
+		t.Fatalf("node1 should see slot %d owned by node2, got %v", targetSlot,
+			func() string {
+				if owner1 == nil {
+					return "nil"
+				}
+				return owner1.ID
+			}())
+	}
+	t.Logf("slot %d ownership transferred to node2 (verified on node1)", targetSlot)
+
+	// Verify node2 sees itself as the owner
+	owner2 := node2.handler.Cluster.GetSlotOwner(targetSlot)
+	if owner2 == nil || owner2.ID != node2.nodeID {
+		t.Fatalf("node2 should see slot %d owned by itself, got %v", targetSlot,
+			func() string {
+				if owner2 == nil {
+					return "nil"
+				}
+				return owner2.ID
+			}())
+	}
+	t.Logf("slot %d ownership confirmed on node2", targetSlot)
+
+	// Verify migration state is cleared on both nodes
+	if node1.handler.Cluster.IsMigratingSlot(targetSlot) {
+		t.Fatal("MIGRATING state should be cleared after migration")
+	}
+	if node2.handler.Cluster.IsImportingSlot(targetSlot) {
+		t.Fatal("IMPORTING state should be cleared after migration")
+	}
+	t.Log("migration state cleared on both nodes")
+}
+
 // TestClusterFailover verifies that PFAIL reports from multiple nodes
 // trigger FAIL promotion and slot reassignment.
 func TestClusterFailover(t *testing.T) {

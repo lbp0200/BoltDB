@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"net"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,6 +68,12 @@ type Handler struct {
 	// 当连接的待发送数据超过此值时，服务器断开该连接（slow client protection）
 	// 0 表示不限制
 	OutputBufferLimit int64
+
+	// MaxClients 是最大并发连接数限制（0 = 默认 10000）
+	MaxClients int
+
+	// Timeout 是空闲连接超时时间（0 = 不超时）
+	Timeout time.Duration
 
 	// wg 跟踪所有后台 goroutine，确保关闭时完整收束
 	wg sync.WaitGroup
@@ -262,6 +269,16 @@ func (h *Handler) Shutdown() {
 
 func (h *Handler) handleConnection(conn net.Conn) {
 	defer h.wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Logger.Error().
+				Str("remote_addr", conn.RemoteAddr().String()).
+				Interface("panic", r).
+				Str("stack", string(debug.Stack())).
+				Msg("recovered panic in handleConnection")
+			_ = conn.Close()
+		}
+	}()
 	remoteAddr := conn.RemoteAddr().String()
 	logger.Logger.Debug().Str("remote_addr", remoteAddr).Msg("新连接建立")
 
@@ -314,6 +331,18 @@ func (h *Handler) handleConnection(conn net.Conn) {
 	}
 	ctx, cancel := context.WithCancel(parentCtx)
 	state := &connState{ctx: ctx, cancel: cancel}
+
+	// maxclients 检查：超限立即拒绝
+	if maxClients := h.GetMaxClients(); maxClients > 0 && h.ActiveClientCount() >= maxClients {
+		cancel()
+		logger.Logger.Warn().Str("remote_addr", remoteAddr).
+			Int("current", h.ActiveClientCount()).
+			Int("max", maxClients).
+			Msg("maxclients 超限，拒绝新连接")
+		_, _ = conn.Write([]byte("-ERR max number of clients reached\r\n"))
+		return
+	}
+
 	h.registerConnection(state, conn, remoteAddr)
 
 	defer func() {
@@ -351,6 +380,11 @@ func (h *Handler) handleConnection(conn net.Conn) {
 	}
 
 	for {
+		// 空闲超时：在 ReadRESP 前设置读取 deadline
+		if h.Timeout > 0 {
+			_ = conn.SetReadDeadline(time.Now().Add(h.Timeout))
+		}
+
 		// 尝试读取所有可用的命令（支持 Pipeline）
 		// 先尝试读取第一个命令
 		req, err := proto.ReadRESP(reader)
@@ -360,6 +394,11 @@ func (h *Handler) handleConnection(conn net.Conn) {
 			// 这可能是正常的连接关闭（如 redis-benchmark 完成测试后关闭连接）
 			logger.Logger.Debug().Str("remote_addr", remoteAddr).Err(err).Msg("读取请求失败")
 			return
+		}
+
+		// 成功读取后清除 deadline，避免命令处理期间误断开
+		if h.Timeout > 0 {
+			_ = conn.SetReadDeadline(time.Time{})
 		}
 
 		h.connsMu.Lock()

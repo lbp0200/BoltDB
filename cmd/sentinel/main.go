@@ -13,6 +13,7 @@ import (
 
 	"github.com/lbp0200/BoltDB/internal/logger"
 	"github.com/lbp0200/BoltDB/internal/sentinel"
+	"github.com/lbp0200/BoltDB/internal/server"
 )
 
 var (
@@ -21,6 +22,9 @@ var (
 	gossipPortFlag = flag.Int("gossip-port", 0, "sentinel gossip port (0 = random)")
 	passwordFlag   = flag.String("password", "", "AUTH password for connecting to monitored masters/slaves (or BOLTDB_PASSWORD env)")
 	logLevelFlag   = flag.String("log-level", "", "log level: DEBUG, INFO, WARNING, ERROR (default: WARNING, or BOLTDB_LOG_LEVEL env)")
+	tlsCertFlag    = flag.String("tls-cert", "", "path to TLS certificate PEM file (empty = no TLS)")
+	tlsKeyFlag     = flag.String("tls-key", "", "path to TLS private key PEM file (empty = no TLS)")
+	tlsCAFlag      = flag.String("tls-ca", "", "path to CA certificate PEM file for server verification (optional)")
 )
 
 func main() {
@@ -28,6 +32,24 @@ func main() {
 
 	if *passwordFlag != "" {
 		sentinel.SetSentinelPassword(*passwordFlag)
+	}
+
+	// Initialize TLS for outbound Sentinel connections (to monitored BoltDB servers)
+	if *tlsCertFlag != "" && *tlsKeyFlag != "" {
+		tlsCfg := &server.TLSConfig{
+			CertFile: *tlsCertFlag,
+			KeyFile:  *tlsKeyFlag,
+			CAFile:   *tlsCAFlag,
+		}
+		tlsGoCfg, err := tlsCfg.BuildTLSConfig()
+		if err != nil {
+			logger.Logger.Fatal().Err(err).Msg("Failed to build TLS config for sentinel")
+		}
+		// For client-side (outbound) connections, use the server cert as client cert
+		// and CA cert for server verification
+		tlsGoCfg.ServerName = "bolt-server" // default, override via tls-ca
+		sentinel.SetSentinelTLSConfig(tlsGoCfg)
+		logger.Logger.Info().Msg("Sentinel TLS enabled for outbound connections")
 	}
 
 	if *logLevelFlag != "" {

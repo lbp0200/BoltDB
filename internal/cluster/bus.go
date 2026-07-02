@@ -2,7 +2,10 @@ package cluster
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"crypto/tls"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -20,6 +23,11 @@ const (
 	busDialTimeout = 5 * time.Second
 	busReadTimeout = 30 * time.Second
 	gossipSectionN = 3 // nodes to gossip per message
+
+	// gossipPayloadFormatJSON indicates JSON-encoded gossip payload.
+	gossipPayloadFormatJSON byte = 'J'
+	// gossipPayloadFormatBinary indicates gob-encoded gossip payload.
+	gossipPayloadFormatBinary byte = 'G'
 )
 
 // GossipNodeInfo is a snapshot of a node's state carried in gossip messages.
@@ -69,6 +77,7 @@ type ClusterBus struct {
 	wg       sync.WaitGroup
 	mu       sync.RWMutex
 	addr     string
+	tlsCfg   *tls.Config
 
 	lastSave time.Time
 }
@@ -85,6 +94,23 @@ func NewClusterBus(cluster *Cluster) *ClusterBus {
 
 func (b *ClusterBus) Addr() string { return b.addr }
 
+// SetContext replaces the bus's context with the server lifecycle context.
+// This makes the bus respond to server shutdown without requiring explicit Stop().
+func (b *ClusterBus) SetContext(ctx context.Context) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.cancel()
+	b.ctx, b.cancel = context.WithCancel(ctx)
+}
+
+// SetTLSConfig sets the TLS configuration for the cluster bus.
+// When set, all bus connections (listener and outbound) use TLS.
+func (b *ClusterBus) SetTLSConfig(tlsCfg *tls.Config) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.tlsCfg = tlsCfg
+}
+
 func (b *ClusterBus) Start(host string, dataPort int) error {
 	busPort := dataPort + BusPortOffset
 	addr := fmt.Sprintf("%s:%d", host, busPort)
@@ -98,6 +124,13 @@ func (b *ClusterBus) Start(host string, dataPort int) error {
 	}
 	if err != nil {
 		return fmt.Errorf("cluster bus: failed to listen on %s: %w", addr, err)
+	}
+	// Wrap with TLS if configured
+	b.mu.RLock()
+	tlsCfg := b.tlsCfg
+	b.mu.RUnlock()
+	if tlsCfg != nil {
+		ln = tls.NewListener(ln, tlsCfg)
 	}
 	b.listener = ln
 	b.addr = ln.Addr().String()
@@ -142,7 +175,17 @@ func (b *ClusterBus) acceptLoop() {
 }
 
 func (b *ClusterBus) Connect(peerAddr, peerID string) error {
-	conn, err := net.DialTimeout("tcp", peerAddr, busDialTimeout)
+	b.mu.RLock()
+	tlsCfg := b.tlsCfg
+	b.mu.RUnlock()
+
+	var conn net.Conn
+	var err error
+	if tlsCfg != nil {
+		conn, err = tls.DialWithDialer(&net.Dialer{Timeout: busDialTimeout}, "tcp", peerAddr, tlsCfg)
+	} else {
+		conn, err = net.DialTimeout("tcp", peerAddr, busDialTimeout)
+	}
 	if err != nil {
 		return fmt.Errorf("cluster bus: connect to %s: %w", peerAddr, err)
 	}
@@ -203,22 +246,25 @@ func (b *ClusterBus) handleBusConn(conn net.Conn, knownPeerID string) {
 
 		cmd := string(args[0])
 
-		var payload GossipPayload
+		var payload *GossipPayload
 		if len(args) >= 3 {
-			_ = json.Unmarshal(args[2], &payload)
+			payload, _ = unmarshalGossipPayload(args[2])
+		}
+		if payload == nil {
+			payload = &GossipPayload{}
 		}
 
 		switch cmd {
 		case "PING":
 			b.handlePING(senderID)
-			dirty := b.ApplyGossipPayloadFrom(senderID, &payload)
+			dirty := b.ApplyGossipPayloadFrom(senderID, payload)
 			// Respond with PONG + our payload
 			respPayload := b.BuildGossipPayload()
 			_ = writeBusMsg(conn, "PONG", b.cluster.Myself.ID, respPayload)
 			b.saveIfDirty(dirty)
 		case "PONG":
 			b.handlePONG(senderID)
-			dirty := b.ApplyGossipPayloadFrom(senderID, &payload)
+			dirty := b.ApplyGossipPayloadFrom(senderID, payload)
 			b.saveIfDirty(dirty)
 		}
 	}
@@ -410,6 +456,7 @@ func (b *ClusterBus) ApplyGossipPayloadFrom(reporterID string, payload *GossipPa
 								Str("slotOwner", entry.NodeID).
 								Uint32("slot", slot).
 								Msg("cluster gossip: slot owner updated via gossip")
+
 						}
 					}
 				}
@@ -417,6 +464,33 @@ func (b *ClusterBus) ApplyGossipPayloadFrom(reporterID string, payload *GossipPa
 		}
 	}
 
+	// Clear migration state for slots that are now owned by the current node
+	// via gossip. This handles IMPORTING on the target node and stale MIGRATING on the source.
+	for _, entry := range payload.SlotOwners {
+		if entry.NodeID == b.cluster.Myself.ID {
+			for _, r := range entry.Ranges {
+				for slot := r.Start; slot <= r.End; slot++ {
+					if b.cluster.Myself.IsImportingSlot(slot) {
+						b.cluster.Myself.ClearSlotMigration(slot)
+						logger.Logger.Debug().
+							Uint32("slot", slot).
+							Msg("cluster gossip: cleared IMPORTING on slot now owned by self")
+					}
+				}
+			}
+		} else {
+			for _, r := range entry.Ranges {
+				for slot := r.Start; slot <= r.End; slot++ {
+					if b.cluster.Myself.IsMigratingSlot(slot) {
+						b.cluster.Myself.ClearSlotMigration(slot)
+						logger.Logger.Debug().
+							Uint32("slot", slot).
+							Msg("cluster gossip: cleared MIGRATING on slot no longer owned by self")
+					}
+				}
+			}
+		}
+	}
 	// Mark PFAIL nodes with reporter tracking
 	if reporterID != "" {
 		for _, pfailID := range payload.PFail {
@@ -519,16 +593,77 @@ func (b *ClusterBus) Disconnect(peerID string) {
 	}
 }
 
+func init() {
+	// Register types for gob encoding
+	gob.Register(GossipPayload{})
+	gob.Register(GossipNodeInfo{})
+	gob.Register(SlotOwnerEntry{})
+	gob.Register(SlotOwnerRange{})
+}
+
+// marshalGossipPayloadBinary encodes a GossipPayload using gob binary encoding.
+// Returns the format version byte + gob data.
+func marshalGossipPayloadBinary(payload *GossipPayload) ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte(gossipPayloadFormatBinary)
+	enc := gob.NewEncoder(&buf)
+	if err := enc.Encode(payload); err != nil {
+		return nil, fmt.Errorf("gob encode gossip payload: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+// unmarshalGossipPayload decodes a gossip payload from either JSON or gob format.
+// The first byte indicates the format: 'J' = JSON, 'G' = gob binary.
+func unmarshalGossipPayload(data []byte) (*GossipPayload, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("empty gossip payload")
+	}
+
+	var payload GossipPayload
+
+	switch data[0] {
+	case gossipPayloadFormatJSON:
+		if err := json.Unmarshal(data[1:], &payload); err != nil {
+			return nil, fmt.Errorf("json unmarshal gossip payload: %w", err)
+		}
+	case gossipPayloadFormatBinary:
+		buf := bytes.NewReader(data[1:])
+		dec := gob.NewDecoder(buf)
+		if err := dec.Decode(&payload); err != nil {
+			return nil, fmt.Errorf("gob decode gossip payload: %w", err)
+		}
+	default:
+		// 兼容旧版本：没有格式标识的纯 JSON
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return nil, fmt.Errorf("unmarshal gossip payload: %w", err)
+		}
+	}
+
+	return &payload, nil
+}
+
 func writeBusMsg(conn net.Conn, cmd, nodeID string, payload *GossipPayload) error {
 	if payload == nil {
 		msg := fmt.Sprintf("*2\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(cmd), cmd, len(nodeID), nodeID)
 		_, err := conn.Write([]byte(msg))
 		return err
 	}
-	data, err := json.Marshal(payload)
+
+	data, err := marshalGossipPayloadBinary(payload)
 	if err != nil {
-		return fmt.Errorf("marshal gossip payload: %w", err)
+		// Fall back to JSON on gob error
+		data, err = json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("marshal gossip payload: %w", err)
+		}
+		// Add JSON format marker
+		jsonData := make([]byte, 1+len(data))
+		jsonData[0] = gossipPayloadFormatJSON
+		copy(jsonData[1:], data)
+		data = jsonData
 	}
+
 	msg := fmt.Sprintf("*3\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
 		len(cmd), cmd, len(nodeID), nodeID, len(data), string(data))
 	_, err = conn.Write([]byte(msg))

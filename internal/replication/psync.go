@@ -1160,8 +1160,15 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 					if i+2 >= len(args) {
 						return nil
 					}
-					limitOffset, _ = strconv.ParseInt(string(args[i+1]), 10, 64)
-					limitCount, _ = strconv.ParseInt(string(args[i+2]), 10, 64)
+					var parseErr error
+					limitOffset, parseErr = strconv.ParseInt(string(args[i+1]), 10, 64)
+					if parseErr != nil {
+						return fmt.Errorf("invalid LIMIT offset %q: %w", args[i+1], parseErr)
+					}
+					limitCount, parseErr = strconv.ParseInt(string(args[i+2]), 10, 64)
+					if parseErr != nil {
+						return fmt.Errorf("invalid LIMIT count %q: %w", args[i+2], parseErr)
+					}
 					i += 3
 				default:
 					i++
@@ -1355,8 +1362,15 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 				if i+2 >= len(args) {
 					return nil
 				}
-				centerLon, _ = strconv.ParseFloat(string(args[i+1]), 64)
-				centerLat, _ = strconv.ParseFloat(string(args[i+2]), 64)
+				var parseErr error
+				centerLon, parseErr = strconv.ParseFloat(string(args[i+1]), 64)
+				if parseErr != nil {
+					return fmt.Errorf("invalid GEO FROMLONLAT longitude %q: %w", args[i+1], parseErr)
+				}
+				centerLat, parseErr = strconv.ParseFloat(string(args[i+2]), 64)
+				if parseErr != nil {
+					return fmt.Errorf("invalid GEO FROMLONLAT latitude %q: %w", args[i+2], parseErr)
+				}
 				i += 3
 			} else {
 				return nil
@@ -1368,7 +1382,11 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 				if i+2 >= len(args) {
 					return nil
 				}
-				radius, _ = strconv.ParseFloat(string(args[i+1]), 64)
+				var parseErr error
+				radius, parseErr = strconv.ParseFloat(string(args[i+1]), 64)
+				if parseErr != nil {
+					return fmt.Errorf("invalid GEO BYRADIUS radius %q: %w", args[i+1], parseErr)
+				}
 				unit = string(args[i+2])
 				i += 3
 			} else {
@@ -1383,7 +1401,11 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 					if i+1 >= len(args) {
 						return nil
 					}
-					count, _ = strconv.Atoi(string(args[i+1]))
+					var parseErr error
+					count, parseErr = strconv.Atoi(string(args[i+1]))
+					if parseErr != nil {
+						return fmt.Errorf("invalid GEO COUNT %q: %w", args[i+1], parseErr)
+					}
 					i += 2
 				case "STOREDIST":
 					storeDist = true
@@ -1480,7 +1502,11 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 				case "RETENTION":
 					i++
 					if i < len(args) {
-						opts.Retention, _ = strconv.ParseInt(string(args[i]), 10, 64)
+						var parseErr error
+						opts.Retention, parseErr = strconv.ParseInt(string(args[i]), 10, 64)
+						if parseErr != nil {
+							return fmt.Errorf("invalid TS.CREATE RETENTION %q: %w", args[i], parseErr)
+						}
 					}
 				case "ENCODING":
 					i++
@@ -1505,9 +1531,16 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			if string(args[2]) == "*" {
 				timestamp = time.Now().UnixNano() / int64(time.Millisecond)
 			} else {
-				timestamp, _ = strconv.ParseInt(string(args[2]), 10, 64)
+				var parseErr error
+				timestamp, parseErr = strconv.ParseInt(string(args[2]), 10, 64)
+				if parseErr != nil {
+					return fmt.Errorf("invalid TS.ADD timestamp %q: %w", args[2], parseErr)
+				}
 			}
-			value, _ := strconv.ParseFloat(string(args[3]), 64)
+			value, valueErr := strconv.ParseFloat(string(args[3]), 64)
+			if valueErr != nil {
+				return fmt.Errorf("invalid TS.ADD value %q: %w", args[3], valueErr)
+			}
 			opts := store.TSAddOptions{}
 			if len(args) > 4 {
 				opt := strings.ToUpper(string(args[4]))
@@ -1631,8 +1664,15 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 				}
 			case "LIMIT":
 				if i+2 < len(args) {
-					offset, _ = strconv.ParseInt(string(args[i+1]), 10, 64)
-					count, _ = strconv.ParseInt(string(args[i+2]), 10, 64)
+					var parseErr error
+					offset, parseErr = strconv.ParseInt(string(args[i+1]), 10, 64)
+					if parseErr != nil {
+						return fmt.Errorf("invalid SORT LIMIT offset %q: %w", args[i+1], parseErr)
+					}
+					count, parseErr = strconv.ParseInt(string(args[i+2]), 10, 64)
+					if parseErr != nil {
+						return fmt.Errorf("invalid SORT LIMIT count %q: %w", args[i+2], parseErr)
+					}
 					i += 3
 				} else {
 					i++
@@ -1790,8 +1830,9 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 		}
 
 	default:
-		logger.Logger.Debug().Str("cmd", cmd).Msg("收到未处理的复制命令")
-		return nil
+		logger.Logger.Warn().Str("cmd", cmd).
+			Msg("收到未处理的复制命令，触发重新同步")
+		return fmt.Errorf("unknown replicated command: %s", cmd)
 	}
 	return nil
 }

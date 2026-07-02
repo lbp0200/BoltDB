@@ -395,6 +395,28 @@ func (n *Node) ClearSlotMigration(slot uint32) {
 	delete(n.migratingSlots, slot)
 }
 
+// GetMigratingSlotsMap 返回所有正在迁移的 slot → 目标地址 映射的快照
+func (n *Node) GetMigratingSlotsMap() map[uint32]string {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	result := make(map[uint32]string, len(n.migratingSlots))
+	for k, v := range n.migratingSlots {
+		result[k] = v
+	}
+	return result
+}
+
+// GetImportingSlotsMap 返回所有正在导入的 slot → 源地址 映射的快照
+func (n *Node) GetImportingSlotsMap() map[uint32]string {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	result := make(map[uint32]string, len(n.importingSlots))
+	for k, v := range n.importingSlots {
+		result[k] = v
+	}
+	return result
+}
+
 // GetImportingSlots 获取所有正在导入的槽信息
 func (n *Node) GetImportingSlots() []ImportingSlotInfo {
 	n.mu.RLock()

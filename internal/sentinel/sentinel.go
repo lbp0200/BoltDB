@@ -60,7 +60,7 @@ func NewSentinelWithDataDir(quorum int, downAfter time.Duration, dataDir string)
 		runID:        generateRunID(),
 		configEpoch:  0,
 		stopCh:       make(chan struct{}),
-		gossipCh:     make(chan *GossipMessage, 100),
+		gossipCh:     make(chan *GossipMessage, 256),
 		Metrics:      NewMetrics(),
 	}
 	if dataDir != "" {
@@ -251,11 +251,29 @@ func (s *Sentinel) BroadcastSdown(masterName string, sdownCount int) {
 		Timestamp:    time.Now(),
 	}
 
-	// 发送到gossip处理器
+	// 发送到gossip处理器（SDOWN 消息不应丢失，使用阻塞发送）
 	select {
 	case s.gossipCh <- msg:
 	default:
-		// 通道满，忽略
+		// 通道满时尝试扩容：丢弃最旧的消息以腾出空间
+		logger.Logger.Warn().
+			Str("master_name", masterName).
+			Int("channel_len", len(s.gossipCh)).
+			Int("channel_cap", cap(s.gossipCh)).
+			Msg("gossip channel 已满，丢弃最旧消息以腾出空间")
+		// 丢弃一条最旧消息
+		select {
+		case <-s.gossipCh:
+		default:
+		}
+		// 重试发送
+		select {
+		case s.gossipCh <- msg:
+		default:
+			logger.Logger.Error().
+				Str("master_name", masterName).
+				Msg("gossip channel 重发失败，SDOWN 消息丢失")
+		}
 	}
 
 	// 如果有网络gossip，也通过网络广播
@@ -293,15 +311,15 @@ func (s *Sentinel) handleSdownMessage(msg *GossipMessage) {
 		return
 	}
 
-	// 更新sdown计数（简化实现，实际应该记录每个哨兵的报告）
-	master.IncrSdownCount()
+	// 使用 per-sentinel 去重记录 SDOWN 报告
+	master.ReportSdown(msg.SourceRunID)
 
 	logger.Logger.Info().
 		Str("master_name", msg.MasterName).
 		Str("from_sentinel", msg.SourceRunID).
-		Int("sdown_count", master.GetSdownCount()).
+		Int("sdown_reporters", master.GetSdownCount()).
 		Int("quorum", master.GetQuorum()).
-		Msg("收到其他哨兵的sdown报告")
+		Msg("收到其他哨兵的sdown报告（per-sentinel 去重）")
 
 	// 检查是否达到客观下线
 	if master.IsODown() {

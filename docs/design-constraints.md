@@ -71,7 +71,7 @@ After stress stops, the system must recover within these bounds:
 
 | Property | Value |
 |----------|-------|
-| Max retry time per write | 5s total (soft), 30s absolute (hard) |
+| Max retry count per write | 60 attempts (count-based, no time budget) |
 | Retry backoff (conflict) | 1ms–50ms exponential with jitter |
 | Retry backoff (blocked) | 1ms–2s exponential with jitter |
 | Max concurrent retry goroutines | 50 (= writeSlot capacity) |
@@ -99,7 +99,7 @@ For default settings (1 MB backlog, ~200 KB/s write throughput @ 4 writers):
 | Phase | Max Duration | Backoff |
 |-------|-------------|---------|
 | Initial reconnect | 1s | Immediate retry |
-| Subsequent retries | 32s cap | Exponential: 1s, 2s, 4s, 8s, 16s, 32s, … |
+| Subsequent retries | 60s cap | Exponential: 1s, 2s, 4s, 8s, 16s, 32s, 60s, … |
 | FULLRESYNC | unbounded | Depends on DB size |
 
 ### 4.3 Convergence After Partition
@@ -118,10 +118,13 @@ After partition ends:
 ```
 1. close listener       → ServeTCP returns
 2. replMgr.Stop()       → close slave TCP connections → unblock reads
-3. cancel()             → cancel root context → all goroutines see Done
-4. handler.Shutdown()   → close all client TCP conns + wg.Wait()
-5. backupMgr.Wait()     → wait for in-flight BGSAVE goroutine
-6. db.Close()           → deferred — guaranteed: 0 goroutines accessing DB
+3. cluster.Gossip.Stop() → stop gossip protocol
+   cluster.Bus.Stop()    → stop cluster bus
+4. cancel()             → cancel root context → all goroutines see Done
+5. metricsWg.Wait()     → wait for periodic metrics snapshot goroutine
+6. handler.Shutdown()   → close all client TCP conns + wg.Wait()
+7. backupMgr.Wait()     → wait for in-flight BGSAVE goroutine
+8. db.Close()           → deferred — guaranteed: 0 goroutines accessing DB
 ```
 
 **Invariant:** After step 4 returns, exactly zero goroutines may call any DB method.
@@ -218,13 +221,27 @@ Any new feature must answer these questions before merging:
 | Failure Mode | Test | Type | Stress Dimension |
 |-------------|------|------|-----------------|
 | Retry storm | `TestRegressionRetryStorm` | Local pressure | Write concurrency |
-| L0 collapse | Partially covered by retry-storm | Local pressure | Write throughput |
+| L0 collapse | `TestRegressionL0Collapse` | Local pressure | Write throughput |
+| Disk pressure | `TestRegressionDiskPressureDegradation` | Local pressure | Disk I/O |
+| Client buffer overflow | `TestRegressionClientBufferOverflow` | Local pressure | Output buffer |
 | Replication thrash | `TestRegressionReplicationThrash` | Distributed stress | Partition frequency |
 | Replication FULLRESYNC | `TestRegressionReplicationThrashFullresync` | Distributed stress | Partition duration |
 | Snapshot inconsistency | `TestRegressionSnapshotConsistency` | Correctness | Data type coverage |
 | Snapshot (concurrent writes) | `TestRegressionSnapshotConcurrentWrites` | Correctness | Write concurrency |
-| Shutdown race | `TestGracefulShutdown` (existing) | Lifecycle | Connection chaos |
+| FULLRESYNC offset | `TestRegressionSnapshotFullresyncOffset` | Correctness | Offset boundary |
+| PSYNC reconnect | `TestRegressionPsyncReconnectNoLoss` | Correctness | Reconnect |
+| FULLRESYNC + Geo | `TestRegressionFullResyncGeo` | Correctness | Geo replication |
+| Duplicate window | `TestRegressionDuplicateWindowMeasurement` | Correctness | Write timing |
+| Backlog exhaustion | `TestRegressionBacklogExhaustion` | Distributed stress | Partition duration |
+| Failover oscillation | `TestRegressionFailoverOscillation` | Distributed stress | Failover |
+| Split brain convergence | `TestRegressionSplitBrainConvergence` | Distributed stress | Partition heal |
+| Write deadline storm | `TestRegressionWriteDeadlineStorm` | Distributed stress | Replication timing |
+| Concurrent FULLRESYNC | `TestRegressionConcurrentFullresyncWriteStorm` | Distributed stress | Concurrent FULLRESYNC |
+| Shutdown race | `TestRegressionShutdownRace` (existing) | Lifecycle | Connection chaos |
 | Shutdown + replication | `TestShutdownWithReplication` (existing) | Lifecycle | Slave connections |
+| PubSub fan-out | `TestRegressionPubSubFanOutStorm` | Local pressure | PubSub |
+| RDB config change | `TestRegressionRdbConcurrentConfigChange` | Correctness | Config concurrency |
+| Slave ownership | `TestRegressionSlaveConnectionOwnership` | Lifecycle | Slave lifecycle |
 
 ---
 

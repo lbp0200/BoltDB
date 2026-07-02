@@ -79,6 +79,8 @@ func (cc *ClusterCommands) HandleCommand(args []string) (interface{}, error) {
 		return cc.handleCountFailureReports(subArgs)
 	case "LINKS":
 		return cc.handleLinks(subArgs)
+	case "MIGRATESLOT":
+		return cc.handleMigrateSlot(subArgs)
 	default:
 		return nil, fmt.Errorf("ERR unknown subcommand '%s'", subcommand)
 	}
@@ -204,7 +206,9 @@ func (cc *ClusterCommands) handleSetSlot(args []string) (string, error) {
 		logger.Logger.Info().Uint32("slot", uint32(slot)).Str("target", subArgs[0]).Msg("cluster SETSLOT MIGRATING")
 		return "OK", nil
 	case "STABLE":
-		// 稳定状态
+		// 清除槽位迁移状态（MIGRATING 和 IMPORTING）
+		cc.cluster.ClearSlotMigration(uint32(slot))
+		logger.Logger.Info().Uint32("slot", uint32(slot)).Msg("cluster SETSLOT STABLE")
 		return "OK", nil
 	case "NODE":
 		// 设置槽位所属节点
@@ -220,6 +224,29 @@ func (cc *ClusterCommands) handleSetSlot(args []string) (string, error) {
 	default:
 		return "", fmt.Errorf("ERR unknown subcommand '%s'", subcommand)
 	}
+}
+
+// handleMigrateSlot 处理CLUSTER MIGRATESLOT命令
+// 将指定槽位的所有 key 从当前节点迁移到目标节点
+// 语法: CLUSTER MIGRATESLOT <slot> <targetNodeID> [COPY]
+func (cc *ClusterCommands) handleMigrateSlot(args []string) (string, error) {
+	if len(args) < 2 {
+		return "", fmt.Errorf("ERR wrong number of arguments for 'CLUSTER MIGRATESLOT' command")
+	}
+
+	slot, err := strconv.ParseUint(args[0], 10, 32)
+	if err != nil {
+		return "", fmt.Errorf("ERR invalid slot number")
+	}
+
+	targetNodeID := args[1]
+	copyKeys := len(args) >= 3 && strings.ToUpper(args[2]) == "COPY"
+
+	if err := cc.cluster.MigrateSlot(uint32(slot), targetNodeID, copyKeys); err != nil {
+		return "", fmt.Errorf("ERR %v", err)
+	}
+
+	return "OK", nil
 }
 
 // handleMeet 处理CLUSTER MEET命令

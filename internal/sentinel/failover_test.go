@@ -292,10 +292,10 @@ func TestFailoverManager_UpdateConfiguration_Coverage(t *testing.T) {
 
 	master := sentinel.GetMaster("test-master")
 
-	// Set master to down state
+	// Set master to down state with per-sentinel reporting
 	master.SetState("sdown")
-	master.IncrSdownCount()
-	master.IncrSdownCount() // sdownCount = 2 >= quorum(2)
+	master.ReportSdown("sentinel-A")
+	master.ReportSdown("sentinel-B") // 2 distinct sentinels >= quorum(2)
 
 	fm := NewFailoverManager(sentinel)
 
@@ -335,9 +335,9 @@ func TestFailoverManager_UpdateConfiguration_WithSlave(t *testing.T) {
 	slave.Offset = 100
 	master.AddSlave(slave)
 
-	// Set master to sdown with sdownCount >= quorum
+	// Set master to sdown with enough distinct sentinels >= quorum
 	master.SetState("sdown")
-	master.IncrSdownCount()
+	master.ReportSdown("sentinel-test-1")
 
 	fm := NewFailoverManager(sentinel)
 

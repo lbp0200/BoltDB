@@ -1,13 +1,19 @@
 package cluster
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/logger"
+	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/lbp0200/BoltDB/internal/store"
 )
 
@@ -148,6 +154,10 @@ func (c *Cluster) AssignSlot(slot uint32, nodeID string) error {
 	node.AddSlotRange(slot, slot)
 	c.Epoch++
 	node.SetEpoch(c.Epoch)
+
+	// 清除当前节点的迁移状态（如果这个 slot 正在被迁移或导入）
+	c.Myself.ClearSlotMigration(slot)
+
 	c.mu.Unlock()
 
 	return c.SaveConfig()
@@ -461,6 +471,7 @@ func (c *Cluster) SetSlotImporting(slot uint32, sourceNodeID string) {
 
 	if node, exists := c.Nodes[sourceNodeID]; exists {
 		c.Myself.SetImportingSlot(slot, node.Addr)
+		_ = c.saveConfigLocked()
 	}
 }
 
@@ -471,6 +482,7 @@ func (c *Cluster) SetSlotMigrating(slot uint32, targetNodeID string) {
 
 	if node, exists := c.Nodes[targetNodeID]; exists {
 		c.Myself.SetMigratingSlot(slot, node.Addr)
+		_ = c.saveConfigLocked()
 	}
 }
 
@@ -500,6 +512,145 @@ func (c *Cluster) ClearSlotMigration(slot uint32) {
 	defer c.mu.Unlock()
 
 	c.Myself.ClearSlotMigration(slot)
+	_ = c.saveConfigLocked()
+}
+
+// MigrateSlot 迁移一个槽位的所有 key 到目标节点。
+// 自动从源节点读取所有属于该槽位的 key，通过 DUMP/RESTORE 传输到目标节点，
+// 迁移完成后更新 slot 归属到目标节点。
+func (c *Cluster) MigrateSlot(slot uint32, targetNodeID string, copyKeys bool) error {
+	if slot >= SlotCount {
+		return fmt.Errorf("slot %d out of range", slot)
+	}
+
+	// 验证 slot 在当前节点处于 MIGRATING 状态
+	if !c.IsMigratingSlot(slot) {
+		return fmt.Errorf("slot %d is not in MIGRATING state", slot)
+	}
+
+	// 找目标节点
+	c.mu.RLock()
+	targetNode, exists := c.Nodes[targetNodeID]
+	c.mu.RUnlock()
+	if !exists || targetNode == nil {
+		return fmt.Errorf("target node %s not found", targetNodeID)
+	}
+
+	logger.Logger.Info().
+		Uint32("slot", slot).
+		Str("target", targetNodeID).
+		Str("target_addr", targetNode.Addr).
+		Bool("copy", copyKeys).
+		Msg("MigrateSlot: starting slot migration")
+
+	// 收集所有属于该 slot 的 key
+	var keys []string
+	err := c.Store.IterateRawKeys(func(rawKey string) bool {
+		if Slot(rawKey) == slot {
+			keys = append(keys, rawKey)
+		}
+		return true
+	})
+	if err != nil {
+		return fmt.Errorf("iterate keys for slot %d: %w", slot, err)
+	}
+
+	logger.Logger.Info().
+		Uint32("slot", slot).
+		Int("key_count", len(keys)).
+		Msg("MigrateSlot: collected keys to migrate")
+
+	// 连接目标节点
+	conn, err := net.DialTimeout("tcp", targetNode.Addr, 10*time.Second)
+	if err != nil {
+		return fmt.Errorf("connect to target %s: %w", targetNode.Addr, err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	reader := bufio.NewReader(conn)
+	var migratedKeys []string
+
+	// 逐个迁移 key
+	for _, key := range keys {
+		// DUMP key
+		data, err := c.Store.Dump(key)
+		if err != nil {
+			if strings.Contains(err.Error(), "no such key") {
+				continue
+			}
+			_ = conn.Close()
+			return fmt.Errorf("dump key %s: %w", key, err)
+		}
+
+		// 构建 RESTORE 命令
+		restoreCmd := &proto.Array{
+			Args: [][]byte{
+				[]byte("RESTORE"),
+				[]byte(key),
+				[]byte("0"),
+				data,
+				[]byte("REPLACE"),
+			},
+		}
+
+		if err := proto.WriteRESP(conn, restoreCmd); err != nil {
+			_ = conn.Close()
+			return fmt.Errorf("write RESTORE for key %s: %w", key, err)
+		}
+
+		// 读取响应
+		resp, err := proto.ReadRESP(reader)
+		if err != nil {
+			_ = conn.Close()
+			return fmt.Errorf("read RESTORE response for key %s: %w", key, err)
+		}
+
+		// 检查错误响应（RESTORE 失败时服务器返回 -ERR）
+		if len(resp.Args) > 0 && len(resp.Args[0]) > 0 && resp.Args[0][0] == 'E' {
+			_ = conn.Close()
+			return fmt.Errorf("target error for key %s: %s", key, string(resp.Args[0]))
+		}
+
+		migratedKeys = append(migratedKeys, key)
+	}
+
+	// 如果未指定 COPY，删除本地 key
+	if !copyKeys {
+		for _, key := range migratedKeys {
+			if _, delErr := c.Store.Del(key); delErr != nil {
+				logger.Logger.Warn().
+					Err(delErr).
+					Str("key", key).
+					Msg("MigrateSlot: failed to delete local key after migration")
+			}
+		}
+	}
+
+	// 清理迁移状态并更新 slot 归属
+	c.ClearSlotMigration(slot)
+	_ = c.AssignSlot(slot, targetNodeID)
+
+	// 通知目标节点清除 IMPORTING 状态（通过现有的 TCP 连接）
+	if !copyKeys {
+		stableCmd := &proto.Array{
+			Args: [][]byte{
+				[]byte("CLUSTER"),
+				[]byte("SETSLOT"),
+				[]byte(strconv.FormatUint(uint64(slot), 10)),
+				[]byte("STABLE"),
+			},
+		}
+		_ = proto.WriteRESP(conn, stableCmd)
+		// 不检查响应——连接将在函数返回时关闭
+	}
+
+	logger.Logger.Info().
+		Uint32("slot", slot).
+		Str("target", targetNodeID).
+		Int("migrated", len(migratedKeys)).
+		Msg("MigrateSlot: slot migration completed")
+
+	return nil
 }
 
 // GetAskRedirect 获取ASK重定向信息

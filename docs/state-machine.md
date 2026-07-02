@@ -33,7 +33,10 @@
 ```
 close listener → ServeTCP returns
 → replMgr.Stop()       (close slave TCP connections → unblock reads)
+→ cluster.Gossip.Stop() (stop gossip)
+→ cluster.Bus.Stop()    (stop cluster bus)
 → cancel()             (cancel root context → all goroutines see Done)
+→ metricsWg.Wait()     (wait for periodic metrics snapshot goroutine)
 → handler.Shutdown()   (close all client TCP conns + WaitGroup.Wait)
 → backupMgr.Wait()     (wait for in-flight BGSAVE goroutine → no DB access after)
 → db.Close()           (deferred — guaranteed: 0 goroutines accessing DB)

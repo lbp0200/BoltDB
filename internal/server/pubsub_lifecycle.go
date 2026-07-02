@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -30,6 +31,19 @@ func (h *Handler) runPubSubLoop(ctx context.Context, conn net.Conn, reader *bufi
 	defer close(done)
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Logger.Error().
+					Str("remote_addr", remoteAddr).
+					Interface("panic", r).
+					Str("stack", string(debug.Stack())).
+					Msg("recovered panic in pubsub reader")
+				select {
+				case errCh <- fmt.Errorf("panic recovered: %v", r):
+				case <-done:
+				}
+			}
+		}()
 		for {
 			req, err := proto.ReadRESP(reader)
 			if err != nil {
@@ -356,6 +370,19 @@ func (h *Handler) runMonitorLoop(conn net.Conn, writer *bufio.Writer, state *con
 	defer close(done)
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Logger.Error().
+					Str("remote_addr", remoteAddr).
+					Interface("panic", r).
+					Str("stack", string(debug.Stack())).
+					Msg("recovered panic in monitor reader")
+				select {
+				case errCh <- fmt.Errorf("panic recovered: %v", r):
+				case <-done:
+				}
+			}
+		}()
 		for {
 			req, err := proto.ReadRESP(reader)
 			if err != nil {

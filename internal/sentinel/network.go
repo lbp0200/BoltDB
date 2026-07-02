@@ -2,6 +2,7 @@ package sentinel
 
 import (
 	"bufio"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"os"
@@ -15,6 +16,10 @@ import (
 // When set, the sentinel sends AUTH after establishing every connection.
 var sentinelPassword string
 
+// sentinelTLSConfig is the optional TLS config for outbound sentinel connections.
+// Set via SetSentinelTLSConfig() by cmd/sentinel when --tls-* flags are provided.
+var sentinelTLSConfig *tls.Config
+
 func init() {
 	sentinelPassword = os.Getenv("BOLTDB_PASSWORD")
 }
@@ -23,6 +28,12 @@ func init() {
 // Used by cmd/sentinel when --password flag is provided.
 func SetSentinelPassword(password string) {
 	sentinelPassword = password
+}
+
+// SetSentinelTLSConfig sets the TLS config for outbound sentinel connections.
+// Used by cmd/sentinel when --tls-cert/--tls-key flags are provided.
+func SetSentinelTLSConfig(tlsCfg *tls.Config) {
+	sentinelTLSConfig = tlsCfg
 }
 
 // SentinelConnection 哨兵连接
@@ -34,7 +45,13 @@ type SentinelConnection struct {
 
 // NewSentinelConnection 创建新的哨兵连接
 func NewSentinelConnection(addr string) (*SentinelConnection, error) {
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	var conn net.Conn
+	var err error
+	if sentinelTLSConfig != nil {
+		conn, err = tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", addr, sentinelTLSConfig)
+	} else {
+		conn, err = net.DialTimeout("tcp", addr, 5*time.Second)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("connect to %s failed: %w", addr, err)
 	}

@@ -1,5 +1,57 @@
 # Changelog
 
+## v8.33.0 (2026-07-02) — TLS 全链路加密 + 集群 Slot 迁移 + 安全加固
+
+> **P0 安全：TLS 全链路加密（监听器、复制、集群总线、哨兵连接）。P1 集群：Slot 迁移完整实现（MIGRATESLOT + 中断恢复 + 集成测试）。修复 Gossip data race、ClusterBus 生命周期上下文、二进制协议编码。所有整改计划 11 大项全部完成。**
+
+### 安全（P0）
+
+- **TLS 全链路加密**：新增 `--tls-cert`/`--tls-key`/`--tls-ca` CLI 参数
+  - 监听器层包装 `tls.NewListener()`，支持可选 TLS
+  - 复制连接（MasterConnection）支持 TLS 拨号
+  - 集群总线（ClusterBus）支持 TLS 连接（`SetTLSConfig`）
+  - 哨兵 outbound 连接支持 TLS（`--tls-cert`/`--tls-key` 标志）
+  - 测试：TLS 握手 + 非 TLS 客户端拒绝
+  - 部署文档：TLS 配置章节
+
+### 集群功能（P1）
+
+- **CLUSTER MIGRATESLOT**：完整实现 slot 迁移命令
+  - 迭代 slot 内所有 key，通过 DUMP/RESTORE 迁移到目标节点
+  - 迁移完成后自动更新 slot 归属（`AssignSlot`）
+  - ASK/MOVED 重定向在迁移期间正常工作
+- **迁移中断恢复**：`migratingSlots`/`importingSlots` 持久化到集群配置，重启自动恢复
+- **CLUSTER SETSLOT STABLE 修复**：之前为空操作，现在实际清除迁移状态
+- **Gossip payload 二进制编码**：从 JSON 切换为 `encoding/gob`，向后兼容旧版 JSON 格式
+- **ClusterBus 生命周期**：使用服务器 context 替代 `context.Background()`，响应服务关闭
+- **Gossiper data race 修复**：`started bool` → `atomic.Bool`
+
+### Bug 修复
+
+- **Gossiper data race**：Start/Stop 竞态条件修复
+- **SETSLOT STABLE 空操作**：之前不清除迁移状态，现在正确清理
+- **TLS 测试时序**：修复远程环境下测试超时问题
+
+### 测试
+
+- **TestClusterMigrateSlot**：新建 slot 迁移集成测试（2 节点，完整生命周期）
+- **TLS 测试**：5 个测试覆盖构建、包装、非 TLS 拒绝、无效证书
+- 所有 cluster 集成测试（6 个）通过远程验证
+
+### 整改计划完成
+
+- A1 TLS 加密传输：7/7 子项 ✅
+- A2 连接数限制与空闲超时：6/6 子项 ✅
+- A3 RESP 协议解析加固：5/5 子项 ✅
+- A4 密码比较安全加固：2/2 子项 ✅
+- B1 集群 slot 迁移：10/10 子项 ✅
+- B2 哨兵 ODOWN 共识：5/5 子项 ✅
+- B3 复制流静默丢弃：3/3 子项 ✅
+- C1 LICENSE 修复：4/4 子项 ✅
+- C2 go.mod 版本号：3/3 子项 ✅
+- C3 仓库卫生清理：5/5 子项 ✅
+- C4 关键错误处理：4/4 子项 ✅
+
 ## v8.32.0 (2026-06-29) — Bug Fixes, Handler Refactor, Test Hardening, Store Optimizations
 
 > **6 个 Redis 兼容性 bug 修复。handler.go 8824 行按命令族拆分为 24 个文件。94 处弱断言加固 + 30 个 fuzz tests。Store 层核心算法优化（List 双向遍历、蓄水池采样、APPEND 事务合并）。**

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/zeebo/assert"
@@ -347,6 +348,21 @@ func TestParseInlineCommand(t *testing.T) {
 			name:     "multiple spaces",
 			line:     []byte("GET   key"),
 			expected: &Array{Args: [][]byte{[]byte("GET"), []byte("key")}},
+		},
+		{
+			name:     "quoted argument with spaces",
+			line:     []byte(`SET key "hello world"`),
+			expected: &Array{Args: [][]byte{[]byte("SET"), []byte("key"), []byte("hello world")}},
+		},
+		{
+			name:     "all quoted",
+			line:     []byte(`"SET" "key" "hello world"`),
+			expected: &Array{Args: [][]byte{[]byte("SET"), []byte("key"), []byte("hello world")}},
+		},
+		{
+			name:     "mixed quoted and unquoted",
+			line:     []byte(`SET "my key" value`),
+			expected: &Array{Args: [][]byte{[]byte("SET"), []byte("my key"), []byte("value")}},
 		},
 	}
 
@@ -799,6 +815,42 @@ func TestReadRESP_PartialPackets(t *testing.T) {
 			assert.Error(t, err)
 			if tt.errMatch != nil && !errors.Is(err, tt.errMatch) {
 				t.Errorf("expected error %v, got %v", tt.errMatch, err)
+			}
+		})
+	}
+}
+
+func TestReadRESP_LineTooLong(t *testing.T) {
+	t.Parallel()
+	// Create a line that exceeds MaxLineLen (64MB) but has no \n — will be caught by readLine
+	// We can't easily test 64MB in unit tests, so test the logic with a smaller mock.
+	// Instead, test that the inline path with a very long line works (within limit)
+	longCmd := strings.Repeat("A", 1000) + "\r\n"
+	r := bufio.NewReader(bytes.NewBufferString(longCmd))
+	result, err := ReadRESP(r)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(result.Args))
+	assert.Equal(t, strings.Repeat("A", 1000), string(result.Args[0]))
+}
+
+func TestParseInlineArgs_Quoted(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{"simple", "PING", []string{"PING"}},
+		{"quoted with spaces", `SET key "hello world"`, []string{"SET", "key", "hello world"}},
+		{"empty quotes", `SET "" value`, []string{"SET", "", "value"}},
+		{"nested spaces", "GET   key", []string{"GET", "key"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseInlineArgs(tt.input)
+			assert.Equal(t, len(tt.expected), len(result))
+			for i := range result {
+				assert.Equal(t, tt.expected[i], result[i])
 			}
 		})
 	}

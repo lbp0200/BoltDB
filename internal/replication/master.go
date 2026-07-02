@@ -3,6 +3,7 @@ package replication
 import (
 	"bufio"
 	"bytes"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -34,7 +35,18 @@ type MasterConnection struct {
 
 // NewMasterConnection 创建新的主节点连接
 func NewMasterConnection(addr string) (*MasterConnection, error) {
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	return NewMasterConnectionWithTLS(addr, nil)
+}
+
+// NewMasterConnectionWithTLS 创建带 TLS 的主节点连接
+func NewMasterConnectionWithTLS(addr string, tlsCfg *tls.Config) (*MasterConnection, error) {
+	var conn net.Conn
+	var err error
+	if tlsCfg != nil {
+		conn, err = tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", addr, tlsCfg)
+	} else {
+		conn, err = net.DialTimeout("tcp", addr, 5*time.Second)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("dial master failed: %w", err)
 	}
@@ -125,7 +137,7 @@ func (mc *MasterConnection) ReadResponse() (proto.RESP, error) {
 		if n == -1 {
 			return proto.NewBulkString(nil), nil
 		}
-		if n > proto.MaxBulkLen {
+		if int64(n) > proto.MaxBulkLen {
 			return nil, fmt.Errorf("bulk string length too large: %d", n)
 		}
 		data := make([]byte, n+2) // +2 for \r\n
@@ -140,7 +152,7 @@ func (mc *MasterConnection) ReadResponse() (proto.RESP, error) {
 		if err != nil || arrLen < 0 {
 			return nil, fmt.Errorf("invalid array length: %s", arrLenStr)
 		}
-		if arrLen > proto.MaxArrayLen {
+		if int64(arrLen) > proto.MaxArrayLen {
 			return nil, fmt.Errorf("array length too large: %d", arrLen)
 		}
 		args := make([][]byte, 0, arrLen)
@@ -206,7 +218,7 @@ func (mc *MasterConnection) ReadBulkString() ([]byte, error) {
 		return nil, nil // NULL bulk string
 	}
 
-	if length > proto.MaxBulkLen {
+	if int64(length) > proto.MaxBulkLen {
 		return nil, fmt.Errorf("bulk string length too large: %d", length)
 	}
 

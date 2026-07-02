@@ -2,6 +2,7 @@ package replication
 
 import (
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"fmt"
 	"sync"
@@ -28,6 +29,7 @@ type ReplicationManager struct {
 	store            *store.BotreonStore         // 数据存储
 	stopped          bool                        // 是否已停止
 	slaveReconnector *SlaveReconnector           // 从节点自动重连器
+	tlsConfig        *tls.Config                 // TLS 配置（nil = 不使用 TLS）
 }
 
 // NewReplicationManager 创建新的复制管理器
@@ -55,6 +57,20 @@ func (rm *ReplicationManager) SetBacklogSize(size int64) {
 		size = MaxBacklogSize
 	}
 	rm.backlog = NewReplicationBacklog(size)
+}
+
+// SetTLSConfig 设置 TLS 配置（nil = 不使用 TLS）
+func (rm *ReplicationManager) SetTLSConfig(cfg *tls.Config) {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+	rm.tlsConfig = cfg
+}
+
+// GetTLSConfig 获取 TLS 配置
+func (rm *ReplicationManager) GetTLSConfig() *tls.Config {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	return rm.tlsConfig
 }
 
 // generateReplicationID 生成40字符的十六进制复制ID

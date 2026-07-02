@@ -280,25 +280,19 @@ func (gp *GossipProtocol) handleSdown(conn net.Conn, parts []string) {
 	}
 
 	masterName := parts[0]
-	reportedSdownCount, _ := strconv.Atoi(parts[1])
+	sourceRunID := parts[1] // 源哨兵的 runID（per-sentinel 去重）
 
-	// 更新主节点的sdown计数
+	// 更新主节点的sdown报告（per-sentinel 去重）
 	master := gp.sentinel.GetMaster(masterName)
 	if master != nil {
-		// 使用报告的sdown计数和当前计数中的较大值
-		currentCount := master.GetSdownCount()
-		if reportedSdownCount > currentCount {
-			master.mu.Lock()
-			master.sdownCount = reportedSdownCount
-			master.mu.Unlock()
-		}
+		master.ReportSdown(sourceRunID)
 
 		logger.Logger.Info().
 			Str("master_name", masterName).
-			Int("reported_sdown_count", reportedSdownCount).
-			Int("current_sdown_count", master.GetSdownCount()).
+			Str("source_runid", sourceRunID).
+			Int("sdown_reporters", master.GetSdownCount()).
 			Int("quorum", master.GetQuorum()).
-			Msg("收到SDOWN消息")
+			Msg("收到SDOWN消息（per-sentinel 去重）")
 
 		// 检查是否达到客观下线
 		if master.IsODown() {
@@ -443,7 +437,8 @@ func (gp *GossipProtocol) BroadcastSdown(masterName string, sdownCount int) {
 	}
 	gp.mu.RUnlock()
 
-	message := "SDOWN " + masterName + " " + strconv.Itoa(sdownCount) + "\n"
+	// SDOWN 线协议格式：SDOWN <masterName> <sourceRunID>\n
+	message := "SDOWN " + masterName + " " + gp.sentinel.runID + "\n"
 	gp.wg.Add(len(addrs))
 	for _, addr := range addrs {
 		go func(peerAddr string) {

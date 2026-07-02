@@ -79,6 +79,9 @@ func (h *Handler) clientListRESP() proto.RESP {
 		name := ""
 		age := int(now.Sub(meta.created).Seconds())
 		idle := 0
+		if !meta.lastRead.IsZero() {
+			idle = int(now.Sub(meta.lastRead).Seconds())
+		}
 
 		state.mu.Lock()
 		flags := "N"

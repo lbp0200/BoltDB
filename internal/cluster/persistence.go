@@ -13,11 +13,18 @@ const (
 )
 
 type persistedClusterState struct {
-	Nodes  map[string]*persistedNode `json:"nodes"`
-	Epoch  int64                     `json:"epoch"`
-	Slots  []persistedSlotOwner      `json:"slots"`
-	NodeID string                    `json:"node_id"`
-	Addr   string                    `json:"addr"`
+	Nodes          map[string]*persistedNode `json:"nodes"`
+	Epoch          int64                     `json:"epoch"`
+	Slots          []persistedSlotOwner      `json:"slots"`
+	NodeID         string                    `json:"node_id"`
+	Addr           string                    `json:"addr"`
+	MigratingSlots []persistedSlotMigration  `json:"migrating_slots,omitempty"`
+	ImportingSlots []persistedSlotMigration  `json:"importing_slots,omitempty"`
+}
+
+type persistedSlotMigration struct {
+	Slot uint32 `json:"slot"`
+	Addr string `json:"addr"`
 }
 
 type persistedNode struct {
@@ -56,6 +63,20 @@ func (c *Cluster) saveConfigLocked() error {
 	}
 
 	mergeSlotOwners(c.Slots, &state)
+
+	// 持久化当前节点的迁移状态（中断恢复）
+	for slot, targetAddr := range c.Myself.GetMigratingSlotsMap() {
+		state.MigratingSlots = append(state.MigratingSlots, persistedSlotMigration{
+			Slot: slot,
+			Addr: targetAddr,
+		})
+	}
+	for slot, sourceAddr := range c.Myself.GetImportingSlotsMap() {
+		state.ImportingSlots = append(state.ImportingSlots, persistedSlotMigration{
+			Slot: slot,
+			Addr: sourceAddr,
+		})
+	}
 
 	data, err := json.Marshal(state)
 	if err != nil {
@@ -149,6 +170,14 @@ func (c *Cluster) loadState(state persistedClusterState) {
 			c.Slots[i] = node
 		}
 		node.AddSlotRange(so.Start, so.End)
+	}
+
+	// 恢复迁移状态（中断恢复）
+	for _, ms := range state.MigratingSlots {
+		c.Myself.migratingSlots[ms.Slot] = ms.Addr
+	}
+	for _, is := range state.ImportingSlots {
+		c.Myself.importingSlots[is.Slot] = is.Addr
 	}
 }
 

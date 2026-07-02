@@ -56,6 +56,7 @@ JSON.*, TS.DEL/INFO, PFADD/PFCOUNT, GEO*, BITOP, BITFIELD, SINTER/SUNION/SDIFF (
 | `TestCommandCompleteness_PubSub` | PUBLISH/SUBSCRIBE/PSUBSCRIBE/UNSUBSCRIBE/PUNSUBSCRIBE/PUBSUB CHANNELS/NUMSUB/NUMPAT | ~7 |
 | `TestCommandCompleteness_Connection` | PING/ECHO/AUTH/HELLO/COMMAND/CLIENT*/ACL/MONITOR | ~11 |
 | `TestCommandCompleteness_Server` | INFO/SAVE/BGSAVE/LASTSAVE/TIME/CONFIG*/SLOWLOG*/MEMORY*/LATENCY*/DEBUG | ~16 |
+| `TestCommandCompleteness_Cluster` | CLUSTER INFO/NODES/SLOTS/MEET/FORGET/REPLICATE/ADDSLOTS/DELSLOTS/GETKEYSINSLOT/COUNTKEYSINSLOT/KEYSLOT | ~12 |
 
 ### Phase 2: 主从全写命令传播测试
 
@@ -81,6 +82,8 @@ JSON.*, TS.DEL/INFO, PFADD/PFCOUNT, GEO*, BITOP, BITFIELD, SINTER/SUNION/SDIFF (
 | `TestReplicationCompleteness_TimeSeries` | TS.CREATE/TS.ADD/TS.DEL/TS.INCRBY/TS.MADD/TS.CREATERULE/TS.DELETERULE |
 | `TestReplicationCompleteness_HLL` | PFADD/PFMERGE |
 | `TestReplicationCompleteness_Geo` | GEOADD |
+
+> **Note:** `TimeSeries`, `Transaction`, `Bitmap`, `FlushDB` replication completeness groups were planned but never implemented (10/14 groups implemented).
 | `TestReplicationCompleteness_Transaction` | MULTI/EXEC (包含写命令) |
 | `TestReplicationCompleteness_Bitmap` | SETBIT/BITOP/BITFIELD |
 | `TestReplicationCompleteness_FlushDB` | FLUSHDB/FLUSHALL |

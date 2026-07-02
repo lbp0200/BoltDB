@@ -6,6 +6,14 @@ func (h *Handler) ActiveClientCount() int {
 	return len(h.conns)
 }
 
+// GetMaxClients 返回有效的最大连接数（未配置时默认 10000）
+func (h *Handler) GetMaxClients() int {
+	if h.MaxClients > 0 {
+		return h.MaxClients
+	}
+	return 10000
+}
+
 func (h *Handler) BlockedClientCount() int {
 	if h.Db == nil {
 		return 0

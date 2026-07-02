@@ -12,8 +12,22 @@ import (
 	"github.com/lbp0200/BoltDB/internal/logger"
 )
 
-const MaxBulkLen = 512 * 1024 * 1024 // 512MB — Redis convention
-const MaxArrayLen = 1024 * 1024      // 1M elements
+var (
+	// MaxBulkLen 是 RESP bulk string 的最大长度限制（默认 256MB）
+	// 可通过 SetMaxBulkLen() 在启动时调整
+	MaxBulkLen = int64(256 * 1024 * 1024)
+	// MaxArrayLen 是 RESP array 的最大元素数
+	MaxArrayLen = int64(1024 * 1024)
+	// MaxLineLen 是行长度限制（默认 64MB，防止 OOM）
+	MaxLineLen = int64(64 * 1024 * 1024)
+)
+
+// SetMaxBulkLen 设置 RESP bulk string 最大长度（字节）
+func SetMaxBulkLen(n int64) {
+	if n > 0 {
+		MaxBulkLen = n
+	}
+}
 
 type RESP interface {
 	String() string
@@ -191,7 +205,7 @@ func ReadRESP(r *bufio.Reader) (*Array, error) {
 		if err != nil || n < 0 {
 			return nil, fmt.Errorf("invalid array length: %s", line[1:])
 		}
-		if n > MaxArrayLen {
+		if int64(n) > MaxArrayLen {
 			return nil, fmt.Errorf("array length too large: %d", n)
 		}
 		args := make([][]byte, n)
@@ -216,7 +230,7 @@ func ReadRESP(r *bufio.Reader) (*Array, error) {
 					args[i] = nil
 					continue
 				}
-				if bulkLen > MaxBulkLen {
+				if int64(bulkLen) > MaxBulkLen {
 					return nil, fmt.Errorf("bulk string length too large: %d", bulkLen)
 				}
 				data := make([]byte, bulkLen+2)
@@ -257,7 +271,7 @@ func ReadRESP(r *bufio.Reader) (*Array, error) {
 		if bulkLen == -1 {
 			return &Array{Args: [][]byte{nil}}, nil
 		}
-		if bulkLen > MaxBulkLen {
+		if int64(bulkLen) > MaxBulkLen {
 			return nil, fmt.Errorf("bulk string length too large: %d", bulkLen)
 		}
 		data := make([]byte, bulkLen+2)
@@ -277,22 +291,18 @@ func ReadRESP(r *bufio.Reader) (*Array, error) {
 
 // parseInlineCommand 解析内联命令
 // 内联命令格式: "PING" 或 "GET key" 或 "SET key value"
-// 参数用空格分隔
+// 参数用空格分隔，支持双引号包裹含空格的参数
 func parseInlineCommand(line []byte) (*Array, error) {
-	// 将字节数组转换为字符串，然后按空格分割
 	cmdStr := strings.TrimSpace(string(line))
 	if cmdStr == "" {
 		return nil, fmt.Errorf("empty inline command")
 	}
 
-	// 按空格分割命令和参数
-	// 注意：Redis 内联命令中，参数中的空格需要用引号包裹，但大多数客户端不使用这个特性
-	parts := strings.Fields(cmdStr)
+	parts := parseInlineArgs(cmdStr)
 	if len(parts) == 0 {
 		return nil, fmt.Errorf("empty inline command")
 	}
 
-	// 转换为字节数组
 	args := make([][]byte, len(parts))
 	for i, part := range parts {
 		args[i] = []byte(part)
@@ -304,6 +314,46 @@ func parseInlineCommand(line []byte) (*Array, error) {
 		Msg("解析内联命令")
 
 	return &Array{Args: args}, nil
+}
+
+// parseInlineArgs splits an inline command string respecting double-quoted arguments.
+// Unquoted tokens are split on whitespace; quoted tokens preserve internal spaces.
+// Adjacent quotes produce empty strings (e.g. SET "" value → [SET, "", value]).
+func parseInlineArgs(s string) []string {
+	var result []string
+	var current strings.Builder
+	inQuote := false
+
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		switch {
+		case ch == '"':
+			if inQuote {
+				// Closing quote: emit token (even if empty)
+				result = append(result, current.String())
+				current.Reset()
+				inQuote = false
+			} else {
+				// Opening quote: if we had accumulated chars before quote, emit them first
+				if current.Len() > 0 {
+					result = append(result, current.String())
+					current.Reset()
+				}
+				inQuote = true
+			}
+		case ch == ' ' && !inQuote:
+			if current.Len() > 0 {
+				result = append(result, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteByte(ch)
+		}
+	}
+	if current.Len() > 0 {
+		result = append(result, current.String())
+	}
+	return result
 }
 
 func WriteRESP(w io.Writer, resp RESP) error {
@@ -455,6 +505,9 @@ func readLine(r *bufio.Reader) ([]byte, error) {
 	line, err := r.ReadBytes('\n')
 	if err != nil {
 		return nil, err
+	}
+	if int64(len(line)) > MaxLineLen {
+		return nil, fmt.Errorf("line too long: %d bytes (max %d)", len(line), MaxLineLen)
 	}
 	// 去掉 \r\n
 	if len(line) > 0 && line[len(line)-1] == '\n' {
