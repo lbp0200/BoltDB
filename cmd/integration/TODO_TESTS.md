@@ -174,7 +174,7 @@ redis-cli -p 6379 GET "test"  # 返回 "hello"
 
 ---
 
-## 待修复测试
+## 已验证通过的测试
 
 ### Stream 消费者组测试 ✅
 
