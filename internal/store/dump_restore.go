@@ -65,15 +65,8 @@ func (s *BotreonStore) Dump(key string) ([]byte, error) {
 			if valItem, err := txn.Get(valueKey); err == nil {
 				if expiresAt := valItem.ExpiresAt(); expiresAt > 0 {
 					nowUnix := uint64(time.Now().Unix())
-					var remaining int64
-					if expiresAt > nowUnix*100 {
-						// 纳秒格式
-						nowNano := time.Now().UnixNano()
-						remaining = int64(expiresAt) - nowNano
-					} else {
-						// 秒格式
-						remaining = (int64(expiresAt) - int64(nowUnix)) * 1_000_000_000
-					}
+					// 秒格式
+					remaining := (int64(expiresAt) - int64(nowUnix)) * 1_000_000_000
 					if remaining > 0 {
 						ttl = remaining / 1_000_000 // 纳秒转毫秒
 					}

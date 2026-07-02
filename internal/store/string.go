@@ -1109,18 +1109,10 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 						if strItem, err := txn.Get([]byte(strKey)); err == nil {
 							if expiresAt := strItem.ExpiresAt(); expiresAt > 0 {
 								nowUnix := uint64(time.Now().Unix())
-								if expiresAt > nowUnix*100 {
-									// 纳秒格式
-									nowNano := uint64(time.Now().UnixNano())
-									if expiresAt > nowNano {
-										remainingTTL = time.Duration(expiresAt - nowNano)
-									}
-								} else {
-									// 秒格式
-									if expiresAt > nowUnix {
-										// #nosec G115 - expiresAt is within int64 range
-										remainingTTL = time.Duration(expiresAt-nowUnix) * time.Second
-									}
+								// 秒格式
+								if expiresAt > nowUnix {
+									// #nosec G115 - expiresAt is within int64 range
+									remainingTTL = time.Duration(expiresAt-nowUnix) * time.Second
 								}
 							}
 						}

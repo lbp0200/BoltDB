@@ -104,24 +104,13 @@ func (s *BotreonStore) Rename(key, newKey string) error {
 				return err
 			}
 			newValueKey := []byte(s.stringKey(newKey))
-			// 保持TTL（处理 ExpiresAt 双格式：纳秒 vs 秒）
+			// 保持TTL（ExpiresAt 始终是秒级 Unix 时间戳）
 			expiresAt := oldValue.ExpiresAt()
 			if expiresAt > 0 {
 				nowUnix := uint64(time.Now().Unix())
 				var ttl time.Duration
-				if expiresAt > nowUnix*100 {
-					// 纳秒格式（Expire/PExpire 写入）
-					// #nosec G115 - expiresAt is within int64 range
-					nowNano := uint64(time.Now().UnixNano())
-					if expiresAt > nowNano {
-						ttl = time.Duration(expiresAt - nowNano)
-					}
-				} else {
-					// 秒格式（WithTTL/SetWithTTL/RDB loader 写入）
-					if expiresAt > nowUnix {
-						// #nosec G115 - expiresAt is within int64 range
-						ttl = time.Duration(expiresAt-nowUnix) * time.Second
-					}
+				if expiresAt > nowUnix {
+					ttl = time.Duration(expiresAt-nowUnix) * time.Second
 				}
 				if ttl > 0 {
 					e := badger.NewEntry(newValueKey, valueBytes).WithTTL(ttl)
@@ -263,24 +252,14 @@ func copyKeysByPrefix(txn *badger.Txn, oldPrefix []byte, oldKey, newKey, keyType
 			return err
 		}
 
-		// 设置新键（保持TTL，处理 ExpiresAt 双格式）
+		// 设置新键（保持TTL，ExpiresAt 始终是秒级 Unix 时间戳）
 		expiresAt := item.ExpiresAt()
 		if expiresAt > 0 {
 			nowUnix := uint64(time.Now().Unix())
 			var ttl time.Duration
-			if expiresAt > nowUnix*100 {
-				// 纳秒格式（Expire/PExpire 写入）
+			if expiresAt > nowUnix {
 				// #nosec G115 - expiresAt is within int64 range
-				nowNano := uint64(time.Now().UnixNano())
-				if expiresAt > nowNano {
-					ttl = time.Duration(expiresAt - nowNano)
-				}
-			} else {
-				// 秒格式（WithTTL/SetWithTTL/RDB loader 写入）
-				if expiresAt > nowUnix {
-					// #nosec G115 - expiresAt is within int64 range
-					ttl = time.Duration(expiresAt-nowUnix) * time.Second
-				}
+				ttl = time.Duration(expiresAt-nowUnix) * time.Second
 			}
 			if ttl > 0 {
 				e := badger.NewEntry([]byte(newKeyStr), val).WithTTL(ttl)

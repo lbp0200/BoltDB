@@ -9,7 +9,6 @@ import (
 	"hash/crc64"
 	"io"
 	"math"
-	"time"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/lbp0200/BoltDB/internal/logger"
@@ -542,16 +541,7 @@ func readTTLFromValueTxn(txn *badger.Txn, key, keyType string) int64 {
 		return 0
 	}
 	if expiresAt := valItem.ExpiresAt(); expiresAt > 0 {
-		// BadgerDB 的 ExpiresAt 有两种格式：
-		//   - 纳秒（旧版 Expire 写入，值约 1.75e18）
-		//   - 秒（WithTTL / SetWithTTL 写入，值约 1.75e9）
-		// 通过阈值 nowUnix*100 区分
-		nowUnix := uint64(time.Now().Unix())
-		if expiresAt > nowUnix*100 {
-			// 纳秒格式
-			return int64(expiresAt / 1_000_000_000)
-		}
-		// 秒格式
+		// ExpiresAt 是秒级 Unix 时间戳（统一格式，由 Expire/PExpire/WithTTL 写入）
 		return int64(expiresAt)
 	}
 	return 0
