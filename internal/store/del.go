@@ -29,11 +29,6 @@ func (s *BotreonStore) Del(key string) (int64, error) {
 		}
 		keyType := string(valCopy)
 
-		// 清除读缓存
-		if s.readCache != nil {
-			s.readCache.Delete(key)
-		}
-
 		switch keyType {
 		case KeyTypeString:
 			if err := txn.Delete(typeKey); err != nil {
@@ -123,11 +118,6 @@ func (s *BotreonStore) DelString(key string) error {
 	bKey := []byte(key)
 	badgerTypeKey := TypeOfKeyGet(key)
 	badgerValueKey := s.stringKey(string(bKey))
-
-	// 清除读缓存
-	if s.readCache != nil {
-		s.readCache.Delete(key)
-	}
 
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		errDel := txn.Delete(badgerTypeKey)

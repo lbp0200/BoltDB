@@ -14,11 +14,6 @@ func (s *BotreonStore) Rename(key, newKey string) error {
 	if key == newKey {
 		return nil
 	}
-	// 清除读缓存
-	if s.readCache != nil {
-		s.readCache.Delete(key)
-		s.readCache.Delete(newKey)
-	}
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		// 检查旧键是否存在
 		typeKey := TypeOfKeyGet(key)

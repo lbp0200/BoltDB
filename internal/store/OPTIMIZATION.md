@@ -100,22 +100,16 @@
 
 ### 5.1 内存充足场景
 ```go
-// 增加缓存大小
-readCache := NewLRUCache(50000, 10*time.Minute)
-writeCache := NewLRUCache(20000, 2*time.Minute)
-
-// 增加 memtable 数量
+// 读缓存已移除（2026-07-02），BadgerDB 索引缓存（IndexCacheSize）已设为 100MB
+// 建议增加 BadgerDB 内存表数量
 opts.NumMemtables = 10
 opts.IndexCacheSize = 500 * 1024 * 1024 // 500MB
 ```
 
 ### 5.2 内存受限场景
 ```go
-// 减少缓存大小
-readCache := NewLRUCache(5000, 3*time.Minute)
-writeCache := NewLRUCache(2000, 30*time.Second)
-
-// 减少 memtable 数量
+// 读缓存已移除（2026-07-02），BadgerDB 索引缓存（IndexCacheSize）已设为 100MB
+// 建议减少 BadgerDB 内存表数量
 opts.NumMemtables = 3
 opts.IndexCacheSize = 50 * 1024 * 1024 // 50MB
 ```

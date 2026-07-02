@@ -138,8 +138,8 @@ func (s *BotreonStore) Expire(key string, seconds int) (bool, error) {
 			return err
 		}
 
-		// 直接设置TTL：计算过期时间戳（纳秒）
-		expiresAt := uint64(time.Now().UnixNano()) + uint64(seconds)*uint64(time.Second)
+		// 直接设置TTL：计算过期时间戳（秒 — 与 BadgerDB WithTTL 格式一致）
+		expiresAt := uint64(time.Now().Unix()) + uint64(seconds)
 		e := badger.NewEntry(valueKey, valBytes)
 		e.ExpiresAt = expiresAt
 		if err := txn.SetEntry(e); err != nil {
@@ -204,8 +204,12 @@ func (s *BotreonStore) PExpire(key string, milliseconds int64) (bool, error) {
 			return err
 		}
 
-		// 直接设置TTL：计算过期时间戳（纳秒）
-		expiresAt := uint64(time.Now().UnixNano()) + uint64(milliseconds)*uint64(time.Millisecond)
+		// 直接设置TTL：计算过期时间戳（秒 — 与 BadgerDB WithTTL 格式一致）
+		// 毫秒精度：将毫秒转换为秒，向上取整，确保不会因为截断而少算
+		expiresAt := uint64(time.Now().Unix()) + uint64(milliseconds)/1000
+		if milliseconds%1000 != 0 {
+			expiresAt++ // 向上取整，确保不会因为截断而提前过期
+		}
 		e := badger.NewEntry(valueKey, valBytes)
 		e.ExpiresAt = expiresAt
 		if err := txn.SetEntry(e); err != nil {
@@ -266,11 +270,9 @@ func (s *BotreonStore) TTL(key string) (int64, error) {
 			return err
 		}
 
-		// ExpiresAt 返回的是 Unix 时间戳，单位由写入方式决定：
-		//   - Expire() 写入的是纳秒（旧格式，uint64 值极大，约 1.75e18）
-		//   - WithTTL() / SetWithTTL() 写入的是秒（正确格式，约 1.75e9）
-		//   通过阈值 nowUnix*100 区分：秒值不会超过 nowUnix*2（年 2106 上限），
-		//   纳秒值远超此范围。
+		// ExpiresAt 返回的是 Unix 时间戳（秒），由以下方式写入：
+		//   - Expire() / ExpireAt() / PExpire() / PExpireAt() 统一写入秒
+		//   - WithTTL() / SetWithTTL() / RDB loader 写入秒
 		expiresAt := valueItem.ExpiresAt()
 		if expiresAt == 0 {
 			ttl = -1 // -1表示键存在但没有设置过期时间
@@ -278,15 +280,7 @@ func (s *BotreonStore) TTL(key string) (int64, error) {
 		}
 
 		nowUnix := uint64(time.Now().Unix())
-		if expiresAt > nowUnix*100 {
-			// 纳秒格式（旧版 Expire 写入），与 nowNano 比较
-			// #nosec G115 - expiresAt is a valid Unix timestamp within int64 range
-			nowNano := uint64(time.Now().UnixNano())
-			ttl = int64(expiresAt-nowNano) / int64(time.Second)
-		} else {
-			// 秒格式（WithTTL / SetWithTTL / RDB loader 写入），与 nowUnix 比较
-			ttl = int64(expiresAt - nowUnix)
-		}
+		ttl = int64(expiresAt - nowUnix)
 		if ttl < 0 {
 			ttl = -2 // 已过期
 		}
@@ -329,11 +323,9 @@ func (s *BotreonStore) PTTL(key string) (int64, error) {
 			return err
 		}
 
-		// ExpiresAt 返回的是 Unix 时间戳，单位由写入方式决定：
-		//   - Expire() 写入的是纳秒（旧格式，uint64 值极大，约 1.75e18）
-		//   - WithTTL() / SetWithTTL() 写入的是秒（正确格式，约 1.75e9）
-		//   通过阈值 nowUnix*100 区分：秒值不会超过 nowUnix*2（年 2106 上限），
-		//   纳秒值远超此范围。
+		// ExpiresAt 返回的是 Unix 时间戳（秒），由以下方式写入：
+		//   - Expire() / ExpireAt() / PExpire() / PExpireAt() 统一写入秒
+		//   - WithTTL() / SetWithTTL() / RDB loader 写入秒
 		expiresAt := valueItem.ExpiresAt()
 		if expiresAt == 0 {
 			ttl = -1 // -1表示键存在但没有设置过期时间
@@ -341,15 +333,7 @@ func (s *BotreonStore) PTTL(key string) (int64, error) {
 		}
 
 		nowUnix := uint64(time.Now().Unix())
-		if expiresAt > nowUnix*100 {
-			// 纳秒格式（旧版 Expire 写入），与 nowNano 比较
-			// #nosec G115 - expiresAt is a valid Unix timestamp within int64 range
-			nowNano := uint64(time.Now().UnixNano())
-			ttl = int64(expiresAt-nowNano) / int64(time.Millisecond)
-		} else {
-			// 秒格式（WithTTL / SetWithTTL / RDB loader 写入），与 nowUnix 比较
-			ttl = int64(expiresAt-nowUnix) * 1000 // 秒 → 毫秒
-		}
+		ttl = int64(expiresAt-nowUnix) * 1000 // 秒 → 毫秒
 		if ttl < 0 {
 			ttl = -2 // 已过期
 		}
@@ -409,23 +393,12 @@ func (s *BotreonStore) computeAbsoluteExpiry(key string, unit time.Duration) (in
 		}
 
 		// #nosec G115 - expiresAt is a valid Unix timestamp within int64 range
-		nowUnix := uint64(time.Now().Unix())
-		if expiresAt > nowUnix*100 {
-			// 纳秒格式 -> 直接除到底层单位
-			switch unit {
-			case time.Millisecond:
-				result = int64(expiresAt) / 1e6
-			default:
-				result = int64(expiresAt) / 1e9
-			}
-		} else {
-			// 秒格式 -> expiresAt 就是 Unix 秒时间戳
-			switch unit {
-			case time.Millisecond:
-				result = int64(expiresAt) * 1000
-			default:
-				result = int64(expiresAt)
-			}
+		// expiresAt 始终是秒级 Unix 时间戳
+		switch unit {
+		case time.Millisecond:
+			result = int64(expiresAt) * 1000
+		default:
+			result = int64(expiresAt)
 		}
 		return nil
 	})

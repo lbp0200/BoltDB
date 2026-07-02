@@ -46,9 +46,6 @@ func (s *BotreonStore) Set(key string, value string) error {
 		strKey := s.stringKey(key)
 		return s.setValueWithCompression(txn, []byte(strKey), []byte(value))
 	}, 30)
-	if err == nil && s.readCache != nil {
-		s.readCache.Set(key, []byte(value))
-	}
 	return err
 }
 
@@ -77,9 +74,6 @@ func (s *BotreonStore) SetWithTTL(key, value string, ttl time.Duration) error {
 		strKey := s.stringKey(key)
 		return s.setEntryWithCompression(txn, []byte(strKey), []byte(value), ttl)
 	}, 30)
-	if err == nil && s.readCache != nil {
-		s.readCache.Set(key, []byte(value))
-	}
 	return err
 }
 
@@ -146,9 +140,6 @@ func (s *BotreonStore) GetSet(key string, value string) (string, error) {
 	}, 30)
 	if err != nil {
 		return "", err
-	}
-	if s.readCache != nil {
-		s.readCache.Set(key, []byte(value))
 	}
 	return oldValue, nil
 }
@@ -263,12 +254,7 @@ func (s *BotreonStore) Get(key string) (string, error) {
 	if err := s.checkErrorInjector("Get"); err != nil {
 		return "", err
 	}
-	// 先检查读缓存
-	if s.readCache != nil {
-		if cachedValue, found := s.readCache.Get(key); found {
-			return string(cachedValue), nil
-		}
-	}
+	// 读缓存已移除，直接读取 BadgerDB
 
 	var val string
 	err := s.db.View(func(txn *badger.Txn) error {
@@ -300,11 +286,6 @@ func (s *BotreonStore) Get(key string) (string, error) {
 		val = string(valBytes)
 		return nil
 	})
-
-	// 如果成功，更新读缓存
-	if err == nil && s.readCache != nil {
-		s.readCache.Set(key, []byte(val))
-	}
 
 	if errors.Is(err, ErrKeyNotFound) {
 		return "", ErrKeyNotFound
@@ -341,10 +322,6 @@ func (s *BotreonStore) setIntValue(txn *badger.Txn, key string, value int64) err
 	strKey := s.stringKey(key)
 	if err := txn.Set([]byte(strKey), []byte(strconv.FormatInt(value, 10))); err != nil {
 		return err
-	}
-	// Update readCache to maintain consistency
-	if s.readCache != nil {
-		s.readCache.Set(key, []byte(strconv.FormatInt(value, 10)))
 	}
 	return nil
 }
@@ -443,9 +420,6 @@ func (s *BotreonStore) INCRBYFLOAT(key string, increment float64) (float64, erro
 	if err != nil {
 		return 0, err
 	}
-	if s.readCache != nil {
-		s.readCache.Set(key, []byte(newValueStr))
-	}
 	return newValue, nil
 }
 
@@ -456,7 +430,6 @@ func (s *BotreonStore) APPEND(key string, value string) (int, error) {
 
 	// Single transaction: read old value + write new value (eliminates View→Update gap)
 	var newLength int
-	var finalValue string
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		strKey := s.stringKey(key)
 		var existingValue string
@@ -493,12 +466,8 @@ func (s *BotreonStore) APPEND(key string, value string) (int, error) {
 		if err := txn.Set(badgerTypeKey, []byte(KeyTypeString)); err != nil {
 			return err
 		}
-		finalValue = newValue
 		return s.setValueWithCompression(txn, []byte(strKey), []byte(newValue))
 	}, 30)
-	if err == nil && s.readCache != nil {
-		s.readCache.Set(key, []byte(finalValue))
-	}
 	return newLength, err
 }
 
@@ -619,9 +588,6 @@ func (s *BotreonStore) SetRange(key string, offset int, value string) (int, erro
 	if err != nil {
 		return 0, err
 	}
-	if s.readCache != nil {
-		s.readCache.Delete(key)
-	}
 	return newLength, nil
 }
 
@@ -668,10 +634,6 @@ func (s *BotreonStore) GetBit(key string, offset int) (int, error) {
 
 // SetBit 实现 Redis SETBIT 命令，设置指定位的值
 func (s *BotreonStore) SetBit(key string, offset int, value int) (int, error) {
-	// 清除读缓存
-	if s.readCache != nil {
-		s.readCache.Delete(key)
-	}
 	var oldBit int
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		data, err := s.getStringBytes(txn, key)
@@ -756,10 +718,6 @@ func (s *BotreonStore) BitCount(key string, start, end int) (int, error) {
 
 // BitOp 实现 Redis BITOP 命令，位操作
 func (s *BotreonStore) BitOp(op string, destKey string, keys ...string) (int, error) {
-	// 清除读缓存
-	if s.readCache != nil {
-		s.readCache.Delete(destKey)
-	}
 	var resultLength int
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		if len(keys) == 0 {
@@ -1230,11 +1188,5 @@ func (s *BotreonStore) SetStringBatch(entries []StringEntry) error {
 		return err
 	}
 
-	// 写入成功后清除缓存
-	if s.readCache != nil {
-		for _, e := range entries {
-			s.readCache.Delete(e.Key)
-		}
-	}
 	return nil
 }

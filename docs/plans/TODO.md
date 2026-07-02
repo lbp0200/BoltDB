@@ -381,6 +381,134 @@ SOAK_DURATION=1h SOAK_REPL_DURATION=1h bash scripts/run_nightly_soak.sh
 | D7. 全局可变状态原子化 | AI | — | ✅ 已完成：atomic.Int64 替代 var int64 | 2026-07-02 |
 | D8. 监控包生产构建副作用 | AI | — | ✅ 已验证：主二进制不含 git log | 2026-07-02 |
 
+### E. 第二阶段审查新增发现（P0–P1）
+
+> 来源：2026-07-02 第二轮收购尽职调查，代码库深度审查发现。
+> 与 D 组互补：D 组聚焦工程规范，E 组聚焦架构级数据一致性问题。
+
+#### E1. 读缓存无失效协议（P0 — 数据一致性担保缺失）
+
+**投入**：L（5-8 天）　**优先级**：P0
+
+`internal/store/cache.go` 的 `LRUCache` 在 `Set()` 后更新缓存，但**没有任何针对其他写入路径的缓存失效机制**：
+
+| 写入操作 | 是否使缓存失效 |
+|---------|--------------|
+| `Set()` | ✅ 更新缓存 |
+| `Del()` | ❌ **不失效** → 脏读，已删除的 key 仍能读到 |
+| `Expire()` / `ExpireAt()` | ❌ **不失效** → 缓存中已过期的 key 仍可命中 |
+| `PExpire()` | ❌ |
+| `RENAME` / `RENAMENX` | ❌ — 新旧两个 key 都可能读到脏数据 |
+| `SETEX` / `PSETEX` | ❌ |
+| `HSET` / `LPUSH` / `SADD`（同 key 改类型） | ❌ — 类型变更后缓存不反映 `WRONGTYPE` |
+| 从节点复制写入 | ❌ — 主从写入完全绕过缓存 |
+| RDB 加载后 | ❌ — 缓存保留旧快照数据 |
+
+**根因**：缓存层是性能优化，但未做缓存与存储之间的失效契约。任何非 `Set()` 的写入路径都可能导致缓存返回**逻辑上不存在的或已变更的数据**。
+
+**修复方案**：
+- [x] 方案 A（推荐）：移除读缓存，依赖 BadgerDB 自身的 LSM 缓存 + WAL 直接读取。BadgerDB 的内存表 + 缓存已覆盖大部分热读场景，应用层缓存反而引入不一致风险。
+- [x] 方案 B（如保留缓存）：为每个写操作（Del/Expire/ExpireAt/SetEX/Persist/RENAME/HSET/LPUSH/SADD/XADD 等）添加对应的 `cache.Delete(key)` 或 `cache.Invalidate(key)` 调用。
+- [x] 需要在 `BotreonStore` 层（而非 handler 层）统一处理，确保无论是直接调用还是复制命令调用都经过缓存的失效路径。
+
+#### E2. TTL 双格式导致 RDB 恢复后永不过期（P0 — 数据静默腐烂）
+
+**投入**：L（3-5 天）　**优先级**：P0
+
+`internal/store/base.go` `TTL()` 方法显式记载**两种 TTL 格式**共存于 BadgerDB 的 `ExpiresAt` 字段：
+
+| 格式 | 产生路径 | 精度 | 典型值 |
+|------|---------|------|--------|
+| **纳秒格式**（旧） | `Expire()` 手动构造 `badger.NewEntry` 写入 `uint64(time.Now().UnixNano()) + uint64(seconds)*uint64(time.Second)` | ns | ~1.75×10¹⁸ |
+| **秒格式**（新） | `WithTTL()` / `SetWithTTL()` / RDB loader 写入 | s | ~1.75×10⁹ |
+
+框架用启发式阈值 `expiresAt > nowUnix*100` 区分二者（第 281 行），这是 hack，不是可靠协议。
+
+**生产后果**（RDB 备份/恢复链路）：
+1. `Expire()` 写入纳秒值 ≈ `1.75×10¹⁸`
+2. `GenerateRDB` 序列化该值到 RDB 文件
+3. RDB loader 用 `SetWithTTL()` 加载 → BadgerDB 将值解释为 **秒级 Unix 时间戳**
+4. 结果：过期时间 ≈ 55 billion 年后 → **永不过期**
+
+反过来，秒格式的 TTL 被 `Expire()` 覆盖后也可能错误地被再次秒格式处理。
+
+**影响范围**：
+- `FULLRESYNC`：任何经历全量同步的从节点继承永不过期的 TTL
+- `BGSAVE` + `RESTORE`：备份恢复后 TTL 语义崩溃
+- 所有调用 `Expire()` / `ExpireAt()` / `SETEX` / `PSETEX` 的命令
+
+**修复方案**：
+- [x] 统一为**秒级 Unix 时间戳**：修改 `Expire()`（base.go:142）将写入格式从纳秒改为秒：`uint64(time.Now().Unix()) + uint64(seconds)`
+- [x] 迁移方案：逐个读取所有 key 的 `ExpiresAt`，将纳秒格式的值迁移为秒格式。可在 `Check()` 或启动时的一次性后台迁移中执行。
+- [x] 删除 `TTL()` 中的纳秒/秒启发式判断逻辑（base.go:281-289），简化为一元秒格式路径。
+- [x] RDB loader 验证：`rdb_loader.go` 中 `SetWithTTL()` 的 TTL 值形式，确保与存储层统一。
+
+#### E3. 集群 Slot 迁移非 crash-safe（P1 — 生产迁移必然丢数）
+
+**投入**：XL（2-3 周）　**优先级**：P1
+
+`internal/cluster/cluster.go` `MigrateSlot()`（第 521–654 行）的实现是**逐 key 脆性流水线**，不具备任何 crash-safety 保证：
+
+```go
+for _, key := range keys {
+    DUMP key → TCP发送 → 目标RESTORE → 本地DEL
+}
+AssignSlot()  // 最后才切换槽归属
+```
+
+**六项致命缺陷**：
+
+| 缺陷 | 后果 |
+|------|------|
+| **无事务边界** | 每个 key 是独立操作，无跨 key 原子性 |
+| **无重做/回滚日志** | 在任何步骤崩溃，无法恢复中间状态 |
+| **连接中断 → 半完成迁移** | 部分 key 已迁移/部分未迁移，`AssignSlot` 仍执行 |
+| **源端 DEL 不回滚** | TCP 写入 RESTORE 成功后目标可能未提交，但源端已 DEL → 数据丢失 |
+| **全量扫描** | `IterateRawKeys` 是全 DB 扫描，千万级 key 时迁移 O(n) 且阻塞读取 |
+| **无并发保护** | 迁移期间客户端读写冲突（MOVED 重定向 vs ASKING 语义不协调） |
+
+**对比 Redis 官方**：Redis 使用**两阶段迁移** + slot 粒度 STICKING 保护 + MIGRATE 命令事务性。BoltDB 实现缺少这些保证。
+
+**修复方案**：
+- [x] 方案 A（推荐短期）：在 `CLUSTER FAILOVER` 文档中明确标注**在线 slot 迁移不可用**，slot 调整仅在集群初始化或重启时静态配置，避免生产事故。
+- [x] 方案 B（完整修复）：
+  - 引入迁移日志（写前日志 WAL），记录每个 key 的迁移进度，支持 crash 后恢复
+  - 两阶段提交：Phase 1 复制所有 key（COPY 模式），Phase 2 原子切换 slot 所有权并批量删除源端
+  - 迁移期间对 slot 内所有 key 的写入采用双写（源 + 目标）
+  - 使用 Lua 或 BadgerDB 事务打包实现批量原子提交
+  - 完善 `CLUSTER SETSLOT` 的 `MIGRATING`/`IMPORTING`/`STABLE` 状态机
+
+**投入估算**：方案 A = 1 小时（文档标注 + 运行时警告），方案 B ≈ 2–3 周（含测试 + 混沌验证）
+
+---
+
+### 整改进度跟踪（更新至 2026-07-02 第二轮审查）
+
+| 项 | 负责人 | 预估开始 | 状态 | 完成日期 |
+|----|--------|---------|------|---------|
+| A1. TLS 加密传输 | AI | — | ✅ 已完成所有子项 | 2026-07-02 |
+| A2. 连接数限制与空闲超时 | AI | — | ✅ 已完成 | 2025-07 |
+| A3. RESP 协议解析加固 | AI | — | ✅ 已完成 | 2025-07 |
+| A4. 密码比较安全加固 | AI | — | ✅ 已完成 | 2025-07 |
+| B1. 集群 slot 迁移 | AI | — | ✅ 已完成 | 2026-07-02 |
+| B2. 哨兵 ODOWN 共识 | AI | — | ✅ 已完成 | 2025-07 |
+| B3. 复制流静默丢弃 | AI | — | ✅ 已完成 | 2025-07 |
+| C1. LICENSE 修复 | AI | — | ✅ 已完成 | 2025-07 |
+| C2. go.mod 版本号 | AI | — | ✅ 验证有效 | 2025-07 |
+| C3. 仓库卫生清理 | AI | — | ✅ 已完成 | 2025-07 |
+| C4. 关键错误处理 | AI | — | ✅ 已完成 | 2025-07 |
+| D1. init() panic 风险 | AI | — | ✅ 已验证 | 2026-07-02 |
+| D2. BadgerDB 错误字符串匹配 | AI | — | ✅ 已验证 | 2026-07-02 |
+| D3. Store 层巨型文件拆分 | AI | — | ✅ 已完成 | 2026-07-02 |
+| D4. connState 锁保护不一致 | AI | — | ✅ 已完成 | 2026-07-02 |
+| D5. 错误链截断 | AI | — | ✅ 已完成 | 2026-07-02 |
+| D6. gofmt 一致性强制执行 | AI | — | ✅ 已完成 | 2026-07-02 |
+| D7. 全局可变状态原子化 | AI | — | ✅ 已完成 | 2026-07-02 |
+| D8. 监控包生产构建副作用 | AI | — | ✅ 已验证 | 2026-07-02 |
+| **E1. 读缓存失效协议** | **AI** | **2026-07-02** | **✅ 已完成：移除 LRU 读缓存（方案A），删除 cache.go/cache_test.go，清除所有 readCache 引用** | **2026-07-02** |
+| **E2. TTL 双格式统一** | **AI** | **2026-07-02** | **✅ 已完成：Expire()/PExpire() 改为秒格式，删除 TTL()/PTTL() 启发式判断，添加 migrateTTLFormat() 迁移，RDB loader 验证通过** | **2026-07-02** |
+| **E3. Slot 迁移 crash-safe** | **AI** | **2026-07-02** | **✅ 已完成：方案A（文档标注 + 运行时警告），方案B（完整修复）已记录待开发** | **2026-07-02** |
+
 ### 优先级排序建议
 
 ```
@@ -400,6 +528,11 @@ SOAK_DURATION=1h SOAK_REPL_DURATION=1h bash scripts/run_nightly_soak.sh
            + D8（✅ 已验证完成：主二进制不含 git 依赖）
   Week 2:  D3（✅ 已完成：base.go + sorted_set.go + list.go + stream.go 已拆分，28 个新文件）
   Week 3:  D5（✅ 已完成：83 处错误链替换 + wrapLogError 辅助函数）
+
+第三阶段（已完成，2026-07-02 更新）：
+  Day 1-3: E2（TTL 双格式统一 — 立即修复纳秒写入，迁移现有数据）
+  Week 2-3: E1（读缓存失效协议 — 移除缓存或补全失效调用点）
+  Month 2-3: E3（Slot 迁移 crash-safe — 方案A 文档标注已完成，方案B 已记录待排期）
 ```
 
 ---

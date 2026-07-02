@@ -301,13 +301,7 @@ func TestSetStringBatch_Coverage(t *testing.T) {
 	assert.Equal(t, "v1", val)
 }
 
-func TestLRUCache_Size_Coverage(t *testing.T) {
-	t.Parallel()
-	cache := NewLRUCache(10, time.Minute)
-	assert.Equal(t, 0, cache.Size())
-	cache.Set("k", []byte("v"))
-	assert.Equal(t, 1, cache.Size())
-}
+// 读缓存已移除，TestLRUCache_Size_Coverage 测试一并删除
 
 func TestPubSubManager_Clear_Coverage(t *testing.T) {
 	t.Parallel()

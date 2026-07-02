@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
+
+	"github.com/lbp0200/BoltDB/internal/logger"
 )
 
 // CloseTimeout is the maximum time to wait for BadgerDB to close.
@@ -62,7 +64,6 @@ type StreamReadResult struct {
 type BotreonStore struct {
 	db              *badger.DB
 	compressionType CompressionType
-	readCache       *LRUCache
 
 	// Key-level locking for atomic operations
 	keyLockMgr *KeyLockManager
@@ -310,6 +311,79 @@ func (s *BotreonStore) Check() error {
 		return fmt.Errorf("consistency check failed: %d orphan type keys (TYPE_ exists but data missing: %v), %d orphan data keys (data exists but TYPE_ missing: %v)",
 			len(orphanType), orphanType, len(orphanData), orphanData)
 	}
+
+	// 执行 TTL 格式迁移（纳秒 → 秒）
+	// 旧版本 Expire()/PExpire() 使用 uint64(time.Now().UnixNano()) 写入 ExpiresAt，
+	// 这是与 BadgerDB 预期格式（秒级 Unix 时间戳）不一致的错误格式。
+	// 迁移会扫描所有 key，将纳秒格式的 TTL 转换为秒格式。
+	if err := s.migrateTTLFormat(); err != nil {
+		logger.Logger.Warn().Err(err).Msg("TTL 格式迁移失败（非致命，旧格式 TTL 仍可被识别）")
+	}
+	return nil
+}
+
+// migrateTTLFormat 将 BadgerDB 中纳秒格式的 ExpiresAt 迁移为秒格式。
+// 旧版 Expire()/PExpire() 错误地写入了纳秒级时间戳，而 BadgerDB 期望秒级 Unix 时间戳。
+// 这个迁移是一次性的：扫描所有 key，将纳秒格式的 TTL 转换为秒格式。
+func (s *BotreonStore) migrateTTLFormat() error {
+	nowUnix := uint64(time.Now().Unix())
+	type fixEntry struct {
+		key    []byte
+		newExp uint64
+	}
+	var keysToFix []fixEntry
+
+	err := s.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			expiresAt := item.ExpiresAt()
+			if expiresAt == 0 {
+				continue
+			}
+			// 纳秒格式：值远大于 nowUnix*100（约 1.75e18 vs 1.75e9）
+			if expiresAt > nowUnix*100 {
+				keysToFix = append(keysToFix, fixEntry{
+					key:    item.KeyCopy(nil),
+					newExp: expiresAt / 1e9, // 纳秒 → 秒
+				})
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to scan for TTL migration: %w", err)
+	}
+
+	if len(keysToFix) == 0 {
+		return nil // 无需迁移
+	}
+
+	logger.Logger.Info().Int("count", len(keysToFix)).Msg("TTL 格式迁移：发现纳秒格式的过期时间，正在迁移为秒格式")
+
+	for _, kf := range keysToFix {
+		if err := s.db.Update(func(txn *badger.Txn) error {
+			item, err := txn.Get(kf.key)
+			if err != nil {
+				return err
+			}
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			e := badger.NewEntry(kf.key, val)
+			e.ExpiresAt = kf.newExp
+			return txn.SetEntry(e)
+		}); err != nil {
+			logger.Logger.Warn().Err(err).Bytes("key", kf.key).Msg("TTL 迁移：单个 key 迁移失败，继续")
+		}
+	}
+
+	logger.Logger.Info().Int("migrated", len(keysToFix)).Msg("TTL 格式迁移完成")
 	return nil
 }
 
@@ -355,15 +429,12 @@ func NewBotreonStoreWithCompression(path string, compressionType CompressionType
 		return nil, err
 	}
 
-	readCache := NewLRUCache(10000, 5*time.Minute)
-
 	bpConfig := DefaultBackpressureConfig()
 
 	p := newWriteSlot(bpConfig.MaxConcurrentWrites)
 	s := &BotreonStore{
 		db:                  db,
 		compressionType:     compressionType,
-		readCache:           readCache,
 		keyLockMgr:          NewKeyLockManager(256),
 		blockingPopChans:    make(map[string][]chan BlockingResult),
 		blockingZPopChans:   make(map[string][]chan string),
@@ -458,9 +529,7 @@ func (s *BotreonStore) ClearAllData() error {
 }
 
 func (s *BotreonStore) ClearCaches() {
-	if s.readCache != nil {
-		s.readCache.Clear()
-	}
+	// 读缓存已移除，ClearCaches 为空操作保留 API 兼容性
 }
 
 // clearAllDataIterative 迭代删除所有键（DropPrefix 失败时的备选方案）

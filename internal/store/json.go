@@ -71,19 +71,15 @@ func (s *BotreonStore) JSONSet(key, path, value string, nx, xx bool) (string, er
 		return "", err
 	}
 
-	skipped := false
 	err = s.retryUpdate(func(txn *badger.Txn) error {
-		skipped = false
 		exists, err := s.jsonKeyExistsInTxn(txn, key)
 		if err != nil {
 			return err
 		}
 		if nx && exists {
-			skipped = true
 			return nil
 		}
 		if xx && !exists {
-			skipped = true
 			return nil
 		}
 
@@ -107,9 +103,6 @@ func (s *BotreonStore) JSONSet(key, path, value string, nx, xx bool) (string, er
 	}, 30)
 	if err != nil {
 		return "", err
-	}
-	if !skipped && s.readCache != nil {
-		s.readCache.Delete(key)
 	}
 	return "OK", nil
 }
@@ -211,9 +204,6 @@ func (s *BotreonStore) JSONDel(key string, paths ...string) (int64, error) {
 		}, 30)
 		if err != nil {
 			return 0, err
-		}
-		if deleted > 0 && s.readCache != nil {
-			s.readCache.Delete(key)
 		}
 		return deleted, nil
 	}
@@ -346,9 +336,6 @@ func (s *BotreonStore) JSONArrAppend(key, path string, values ...string) (int64,
 			return 0, ErrKeyNotFound
 		}
 		return 0, err
-	}
-	if s.readCache != nil {
-		s.readCache.Delete(key)
 	}
 	return newLen, nil
 }
@@ -533,9 +520,6 @@ func (s *BotreonStore) JSONNumIncrBy(key, path string, increment float64) (float
 		}
 		return 0, err
 	}
-	if s.readCache != nil {
-		s.readCache.Delete(key)
-	}
 	return result, nil
 }
 
@@ -605,9 +589,6 @@ func (s *BotreonStore) JSONNumMultBy(key, path string, multiplier float64) (floa
 		}
 		return 0, err
 	}
-	if s.readCache != nil {
-		s.readCache.Delete(key)
-	}
 	return result, nil
 }
 
@@ -655,9 +636,6 @@ func (s *BotreonStore) JSONClear(key, path string) (int64, error) {
 			return 0, ErrKeyNotFound
 		}
 		return 0, err
-	}
-	if cleared > 0 && s.readCache != nil {
-		s.readCache.Delete(key)
 	}
 	return cleared, nil
 }
