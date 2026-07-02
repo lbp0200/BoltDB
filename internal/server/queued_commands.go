@@ -24,7 +24,7 @@ func (h *Handler) executeQueuedCommand(cmd string, args [][]byte, respVersion in
 		key, value := string(args[0]), string(args[1])
 		ttl, nx, xx, get, keepTTL, err := parseSetOptions(args[2:])
 		if err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapLogError(err)
 		}
 		var oldVal string
 		exists := false

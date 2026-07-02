@@ -65,10 +65,10 @@ func TestIdleTimeout_ReadDeadline(t *testing.T) {
 	defer db.Close()
 
 	handler := &Handler{
-		Db:         db,
-		conns:      make(map[*connState]*connMeta),
-		Timeout:    5 * time.Second,
-		Ctx:        t.Context(),
+		Db:      db,
+		conns:   make(map[*connState]*connMeta),
+		Timeout: 5 * time.Second,
+		Ctx:     t.Context(),
 	}
 
 	// 验证 Timeout 被正确设置

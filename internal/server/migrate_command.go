@@ -65,6 +65,7 @@ func (h *Handler) handleMIGRATE(state *connState, args [][]byte, remoteAddr stri
 	// Connect once and send all RESTORE commands over the same connection
 	conn, err := net.DialTimeout("tcp", targetAddr, timeout)
 	if err != nil {
+		logger.Logger.Debug().Err(err).Str("target", targetAddr).Msg("MIGRATE: connecting")
 		return proto.NewError(fmt.Sprintf("ERR MIGRATE: connecting to %s: %v", targetAddr, err))
 	}
 	defer func() { _ = conn.Close() }()
@@ -80,6 +81,7 @@ func (h *Handler) handleMIGRATE(state *connState, args [][]byte, remoteAddr stri
 				continue
 			}
 			_ = conn.Close()
+			logger.Logger.Debug().Err(err).Str("key", migrateKey).Msg("MIGRATE: dump key failed")
 			return proto.NewError(fmt.Sprintf("ERR MIGRATE: dump key %s: %v", migrateKey, err))
 		}
 
@@ -100,12 +102,14 @@ func (h *Handler) handleMIGRATE(state *connState, args [][]byte, remoteAddr stri
 
 		if _, err := conn.Write(restoreData); err != nil {
 			_ = conn.Close()
+			logger.Logger.Debug().Err(err).Str("target", targetAddr).Msg("MIGRATE: write failed")
 			return proto.NewError(fmt.Sprintf("ERR MIGRATE: write to %s: %v", targetAddr, err))
 		}
 
 		resp, err := proto.ReadRESP(reader)
 		if err != nil {
 			_ = conn.Close()
+			logger.Logger.Debug().Err(err).Str("key", migrateKey).Msg("MIGRATE: target response error")
 			return proto.NewError(fmt.Sprintf("ERR MIGRATE: target response for key %s: %v", migrateKey, err))
 		}
 

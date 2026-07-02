@@ -52,6 +52,11 @@ func getEnv(key, fallback string) string {
 func main() {
 	flag.Parse()
 
+	// 启动时校验 isWriteCommand map 与 dispatch switch 一致性
+	if err := server.ValidateWriteCommandConsistency(); err != nil {
+		logger.Logger.Fatal().Err(err).Msg("Write command consistency check failed: isWriteCommand map out of sync with dispatch switch")
+	}
+
 	// 设置日志级别
 	if *logLevelFlag != "" {
 		logger.SetLevelFromString(*logLevelFlag)

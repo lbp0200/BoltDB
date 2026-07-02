@@ -87,7 +87,7 @@ func (h *Handler) handleTS_ADD(state *connState, args [][]byte, remoteAddr strin
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewInteger(ts)
 }
@@ -109,7 +109,7 @@ func (h *Handler) handleTS_GET(state *connState, args [][]byte, remoteAddr strin
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	// Return as array: [timestamp, value]
 	return &proto.Array{
@@ -144,7 +144,7 @@ func (h *Handler) handleTS_RANGE(state *connState, args [][]byte, remoteAddr str
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	arr := make([][]byte, 0, len(results)*2)
 	for _, dp := range results {
@@ -168,7 +168,7 @@ func (h *Handler) handleTS_DEL(state *connState, args [][]byte, remoteAddr strin
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewInteger(deleted)
 }
@@ -190,7 +190,7 @@ func (h *Handler) handleTS_INFO(state *connState, args [][]byte, remoteAddr stri
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	// Return as array of key-value pairs
 	return &proto.Array{
@@ -223,7 +223,7 @@ func (h *Handler) handleTS_LEN(state *connState, args [][]byte, remoteAddr strin
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewInteger(length)
 }
@@ -243,7 +243,7 @@ func (h *Handler) handleTS_MGET(state *connState, args [][]byte, remoteAddr stri
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	arr := make([][]byte, 0, len(results)*2)
 	for _, dp := range results {
@@ -282,7 +282,7 @@ func (h *Handler) handleTS_REVRANGE(state *connState, args [][]byte, remoteAddr 
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	arr := make([][]byte, 0, len(results)*2)
 	for _, dp := range results {
@@ -322,11 +322,11 @@ func (h *Handler) handleTS_MRANGE(state *connState, args [][]byte, remoteAddr st
 	}
 	keys, err := h.Db.TSQueryIndex(filters)
 	if err != nil {
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	results, err := h.Db.TSMRange(strings.Join(filters, ","), keys, start, stop, count)
 	if err != nil {
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	respElems := make([]proto.RESP, len(results))
 	for i, r := range results {
@@ -377,7 +377,7 @@ func (h *Handler) handleTS_MREVRANGE(state *connState, args [][]byte, remoteAddr
 	}
 	keys, err := h.Db.TSQueryIndex(filters)
 	if err != nil {
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	var results [][]interface{}
 	for _, key := range keys {
@@ -386,7 +386,7 @@ func (h *Handler) handleTS_MREVRANGE(state *connState, args [][]byte, remoteAddr
 			if errors.Is(err, store.ErrKeyNotFound) || errors.Is(err, store.ErrWrongType) {
 				continue
 			}
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapLogError(err)
 		}
 		if len(dps) > 0 {
 			results = append(results, []interface{}{key, dps})
@@ -422,7 +422,7 @@ func (h *Handler) handleTS_QUERYINDEX(state *connState, args [][]byte, remoteAdd
 	}
 	keys, err := h.Db.TSQueryIndex(filters)
 	if err != nil {
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	arr := make([][]byte, len(keys))
 	for i, key := range keys {
@@ -459,7 +459,7 @@ func (h *Handler) handleTS_MADD(state *connState, args [][]byte, remoteAddr stri
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapLogError(err)
 		}
 		results[i/3] = proto.NewInteger(ts)
 	}
@@ -495,7 +495,7 @@ func (h *Handler) handleTS_INCRBY(state *connState, args [][]byte, remoteAddr st
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewInteger(ts)
 }
@@ -518,7 +518,7 @@ func (h *Handler) handleTS_CREATERULE(state *connState, args [][]byte, remoteAdd
 	}
 	h.markDirtyKeys(state, sourceKey, destKey)
 	if err := h.Db.TSAddRule(sourceKey, destKey, aggregator, bucketDuration); err != nil {
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewSimpleString("OK")
 }
@@ -541,7 +541,7 @@ func (h *Handler) handleTS_DELETERULE(state *connState, args [][]byte, remoteAdd
 	}
 	h.markDirtyKeys(state, sourceKey, destKey)
 	if err := h.Db.TSDelRule(sourceKey, destKey, aggregator, bucketDuration); err != nil {
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewSimpleString("OK")
 }

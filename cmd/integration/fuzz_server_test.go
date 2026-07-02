@@ -129,35 +129,35 @@ const (
 )
 
 var opNames = map[byte]string{
-	opSET:        "SET",
-	opGET:        "GET",
-	opMULTI:      "MULTI",
-	opEXEC:       "EXEC",
-	opDISCARD:    "DISCARD",
-	opWATCH:      "WATCH",
-	opUNWATCH:    "UNWATCH",
-	opSUBSCRIBE:  "SUBSCRIBE",
+	opSET:         "SET",
+	opGET:         "GET",
+	opMULTI:       "MULTI",
+	opEXEC:        "EXEC",
+	opDISCARD:     "DISCARD",
+	opWATCH:       "WATCH",
+	opUNWATCH:     "UNWATCH",
+	opSUBSCRIBE:   "SUBSCRIBE",
 	opUNSUBSCRIBE: "UNSUBSCRIBE",
-	opPUBLISH:    "PUBLISH",
-	opBLPOP:      "BLPOP",
-	opBZPOPMAX:   "BZPOPMAX",
-	opXREAD:      "XREAD",
-	opCLIENTKILL: "CLIENT KILL",
-	opQUIT:       "QUIT",
-	opPING:       "PING",
-	opDEL:        "DEL",
-	opLPUSH:      "LPUSH",
-	opSADD:       "SADD",
-	opZADD:       "ZADD",
-	opHSET:       "HSET",
-	opHGET:       "HGET",
-	opINCR:       "INCR",
-	opEXPIRE:     "EXPIRE",
-	opRPUSH:      "RPUSH",
-	opRENAME:     "RENAME",
-	opSMEMBERS:   "SMEMBERS",
-	opGEOADD:     "GEOADD",
-	opMONITOR:    "MONITOR",
+	opPUBLISH:     "PUBLISH",
+	opBLPOP:       "BLPOP",
+	opBZPOPMAX:    "BZPOPMAX",
+	opXREAD:       "XREAD",
+	opCLIENTKILL:  "CLIENT KILL",
+	opQUIT:        "QUIT",
+	opPING:        "PING",
+	opDEL:         "DEL",
+	opLPUSH:       "LPUSH",
+	opSADD:        "SADD",
+	opZADD:        "ZADD",
+	opHSET:        "HSET",
+	opHGET:        "HGET",
+	opINCR:        "INCR",
+	opEXPIRE:      "EXPIRE",
+	opRPUSH:       "RPUSH",
+	opRENAME:      "RENAME",
+	opSMEMBERS:    "SMEMBERS",
+	opGEOADD:      "GEOADD",
+	opMONITOR:     "MONITOR",
 }
 
 // FuzzServerCommandSequence fuzzes state-machine command sequences.
@@ -499,8 +499,8 @@ func executeFuzzOp(t *testing.T, conn net.Conn, reader *bufio.Reader, op byte, i
 		return true
 	case opGEOADD:
 		key := randKey(rng)
-		lng := fmt.Sprintf("%f", (rng.Float64()*360-180))
-		lat := fmt.Sprintf("%f", (rng.Float64()*180-90))
+		lng := fmt.Sprintf("%f", (rng.Float64()*360 - 180))
+		lat := fmt.Sprintf("%f", (rng.Float64()*180 - 90))
 		member := randString(rng, 8)
 		sendRESP(conn, "GEOADD", key, lng, lat, member)
 		return true
@@ -600,10 +600,10 @@ func FuzzServerPipeline(f *testing.F) {
 // Tests race conditions, deadlocks, and state corruption under contention.
 func FuzzServerConcurrent(f *testing.F) {
 	seeds := [][]byte{
-		{2, 0, 5},             // 2 clients, 5 ops each
-		{3, 0, 3},             // 3 clients, 3 ops each
-		{5, 1, 2},             // 5 clients, 2 ops each (shared key range)
-		{10, 0, 1},            // 10 clients, 1 op each
+		{2, 0, 5},  // 2 clients, 5 ops each
+		{3, 0, 3},  // 3 clients, 3 ops each
+		{5, 1, 2},  // 5 clients, 2 ops each (shared key range)
+		{10, 0, 1}, // 10 clients, 1 op each
 	}
 	for _, s := range seeds {
 		f.Add(s)

@@ -248,7 +248,7 @@ func (h *Handler) handleSET(state *connState, args [][]byte, remoteAddr string) 
 
 	ttl, nx, xx, get, keepTTL, err := parseSetOptions(args[2:])
 	if err != nil {
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 
 	h.markDirtyKeys(state, key)
@@ -275,7 +275,7 @@ func (h *Handler) handleGET(state *connState, args [][]byte, remoteAddr string) 
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewBulkString([]byte(value))
 }
@@ -300,11 +300,11 @@ func (h *Handler) handleGETDEL(state *connState, args [][]byte, remoteAddr strin
 		if errors.Is(gdErr, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", gdErr))
+		return wrapLogError(gdErr)
 	}
 	h.markDirtyKeys(state, gdKey)
 	if _, err := h.Db.Del(gdKey); err != nil {
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewBulkString([]byte(gdValue))
 }
@@ -353,12 +353,12 @@ func (h *Handler) handleGETEX(state *connState, args [][]byte, remoteAddr string
 		if errors.Is(gexErr, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", gexErr))
+		return wrapLogError(gexErr)
 	}
 	if gexSeconds > 0 {
 		h.markDirtyKeys(state, gexKey)
 		if _, err := h.Db.Expire(gexKey, gexSeconds); err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapLogError(err)
 		}
 	}
 	return proto.NewBulkString([]byte(gexValue))

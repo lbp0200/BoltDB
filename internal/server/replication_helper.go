@@ -95,12 +95,6 @@ func ValidateWriteCommandConsistency() error {
 	return nil
 }
 
-func init() {
-	if err := ValidateWriteCommandConsistency(); err != nil {
-		panic(err)
-	}
-}
-
 // isWriteCommand 检查是否是写命令
 func isWriteCommand(cmd string) bool {
 	return getWriteCommandSet()[cmd]

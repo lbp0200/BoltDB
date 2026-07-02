@@ -2,7 +2,6 @@ package server
 
 import (
 	"errors"
-	"fmt"
 	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/lbp0200/BoltDB/internal/store"
 	"strconv"
@@ -33,7 +32,7 @@ func (h *Handler) handleJSON_SET(state *connState, args [][]byte, remoteAddr str
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewSimpleString(result)
 }
@@ -59,7 +58,7 @@ func (h *Handler) handleJSON_GET(state *connState, args [][]byte, remoteAddr str
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	if len(result) == 1 {
 		return proto.NewBulkString([]byte(result[0]))
@@ -88,7 +87,7 @@ func (h *Handler) handleJSON_DEL(state *connState, args [][]byte, remoteAddr str
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewInteger(count)
 }
@@ -114,7 +113,7 @@ func (h *Handler) handleJSON_TYPE(state *connState, args [][]byte, remoteAddr st
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewBulkString([]byte(result))
 }
@@ -134,7 +133,7 @@ func (h *Handler) handleJSON_MGET(state *connState, args [][]byte, remoteAddr st
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	arr := make([][]byte, len(result))
 	for i, v := range result {
@@ -163,7 +162,7 @@ func (h *Handler) handleJSON_ARRAPPEND(state *connState, args [][]byte, remoteAd
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewInteger(count)
 }
@@ -183,7 +182,7 @@ func (h *Handler) handleJSON_ARRLEN(state *connState, args [][]byte, remoteAddr 
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewInteger(count)
 }
@@ -203,7 +202,7 @@ func (h *Handler) handleJSON_OBJKEYS(state *connState, args [][]byte, remoteAddr
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	arr := make([][]byte, len(keys))
 	for i, k := range keys {
@@ -228,7 +227,7 @@ func (h *Handler) handleJSON_NUMINCRBY(state *connState, args [][]byte, remoteAd
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewBulkString([]byte(strconv.FormatFloat(result, 'f', -1, 64)))
 }
@@ -249,7 +248,7 @@ func (h *Handler) handleJSON_NUMMULTBY(state *connState, args [][]byte, remoteAd
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewBulkString([]byte(strconv.FormatFloat(result, 'f', -1, 64)))
 }
@@ -270,7 +269,7 @@ func (h *Handler) handleJSON_CLEAR(state *connState, args [][]byte, remoteAddr s
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewInteger(count)
 }
@@ -300,7 +299,7 @@ func (h *Handler) handleJSON_DEBUG(state *connState, args [][]byte, remoteAddr s
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewInteger(memory)
 

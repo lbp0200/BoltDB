@@ -232,7 +232,8 @@ func TestGeoMutationKill_GeosearchstoreOptions(t *testing.T) {
 
 // TestRestoreMutationKill_Absttl 验证 RESTORE ABSTTL 时间计算
 // 目标变异体: key_commands.go:131 (ttlMS > now boundary)
-//            key_commands.go:132 (ttl = time.Duration(ttlMS-now) arithmetic)
+//
+//	key_commands.go:132 (ttl = time.Duration(ttlMS-now) arithmetic)
 func TestRestoreMutationKill_Absttl(t *testing.T) {
 	t.Parallel()
 	handler, state := setupTestHandler(t)
@@ -673,11 +674,11 @@ func TestGensearchstoreMutationKill_CountZero(t *testing.T) {
 // mockNetConnMut is a minimal net.Conn mock for mutation-kill tests
 type mockNetConnMut struct{}
 
-func (m *mockNetConnMut) Read(b []byte) (n int, err error)  { return 0, fmt.Errorf("mock") }
-func (m *mockNetConnMut) Write(b []byte) (n int, err error) { return len(b), nil }
-func (m *mockNetConnMut) Close() error                      { return nil }
-func (m *mockNetConnMut) LocalAddr() net.Addr               { return &mockAddrMut{} }
-func (m *mockNetConnMut) RemoteAddr() net.Addr              { return &mockAddrMut{} }
+func (m *mockNetConnMut) Read(b []byte) (n int, err error)   { return 0, fmt.Errorf("mock") }
+func (m *mockNetConnMut) Write(b []byte) (n int, err error)  { return len(b), nil }
+func (m *mockNetConnMut) Close() error                       { return nil }
+func (m *mockNetConnMut) LocalAddr() net.Addr                { return &mockAddrMut{} }
+func (m *mockNetConnMut) RemoteAddr() net.Addr               { return &mockAddrMut{} }
 func (m *mockNetConnMut) SetDeadline(t time.Time) error      { return nil }
 func (m *mockNetConnMut) SetReadDeadline(t time.Time) error  { return nil }
 func (m *mockNetConnMut) SetWriteDeadline(t time.Time) error { return nil }

@@ -111,7 +111,7 @@ func (h *Handler) handleSAVE(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR backup not enabled")
 	}
 	if err := h.Backup.Save(); err != nil {
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.OK
 }
@@ -126,7 +126,7 @@ func (h *Handler) handleBGSAVE(state *connState, args [][]byte, remoteAddr strin
 		bgCtx = context.Background()
 	}
 	if err := h.Backup.BGSave(bgCtx); err != nil {
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewSimpleString("Background saving started")
 }

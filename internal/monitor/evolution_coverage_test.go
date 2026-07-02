@@ -222,9 +222,9 @@ func TestComputeEvolutionLevel(t *testing.T) {
 
 	t.Run("health slope recent < -0.02 fails", func(t *testing.T) {
 		r := EvolutionReport{
-			RunCount:           3,
-			HealthSlopeRecent:  -0.03,
-			Runs:               []EvolutionRun{{}, {}, {}},
+			RunCount:          3,
+			HealthSlopeRecent: -0.03,
+			Runs:              []EvolutionRun{{}, {}, {}},
 		}
 		level, reasons := computeEvolutionLevel(r)
 		if level != LevelFail {
@@ -287,10 +287,10 @@ func TestComputeEvolutionLevel(t *testing.T) {
 
 	t.Run("2+ dimensions degrading warns", func(t *testing.T) {
 		r := EvolutionReport{
-			RunCount:          3,
-			StorageTrend:      trendDegrading,
-			ReplicationTrend:  trendDegrading,
-			Runs:              []EvolutionRun{{}, {}, {}},
+			RunCount:         3,
+			StorageTrend:     trendDegrading,
+			ReplicationTrend: trendDegrading,
+			Runs:             []EvolutionRun{{}, {}, {}},
 		}
 		level, reasons := computeEvolutionLevel(r)
 		if level != LevelWarn {
@@ -303,10 +303,10 @@ func TestComputeEvolutionLevel(t *testing.T) {
 
 	t.Run("persistence degrading warns", func(t *testing.T) {
 		r := EvolutionReport{
-			RunCount:          3,
-			PersistenceTrend:  trendDegrading,
-			PersistenceSlope:  0.01,
-			Runs:              []EvolutionRun{{}, {}, {}},
+			RunCount:         3,
+			PersistenceTrend: trendDegrading,
+			PersistenceSlope: 0.01,
+			Runs:             []EvolutionRun{{}, {}, {}},
 		}
 		level, reasons := computeEvolutionLevel(r)
 		if level != LevelWarn {
@@ -595,27 +595,27 @@ func TestFormatEvolutionReport(t *testing.T) {
 	t.Run("passing gate", func(t *testing.T) {
 		now := time.Now()
 		r := EvolutionReport{
-			AnalysisTime:            time.Now(),
-			RunCount:                3,
-			Runs:                    []EvolutionRun{
+			AnalysisTime: time.Now(),
+			RunCount:     3,
+			Runs: []EvolutionRun{
 				{Timestamp: now.Add(-48 * time.Hour), HealthOverall: 0.9, HealthStorage: 0.9, HealthRepl: 0.9, HealthCluster: 0.9, BasinDepth: 0.2, L0Peak: 2, Basin: "healthy"},
 				{Timestamp: now.Add(-24 * time.Hour), HealthOverall: 0.95, HealthStorage: 0.95, HealthRepl: 0.95, HealthCluster: 0.95, BasinDepth: 0.15, L0Peak: 1, Basin: "healthy"},
 				{Timestamp: now, HealthOverall: 0.97, HealthStorage: 0.97, HealthRepl: 0.97, HealthCluster: 0.97, BasinDepth: 0.1, L0Peak: 1, Basin: "healthy"},
 			},
-			HealthSlope:              0.035,
-			StorageSlope:             0.035,
-			ReplicationSlope:         0.035,
-			ClusterSlope:             0.035,
-			BasinDepthSlope:          -0.05,
-			L0PeakSlope:              -0.5,
-			HealthTrend:              trendImproving,
-			StorageTrend:             trendImproving,
-			ReplicationTrend:         trendImproving,
-			ClusterTrend:             trendImproving,
-			BasinDepthTrend:          trendImproving,
-			OscillationTrend:         trendStable,
-			Level:                    LevelOK,
-			SpanDays:                 2.0,
+			HealthSlope:      0.035,
+			StorageSlope:     0.035,
+			ReplicationSlope: 0.035,
+			ClusterSlope:     0.035,
+			BasinDepthSlope:  -0.05,
+			L0PeakSlope:      -0.5,
+			HealthTrend:      trendImproving,
+			StorageTrend:     trendImproving,
+			ReplicationTrend: trendImproving,
+			ClusterTrend:     trendImproving,
+			BasinDepthTrend:  trendImproving,
+			OscillationTrend: trendStable,
+			Level:            LevelOK,
+			SpanDays:         2.0,
 		}
 		report := r.FormatReport()
 		if !containsStr(report, "No degradation signals detected") {
@@ -639,7 +639,7 @@ func TestFormatEvolutionReport(t *testing.T) {
 				{Timestamp: now.Add(-24 * time.Hour), HealthOverall: 0.85, HealthStorage: 0.85, HealthRepl: 0.85, HealthCluster: 0.85, BasinDepth: 0.25, L0Peak: 3, Basin: "healthy"},
 				{Timestamp: now, HealthOverall: 0.8, HealthStorage: 0.8, HealthRepl: 0.8, HealthCluster: 0.8, BasinDepth: 0.3, L0Peak: 4, Basin: "healthy"},
 			},
-			SpanDays:          2.0,
+			SpanDays: 2.0,
 		}
 		report := r.FormatReport()
 		if !containsStr(report, "Evolution Gate: FAIL") {
@@ -664,7 +664,7 @@ func TestFormatEvolutionReport(t *testing.T) {
 				{Timestamp: now.Add(-24 * time.Hour), HealthOverall: 0.85, HealthStorage: 0.85, HealthRepl: 0.85, HealthCluster: 0.85, BasinDepth: 0.25, L0Peak: 3, Basin: "healthy"},
 				{Timestamp: now, HealthOverall: 0.82, HealthStorage: 0.82, HealthRepl: 0.82, HealthCluster: 0.82, BasinDepth: 0.28, L0Peak: 3, Basin: "healthy"},
 			},
-			SpanDays:                2.0,
+			SpanDays: 2.0,
 		}
 		report := r.FormatReport()
 		if !containsStr(report, "False Positive Suppression") {
@@ -683,8 +683,8 @@ func TestFormatEvolutionReport(t *testing.T) {
 				{Timestamp: now.Add(-24 * time.Hour), HealthOverall: 0.8, HealthStorage: 0.8, HealthRepl: 0.8, HealthCluster: 0.8, BasinDepth: 0.3, L0Peak: 4, Basin: "healthy"},
 				{Timestamp: now, HealthOverall: 0.75, HealthStorage: 0.75, HealthRepl: 0.75, HealthCluster: 0.75, BasinDepth: 0.35, L0Peak: 5, Basin: "healthy"},
 			},
-			SpanDays:           3.0,
-			Warnings:           []string{"health dropped 0.05 since last run"},
+			SpanDays: 3.0,
+			Warnings: []string{"health dropped 0.05 since last run"},
 		}
 		report := r.FormatReport()
 		if !containsStr(report, "## Warnings") {

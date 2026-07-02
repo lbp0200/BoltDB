@@ -2234,11 +2234,12 @@ func TestConcurrentTransaction(t *testing.T) {
 // Fix: Moved all transaction state into per-connection connState.
 //
 // State transitions covered:
-//   IDLE → MULTI → SET → QUEUED → EXEC → IDLE  (per-connection)
-//   connA[MULTI→SET connA.key] → connB[MULTI→SET connB.key→EXEC] → EXEC connA  (no cross-leak)
-//   MULTI → disconnect → reconnect → MULTI → EXEC  (clean state after reconnect)
-//   MULTI → MULTI  (nesting error, per-connection)
-//   WATCH → [other conn SET] → MULTI → SET → EXEC  (watch conflict returns *-1, per-connection tracking)
+//
+//	IDLE → MULTI → SET → QUEUED → EXEC → IDLE  (per-connection)
+//	connA[MULTI→SET connA.key] → connB[MULTI→SET connB.key→EXEC] → EXEC connA  (no cross-leak)
+//	MULTI → disconnect → reconnect → MULTI → EXEC  (clean state after reconnect)
+//	MULTI → MULTI  (nesting error, per-connection)
+//	WATCH → [other conn SET] → MULTI → SET → EXEC  (watch conflict returns *-1, per-connection tracking)
 func TestTransactionConnIsolationRegression(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
@@ -2357,11 +2358,12 @@ func TestTransactionConnIsolationRegression(t *testing.T) {
 // Fix: Added type prefix check in MGet; non-string keys return ErrWrongType.
 //
 // State transitions covered:
-//   MGET [string, hash] → -ERR WRONGTYPE  (wrong type detected)
-//   MGET [string, nonexistent] → [value, nil]  (mixed OK keys still work)
-//   MGET [hash, list, set, zset] → -ERR WRONGTYPE  (all non-string types rejected)
-//   concurrent: SET → HSET same key, MGET while type changes  (concurrent type change)
-//   disconnect → reconnect → MGET (works after reconnect)
+//
+//	MGET [string, hash] → -ERR WRONGTYPE  (wrong type detected)
+//	MGET [string, nonexistent] → [value, nil]  (mixed OK keys still work)
+//	MGET [hash, list, set, zset] → -ERR WRONGTYPE  (all non-string types rejected)
+//	concurrent: SET → HSET same key, MGET while type changes  (concurrent type change)
+//	disconnect → reconnect → MGET (works after reconnect)
 func TestMGetWrongTypeRegression(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
@@ -2441,11 +2443,12 @@ func TestMGetWrongTypeRegression(t *testing.T) {
 // Fix: Added NilArray type; WriteRESP encodes it as *-1\r\n; BLPOP/BRPOP/EXEC use it.
 //
 // State transitions covered:
-//   BLPOP empty → timeout → *-1  (nil array for timeout)
-//   EXEC after watch conflict → *-1  (nil array for failed EXEC)
-//   concurrent BLPOP + LPUSH → *2 array  (normal flow still produces correct array)
-//   WriteRESP with NilArray → *-1\r\n  (encoding correctness)
-//   disconnect → reconnect → BLPOP timeout  (works after reconnect)
+//
+//	BLPOP empty → timeout → *-1  (nil array for timeout)
+//	EXEC after watch conflict → *-1  (nil array for failed EXEC)
+//	concurrent BLPOP + LPUSH → *2 array  (normal flow still produces correct array)
+//	WriteRESP with NilArray → *-1\r\n  (encoding correctness)
+//	disconnect → reconnect → BLPOP timeout  (works after reconnect)
 func TestWriteRESPNilArrayRegression(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
@@ -3022,7 +3025,3 @@ func TestZUNIONIntegration(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, 2, len(partial)) // a, b from zu_a only
 }
-
-
-
-

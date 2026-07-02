@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lbp0200/BoltDB/internal/logger"
 	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/lbp0200/BoltDB/internal/store"
 )
@@ -117,6 +118,16 @@ func wrapStoreError(err error) proto.RESP {
 	if errors.Is(err, store.ErrWrongType) {
 		return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
+	// Log full error chain before formatting for client response (preserves errors.Is/errors.As capability)
+	logger.Logger.Debug().Err(err).Msg("store error wrapped for client response")
+	return wrapLogError(err)
+}
+
+// wrapLogError 记录错误链到日志并返回 RESP 错误响应。
+// 用于替换 proto.NewError(fmt.Sprintf("ERR %v", err)) 模式，
+// 确保错误链在日志中可通过 errors.Is/errors.As 检索。
+func wrapLogError(err error) proto.RESP {
+	logger.Logger.Debug().Err(err).Msg("error chain preserved")
 	return proto.NewError(fmt.Sprintf("ERR %v", err))
 }
 

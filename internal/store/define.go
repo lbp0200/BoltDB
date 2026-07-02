@@ -507,7 +507,7 @@ func (s *BotreonStore) waitForWritesReady() error {
 		if err == nil {
 			return nil // 可以写入了
 		}
-		if !strings.Contains(err.Error(), "Writes are blocked") {
+		if !errors.Is(err, badger.ErrBlockedWrites) {
 			return err // 非阻塞错误，直接返回
 		}
 		// 指数退避
@@ -556,8 +556,8 @@ func (s *BotreonStore) deleteBatchWithRetry(keys [][]byte) error {
 			return nil
 		}
 
-		// 只对 "Writes are blocked" 错误进行重试
-		if !strings.Contains(lastErr.Error(), "Writes are blocked") {
+		// 只对 Writes are blocked 错误进行重试
+		if !errors.Is(lastErr, badger.ErrBlockedWrites) {
 			return lastErr
 		}
 

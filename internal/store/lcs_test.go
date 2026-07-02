@@ -7,8 +7,8 @@ import (
 func TestComputeLCS(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name   string
-		a, b   string
+		name    string
+		a, b    string
 		wantLCS string
 		wantLen int
 	}{
@@ -121,12 +121,12 @@ func TestComputeLCSMatches(t *testing.T) {
 	}{
 		{
 			name: "no common",
-			a: "ABC", b: "XYZ",
+			a:    "ABC", b: "XYZ",
 			wantCount: 0,
 		},
 		{
 			name: "single char min 1",
-			a: "A", b: "A",
+			a:    "A", b: "A",
 			minMatchLen: 1,
 			wantCount:   1,
 			check: func(t *testing.T, matches []LCIMatch) {
@@ -138,13 +138,13 @@ func TestComputeLCSMatches(t *testing.T) {
 		},
 		{
 			name: "single char filtered",
-			a: "A", b: "A",
+			a:    "A", b: "A",
 			minMatchLen: 2,
 			wantCount:   0,
 		},
 		{
 			name: "multiple non-overlapping",
-			a: "ABAB", b: "ABAB",
+			a:    "ABAB", b: "ABAB",
 			minMatchLen: 1,
 			wantCount:   1, // greedy: finds first LCS "ABAB" = entire string
 			check: func(t *testing.T, matches []LCIMatch) {
@@ -155,7 +155,7 @@ func TestComputeLCSMatches(t *testing.T) {
 		},
 		{
 			name: "non-contiguous characters",
-			a: "ABCDEF", b: "ACDF",
+			a:    "ABCDEF", b: "ACDF",
 			minMatchLen: 1,
 			wantCount:   3, // "A" (len1), "CD" (len2), "F" (len1)
 			check: func(t *testing.T, matches []LCIMatch) {
@@ -177,7 +177,7 @@ func TestComputeLCSMatches(t *testing.T) {
 		},
 		{
 			name: "two separate matches",
-			a: "AB_CD", b: "ABXCD",
+			a:    "AB_CD", b: "ABXCD",
 			minMatchLen: 1,
 			wantCount:   2, // "AB" and "CD"
 			check: func(t *testing.T, matches []LCIMatch) {
@@ -197,13 +197,13 @@ func TestComputeLCSMatches(t *testing.T) {
 		},
 		{
 			name: "minMatchLen 2 filters singles",
-			a: "A_B", b: "AXB",
+			a:    "A_B", b: "AXB",
 			minMatchLen: 2,
 			wantCount:   0, // A and B are separated, LCS may be multiple single chars
 		},
 		{
 			name: "longer strings with gaps",
-			a: "abcdefgh", b: "aXcYeGgh",
+			a:    "abcdefgh", b: "aXcYeGgh",
 			minMatchLen: 2,
 			check: func(t *testing.T, matches []LCIMatch) {
 				for _, m := range matches {
@@ -215,7 +215,7 @@ func TestComputeLCSMatches(t *testing.T) {
 		},
 		{
 			name: "identical strings",
-			a: "HELLO", b: "HELLO",
+			a:    "HELLO", b: "HELLO",
 			minMatchLen: 1,
 			wantCount:   1,
 			check: func(t *testing.T, matches []LCIMatch) {
@@ -227,13 +227,13 @@ func TestComputeLCSMatches(t *testing.T) {
 		},
 		{
 			name: "empty strings",
-			a: "", b: "",
+			a:    "", b: "",
 			minMatchLen: 1,
 			wantCount:   0,
 		},
 		{
 			name: "one empty",
-			a: "ABC", b: "",
+			a:    "ABC", b: "",
 			minMatchLen: 1,
 			wantCount:   0,
 		},
@@ -287,7 +287,6 @@ func TestComputeLCSMatches_AGGTAB_GXTXAYB(t *testing.T) {
 		t.Logf("  %q at A[%d:%d] B[%d:%d] (len %d)", m.Value, m.StartA, m.EndA, m.StartB, m.EndB, m.MatchLen)
 	}
 }
-
 
 // isSubsequence checks if sub appears as a (non-contiguous) subsequence of s
 func isSubsequence(sub, s string) bool {

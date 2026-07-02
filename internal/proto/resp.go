@@ -8,6 +8,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/lbp0200/BoltDB/internal/logger"
 )
@@ -15,17 +16,23 @@ import (
 var (
 	// MaxBulkLen 是 RESP bulk string 的最大长度限制（默认 256MB）
 	// 可通过 SetMaxBulkLen() 在启动时调整
-	MaxBulkLen = int64(256 * 1024 * 1024)
+	MaxBulkLen atomic.Int64
 	// MaxArrayLen 是 RESP array 的最大元素数
-	MaxArrayLen = int64(1024 * 1024)
+	MaxArrayLen atomic.Int64
 	// MaxLineLen 是行长度限制（默认 64MB，防止 OOM）
-	MaxLineLen = int64(64 * 1024 * 1024)
+	MaxLineLen atomic.Int64
 )
+
+func init() {
+	MaxBulkLen.Store(256 * 1024 * 1024)
+	MaxArrayLen.Store(1024 * 1024)
+	MaxLineLen.Store(64 * 1024 * 1024)
+}
 
 // SetMaxBulkLen 设置 RESP bulk string 最大长度（字节）
 func SetMaxBulkLen(n int64) {
 	if n > 0 {
-		MaxBulkLen = n
+		MaxBulkLen.Store(n)
 	}
 }
 
@@ -205,7 +212,7 @@ func ReadRESP(r *bufio.Reader) (*Array, error) {
 		if err != nil || n < 0 {
 			return nil, fmt.Errorf("invalid array length: %s", line[1:])
 		}
-		if int64(n) > MaxArrayLen {
+		if int64(n) > MaxArrayLen.Load() {
 			return nil, fmt.Errorf("array length too large: %d", n)
 		}
 		args := make([][]byte, n)
@@ -230,7 +237,7 @@ func ReadRESP(r *bufio.Reader) (*Array, error) {
 					args[i] = nil
 					continue
 				}
-				if int64(bulkLen) > MaxBulkLen {
+				if int64(bulkLen) > MaxBulkLen.Load() {
 					return nil, fmt.Errorf("bulk string length too large: %d", bulkLen)
 				}
 				data := make([]byte, bulkLen+2)
@@ -271,7 +278,7 @@ func ReadRESP(r *bufio.Reader) (*Array, error) {
 		if bulkLen == -1 {
 			return &Array{Args: [][]byte{nil}}, nil
 		}
-		if int64(bulkLen) > MaxBulkLen {
+		if int64(bulkLen) > MaxBulkLen.Load() {
 			return nil, fmt.Errorf("bulk string length too large: %d", bulkLen)
 		}
 		data := make([]byte, bulkLen+2)
@@ -506,8 +513,8 @@ func readLine(r *bufio.Reader) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(line)) > MaxLineLen {
-		return nil, fmt.Errorf("line too long: %d bytes (max %d)", len(line), MaxLineLen)
+	if int64(len(line)) > MaxLineLen.Load() {
+		return nil, fmt.Errorf("line too long: %d bytes (max %d)", len(line), MaxLineLen.Load())
 	}
 	// 去掉 \r\n
 	if len(line) > 0 && line[len(line)-1] == '\n' {

@@ -460,9 +460,9 @@ func TestBoundary_SpecialCharsInValues(t *testing.T) {
 	defer handler.Db.Close()
 
 	specialVals := []string{
-		"\x00\x01\x02\xff",           // binary
-		"中文测试",                      // unicode
-		"line1\nline2\ttab",           // control chars
+		"\x00\x01\x02\xff",             // binary
+		"中文测试",                         // unicode
+		"line1\nline2\ttab",            // control chars
 		"",                             // empty
 		strings.Repeat("A", 1024*1024), // 1MB
 	}

@@ -652,11 +652,11 @@ func TestAnalyzeBasin_Transitions(t *testing.T) {
 
 func TestBasinAttractorInfo_FormatCompact(t *testing.T) {
 	info := BasinAttractorInfo{
-		CurrentBasin:  BasinHealthy,
-		Depth:         0.8,
-		Stability:     0.95,
-		L0Velocity:    -0.02,
-		Converging:    true,
+		CurrentBasin:      BasinHealthy,
+		Depth:             0.8,
+		Stability:         0.95,
+		L0Velocity:        -0.02,
+		Converging:        true,
 		ConvergenceTarget: BasinHealthy,
 		ConvergenceProb:   0.95,
 		TrajectoryPhase:   PhaseHealthyConverged,
@@ -677,21 +677,21 @@ func TestBasinAttractorInfo_FormatCompact_Unknown(t *testing.T) {
 
 func TestBasinAttractorInfo_FormatReport(t *testing.T) {
 	info := BasinAttractorInfo{
-		CurrentBasin:    BasinDegraded,
-		Depth:           0.6,
-		Stability:       0.4,
-		L0Velocity:      -0.15,
-		L0Acceleration:  -0.02,
-		RetryVelocity:   -5.0,
-		LimitCycle:      false,
-		InDegradation:   true,
+		CurrentBasin:        BasinDegraded,
+		Depth:               0.6,
+		Stability:           0.4,
+		L0Velocity:          -0.15,
+		L0Acceleration:      -0.02,
+		RetryVelocity:       -5.0,
+		LimitCycle:          false,
+		InDegradation:       true,
 		DegradationDuration: 10 * time.Second,
-		Escapable:       true,
-		EscapabilityScore: 0.75,
-		Converging:      true,
-		ConvergenceTarget: BasinStressed,
-		ConvergenceProb: 0.7,
-		TrajectoryPhase: PhaseEscapingDegradation,
+		Escapable:           true,
+		EscapabilityScore:   0.75,
+		Converging:          true,
+		ConvergenceTarget:   BasinStressed,
+		ConvergenceProb:     0.7,
+		TrajectoryPhase:     PhaseEscapingDegradation,
 	}
 	s := info.FormatReport()
 	if len(s) == 0 {

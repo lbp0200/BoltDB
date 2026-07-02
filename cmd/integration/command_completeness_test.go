@@ -521,7 +521,7 @@ func TestCommandCompleteness_List(t *testing.T) {
 	t.Run("LPUSH_RPUSH", func(t *testing.T) {
 		sharedClient.LPush(ctx, p+"l1", "c", "b", "a")
 		sharedClient.RPush(ctx, p+"l1", "d", "e")
-	vals, _ := sharedClient.LRange(ctx, p+"l1", 0, -1).Result()
+		vals, _ := sharedClient.LRange(ctx, p+"l1", 0, -1).Result()
 		assert.Equal(t, []string{"a", "b", "c", "d", "e"}, vals)
 	})
 

@@ -119,7 +119,7 @@ func TestStreamXRead(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Read from stream
-		result, err := store.XRead(context.Background(), 10, 0, "mystream", "0")
+	result, err := store.XRead(context.Background(), 10, 0, "mystream", "0")
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(result))
 	assert.Equal(t, 1, len(result[0]["mystream"]))

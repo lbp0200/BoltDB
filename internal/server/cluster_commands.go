@@ -23,7 +23,7 @@ func (h *Handler) handleCLUSTER(state *connState, args [][]byte, remoteAddr stri
 	}
 	result, err := clusterCmd.HandleCommand(subcommandArgs)
 	if err != nil {
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	// 根据返回类型转换
 	switch v := result.(type) {

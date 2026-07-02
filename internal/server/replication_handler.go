@@ -38,7 +38,7 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 	// 处理PSYNC
 	result, err := replication.HandlePSync(h.Replication, replId, offset)
 	if err != nil {
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 
 	if result.FullResync {

@@ -66,7 +66,7 @@ func (h *Handler) handleZINTER(state *connState, args [][]byte, remoteAddr strin
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	if len(members) == 0 {
 		return &proto.Array{Args: [][]byte{}}
@@ -123,7 +123,7 @@ func (h *Handler) handleZINTERCARD(state *connState, args [][]byte, remoteAddr s
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewInteger(count)
 }
@@ -184,7 +184,7 @@ func (h *Handler) handleZUNION(state *connState, args [][]byte, remoteAddr strin
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	if len(members) == 0 {
 		return &proto.Array{Args: [][]byte{}}
@@ -246,7 +246,7 @@ func (h *Handler) handleZREM(state *connState, args [][]byte, remoteAddr string)
 			if errors.Is(err, store.ErrMemberNotFound) {
 				continue
 			}
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapLogError(err)
 		}
 		count += int(deleted)
 	}
@@ -418,7 +418,7 @@ func (h *Handler) handleZCARD(state *connState, args [][]byte, remoteAddr string
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewInteger(int64(count))
 }
@@ -434,7 +434,7 @@ func (h *Handler) handleZSCORE(state *connState, args [][]byte, remoteAddr strin
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	if !exists {
 		if state.respVersion == 3 {
@@ -789,7 +789,7 @@ func (h *Handler) handleZRANDMEMBER(state *connState, args [][]byte, remoteAddr 
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	if len(members) == 0 {
 		if count == 0 {
@@ -858,7 +858,7 @@ func (h *Handler) handleZMPOP(state *connState, args [][]byte, remoteAddr string
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	if key == "" || len(members) == 0 {
 		return proto.NilArray{}
@@ -1090,7 +1090,7 @@ func (h *Handler) handleZDIFF(state *connState, args [][]byte, remoteAddr string
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	if len(members) == 0 {
 		return &proto.Array{Args: [][]byte{}}

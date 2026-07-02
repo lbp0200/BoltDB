@@ -217,7 +217,7 @@ func TestApplyConvergenceSuppression_EscalatingDegradationNeverSuppressed(t *tes
 // regime shift + health slope (mixed): regime shift dominates → FAIL preserved
 func TestApplyConvergenceSuppression_MixedConditionsRegimeShiftDominates(t *testing.T) {
 	r := EvolutionReport{
-		Level:              LevelFail,
+		Level: LevelFail,
 		GateReasons: []string{
 			"regime shift to worse basin state (sustained)",
 			"health slope in last 3 runs: -0.0300 (threshold: -0.02)",

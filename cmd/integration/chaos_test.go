@@ -422,5 +422,3 @@ func sendRESP(conn net.Conn, cmd string, args ...string) {
 	}
 	proto.WriteRESP(conn, &proto.Array{Args: cmdArgs})
 }
-
-

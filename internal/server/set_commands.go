@@ -2,7 +2,6 @@ package server
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -45,7 +44,7 @@ func (h *Handler) handleSREM(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
 	if err != nil {
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	// #nosec G115 - count is bounded by practical data size limits
 	return proto.NewInteger(int64(count))
@@ -441,7 +440,7 @@ func (h *Handler) handleHSCAN(state *connState, args [][]byte, remoteAddr string
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	fieldElems := make([]proto.RESP, 0, len(hscanResult.Fields)*2)
 	for fieldName, fieldVal := range hscanResult.Fields {

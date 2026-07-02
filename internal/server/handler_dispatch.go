@@ -15,12 +15,14 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		return proto.NewError("ERR internal error: nil connState")
 	}
 
+	state.mu.Lock()
 	// 如果配置了密码，检查是否已认证
 	if password := os.Getenv("BOLTDB_PASSWORD"); password != "" && !state.authenticated {
 		switch cmd {
 		case "AUTH", "PING", "QUIT", "COMMAND", "HELLO":
 			// 这些命令可以绕过认证
 		default:
+			state.mu.Unlock()
 			return proto.NewError("NOAUTH Authentication required.")
 		}
 	}
@@ -35,9 +37,11 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				Command: cmd,
 				Args:    args,
 			})
+			state.mu.Unlock()
 			return proto.NewSimpleString("QUEUED")
 		}
 	}
+	state.mu.Unlock()
 
 	switch cmd {
 	// 连接命令
@@ -534,7 +538,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		// 启动复制
 		masterAddr := fmt.Sprintf("%s:%s", host, port)
 		if err := replication.StartSlaveReplication(h.Replication, h.Db, masterAddr); err != nil {
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapLogError(err)
 		}
 		return proto.OK
 
@@ -878,11 +882,16 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		return proto.OK
 
 	default:
-		if state.inTransaction {
+		state.mu.Lock()
+		inTx := state.inTransaction
+		if inTx {
 			state.commands = append(state.commands, TransactionCommand{
 				Command: cmd,
 				Args:    args,
 			})
+		}
+		state.mu.Unlock()
+		if inTx {
 			return proto.NewSimpleString("QUEUED")
 		}
 		return proto.NewError(fmt.Sprintf("ERR unknown command '%s'", cmd))

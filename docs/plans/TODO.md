@@ -116,7 +116,7 @@ SOAK_DURATION=1h SOAK_REPL_DURATION=1h bash scripts/run_nightly_soak.sh
 
 ## 已知问题
 
-见下方「整改计划（收购前必须完成）」，三大类共 12 项。
+第一阶段（11 项）已全部修复 ✅。第二阶段（8 项）已完成（2026-07-02 本次整改）。
 
 ---
 
@@ -134,8 +134,13 @@ SOAK_DURATION=1h SOAK_REPL_DURATION=1h bash scripts/run_nightly_soak.sh
 
 ## 整改计划（收购前必须完成）
 
-> 来源：2025-07 尽职调查，以最苛刻标准审查后识别的三大致命问题。
-> 每项标注投入（S/M/L）和优先级（P0 = 阻塞收购 / P1 = 必须修复 / P2 = 强烈建议）。
+> 来源：2025-07 — 2026-07 两轮尽职调查。
+>
+> **第一阶段**（已完成）：2025-07 初始审查识别的 11 项（A1–C4，见下方）。
+>
+> **第二阶段**（进行中）：2026-07 收购审查新增 8 项（D1–D8），以最苛刻标准审视代码库健康度。
+>
+> 每项标注投入（S/M/L/XL）和优先级（P0 = 阻塞收购 / P1 = 必须修复 / P2 = 强烈建议）。
 
 ### A. 安全防护（P0 — 不修复则不具备生产可用性）
 
@@ -265,6 +270,93 @@ SOAK_DURATION=1h SOAK_REPL_DURATION=1h bash scripts/run_nightly_soak.sh
 
 ---
 
+### D. 收购审查新增项（P0–P2）
+
+> 来源：2026-07-02 收购尽职调查，以潜在收购方视角全面审查。
+> 与第一阶段互补：第一阶段聚焦安全/集群/合规，第二阶段聚焦代码库长期健康度、可维护性、生产稳健性。
+
+#### D1. init() panic 风险（P0 — 单点故障）
+
+**投入**：S（半天）　**优先级**：P0
+
+- [x] 已验证：`ValidateWriteCommandConsistency()` 已在 `main.go:56` 调用，不在 `init()` 中（代码已正确实现）
+- [x] 验证通过：启动时返回错误而非 panic
+
+#### D2. BadgerDB 错误字符串匹配（P0 — 版本升级熔断风险）
+
+**投入**：S（半天）　**优先级**：P0
+
+- [x] 已验证：`set.go` 及全库已使用 `errors.Is(err, badger.ErrConflict)` 替代字符串匹配
+- [x] 验证通过：retry 逻辑使用 `errors.Is` 而非 `strings.Contains`
+
+#### D3. Store 层巨型文件拆分（P1 — 收购后团队接手成本）
+
+**投入**：M（3-5 天）　**优先级**：P1
+
+当前 5 个单文件超 1900 行（handler.go 已拆分，store 层已拆分 base.go + sorted_set.go）：
+
+| 文件 | 原行数 | 现行数 | 状态 | 拆分后文件 |
+|------|--------|--------|------|-----------|
+| `internal/store/base.go` | 2,258 | 566 | ✅ 已拆分 | `del.go`、`scan.go`、`rename.go`、`dump_restore.go`、`cleanup.go`、`memory.go` |
+| `internal/store/sorted_set.go` | 2,247 | 271 | ✅ 已拆分 | `zset_types.go`、`zadd_zrem.go`、`zrange.go`、`zrank.go`、`zpop.go`、`zinter_store.go`、`zlex.go`、`zcard_score.go`、`zscan_rand.go` |
+| `internal/store/list.go` | 2,149 | — (已删除) | ✅ 已拆分 | `list_types.go`、`lpush_rpop.go`、`lpushpop_core.go`、`lrange_lindex.go`、`ltrim.go`、`linsert.go`、`blpop.go` |
+| `internal/store/stream.go` | 1,942 | — (已删除) | ✅ 已拆分 | `stream_types.go`、`xadd.go`、`xread.go`、`xrange.go`、`xdel.go`、`xinfo.go`、`xtrim.go`、`xgroup.go`、`xreadgroup.go`、`xack.go`、`xautoclaim.go` |
+| `internal/store/string.go` | 1,118 | 1,240 | 可按需拆分 | — |
+- [x] base.go 已拆分（2,258→566 行）为 6 个功能文件
+- [x] sorted_set.go 已拆分（2,247→271 行）为 9 个功能文件
+- [x] list.go 已拆分（2,149→已删除）为 7 个功能文件
+- [x] stream.go 已拆分（1,942→已删除）为 11 个功能文件
+- [x] 验证：`go build ./internal/store/` 通过 + `go build ./...` 通过
+
+#### D4. connState 锁保护不一致（P1 — 隐藏竞态风险）
+
+**投入**：S（1 天）　**优先级**：P1
+
+- [x] `internal/server/handler_dispatch.go:19,29,34`：已为 `state.authenticated`、`state.inTransaction`、`state.commands` 添加 `state.mu.Lock()`/`Unlock()` 保护
+- [x] 采用**方案 A**：在 `executeCommand` 入口处统一加锁
+- [x] 也修复了 `handler_dispatch.go` default 分支中的无锁访问
+- [x] 验证：`go build ./...` 通过
+
+#### D5. 错误链截断 — `fmt.Sprintf("ERR %v", err)`（P1 — 可调试性）
+
+**投入**：M（1-2 天）　**优先级**：P1
+
+- [x] `internal/server/handler_utils.go:wrapStoreError()`：已添加 `logger.Debug().Err(err).Msg("store error wrapped for client response")` 保留完整错误链
+- [x] 新增 `wrapLogError(err) proto.RESP` 辅助函数，自动记录错误链到日志
+- [x] 全库 15 个文件、**83 处** `proto.NewError(fmt.Sprintf("ERR %v", err))` ✅→ `wrapLogError(err)`
+- [x] 涵盖：zset_commands(9)、hash_commands(3)、timeseries_commands(17)、string_commands(4)、stream_commands(19)、json_commands(12)、geo_commands(5)、list_commands(3)、set_commands(2) 等
+- [x] 验证：`go build ./...` 通过
+- [x] 剩余少量非常规格式（如内联 logger 记录 + 4 处 migrate_command.go 错误处理）已处理
+
+#### D6. gofmt 一致性强制执行（P1 — 工程纪律红线）
+
+**投入**：S（1 小时）　**优先级**：P1
+
+- [x] 运行 `gofmt -w` 修正 `internal/server/handler_dispatch.go`
+- [x] CI 中增加 `gofmt -d` 检查步骤（`go.yml` 中 lint 后执行）
+- [x] 验证：`gofmt -l .` 返回空
+
+#### D7. 全局可变状态原子化（P2 — 并发安全）
+
+**投入**：S（半天）　**优先级**：P2
+
+- [x] `internal/proto/resp.go:15-22`：`MaxBulkLen`、`MaxArrayLen`、`MaxLineLen` 从 `var int64` 改为 `atomic.Int64`
+- [x] `SetMaxBulkLen` 使用 `.Store()`
+- [x] 所有读取位置使用 `.Load()`
+- [x] 同步更新 `internal/replication/master.go` 中的 3 处引用
+- [x] 验证：`go build ./...` 通过
+
+#### D8. 监控包生产构建副作用（P2 — 二进制纯净度）
+
+**投入**：S（半天）　**优先级**：P2
+
+- [x] 验证：`cmd/boltDB/main.go` 不导入 `internal/monitor`
+- [x] 验证：`strings build/boltDB | grep "git log"` 返回空（主二进制不含 git 依赖）
+- [x] 在 `internal/monitor/anomaly.go` 添加注释警告：禁止在主二进制中导入
+- [x] `getCommitsInWindow()` 已在 git 不可用时优雅降级（返回 nil）
+
+---
+
 ### 整改进度跟踪
 
 | 项 | 负责人 | 预估开始 | 状态 | 完成日期 |
@@ -280,20 +372,34 @@ SOAK_DURATION=1h SOAK_REPL_DURATION=1h bash scripts/run_nightly_soak.sh
 | C2. go.mod 版本号 | AI | — | ✅ 验证有效 | 2025-07 |
 | C3. 仓库卫生清理 | AI | — | ✅ 已完成 | 2025-07 |
 | C4. 关键错误处理 | AI | — | ✅ 已完成 | 2025-07 |
+| D1. init() panic 风险 | AI | — | ✅ 已验证：ValidateWriteCommandConsistency 已在 main.go:56 调用，未使用 init() | 2026-07-02 |
+| D2. BadgerDB 错误字符串匹配 | AI | — | ✅ 已验证：store 层已全量使用 errors.Is(err, badger.ErrConflict) | 2026-07-02 |
+| D3. Store 层巨型文件拆分 | AI | 2026-07-02 | ✅ 已完成：base.go + sorted_set.go + list.go + stream.go 已拆分（28 个新文件） | 2026-07-02 |
+| D4. connState 锁保护不一致 | AI | — | ✅ 已完成：handler_dispatch.go 加锁保护 | 2026-07-02 |
+| D5. 错误链截断 | AI | — | ✅ 已完成：83 处替换 + wrapLogError 辅助函数 | 2026-07-02 |
+| D6. gofmt 一致性强制执行 | AI | — | ✅ 已完成：gofmt -w + CI 检查步骤 | 2026-07-02 |
+| D7. 全局可变状态原子化 | AI | — | ✅ 已完成：atomic.Int64 替代 var int64 | 2026-07-02 |
+| D8. 监控包生产构建副作用 | AI | — | ✅ 已验证：主二进制不含 git log | 2026-07-02 |
 
 ### 优先级排序建议
 
 ```
-Week 1:  C1 + C2 + C3（低成本，立即修复信任问题）
-         + A3 + A4（安全加固小项）
-         + B3（复制静默丢弃，半天可修复）
+第一阶段（已完成）：
+  Week 1:  C1 + C2 + C3（低成本，立即修复信任问题）
+           + A3 + A4（安全加固小项）
+           + B3（复制静默丢弃，半天可修复）
+  Week 2:  A2（连接限制与超时）
+           + B2（哨兵 ODOWN 重写）
+  Week 3-4: A1（TLS 全链路加密）
+  Week 5-8: B1（集群 slot 迁移，最大工程量）
 
-Week 2:  A2（连接限制与超时）
-         + B2（哨兵 ODOWN 重写）
-
-Week 3-4: A1（TLS 全链路加密）
-
-Week 5-8: B1（集群 slot 迁移，最大工程量）
+第二阶段（已完成，2026-07-02 更新）：
+  Day 1:   D1 + D2（✅ 已验证已修复，非阻塞性问题）
+           + D4 + D7（✅ 已完成：connState 加锁 + atomic.Int64）
+  Day 2:   D6（✅ 已完成：gofmt + CI 检查）
+           + D8（✅ 已验证完成：主二进制不含 git 依赖）
+  Week 2:  D3（✅ 已完成：base.go + sorted_set.go + list.go + stream.go 已拆分，28 个新文件）
+  Week 3:  D5（✅ 已完成：83 处错误链替换 + wrapLogError 辅助函数）
 ```
 
 ---

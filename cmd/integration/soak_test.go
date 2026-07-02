@@ -118,9 +118,9 @@ func TestSoak(t *testing.T) {
 	backupMgr := backup.NewBackupManager(db, dataDir)
 
 	h := &server.Handler{
-		Db:         db,
-		PubSub:     pubsubMgr,
-		Backup:     backupMgr,
+		Db:          db,
+		PubSub:      pubsubMgr,
+		Backup:      backupMgr,
 		Replication: replMgr,
 	}
 
@@ -245,14 +245,14 @@ func runSoakClient(ctx context.Context, addr string, id int, errCh chan<- error)
 
 	// probability weights for different operation classes
 	const (
-		pubsubWeight    = 15
-		blockingWeight  = 10
-		txnWeight       = 10
-		killWeight      = 3
-		connectWeight   = 5
-		pipelineWeight  = 12
-		normalWeight    = 45
-		totalWeight     = pubsubWeight + blockingWeight + txnWeight + killWeight + connectWeight + pipelineWeight + normalWeight
+		pubsubWeight   = 15
+		blockingWeight = 10
+		txnWeight      = 10
+		killWeight     = 3
+		connectWeight  = 5
+		pipelineWeight = 12
+		normalWeight   = 45
+		totalWeight    = pubsubWeight + blockingWeight + txnWeight + killWeight + connectWeight + pipelineWeight + normalWeight
 	)
 
 	for ctx.Err() == nil {

@@ -56,7 +56,8 @@ func getSoakReplDuration() time.Duration {
 //
 // For strict equality: set SOAK_REPL_STRICT_EQUALITY=1.
 // For strict correctness regression tests, use the suite:
-//   go test -race -timeout 600s ./cmd/integration/regressions/...
+//
+//	go test -race -timeout 600s ./cmd/integration/regressions/...
 //
 // Usage:
 //

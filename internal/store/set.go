@@ -58,10 +58,7 @@ func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int) e
 			s.retryMu.Unlock()
 			return nil
 		}
-		errStr := err.Error()
-		if strings.Contains(errStr, "Transaction Conflict") ||
-			strings.Contains(errStr, "conflict") ||
-			strings.Contains(errStr, "Conflict") {
+		if errors.Is(err, badger.ErrConflict) {
 			baseBackoff := time.Duration(1<<uint(i)) * time.Millisecond
 			if baseBackoff > 50*time.Millisecond {
 				baseBackoff = 50 * time.Millisecond
@@ -71,7 +68,7 @@ func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int) e
 			time.Sleep(backoff)
 			continue
 		}
-		if strings.Contains(errStr, "Writes are blocked") {
+		if errors.Is(err, badger.ErrBlockedWrites) {
 			s.retryMu.Lock()
 			s.retryMetrics.writesBlocked++
 			s.retryMu.Unlock()

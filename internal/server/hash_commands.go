@@ -27,7 +27,7 @@ func (h *Handler) handleHSET(state *connState, args [][]byte, remoteAddr string)
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapLogError(err)
 		}
 		count++
 	}
@@ -69,7 +69,7 @@ func (h *Handler) handleHDEL(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
 	if err != nil {
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewInteger(int64(count))
 }
@@ -355,7 +355,7 @@ func (h *Handler) handleHRANDMEMBER(state *connState, args [][]byte, remoteAddr 
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	if len(entries) == 0 {
 		if count == 0 {

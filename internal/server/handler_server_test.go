@@ -1,8 +1,8 @@
 package server
 
 import (
-	"testing"
 	"strings"
+	"testing"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/zeebo/assert"

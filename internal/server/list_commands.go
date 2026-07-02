@@ -26,7 +26,7 @@ func (h *Handler) handleLPUSH(state *connState, args [][]byte, remoteAddr string
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	// #nosec G115 - count is bounded by practical data size limits
 	return proto.NewInteger(int64(count))
@@ -48,7 +48,7 @@ func (h *Handler) handleRPUSH(state *connState, args [][]byte, remoteAddr string
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	// #nosec G115 - count is bounded by practical data size limits
 	return proto.NewInteger(int64(count))
@@ -544,7 +544,7 @@ func (h *Handler) handleLMPOP(state *connState, args [][]byte, remoteAddr string
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	if key == "" || len(elements) == 0 {
 		return proto.NilArray{}

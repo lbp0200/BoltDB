@@ -2199,7 +2199,7 @@ func TestDeterministicConflict_ZRevRankConcurrent(t *testing.T) {
 
 	var wg sync.WaitGroup
 	errs := make([]error, goroutines*2) // half ZAdd, half ZRevRank
-	ranks := make([]int64, goroutines)   // capture ZRevRank results
+	ranks := make([]int64, goroutines)  // capture ZRevRank results
 
 	// 先添加初始成员
 	members := make([]ZSetMember, 10)
@@ -2309,7 +2309,7 @@ func TestDeterministicConflict_HDelAndHSetCount(t *testing.T) {
 			defer wg.Done()
 			var err error
 			if idx < half {
-							_, err = s.HDel(key, fmt.Sprintf("f%d", idx))
+				_, err = s.HDel(key, fmt.Sprintf("f%d", idx))
 			} else {
 				err = s.HSet(key, fmt.Sprintf("f%d", idx), idx+100)
 			}

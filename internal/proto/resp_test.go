@@ -293,7 +293,7 @@ func TestWriteRESP(t *testing.T) {
 			expected: "$-1\r\n",
 		},
 		{
-			name:     "nested array",
+			name: "nested array",
 			resp: &NestedArray{Elems: []RESP{
 				NewSimpleString("a"),
 				NewInteger(42),

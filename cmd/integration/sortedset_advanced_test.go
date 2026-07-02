@@ -63,8 +63,8 @@ func TestZRevRangeByScore(t *testing.T) {
 
 	// ZREVRANGEBYSCORE - 限制数量
 	members, err = sharedClient.ZRevRangeByScore(ctx, "zrevscore", &redis.ZRangeBy{
-		Min: "10",
-		Max: "30",
+		Min:    "10",
+		Max:    "30",
 		Offset: 0,
 		Count:  2,
 	}).Result()

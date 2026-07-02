@@ -546,10 +546,10 @@ func TestFormatReport(t *testing.T) {
 func TestFormatCompact(t *testing.T) {
 	t.Parallel()
 	h := HealthScore{
-		Overall:            0.75,
-		HealthStorage:      0.80,
-		HealthReplication:  0.75,
-		HealthCluster:      0.70,
+		Overall:           0.75,
+		HealthStorage:     0.80,
+		HealthReplication: 0.75,
+		HealthCluster:     0.70,
 	}
 	line := h.FormatCompact()
 	assert.Equal(t, "0.75 [WARN] S=0.80 R=0.75 C=0.70", line)

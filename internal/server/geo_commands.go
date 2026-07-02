@@ -35,7 +35,7 @@ func (h *Handler) handleGEOADD(state *connState, args [][]byte, remoteAddr strin
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewInteger(added)
 }
@@ -55,7 +55,7 @@ func (h *Handler) handleGEOPOS(state *connState, args [][]byte, remoteAddr strin
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	results := make([]proto.RESP, len(positions))
 	for i, pos := range positions {
@@ -92,7 +92,7 @@ func (h *Handler) handleGEOHASH(state *connState, args [][]byte, remoteAddr stri
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	hashResults := make([][]byte, len(hashes))
 	for i, h := range hashes {
@@ -118,7 +118,7 @@ func (h *Handler) handleGEODIST(state *connState, args [][]byte, remoteAddr stri
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewBulkString([]byte(fmt.Sprintf("%.4f", dist)))
 }
@@ -181,7 +181,7 @@ func (h *Handler) handleGEORADIUS(state *connState, args [][]byte, remoteAddr st
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 
 	if !gWithCoord && !gWithDist && !gWithHash {

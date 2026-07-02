@@ -17,10 +17,10 @@ import (
 
 // agreementSnapshot tracks a single observation of sentinel views.
 type agreementSnapshot struct {
-	Time    time.Time
-	Views   []sentinelView
-	Agreed  int
-	Total   int
+	Time   time.Time
+	Views  []sentinelView
+	Agreed int
+	Total  int
 }
 
 // oscillationTracker extends convergenceTracker with full trajectory
@@ -271,10 +271,12 @@ func (ot *oscillationTracker) logMetrics(t *testing.T) {
 // converges without oscillation. It tests two scenarios:
 //
 // Scenario A: Single partition → failover → heal
-//   Verifies sentinel views converge monotonically (no agreement drop after full consensus)
+//
+//	Verifies sentinel views converge monotonically (no agreement drop after full consensus)
 //
 // Scenario B: Chain failover (master → slaveA → slaveB)
-//   Verifies cascading master deaths don't cause infinite failover attempts
+//
+//	Verifies cascading master deaths don't cause infinite failover attempts
 //
 // This is the first cross-validation test combining:
 //   - sentinel (failover detection, promotion, gossip)
@@ -1045,5 +1047,3 @@ func TestRegressionFailoverOscillationScenarioD(t *testing.T) {
 
 	t.Log("PASS: Scenario D completed")
 }
-
-

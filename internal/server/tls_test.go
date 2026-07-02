@@ -84,7 +84,7 @@ func TestTLSConfig_BuildAndWrapListener(t *testing.T) {
 	}
 
 	clientCfg := &tls.Config{
-		ServerName:       "test-bolt",
+		ServerName:         "test-bolt",
 		InsecureSkipVerify: true,
 	}
 

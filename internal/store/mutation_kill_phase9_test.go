@@ -364,7 +364,6 @@ func TestSIsMemberFalse(t *testing.T) {
 	assert.False(t, exists)
 }
 
-
 func TestTSGetWithData(t *testing.T) {
 	t.Parallel()
 	s := setupTestStore(t)

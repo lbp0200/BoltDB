@@ -17,11 +17,11 @@ type errReadMock struct {
 	err error
 }
 
-func (e *errReadMock) Read(b []byte) (int, error) { return 0, e.err }
-func (e *errReadMock) Write(b []byte) (int, error) { return len(b), nil }
-func (e *errReadMock) Close() error                { return nil }
-func (e *errReadMock) LocalAddr() net.Addr         { return &net.TCPAddr{Port: 1} }
-func (e *errReadMock) RemoteAddr() net.Addr        { return &net.TCPAddr{Port: 2} }
+func (e *errReadMock) Read(b []byte) (int, error)         { return 0, e.err }
+func (e *errReadMock) Write(b []byte) (int, error)        { return len(b), nil }
+func (e *errReadMock) Close() error                       { return nil }
+func (e *errReadMock) LocalAddr() net.Addr                { return &net.TCPAddr{Port: 1} }
+func (e *errReadMock) RemoteAddr() net.Addr               { return &net.TCPAddr{Port: 2} }
 func (e *errReadMock) SetDeadline(t time.Time) error      { return nil }
 func (e *errReadMock) SetReadDeadline(t time.Time) error  { return nil }
 func (e *errReadMock) SetWriteDeadline(t time.Time) error { return nil }

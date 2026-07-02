@@ -530,5 +530,3 @@ func runClusterSlotChaos(ctx context.Context, t *testing.T, env *clusterSoakEnv,
 		time.Sleep(1 * time.Second)
 	}
 }
-
-

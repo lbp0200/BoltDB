@@ -436,7 +436,7 @@ func TestAnalyzeTemporal_DimensionSlopes(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		storage := 1.0 - float64(i)*0.05 // degrading storage
 		repl := 0.5 + float64(i)*0.05    // recovering replication
-		cluster := 1.0                    // stable cluster
+		cluster := 1.0                   // stable cluster
 		overall := (storage*0.40 + repl*0.30 + cluster*0.30)
 		snaps = append(snaps, TemporalSnapshot{
 			Time: now.Add(time.Duration(i) * time.Second),

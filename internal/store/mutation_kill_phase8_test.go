@@ -393,7 +393,6 @@ func TestTSIncrByNoExistingTS(t *testing.T) {
 	assert.Equal(t, int64(2000), ts)
 }
 
-
 func TestLMPopMultipleKeys(t *testing.T) {
 	t.Parallel()
 	s := setupTestStore(t)

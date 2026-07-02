@@ -420,5 +420,3 @@ func TestIterateRawKeys_Coverage(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), count) // set exactly 1 key
 }
-
-

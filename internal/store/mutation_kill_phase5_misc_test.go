@@ -301,7 +301,7 @@ func TestCompressLZ4Roundtrip(t *testing.T) {
 	t.Parallel()
 	data := make([]byte, 128)
 	for i := range data {
-		data[i] = byte(i % 26 + 'a')
+		data[i] = byte(i%26 + 'a')
 	}
 	compressed, err := compressData(data, CompressionLZ4)
 	assert.NoError(t, err)
@@ -314,7 +314,7 @@ func TestCompressZSTRoundtrip(t *testing.T) {
 	t.Parallel()
 	data := make([]byte, 128)
 	for i := range data {
-		data[i] = byte(i % 26 + 'a')
+		data[i] = byte(i%26 + 'a')
 	}
 	compressed, err := compressData(data, CompressionZSTD)
 	assert.NoError(t, err)
@@ -348,10 +348,10 @@ func TestSetBackpressureConfig(t *testing.T) {
 	t.Parallel()
 	s := setupTestStore(t)
 	cfg := BackpressureConfig{
-		Enabled:        true,
+		Enabled:         true,
 		L0SoftThreshold: 5.0,
 		L0HardThreshold: 20.0,
-		MaxPreDelay:    500000000, // 500ms
+		MaxPreDelay:     500000000, // 500ms
 	}
 	s.SetBackpressureConfig(cfg)
 	got := s.GetBackpressureConfig()

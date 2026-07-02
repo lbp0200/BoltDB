@@ -75,7 +75,7 @@ func (h *Handler) handleXADD(state *connState, args [][]byte, remoteAddr string)
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	if h.Replication != nil && h.Replication.IsMaster() && id == "*" {
 		args[idPos] = []byte(resultID)
@@ -94,7 +94,7 @@ func (h *Handler) handleXLEN(state *connState, args [][]byte, remoteAddr string)
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewInteger(length)
 }
@@ -167,7 +167,7 @@ func (h *Handler) handleXREAD(state *connState, args [][]byte, remoteAddr string
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 
 	// Format response
@@ -233,7 +233,7 @@ func (h *Handler) handleXRANGE(state *connState, args [][]byte, remoteAddr strin
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 
 	// XRANGE returns [[entryID, [field, value, ...]], ...]
@@ -292,7 +292,7 @@ func (h *Handler) handleXREVRANGE(state *connState, args [][]byte, remoteAddr st
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 
 	// XREVRANGE returns [[entryID, [field, value, ...]], ...] (reverse order)
@@ -334,7 +334,7 @@ func (h *Handler) handleXDEL(state *connState, args [][]byte, remoteAddr string)
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewInteger(deleted)
 }
@@ -378,7 +378,7 @@ func (h *Handler) handleXGROUP(state *connState, args [][]byte, remoteAddr strin
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapLogError(err)
 		}
 		return proto.OK
 	case "DESTROY":
@@ -393,7 +393,7 @@ func (h *Handler) handleXGROUP(state *connState, args [][]byte, remoteAddr strin
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapLogError(err)
 		}
 		return proto.NewInteger(1)
 	case "SETID":
@@ -409,7 +409,7 @@ func (h *Handler) handleXGROUP(state *connState, args [][]byte, remoteAddr strin
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapLogError(err)
 		}
 		return proto.OK
 	case "DELCONSUMER":
@@ -425,7 +425,7 @@ func (h *Handler) handleXGROUP(state *connState, args [][]byte, remoteAddr strin
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapLogError(err)
 		}
 		return proto.NewInteger(removed)
 	default:
@@ -551,7 +551,7 @@ func (h *Handler) handleXREADGROUP(state *connState, args [][]byte, remoteAddr s
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 
 	// Format response - XREADGROUP returns [[stream, [[entry1], [entry2], ...]], ...]
@@ -611,7 +611,7 @@ func (h *Handler) handleXCLAIM(state *connState, args [][]byte, remoteAddr strin
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	result := make([][]byte, len(claimed))
 	for i, id := range claimed {
@@ -664,7 +664,7 @@ func (h *Handler) handleXAUTOCLAIM(state *connState, args [][]byte, remoteAddr s
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 
 	if opts.JustID {
@@ -713,7 +713,7 @@ func (h *Handler) handleXPENDING(state *connState, args [][]byte, remoteAddr str
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	response := make([]proto.RESP, 0)
 
@@ -783,7 +783,7 @@ func (h *Handler) handleXINFO(state *connState, args [][]byte, remoteAddr string
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapLogError(err)
 		}
 		groupsCount := int64(0)
 		if info.Groups != nil {
@@ -816,7 +816,7 @@ func (h *Handler) handleXINFO(state *connState, args [][]byte, remoteAddr string
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapLogError(err)
 		}
 		var response []proto.RESP
 		for _, g := range groups {
@@ -842,7 +842,7 @@ func (h *Handler) handleXINFO(state *connState, args [][]byte, remoteAddr string
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
-			return proto.NewError(fmt.Sprintf("ERR %v", err))
+			return wrapLogError(err)
 		}
 		var response []proto.RESP
 		for _, c := range consumers {
@@ -928,7 +928,7 @@ func (h *Handler) handleXTRIM(state *connState, args [][]byte, remoteAddr string
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewInteger(trimmed)
 }
@@ -1076,7 +1076,7 @@ func (h *Handler) handleXDELEX(state *connState, args [][]byte, remoteAddr strin
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NewError(fmt.Sprintf("ERR %v", err))
+		return wrapLogError(err)
 	}
 	return proto.NewInteger(deleted)
 }

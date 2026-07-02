@@ -1,5 +1,10 @@
 package monitor
 
+// ATTENTION: This package uses exec.Command("git", "log", ...) and MUST NOT
+// be imported by cmd/boltDB/main.go (the production binary). It is designed
+// for use by cmd/evolution/ and cmd/integration/ only. Adding an import of
+// internal/monitor to the main binary will pull "git log" into production.
+
 import (
 	"encoding/json"
 	"fmt"

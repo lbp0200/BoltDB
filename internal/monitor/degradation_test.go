@@ -166,10 +166,10 @@ type mockTestingT struct {
 	*testing.T
 }
 
-func (m *mockTestingT) Log(args ...any)   {}
-func (m *mockTestingT) Logf(string, ...any) {}
+func (m *mockTestingT) Log(args ...any)       {}
+func (m *mockTestingT) Logf(string, ...any)   {}
 func (m *mockTestingT) Errorf(string, ...any) {}
-func (m *mockTestingT) FailNow()             {}
+func (m *mockTestingT) FailNow()              {}
 
 func TestCheckDegradation_OK(t *testing.T) {
 	pm := NewPressureMonitor(nil, nil)
@@ -292,12 +292,12 @@ func TestCheckDegradation_SentinelFail(t *testing.T) {
 	pm.mu.Lock()
 	pm.samples = []PressureSample{
 		{
-			LastL0Score:      3.0,
-			ActiveRetries:    0,
-			Goroutines:       100,
-			TotalSentinels:   3,
-			AgreedSentinels:  1,
-			LeaderChanges:    20,
+			LastL0Score:       3.0,
+			ActiveRetries:     0,
+			Goroutines:        100,
+			TotalSentinels:    3,
+			AgreedSentinels:   1,
+			LeaderChanges:     20,
 			ClusterFragmented: true,
 		},
 	}

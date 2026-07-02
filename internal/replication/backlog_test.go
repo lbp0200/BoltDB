@@ -216,13 +216,13 @@ func TestBacklog_IsOffsetAvailable(t *testing.T) {
 func TestBacklog_GetAvailableLength(t *testing.T) {
 	t.Parallel()
 	backlog := NewReplicationBacklog(100)
-	assert.Equal(t, int64(0), 	backlog.GetAvailableLength())
+	assert.Equal(t, int64(0), backlog.GetAvailableLength())
 
 	backlog.Append([]byte("hello"))
-	assert.Equal(t, int64(5), 	backlog.GetAvailableLength())
+	assert.Equal(t, int64(5), backlog.GetAvailableLength())
 
 	for i := 0; i < 20; i++ {
 		backlog.Append(make([]byte, 10))
 	}
-	assert.Equal(t, int64(100), 	backlog.GetAvailableLength())
+	assert.Equal(t, int64(100), backlog.GetAvailableLength())
 }

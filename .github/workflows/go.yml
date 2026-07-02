@@ -381,3 +381,11 @@ jobs:
         with:
           version: v2.8.0
           args: --timeout 5m
+
+      - name: gofmt check
+        run: |
+          if [ "$(gofmt -l . | wc -l)" -ne 0 ]; then
+            echo "The following files are not gofmt-compliant:"
+            gofmt -l .
+            exit 1
+          fi

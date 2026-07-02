@@ -137,7 +137,7 @@ func (mc *MasterConnection) ReadResponse() (proto.RESP, error) {
 		if n == -1 {
 			return proto.NewBulkString(nil), nil
 		}
-		if int64(n) > proto.MaxBulkLen {
+		if int64(n) > proto.MaxBulkLen.Load() {
 			return nil, fmt.Errorf("bulk string length too large: %d", n)
 		}
 		data := make([]byte, n+2) // +2 for \r\n
@@ -152,7 +152,7 @@ func (mc *MasterConnection) ReadResponse() (proto.RESP, error) {
 		if err != nil || arrLen < 0 {
 			return nil, fmt.Errorf("invalid array length: %s", arrLenStr)
 		}
-		if int64(arrLen) > proto.MaxArrayLen {
+		if int64(arrLen) > proto.MaxArrayLen.Load() {
 			return nil, fmt.Errorf("array length too large: %d", arrLen)
 		}
 		args := make([][]byte, 0, arrLen)
@@ -218,7 +218,7 @@ func (mc *MasterConnection) ReadBulkString() ([]byte, error) {
 		return nil, nil // NULL bulk string
 	}
 
-	if int64(length) > proto.MaxBulkLen {
+	if int64(length) > proto.MaxBulkLen.Load() {
 		return nil, fmt.Errorf("bulk string length too large: %d", length)
 	}
 
