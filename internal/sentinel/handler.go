@@ -141,6 +141,7 @@ func (sh *SentinelHandler) handleSentinelCommand(subcommand string, args [][]byt
 		}
 		addr := fmt.Sprintf("%s:%s", ip, port)
 		if err := sh.sentinel.AddMaster(name, addr, quorum); err != nil {
+			logger.Logger.Debug().Err(err).Msg("SENTINEL MONITOR error")
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.OK
@@ -191,6 +192,7 @@ func (sh *SentinelHandler) handleSentinelCommand(subcommand string, args [][]byt
 		}
 		masterName := string(args[0])
 		if err := sh.failoverMgr.StartFailover(masterName); err != nil {
+			logger.Logger.Debug().Err(err).Msg("SENTINEL FAILOVER error")
 			return proto.NewError(fmt.Sprintf("ERR %v", err))
 		}
 		return proto.OK
