@@ -15,13 +15,15 @@
 
 ## Introduction | 简介
 
-BoltDB is a **high-performance, disk-persistent key-value database** fully compatible with the Redis protocol. Built on **BadgerDB** for storage, it overcomes Redis's memory limitations, supporting up to **100TB** of data on disk while maintaining full Redis protocol compatibility.
+BoltDB is a **high-performance, disk-persistent key-value database** fully compatible with the Redis protocol. Built on **BadgerDB** for storage, it overcomes Redis's memory limitations, supporting **tens-of-gigabytes-scale** data on disk while maintaining full Redis protocol compatibility.
 
-**BoltDB** 是一个 **高性能、磁盘持久化的键值数据库**，完全兼容 Redis 协议。基于 **BadgerDB** 构建，克服了 Redis 的内存限制，支持在磁盘上存储高达 **100TB** 的数据，同时保持完整的 Redis 协议兼容性。
+**BoltDB** 是一个 **高性能、磁盘持久化的键值数据库**，完全兼容 Redis 协议。基于 **BadgerDB** 构建，克服了 Redis 的内存限制，支持在磁盘上存储 **数十 GB 级** 的数据，同时保持完整的 Redis 协议兼容性。
 
-> 💡 **Memory Redis can only store 64GB? BoltDB can handle 100TB!**
+> 💡 **Memory Redis can only store 64GB? BoltDB can handle tens of GB of data!**
 >
 > On pure HDD, BoltDB's GET performance approaches 50% of Redis memory version, and SET is even higher (because Badger's sequential writes dominate).
+>
+> ⚠️ **Current verification**: tested at tens-of-GB scale. Larger-scale validation (TB+) is ongoing. See [scaling plan](docs/plans/TODO.md#-100tb-宣称与零规模化验证之间的鸿沟).
 
 ---
 
@@ -29,7 +31,7 @@ BoltDB is a **high-performance, disk-persistent key-value database** fully compa
 
 | Scenario | Redis (Memory) | BoltDB (Disk) |
 |----------|---------------|---------------|
-| Storage Capacity | Limited by RAM (~64GB typical) | Up to 100TB (disk limit) |
+| Storage Capacity | Limited by RAM (~64GB typical) | Tens-of-GB verified, architected for larger (disk limit) |
 | Cost | High (RAM expensive) | Low (HDD/SSD affordable) |
 | Persistence | RDB/AOF snapshot | Continuous write |
 | Latency | < 1ms | < 5ms (SSD recommended) |

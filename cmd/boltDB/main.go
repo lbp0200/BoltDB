@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -96,6 +97,18 @@ func main() {
 		}
 		replMgr.SetBacklogSize(size)
 		logger.Logger.Info().Int64("size", size).Msg("Replication backlog size set")
+	}
+
+	// 创建并启用 backlog WAL（文件持久化），提供崩溃恢复能力
+	// WAL 以 append-only 格式记录每条写命令，主节点崩溃重启后可从 WAL 重建
+	// 内存 backlog，避免所有从节点被迫 FULLRESYNC
+	walDir := filepath.Join(*dbPathFlag, replication.WALDirName)
+	wal, walErr := replication.NewBacklogWAL(walDir)
+	if walErr != nil {
+		logger.Logger.Warn().Err(walErr).Str("dir", walDir).Msg("Failed to create backlog WAL, continuing without persistence")
+	} else {
+		replMgr.SetBacklogWAL(wal)
+		logger.Logger.Info().Str("dir", walDir).Msg("Backlog WAL enabled for crash recovery")
 	}
 
 	// TLS 配置（提前创建，供 replication 和 listener 使用）

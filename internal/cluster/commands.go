@@ -242,7 +242,7 @@ func (cc *ClusterCommands) handleMigrateSlot(args []string) (string, error) {
 	targetNodeID := args[1]
 	copyKeys := len(args) >= 3 && strings.ToUpper(args[2]) == "COPY"
 
-	if err := cc.cluster.MigrateSlot(uint32(slot), targetNodeID, copyKeys); err != nil {
+	if err := cc.cluster.MigrateSlotCrashSafe(uint32(slot), targetNodeID, copyKeys); err != nil {
 		return "", fmt.Errorf("ERR %v", err)
 	}
 

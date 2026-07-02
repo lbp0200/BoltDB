@@ -24,6 +24,7 @@ type ReplicationManager struct {
 	masterConn       *MasterConnection           // 到主节点的连接(当role=slave时)
 	slaves           map[string]*SlaveConnection // 从节点连接(当role=master时)
 	backlog          *ReplicationBacklog         // 复制积压缓冲区
+	wal              *BacklogWAL                 // 持久化 WAL（nil = 不使用，向后兼容）
 	masterReplOffset int64                       // 主节点复制偏移量
 	replId           string                      // 复制ID(主节点运行ID)
 	store            *store.BotreonStore         // 数据存储
@@ -108,6 +109,34 @@ func (rm *ReplicationManager) GetTLSConfig() *tls.Config {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
 	return rm.tlsConfig
+}
+
+// SetBacklogWAL 设置 backlog 持久化 WAL。
+// wal 为 nil 时禁用持久化（向后兼容）。
+// 如果 WAL 中有未回放的条目，会立即回放到当前 backlog 中。
+//
+// 使用示例：
+//
+//	rm.SetBacklogWAL(wal)  // 启用 WAL，自动回放未处理条目
+//	rm.SetBacklogWAL(nil)  // 禁用 WAL
+func (rm *ReplicationManager) SetBacklogWAL(wal *BacklogWAL) {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+	rm.wal = wal
+
+	// 如果 WAL 非空，立即回放未处理的条目
+	if wal != nil {
+		if err := wal.Replay(rm.backlog); err != nil {
+			logger.Logger.Warn().Err(err).Msg("failed to replay WAL on SetBacklogWAL")
+		}
+	}
+}
+
+// GetBacklogWAL 获取 backlog 持久化 WAL。
+func (rm *ReplicationManager) GetBacklogWAL() *BacklogWAL {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	return rm.wal
 }
 
 // generateReplicationID 生成40字符的十六进制复制ID
@@ -274,6 +303,7 @@ func (rm *ReplicationManager) PropagateCommand(cmd [][]byte) {
 		slaves = append(slaves, slave)
 	}
 	backlog := rm.backlog
+	wal := rm.wal
 	rm.mu.RUnlock()
 
 	// 总是将命令添加到backlog并更新offset，无论是否有从节点
@@ -283,6 +313,14 @@ func (rm *ReplicationManager) PropagateCommand(cmd [][]byte) {
 
 	// 更新复制偏移量（在Slave建立前也必须有正确的offset）
 	rm.IncrementReplOffset(int64(len(cmdBytes)))
+
+	// 如果配置了 WAL，将命令写入持久化日志
+	// 这提供了 crash 恢复能力：即使主节点崩溃，backlog 也可以从 WAL 重建
+	if wal != nil {
+		if err := wal.Append(cmdOffset, cmdBytes); err != nil {
+			logger.Logger.Warn().Err(err).Int64("offset", cmdOffset).Msg("backlog WAL append failed")
+		}
+	}
 
 	// 传播到所有从节点
 	for _, slave := range slaves {
@@ -341,6 +379,13 @@ func (rm *ReplicationManager) Stop() {
 			logger.Logger.Warn().Err(saveErr).Msg("failed to persist backlog on shutdown")
 		} else {
 			logger.Logger.Debug().Int("backlog_bytes", len(bBuf)).Msg("backlog persisted on shutdown")
+		}
+	}
+
+	// 关闭 WAL（flush 剩余数据到磁盘）
+	if rm.wal != nil {
+		if closeErr := rm.wal.Close(); closeErr != nil {
+			logger.Logger.Warn().Err(closeErr).Msg("failed to close backlog WAL")
 		}
 	}
 

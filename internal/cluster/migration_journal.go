@@ -1,0 +1,536 @@
+package cluster
+
+import (
+	"bufio"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/dgraph-io/badger/v4"
+	"github.com/lbp0200/BoltDB/internal/logger"
+	"github.com/lbp0200/BoltDB/internal/proto"
+)
+
+// Migration journal keys (stored in BadgerDB for crash recovery).
+// Format: __MIGRATE_JOURNAL__:<slot>
+const journalKeyPrefix = "__MIGRATE_JOURNAL__:"
+
+// Migration phases.
+const (
+	PhaseInit    = "INIT"    // 迁移初始化
+	PhaseCopying = "COPYING" // Phase 1：复制 key 到目标节点
+	PhaseCopied  = "COPIED"  // Phase 1 完成：所有 key 已复制
+	PhaseCommit  = "COMMIT"  // Phase 2：正在提交（批量删除 + 切换 slot）
+	PhaseDone    = "DONE"    // 迁移完成
+)
+
+// keyStatus 记录单个 key 的迁移状态。
+type keyStatus struct {
+	Key    string `json:"key"`
+	Copied bool   `json:"copied"` // 是否已成功复制到目标
+}
+
+// migrationJournal 记录一次 slot 迁移的所有状态。
+// 持久化在 BadgerDB 中，crash 后可通过 RecoverSlotMigration 恢复。
+type migrationJournal struct {
+	Slot       uint32      `json:"slot"`
+	TargetID   string      `json:"target_id"`
+	TargetAddr string      `json:"target_addr"`
+	Phase      string      `json:"phase"`
+	Keys       []keyStatus `json:"keys"`
+	CopyKeys   bool        `json:"copy_keys"` // 是否 COPY 模式（不删除源端）
+}
+
+// journalKey 返回槽位对应迁移日志的 BadgerDB key。
+func journalKey(slot uint32) []byte {
+	return []byte(journalKeyPrefix + strconv.FormatUint(uint64(slot), 10))
+}
+
+// saveJournal 持久化迁移日志到 BadgerDB。
+func (c *Cluster) saveJournal(j *migrationJournal) error {
+	data, err := json.Marshal(j)
+	if err != nil {
+		return fmt.Errorf("marshal migration journal: %w", err)
+	}
+	return c.Store.GetDB().Update(func(txn *badger.Txn) error {
+		return txn.Set(journalKey(j.Slot), data)
+	})
+}
+
+// loadJournal 从 BadgerDB 读取迁移日志。
+// 返回 nil, nil 表示不存在日志（首次启动或已清理）。
+func (c *Cluster) loadJournal(slot uint32) (*migrationJournal, error) {
+	var data []byte
+	err := c.Store.GetDB().View(func(txn *badger.Txn) error {
+		item, err := txn.Get(journalKey(slot))
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		data, err = item.ValueCopy(nil)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read migration journal for slot %d: %w", slot, err)
+	}
+	if data == nil {
+		return nil, nil
+	}
+	var j migrationJournal
+	if err := json.Unmarshal(data, &j); err != nil {
+		return nil, fmt.Errorf("unmarshal migration journal for slot %d: %w", slot, err)
+	}
+	return &j, nil
+}
+
+// deleteJournal 删除迁移日志（迁移完成后清理）。
+func (c *Cluster) deleteJournal(slot uint32) error {
+	return c.Store.GetDB().Update(func(txn *badger.Txn) error {
+		return txn.Delete(journalKey(slot))
+	})
+}
+
+// migrateConn 封装单个 key 的迁移 TCP 连接。
+type migrateConn struct {
+	conn   net.Conn
+	reader *bufio.Reader
+	mu     sync.Mutex
+}
+
+func newMigrateConn(addr string) (*migrateConn, error) {
+	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("connect to target %s: %w", addr, err)
+	}
+	return &migrateConn{
+		conn:   conn,
+		reader: bufio.NewReader(conn),
+	}, nil
+}
+
+func (mc *migrateConn) sendRestore(key string, data []byte) error {
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+
+	restoreCmd := &proto.Array{
+		Args: [][]byte{
+			[]byte("RESTORE"),
+			[]byte(key),
+			[]byte("0"),
+			data,
+			[]byte("REPLACE"),
+		},
+	}
+	if err := proto.WriteRESP(mc.conn, restoreCmd); err != nil {
+		return fmt.Errorf("write RESTORE: %w", err)
+	}
+
+	resp, err := proto.ReadRESP(mc.reader)
+	if err != nil {
+		return fmt.Errorf("read RESTORE response: %w", err)
+	}
+
+	// 检查错误响应
+	if isErrorResponse(resp) {
+		return fmt.Errorf("target error: %s", string(resp.Args[0]))
+	}
+	return nil
+}
+
+func (mc *migrateConn) sendStable(slot uint32) {
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+
+	stableCmd := &proto.Array{
+		Args: [][]byte{
+			[]byte("CLUSTER"),
+			[]byte("SETSLOT"),
+			[]byte(strconv.FormatUint(uint64(slot), 10)),
+			[]byte("STABLE"),
+		},
+	}
+	_ = proto.WriteRESP(mc.conn, stableCmd)
+}
+
+func (mc *migrateConn) close() {
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+	mc.conn.Close() //nolint:errcheck
+}
+
+// isErrorResponse 检查 RESP Array 响应是否为错误。
+func isErrorResponse(resp *proto.Array) bool {
+	if resp == nil || len(resp.Args) == 0 || len(resp.Args[0]) == 0 {
+		return false
+	}
+	return resp.Args[0][0] == '-'
+}
+
+// MigrateSlotCrashSafe 是 MigrateSlot 的 crash-safe 版本（两阶段提交）。
+// 它使用迁移日志记录每个 key 的迁移进度，在 crash 后可恢复。
+//
+// 参数：
+//   - slot：要迁移的槽位
+//   - targetNodeID：目标节点 ID
+//   - copyKeys：如果为 true，只复制不删除源端
+//
+// 两阶段提交流程：
+//
+//	Phase 1 (COPY)：逐 key DUMP → TCP RESTORE，记录每个 key 的复制状态到日志
+//	Phase 2 (COMMIT)：BadgerDB 事务批量删除源端 key + AssignSlot，日志标记 DONE
+//
+// Crash 恢复（重启时由 RecoverSlotMigrations 调用）：
+//   - INIT / COPYING：清除 MIGRATING 状态，回滚（源端未删除，安全）
+//   - COPIED 但非 DONE：重新执行 Phase 2（批量删除 + AssignSlot）
+//   - DONE：清理迁移日志
+func (c *Cluster) MigrateSlotCrashSafe(slot uint32, targetNodeID string, copyKeys bool) error {
+	if slot >= SlotCount {
+		return fmt.Errorf("slot %d out of range", slot)
+	}
+
+	// 验证 slot 在当前节点处于 MIGRATING 状态
+	if !c.IsMigratingSlot(slot) {
+		return fmt.Errorf("slot %d is not in MIGRATING state", slot)
+	}
+
+	// 检查是否已有未完成的迁移日志（防止并发迁移同一个 slot）
+	existing, err := c.loadJournal(slot)
+	if err != nil {
+		return fmt.Errorf("check existing journal for slot %d: %w", slot, err)
+	}
+	if existing != nil && existing.Phase != PhaseDone {
+		return fmt.Errorf("slot %d already has an incomplete migration (phase=%s)", slot, existing.Phase)
+	}
+
+	// 找目标节点
+	c.mu.RLock()
+	targetNode, exists := c.Nodes[targetNodeID]
+	c.mu.RUnlock()
+	if !exists || targetNode == nil {
+		return fmt.Errorf("target node %s not found", targetNodeID)
+	}
+
+	logger.Logger.Info().
+		Uint32("slot", slot).
+		Str("target", targetNodeID).
+		Str("target_addr", targetNode.Addr).
+		Bool("copy", copyKeys).
+		Msg("MigrateSlotCrashSafe: starting two-phase slot migration")
+
+	// 收集所有属于该 slot 的 key
+	var keys []string
+	err = c.Store.IterateRawKeys(func(rawKey string) bool {
+		if Slot(rawKey) == slot {
+			keys = append(keys, rawKey)
+		}
+		return true
+	})
+	if err != nil {
+		return fmt.Errorf("iterate keys for slot %d: %w", slot, err)
+	}
+
+	logger.Logger.Info().
+		Uint32("slot", slot).
+		Int("key_count", len(keys)).
+		Msg("MigrateSlotCrashSafe: collected keys to migrate")
+
+	// 初始化迁移日志
+	journal := &migrationJournal{
+		Slot:       slot,
+		TargetID:   targetNodeID,
+		TargetAddr: targetNode.Addr,
+		Phase:      PhaseInit,
+		CopyKeys:   copyKeys,
+		Keys:       make([]keyStatus, len(keys)),
+	}
+	for i, k := range keys {
+		journal.Keys[i] = keyStatus{Key: k, Copied: false}
+	}
+
+	// 持久化 INIT 状态
+	journal.Phase = PhaseInit
+	if err := c.saveJournal(journal); err != nil {
+		return fmt.Errorf("save initial migration journal: %w", err)
+	}
+
+	// ---- Phase 1: COPY ----
+	journal.Phase = PhaseCopying
+	if err := c.saveJournal(journal); err != nil {
+		return fmt.Errorf("save COPYING journal: %w", err)
+	}
+
+	// 连接目标节点
+	mc, err := newMigrateConn(targetNode.Addr)
+	if err != nil {
+		return err
+	}
+	defer mc.close()
+
+	allCopied := true
+	for i := range journal.Keys {
+		// 跳过已经复制过的 key（中断恢复）
+		if journal.Keys[i].Copied {
+			continue
+		}
+
+		key := journal.Keys[i].Key
+
+		// DUMP key
+		data, err := c.Store.Dump(key)
+		if err != nil {
+			if strings.Contains(err.Error(), "no such key") {
+				// key 在收集中存在但在 DUMP 时已被删除，标记为已复制（跳过）
+				journal.Keys[i].Copied = true
+				continue
+			}
+			journal.Keys[i].Copied = false
+			_ = c.saveJournal(journal)
+			return fmt.Errorf("dump key %s: %w", key, err)
+		}
+
+		// 发送 RESTORE 到目标
+		if err := mc.sendRestore(key, data); err != nil {
+			journal.Keys[i].Copied = false
+			_ = c.saveJournal(journal)
+			return fmt.Errorf("restore key %s on target: %w", key, err)
+		}
+
+		// 标记为已复制，每复制 10 个 key 更新一次日志
+		journal.Keys[i].Copied = true
+		if i%10 == 0 {
+			if err := c.saveJournal(journal); err != nil {
+				logger.Logger.Warn().Err(err).Uint32("slot", slot).Msg("failed to update migration journal during copy")
+			}
+		}
+	}
+
+	if !allCopied {
+		// 有 key 复制失败，保持 COPYING 状态以便重试
+		_ = c.saveJournal(journal)
+		return fmt.Errorf("slot %d migration incomplete: some keys failed to copy", slot)
+	}
+
+	// Phase 1 完成
+	journal.Phase = PhaseCopied
+	if err := c.saveJournal(journal); err != nil {
+		return fmt.Errorf("save COPIED journal: %w", err)
+	}
+
+	// 在 COPY 模式下，不执行 Phase 2（不删除源端，不切换 slot）
+	if copyKeys {
+		journal.Phase = PhaseDone
+		if err := c.saveJournal(journal); err != nil {
+			return fmt.Errorf("save DONE journal (copy mode): %w", err)
+		}
+		c.ClearSlotMigration(slot)
+
+		logger.Logger.Info().
+			Uint32("slot", slot).
+			Str("target", targetNodeID).
+			Int("copied", len(journal.Keys)).
+			Msg("MigrateSlotCrashSafe: copy completed")
+		return nil
+	}
+
+	// ---- Phase 2: COMMIT ----
+	journal.Phase = PhaseCommit
+	if err := c.saveJournal(journal); err != nil {
+		return fmt.Errorf("save COMMIT journal: %w", err)
+	}
+
+	// 批量删除源端 key（在同一个 BadgerDB 事务中）
+	err = c.Store.GetDB().Update(func(txn *badger.Txn) error {
+		for _, ks := range journal.Keys {
+			if !ks.Copied {
+				continue
+			}
+			// 删除 TYPE_ 记录
+			typeKey := append([]byte("TYPE_"), []byte(ks.Key)...)
+			if err := txn.Delete(typeKey); err != nil {
+				return fmt.Errorf("delete type key for %s: %w", ks.Key, err)
+			}
+			// 删除数据 key
+			if err := txn.Delete([]byte(ks.Key)); err != nil {
+				return fmt.Errorf("delete data key for %s: %w", ks.Key, err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		// 批量删除失败，保持 COMMIT 状态以便重试
+		_ = c.saveJournal(journal)
+		return fmt.Errorf("batch delete keys for slot %d: %w", slot, err)
+	}
+
+	// 原子切换 slot 归属
+	c.ClearSlotMigration(slot)
+	if err := c.AssignSlot(slot, targetNodeID); err != nil {
+		// AssignSlot 失败但 key 已删除——这是危险状态，记录日志
+		logger.Logger.Error().
+			Err(err).
+			Uint32("slot", slot).
+			Msg("CRITICAL: keys deleted but AssignSlot failed! Manual intervention required.")
+		_ = c.saveJournal(journal)
+		return fmt.Errorf("assign slot %d to %s after key deletion: %w", slot, targetNodeID, err)
+	}
+
+	// 持久化集群配置（包含 slot 变更）
+	if err := c.SaveConfig(); err != nil {
+		logger.Logger.Warn().Err(err).Uint32("slot", slot).Msg("failed to save config after slot migration")
+	}
+
+	// 通知目标节点清除 IMPORTING 状态
+	mc.sendStable(slot)
+
+	// 标记完成
+	journal.Phase = PhaseDone
+	if err := c.saveJournal(journal); err != nil {
+		return fmt.Errorf("save DONE journal: %w", err)
+	}
+
+	// 清理迁移日志（非关键，可在下次启动时清理）
+	_ = c.deleteJournal(slot)
+
+	logger.Logger.Info().
+		Uint32("slot", slot).
+		Str("target", targetNodeID).
+		Int("migrated", len(journal.Keys)).
+		Msg("MigrateSlotCrashSafe: migration completed successfully")
+
+	return nil
+}
+
+// RecoverSlotMigrations 在集群启动时恢复未完成的 slot 迁移。
+// 遍历 BadgerDB 中的迁移日志，根据当前阶段决定恢复策略。
+// 应在 Cluster 初始化完成后调用。
+func (c *Cluster) RecoverSlotMigrations() error {
+	// 扫描所有迁移日志 key
+	prefix := []byte(journalKeyPrefix)
+	var slots []uint32
+
+	err := c.Store.GetDB().View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.Prefix = prefix
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			key := string(item.Key())
+			slotStr := key[len(journalKeyPrefix):]
+			if slotUint, err := strconv.ParseUint(slotStr, 10, 32); err == nil {
+				slots = append(slots, uint32(slotUint))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("scan migration journals: %w", err)
+	}
+
+	for _, slot := range slots {
+		journal, err := c.loadJournal(slot)
+		if err != nil {
+			logger.Logger.Warn().Err(err).Uint32("slot", slot).Msg("RecoverSlotMigrations: failed to load journal")
+			continue
+		}
+		if journal == nil {
+			continue
+		}
+
+		logger.Logger.Info().
+			Uint32("slot", slot).
+			Str("phase", journal.Phase).
+			Int("keys", len(journal.Keys)).
+			Msg("RecoverSlotMigrations: found incomplete migration")
+
+		switch journal.Phase {
+		case PhaseInit, PhaseCopying:
+			// Phase 1 未完成 → 回滚（清除迁移状态，key 未被删除）
+			logger.Logger.Warn().
+				Uint32("slot", slot).
+				Msg("RecoverSlotMigrations: Phase 1 incomplete, rolling back (keys are intact)")
+			c.ClearSlotMigration(slot)
+			_ = c.deleteJournal(slot)
+
+		case PhaseCopied:
+			// Phase 1 完成但 Phase 2 未开始 → 重新执行 Phase 2
+			logger.Logger.Warn().
+				Uint32("slot", slot).
+				Str("target", journal.TargetID).
+				Msg("RecoverSlotMigrations: Phase 1 complete, re-executing Phase 2 (COMMIT)")
+			if err := c.retryCommitPhase(journal); err != nil {
+				logger.Logger.Error().
+					Err(err).
+					Uint32("slot", slot).
+					Msg("RecoverSlotMigrations: Phase 2 retry failed, manual intervention may be needed")
+			}
+
+		case PhaseCommit:
+			// Phase 2 中断——可能部分 key 已删除 + AssignSlot 未执行
+			logger.Logger.Warn().
+				Uint32("slot", slot).
+				Str("target", journal.TargetID).
+				Msg("RecoverSlotMigrations: Phase 2 interrupted, retrying COMMIT")
+			if err := c.retryCommitPhase(journal); err != nil {
+				logger.Logger.Error().
+					Err(err).
+					Uint32("slot", slot).
+					Msg("RecoverSlotMigrations: Phase 2 retry after interrupt failed")
+			}
+
+		case PhaseDone:
+			// 完成后清理
+			_ = c.deleteJournal(slot)
+		}
+	}
+
+	return nil
+}
+
+// retryCommitPhase 重新执行 Phase 2（批量删除 + AssignSlot）。
+// 用于 crash 恢复：Phase 1 已完成，需要提交。
+func (c *Cluster) retryCommitPhase(journal *migrationJournal) error {
+	slot := journal.Slot
+
+	if !journal.CopyKeys {
+		// 删除源端 key（幂等：已经删除的 key 再次 delete 不会报错）
+		err := c.Store.GetDB().Update(func(txn *badger.Txn) error {
+			for _, ks := range journal.Keys {
+				if !ks.Copied {
+					continue
+				}
+				typeKey := append([]byte("TYPE_"), []byte(ks.Key)...)
+				_ = txn.Delete(typeKey)
+				_ = txn.Delete([]byte(ks.Key))
+			}
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("retry batch delete for slot %d: %w", slot, err)
+		}
+	}
+
+	// AssignSlot 是幂等的
+	c.ClearSlotMigration(slot)
+	if err := c.AssignSlot(slot, journal.TargetID); err != nil {
+		return fmt.Errorf("retry assign slot %d to %s: %w", slot, journal.TargetID, err)
+	}
+
+	if err := c.SaveConfig(); err != nil {
+		logger.Logger.Warn().Err(err).Uint32("slot", slot).Msg("retryCommitPhase: save config failed")
+	}
+
+	journal.Phase = PhaseDone
+	_ = c.saveJournal(journal)
+	_ = c.deleteJournal(slot)
+
+	return nil
+}
