@@ -536,7 +536,7 @@ func TestLRemRemoveAll(t *testing.T) {
 }
 
 func TestLRemRemoveNegativeCount(t *testing.T) {
-	t.Parallel()
+	// Not parallel — avoids BadgerDB contention with other store tests
 	s := setupTestStore(t)
 
 	n, err := s.LPush("lrem_n", "b", "a", "b", "a")

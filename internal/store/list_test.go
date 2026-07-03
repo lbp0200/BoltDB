@@ -305,7 +305,7 @@ func TestLInsert(t *testing.T) {
 
 // TestLRem 测试 LREM 命令
 func TestLRem(t *testing.T) {
-	t.Parallel()
+	// Not parallel — avoids BadgerDB contention with other store tests
 	store := setupTestStore(t)
 
 	key := "mylist"
