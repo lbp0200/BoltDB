@@ -139,17 +139,22 @@ func setupMasterSlaveServer(t *testing.T) (masterClient, slaveClient *redis.Clie
 	}
 
 	// 等待 FULLRESYNC 完成（GHA 上可能需要 20-30s）
+	// 方法：写入一个测试键，轮询从库直到读到它
+	replSyncKey := "__boltdb_sync_check__"
+	masterClient.Set(ctx, replSyncKey, "1", 0)
 	deadline := time.Now().Add(60 * time.Second)
+	synced := false
 	for time.Now().Before(deadline) {
-		role := slaveReplMgr.GetRole()
-		if role == replication.RoleSlave {
-			mOff := masterReplMgr.GetMasterReplOffset()
-			sOff := slaveReplMgr.GetMasterReplOffset()
-			if mOff > 0 && sOff >= mOff {
-				break
-			}
+		if _, err := slaveClient.Get(ctx, replSyncKey).Result(); err == nil {
+			synced = true
+			break
 		}
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
+	}
+	// 清理测试键
+	masterClient.Del(ctx, replSyncKey)
+	if !synced {
+		t.Logf("WARNING: slave sync not confirmed within 60s (GHA runner may be slow)")
 	}
 
 	cleanup = func() {
