@@ -372,7 +372,9 @@ func TestStringError_PsetexWrongType(t *testing.T) {
 	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("list_key"), []byte("value")}, "127.0.0.1:12345")
 	resp := handler.executeCommand(state, "PSETEX", [][]byte{[]byte("list_key"), []byte("1000"), []byte("value")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
-	assert.True(t, ok)
+	if !ok {
+		t.Fatalf("expected *proto.Error, got %T: %v", resp, resp)
+	}
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
 }
 

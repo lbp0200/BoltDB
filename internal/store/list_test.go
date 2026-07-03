@@ -311,14 +311,17 @@ func TestLRem(t *testing.T) {
 	key := "mylist"
 
 	// 设置值
-	_, _ = store.RPush(key, "a", "b", "a", "c", "a", "d")
+	n, err := store.RPush(key, "a", "b", "a", "c", "a", "d")
+	assert.NoError(t, err)
+	assert.Equal(t, 6, n)
 
 	// 删除第一个a
 	count, err := store.LRem(key, 1, "a")
 	assert.NoError(t, err)
 	assert.Equal(t, 1, count)
 
-	values, _ := store.LRange(key, 0, -1)
+	values, err := store.LRange(key, 0, -1)
+	assert.NoError(t, err)
 	assert.Equal(t, []string{"b", "a", "c", "a", "d"}, values)
 
 	// 删除所有a
@@ -326,16 +329,20 @@ func TestLRem(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 2, count)
 
-	values, _ = store.LRange(key, 0, -1)
+	values, err = store.LRange(key, 0, -1)
+	assert.NoError(t, err)
 	assert.Equal(t, []string{"b", "c", "d"}, values)
 
 	// 从尾部删除
-	_, _ = store.RPush(key, "x", "y", "x")
+	n, err = store.RPush(key, "x", "y", "x")
+	assert.NoError(t, err)
+	assert.Equal(t, 5, n)
 	count, err = store.LRem(key, -1, "x")
 	assert.NoError(t, err)
 	assert.Equal(t, 1, count)
 
-	values, _ = store.LRange(key, 0, -1)
+	values, err = store.LRange(key, 0, -1)
+	assert.NoError(t, err)
 	assert.Equal(t, []string{"b", "c", "d", "x", "y"}, values)
 }
 

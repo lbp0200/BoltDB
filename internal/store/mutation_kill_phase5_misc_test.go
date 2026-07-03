@@ -539,7 +539,8 @@ func TestLRemRemoveNegativeCount(t *testing.T) {
 	t.Parallel()
 	s := setupTestStore(t)
 
-	s.LPush("lrem_n", "b", "a", "b", "a")
+	_, err := s.LPush("lrem_n", "b", "a", "b", "a")
+	assert.NoError(t, err)
 	count, err := s.LRem("lrem_n", -1, "a")
 	assert.NoError(t, err)
 	assert.Equal(t, 1, count) // removes from tail

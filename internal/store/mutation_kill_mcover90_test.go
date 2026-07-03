@@ -474,9 +474,12 @@ func TestScanSmallDB(t *testing.T) {
 	t.Parallel()
 	s := setupTestStore(t)
 
-	s.Set("scan_a", "1")
-	s.Set("scan_b", "2")
-	s.Set("scan_c", "3")
+	err := s.Set("scan_a", "1")
+	assert.NoError(t, err)
+	err = s.Set("scan_b", "2")
+	assert.NoError(t, err)
+	err = s.Set("scan_c", "3")
+	assert.NoError(t, err)
 
 	var allKeys []string
 	cursor := uint64(0)

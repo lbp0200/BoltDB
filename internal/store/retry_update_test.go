@@ -52,7 +52,7 @@ func TestRetryUpdate_SuccessAfterWritesBlocked(t *testing.T) {
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		callCount++
 		if callCount < 2 {
-			return errors.New("Writes are blocked")
+			return badger.ErrBlockedWrites
 		}
 		return nil
 	}, 5)
@@ -74,7 +74,7 @@ func TestRetryUpdate_SuccessAfterWritesBlockedWithConflicts(t *testing.T) {
 		case 1:
 			return badger.ErrConflict
 		case 2:
-			return errors.New("Writes are blocked")
+			return badger.ErrBlockedWrites
 		default:
 			return nil
 		}
@@ -114,7 +114,7 @@ func TestRetryUpdate_WritesBlockedExhaustRetries(t *testing.T) {
 	callCount := 0
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		callCount++
-		return errors.New("Writes are blocked")
+		return badger.ErrBlockedWrites
 	}, maxRetries)
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -154,7 +154,7 @@ func TestRetryUpdate_NonRetryableAfterRetries(t *testing.T) {
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		callCount++
 		if callCount < 3 {
-			return errors.New("Writes are blocked")
+			return badger.ErrBlockedWrites
 		}
 		return errors.New(sentinel)
 	}, 5)

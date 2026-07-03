@@ -51,7 +51,7 @@ func TestReadRDBExpireTime_UnknownType(t *testing.T) {
 	expireAt, ok := readRDBExpireTime(&buf)
 	assert.False(t, ok)
 	assert.Equal(t, int64(0), expireAt)
-	assert.Equal(t, 1, buf.Len())
+	assert.Equal(t, 0, buf.Len()) // byte consumed by readRDBExpireTime
 }
 
 func TestReadRDBExpireTime_FC_Truncated(t *testing.T) {

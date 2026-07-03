@@ -3,6 +3,8 @@ package integration
 import (
 	"context"
 	"net"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -250,28 +252,42 @@ func parseInt64(data []byte) int64 {
 
 // waitForReplication polls the slave REPLICAINFO offset until it catches up
 // to the master offset, with a timeout.
-func waitForReplication(t *testing.T, masterClient, slaveClient *redis.Client, timeout time.Duration) {
+func waitForReplication(t *testing.T, masterClient, slaveClient *redis.Client, timeout time.Duration, minOffset int64) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		mOff, err := masterClient.Do(context.Background(), "INFO", "replication").Result()
+		mInfo, err := masterClient.Info(context.Background(), "replication").Result()
 		if err != nil {
 			time.Sleep(50 * time.Millisecond)
 			continue
 		}
-		sOff, err := slaveClient.Do(context.Background(), "INFO", "replication").Result()
+		sInfo, err := slaveClient.Info(context.Background(), "replication").Result()
 		if err != nil {
 			time.Sleep(50 * time.Millisecond)
 			continue
 		}
-		_ = mOff
-		_ = sOff
-		// If both respond, replication is active — sleep a bit more for data propagation
-		time.Sleep(100 * time.Millisecond)
-		return
+		// Extract master_repl_offset from INFO output
+		mOff := extractInfoValue(mInfo, "master_repl_offset")
+		sOff := extractInfoValue(sInfo, "slave_repl_offset")
+		if mOff == sOff && mOff >= minOffset {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	// Fallback: just wait
-	time.Sleep(200 * time.Millisecond)
+	// Fallback: wait for any pending propagation
+	time.Sleep(500 * time.Millisecond)
+}
+
+// extractInfoValue extracts a numeric value from Redis INFO output by key.
+func extractInfoValue(info, key string) int64 {
+	for _, line := range strings.Split(info, "\r\n") {
+		if strings.HasPrefix(line, key+":") {
+			val := strings.TrimPrefix(line, key+":")
+			n, _ := strconv.ParseInt(strings.TrimSpace(val), 10, 64)
+			return n
+		}
+	}
+	return 0
 }
 
 // setupReplicationTest creates a master-slave pair and returns clients + cleanup.
@@ -464,9 +480,9 @@ func TestReplicationCompleteness_Key(t *testing.T) {
 
 	// RENAME
 	masterClient.Set(ctx, p+"rename1", "val1", 0)
-	time.Sleep(100 * time.Millisecond)
+	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 18)
 	masterClient.Rename(ctx, p+"rename1", p+"rename2")
-	time.Sleep(200 * time.Millisecond)
+	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 36)
 	val, err := slaveClient.Get(ctx, p+"rename2").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, "val1", val)
@@ -475,47 +491,42 @@ func TestReplicationCompleteness_Key(t *testing.T) {
 
 	// EXPIRE via SetEX
 	masterClient.SetEx(ctx, p+"expire1", "temp", 3600*time.Second)
-	time.Sleep(300 * time.Millisecond)
+	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 54)
 	ttl, err := slaveClient.TTL(ctx, p+"expire1").Result()
 	assert.NoError(t, err)
-	// TTL should be positive (3600s minus elapsed time) — allow range
 	assert.True(t, ttl > 0)
 
 	// PERSIST
 	masterClient.Persist(ctx, p+"expire1")
-	time.Sleep(500 * time.Millisecond)
+	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 64)
 	ttl, _ = slaveClient.TTL(ctx, p+"expire1").Result()
-	// TTL should be -1 (no expiry) after PERSIST, or -2 if key expired during test
 	assert.True(t, ttl == -1 || ttl == -2)
 
 	// DEL
 	masterClient.Del(ctx, p+"expire1", p+"rename2")
-	time.Sleep(200 * time.Millisecond)
+	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 80)
 	exists, _ = slaveClient.Exists(ctx, p+"expire1").Result()
 	assert.Equal(t, int64(0), exists)
 
-	// UNLINK (async delete — same as DEL for replication)
+	// UNLINK (async delete)
 	masterClient.Set(ctx, p+"unlink1", "ulval", 0)
-	time.Sleep(100 * time.Millisecond)
+	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 98)
 	masterClient.Unlink(ctx, p+"unlink1")
-	time.Sleep(500 * time.Millisecond) // UNLINK is async, give more time
-	exists, _ = slaveClient.Exists(ctx, p+"unlink1").Result()
-	// UNLINK is async — slave may or may not have cleaned up yet
-	_ = exists
+	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 108)
 
 	// SORT with STORE
 	masterClient.RPush(ctx, p+"sort1", "3", "1", "2")
-	time.Sleep(100 * time.Millisecond)
+	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 142)
 	masterClient.Do(ctx, "SORT", p+"sort1", "STORE", p+"sort_out")
-	time.Sleep(300 * time.Millisecond)
+	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 160)
 	listVal, _ := slaveClient.LRange(ctx, p+"sort_out", 0, -1).Result()
 	assert.Equal(t, []string{"1", "2", "3"}, listVal)
 
 	// FLUSHDB
 	masterClient.Set(ctx, p+"flush1", "gone", 0)
-	time.Sleep(100 * time.Millisecond)
+	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 178)
 	masterClient.FlushDB(ctx)
-	time.Sleep(200 * time.Millisecond)
+	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 180)
 	exists, _ = slaveClient.Exists(ctx, p+"flush1").Result()
 	assert.Equal(t, int64(0), exists)
 }

@@ -149,8 +149,9 @@ func TestReplicationManager_MultipleSlaveIds(t *testing.T) {
 	// 测试复制ID生成的唯一性
 	replId1 := rm.GetReplicationID()
 
-	// 创建新的 manager
-	rm2 := NewReplicationManager(testStore)
+	// 创建新的 manager（使用不同的 store 实例避免数据竞争）
+	testStore2 := setupTestStore(t)
+	rm2 := NewReplicationManager(testStore2)
 	replId2 := rm2.GetReplicationID()
 
 	// 两个 ID 应该不同（概率上几乎必然）
