@@ -229,7 +229,7 @@ func TestSentinelFailoverConvergence(t *testing.T) {
 	master.Kill()
 
 	pollStart := time.Now()
-	for time.Since(pollStart) < 15*time.Second {
+	for time.Since(pollStart) < 5*time.Second {
 		m := s.GetMaster("mymaster")
 		if m.GetAddr() != master.Addr {
 			t.Logf("Address changed to %s after %v", m.GetAddr(), time.Since(killTime))
@@ -265,7 +265,7 @@ func TestSentinelFailoverConvergence(t *testing.T) {
 	if detectLat <= 0 {
 		t.Fatal("detection latency should be positive")
 	}
-	if detectLat >= 15*time.Second {
+	if detectLat >= 5*time.Second {
 		t.Fatalf("detection too slow: %v", detectLat)
 	}
 	if s.Metrics.GetLeaderChanges() == 0 {

@@ -60,7 +60,7 @@ func TestRegressionDuplicateWindowMeasurement(t *testing.T) {
 	if err := slave.MakeSlave(master.Addr); err != nil {
 		t.Fatalf("failed to start slave replication: %v", err)
 	}
-	if !master.WaitForReplicaSync(ctx, master, slave, 15*time.Second) {
+	if !master.WaitForReplicaSync(ctx, master, slave, 5*time.Second) {
 		t.Fatal("dw-measure: initial sync failed")
 	}
 	baseline := runtime.NumGoroutine()

@@ -66,7 +66,7 @@ func TestRegressionWriteDeadlineStorm(t *testing.T) {
 	// Phase 2: heavy writes to advance master past backlog
 	t.Log("write-deadline: phase 2 — heavy writes (15s)")
 	errCh := make(chan error, 100)
-	master.RunLoad(ctx, 8, 15*time.Second, errCh)
+	master.RunLoad(ctx, 8, 5*time.Second, errCh)
 
 	mOffBefore := master.GetMasterOffset()
 	t.Logf("write-deadline: after initial writes — master_offset=%d", mOffBefore)

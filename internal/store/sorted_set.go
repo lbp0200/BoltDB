@@ -91,6 +91,11 @@ func (s *BotreonStore) BZMPopBlocking(ctx context.Context, keys []string, modifi
 		return key, members, nil
 	}
 
+	// timeout == 0 是非阻塞模式，立即返回
+	if timeout <= 0 {
+		return "", nil, nil
+	}
+
 	resultCh := make(chan string, 1)
 	var timerCh <-chan time.Time
 	if timeout > 0 {

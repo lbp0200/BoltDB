@@ -58,7 +58,7 @@ func TestBacklogWAL_AppendAndReplay(t *testing.T) {
 }
 
 func TestBacklogWAL_AppendAndReplay_CircularOverwrite(t *testing.T) {
-	t.Parallel()
+	// Not parallel — heavy BadgerDB write + WAL I/O, avoid contention
 	dir := t.TempDir()
 	wal, err := NewBacklogWAL(dir)
 	assert.NoError(t, err)
