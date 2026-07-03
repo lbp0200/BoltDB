@@ -280,7 +280,7 @@ func waitForReplication(t *testing.T, masterClient, slaveClient *redis.Client, t
 
 // extractInfoValue extracts a numeric value from Redis INFO output by key.
 func extractInfoValue(info, key string) int64 {
-	for _, line := range strings.Split(info, "\r\n") {
+	for _, line := range strings.Split(info, "\n") {
 		if strings.HasPrefix(line, key+":") {
 			val := strings.TrimPrefix(line, key+":")
 			n, _ := strconv.ParseInt(strings.TrimSpace(val), 10, 64)
