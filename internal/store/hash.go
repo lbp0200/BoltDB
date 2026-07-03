@@ -747,20 +747,16 @@ func (s *BotreonStore) HRandField(key string, count int, withValues bool) ([]str
 	err := s.db.View(func(txn *badger.Txn) error {
 		if count >= 0 && count != 0 {
 			// Count > 0: distinct via reservoir sampling; count == 0: single random
-			// Count >= len(fields): need full scan anyway
 			// Use streaming iteration with reservoir sampling for count > 0
 			return s.hRandFieldReservoir(txn, key, count, withValues, &fields, &values)
 		}
 		if count < 0 {
-			// Allow repeats: collect all fields first (needed for repeated random access)
-			allFields, err := s.hGetAllFields(txn, key)
-			if err != nil {
-				return err
-			}
+			// count < 0: allow repeats. Load only field names (not values) when !withValues.
+			realCount := -count
+			allFields := s.hGetAllFieldNames(txn, key, withValues)
 			if len(allFields) == 0 {
 				return nil
 			}
-			realCount := -count
 			for i := 0; i < realCount; i++ {
 				idx := int(randomFloat64() * float64(len(allFields)))
 				fields = append(fields, allFields[idx].Field)
@@ -770,7 +766,7 @@ func (s *BotreonStore) HRandField(key string, count int, withValues bool) ([]str
 			}
 			return nil
 		}
-		// count == 0: return all fields
+		// count == 0: return all fields (with values)
 		allFields, err := s.hGetAllFields(txn, key)
 		if err != nil {
 			return err
@@ -908,6 +904,39 @@ func (s *BotreonStore) hGetAllFields(txn *badger.Txn, key string) ([]hashField, 
 	return fields, nil
 }
 
+// hGetAllFieldNames 只加载 field 名（和可选的 value），不强制读全部 value。
+// 用于 HRANDFIELD count < 0 路径，避免 !withValues 时无意义地加载 value。
+func (s *BotreonStore) hGetAllFieldNames(txn *badger.Txn, key string, withValues bool) []hashField {
+	var fields []hashField
+	prefix := s.hashKey(key, "")
+	opts := badger.DefaultIteratorOptions
+	opts.Prefix = prefix
+	opts.PrefetchValues = withValues // 只有当需要 value 时才 prefetch
+
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+		item := it.Item()
+		k := item.Key()
+		fieldName := string(k[len(prefix):])
+		if fieldName == "__count__" {
+			continue
+		}
+		if withValues {
+			var fieldValue []byte
+			_ = item.Value(func(val []byte) error {
+				fieldValue = val
+				return nil
+			})
+			fields = append(fields, hashField{Field: fieldName, Value: fieldValue})
+		} else {
+			fields = append(fields, hashField{Field: fieldName})
+		}
+	}
+	return fields
+}
+
 // hashField 哈希字段结构
 type hashField struct {
 	Field string
@@ -929,6 +958,9 @@ func (s *BotreonStore) HScan(key string, cursor uint64, pattern string, count in
 	if count <= 0 {
 		count = 10
 	}
+
+	seekKey := s.scanBookmarkLookup(cursor)
+	s.scanBookmarkRelease(cursor)
 
 	err := s.db.View(func(txn *badger.Txn) error {
 		typeKey := TypeOfKeyGet(key)
@@ -955,24 +987,21 @@ func (s *BotreonStore) HScan(key string, cursor uint64, pattern string, count in
 		iter := txn.NewIterator(opts)
 		defer iter.Close()
 
-		currentPos := uint64(0)
-		collected := 0
-
-		if cursor > 0 {
-			for iter.Seek(prefix); iter.ValidForPrefix(prefix) && currentPos < cursor; iter.Next() {
-				currentPos++
-			}
+		if seekKey != nil {
+			iter.Seek(seekKey)
 		} else {
 			iter.Seek(prefix)
 		}
 
+		collected := 0
+		var lastKey []byte
 		for iter.ValidForPrefix(prefix) && collected < count {
 			item := iter.Item()
 			keyBytes := item.KeyCopy(nil)
 			fieldName := string(keyBytes[len(prefix):])
 
 			if fieldName == "__count__" {
-				currentPos++
+				lastKey = keyBytes
 				iter.Next()
 				continue
 			}
@@ -986,12 +1015,12 @@ func (s *BotreonStore) HScan(key string, cursor uint64, pattern string, count in
 				collected++
 			}
 
-			currentPos++
+			lastKey = keyBytes
 			iter.Next()
 		}
 
 		if iter.ValidForPrefix(prefix) {
-			result.Cursor = currentPos
+			result.Cursor = s.scanBookmarkStore(lastKey)
 		} else {
 			result.Cursor = 0
 		}
@@ -1015,10 +1044,12 @@ type HRandMemberResult struct {
 // If count > 0: returns up to count distinct field-value pairs (no repeats).
 // If count < 0: returns -count field-value pairs, allowing repeats.
 // If count == 0: returns 1 random field-value pair.
+// 使用蓄水池采样（与 HRandField 同策略）避免全量加载到内存。
 func (s *BotreonStore) HRandMember(key string, count int) ([]HRandMemberResult, error) {
 	var result []HRandMemberResult
 	prefix := fmt.Sprintf("%s:%s:", KeyTypeHash, key)
 
+	// type check
 	typeKey := TypeOfKeyGet(key)
 	if err := s.db.View(func(txn *badger.Txn) error {
 		typeItem, err := txn.Get(typeKey)
@@ -1039,53 +1070,93 @@ func (s *BotreonStore) HRandMember(key string, count int) ([]HRandMemberResult, 
 		return nil, err
 	}
 
+	if count >= 0 {
+		// count == 0: single random; count > 0: distinct via reservoir sampling
+		err := s.db.View(func(txn *badger.Txn) error {
+			prefixBytes := []byte(prefix)
+			opts := badger.DefaultIteratorOptions
+			opts.Prefix = prefixBytes
+			opts.PrefetchValues = false
+
+			it := txn.NewIterator(opts)
+			defer it.Close()
+
+			n := count
+			if n == 0 {
+				n = 1
+			}
+			reservoir := make([]HRandMemberResult, 0, n)
+			i := 0
+			for it.Seek(prefixBytes); it.ValidForPrefix(prefixBytes); it.Next() {
+				k := it.Item().Key()
+				_, field := splitHashKey(k)
+				if field == "__count__" {
+					continue
+				}
+				val, vErr := s.getValueWithDecompression(it.Item())
+				if vErr != nil {
+					return vErr
+				}
+				if i < n {
+					reservoir = append(reservoir, HRandMemberResult{Field: field, Value: val})
+				} else {
+					j := randomIntn(i + 1)
+					if j < n {
+						reservoir[j] = HRandMemberResult{Field: field, Value: val}
+					}
+				}
+				i++
+			}
+			// If we found fewer fields than requested, return all
+			if n > len(reservoir) || count == 0 {
+				result = reservoir[:min(len(reservoir), n)]
+			} else {
+				// Re-shuffle the reservoir to avoid positional bias
+				randomShuffle(len(reservoir), func(i, j int) {
+					reservoir[i], reservoir[j] = reservoir[j], reservoir[i]
+				})
+				result = reservoir
+			}
+			return nil
+		})
+		return result, err
+	}
+
+	// count < 0: allow repeats. Load all field names (no value load) then pick.
 	err := s.db.View(func(txn *badger.Txn) error {
 		prefixBytes := []byte(prefix)
-		var allEntries []HRandMemberResult
+		var allFields []string
+		var allValues [][]byte
 
-		iter := txn.NewIterator(badger.DefaultIteratorOptions)
-		defer iter.Close()
+		opts := badger.DefaultIteratorOptions
+		opts.Prefix = prefixBytes
+		opts.PrefetchValues = true
+		it := txn.NewIterator(opts)
+		defer it.Close()
 
-		for iter.Seek(prefixBytes); iter.Valid(); iter.Next() {
-			k := iter.Item().Key()
-			kStr := string(k)
-			if !strings.HasPrefix(kStr, prefix) {
-				break
-			}
+		for it.Seek(prefixBytes); it.ValidForPrefix(prefixBytes); it.Next() {
+			k := it.Item().Key()
 			_, field := splitHashKey(k)
 			if field == "__count__" {
 				continue
 			}
-			item := iter.Item()
-			val, vErr := s.getValueWithDecompression(item)
+			val, vErr := s.getValueWithDecompression(it.Item())
 			if vErr != nil {
 				return vErr
 			}
-			allEntries = append(allEntries, HRandMemberResult{Field: field, Value: val})
+			allFields = append(allFields, field)
+			allValues = append(allValues, val)
 		}
 
-		if len(allEntries) == 0 {
+		if len(allFields) == 0 {
 			return nil
 		}
 
-		if count == 0 {
-			idx := randomIntn(len(allEntries))
-			result = append(result, allEntries[idx])
-		} else if count < 0 {
-			n := -count
-			for i := 0; i < n; i++ {
-				idx := randomIntn(len(allEntries))
-				result = append(result, allEntries[idx])
-			}
-		} else {
-			n := count
-			if n > len(allEntries) {
-				n = len(allEntries)
-			}
-			randomShuffle(len(allEntries), func(i, j int) {
-				allEntries[i], allEntries[j] = allEntries[j], allEntries[i]
-			})
-			result = allEntries[:n]
+		n := -count
+		result = make([]HRandMemberResult, n)
+		for i := 0; i < n; i++ {
+			idx := randomIntn(len(allFields))
+			result[i] = HRandMemberResult{Field: allFields[idx], Value: allValues[idx]}
 		}
 		return nil
 	})

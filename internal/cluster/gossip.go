@@ -95,23 +95,50 @@ func (g *Gossiper) cleanupLoop() {
 }
 
 // pingRandomPeers sends PINGs to a random subset of peer nodes.
+// 使用蓄水池采样选 gossipFanout 个随机 peer，避免全量拷贝 + 全洗牌 O(n)。
 func (g *Gossiper) pingRandomPeers() {
 	g.cluster.mu.RLock()
-	peers := make([]*Node, 0, len(g.cluster.Nodes))
+
+	// 计数 + 蓄水池采样，一次 RLock 完成
+	totalPeers := 0
 	for _, node := range g.cluster.Nodes {
 		if node.ID != g.cluster.Myself.ID {
-			peers = append(peers, node)
+			totalPeers++
 		}
 	}
-	g.cluster.mu.RUnlock()
 
-	if len(peers) == 0 {
+	if totalPeers == 0 {
+		g.cluster.mu.RUnlock()
 		return
 	}
 
-	// Ensure bus connections for known peers missing one
+	n := gossipFanout
+	if n > totalPeers {
+		n = totalPeers
+	}
+
+	// 蓄水池采样：遍历一次，每个 peer 以 1/(i+1) 概率替换进结果
+	selected := make([]*Node, 0, n)
+	i := 0
+	for _, node := range g.cluster.Nodes {
+		if node.ID == g.cluster.Myself.ID {
+			continue
+		}
+		if i < n {
+			selected = append(selected, node)
+		} else {
+			j := rand.Intn(i + 1)
+			if j < n {
+				selected[j] = node
+			}
+		}
+		i++
+	}
+	g.cluster.mu.RUnlock()
+
+	// Ensure bus connections for selected peers
 	if g.cluster.Bus != nil {
-		for _, peer := range peers {
+		for _, peer := range selected {
 			if !g.cluster.Bus.HasPeer(peer.ID) {
 				busAddr := busAddrForPeer(peer.Addr)
 				if err := g.cluster.Bus.Connect(busAddr, peer.ID); err != nil {
@@ -123,20 +150,10 @@ func (g *Gossiper) pingRandomPeers() {
 		}
 	}
 
-	// Shuffle and pick first gossipFanout
-	rand.Shuffle(len(peers), func(i, j int) {
-		peers[i], peers[j] = peers[j], peers[i]
-	})
-
-	count := gossipFanout
-	if count > len(peers) {
-		count = len(peers)
-	}
-
 	// If cluster bus is available and has peers, send real PING over TCP
 	if g.cluster.Bus != nil && g.cluster.Bus.PeerCount() > 0 {
 		g.cluster.Bus.SendPING()
-		for _, peer := range peers[:count] {
+		for _, peer := range selected {
 			logger.Logger.Debug().
 				Str("peer", peer.ID).
 				Str("addr", peer.Addr).
@@ -146,7 +163,7 @@ func (g *Gossiper) pingRandomPeers() {
 	}
 
 	// Fallback: update local timestamps (unit tests, or bus not yet connected)
-	for _, peer := range peers[:count] {
+	for _, peer := range selected {
 		peer.UpdatePing()
 		logger.Logger.Debug().
 			Str("peer", peer.ID).

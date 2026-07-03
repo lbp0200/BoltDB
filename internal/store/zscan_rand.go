@@ -15,12 +15,14 @@ type ZScanResult struct {
 // ZScan 实现 Redis ZSCAN 命令
 func (s *BotreonStore) ZScan(zSetName string, cursor uint64, pattern string, count int) (ZScanResult, error) {
 	var result ZScanResult
-	result.Cursor = 0
 	result.Members = []ZSetMember{}
 
 	if count <= 0 {
 		count = 10
 	}
+
+	seekKey := s.scanBookmarkLookup(cursor)
+	s.scanBookmarkRelease(cursor)
 
 	err := s.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
@@ -31,17 +33,14 @@ func (s *BotreonStore) ZScan(zSetName string, cursor uint64, pattern string, cou
 		iter := txn.NewIterator(opts)
 		defer iter.Close()
 
-		currentPos := uint64(0)
-		collected := 0
-
-		if cursor > 0 {
-			for iter.Seek(prefix); iter.ValidForPrefix(prefix) && currentPos < cursor; iter.Next() {
-				currentPos++
-			}
+		if seekKey != nil {
+			iter.Seek(seekKey)
 		} else {
 			iter.Seek(prefix)
 		}
 
+		collected := 0
+		var lastKey []byte
 		for iter.ValidForPrefix(prefix) && collected < count {
 			score, member, _, ok := parseZSetIndexKey(iter.Item().Key(), prefix)
 			if ok {
@@ -51,12 +50,12 @@ func (s *BotreonStore) ZScan(zSetName string, cursor uint64, pattern string, cou
 				}
 			}
 
-			currentPos++
+			lastKey = iter.Item().KeyCopy(nil)
 			iter.Next()
 		}
 
 		if iter.ValidForPrefix(prefix) {
-			result.Cursor = currentPos
+			result.Cursor = s.scanBookmarkStore(lastKey)
 		} else {
 			result.Cursor = 0
 		}

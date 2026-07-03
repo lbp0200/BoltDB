@@ -5,17 +5,20 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math"
+	"math/bits"
 
 	"github.com/dgraph-io/badger/v4"
 )
 
-// HyperLogLog 实现（基于 14 位寄存器的稀疏编码优化）
+// HyperLogLog 实现（基于 14 位寄存器的密集编码）
 const (
 	hllRegisterBits  = 14
-	hllRegisterCount = 1 << hllRegisterBits
+	hllRegisterCount = 1 << hllRegisterBits // 16384
 	hllRegisterMask  = hllRegisterCount - 1
-	hllP             = 1 << (hllRegisterBits - 2)
-	hllAlpha         = 0.721347520444481703739965215
+	// hllAlpha 是 HyperLogLog 的偏置校正常数 α_m。
+	// 对于 m >= 128: α_m = 0.721347520444481703739965215 / (1 + 1.079/m)。
+	// m = 16384 时 α ≈ 0.721300, 在此直接使用 ∞ 近似值足够精确（偏差 < 0.007%）。
+	hllAlpha = 0.721347520444481703739965215
 )
 
 // HyperLogLog 结构
@@ -60,7 +63,8 @@ func (h *HyperLogLog) Estimate() float64 {
 		return 0
 	}
 
-	estimate := hllP / sum
+	// 标准 HLL 估计: E = α_m * m² / Σ 2^{-M[j]}
+	estimate := hllAlpha * float64(hllRegisterCount) * float64(hllRegisterCount) / sum
 	zeros := h.countZeros()
 	if zeros > 0 {
 		linearCount := float64(hllRegisterCount) * math.Log(float64(hllRegisterCount)/float64(zeros))
@@ -96,8 +100,8 @@ func (h *HyperLogLog) add(data []byte) bool {
 	// 使用前 14 位作为寄存器索引
 	registerIdx := hashVal & hllRegisterMask
 
-	// 计算尾随零的数量 + 1
-	tz := countTrailingZeros(hashVal >> hllRegisterBits)
+	// 计算尾随零的数量 + 1（使用 CPU 指令级 bits.TrailingZeros64）
+	tz := bits.TrailingZeros64(hashVal >> hllRegisterBits)
 	count := tz + 1
 	if count > 63 {
 		count = 63 // 最大值
@@ -117,19 +121,6 @@ func hashData(data []byte) uint64 {
 	h := fnv.New64a()
 	h.Write(data)
 	return h.Sum64()
-}
-
-// countTrailingZeros 计算尾随零的数量
-func countTrailingZeros(x uint64) int {
-	if x == 0 {
-		return 64
-	}
-	n := 0
-	for (x & 1) == 0 {
-		n++
-		x >>= 1
-	}
-	return n
 }
 
 // merge 合并另一个 HyperLogLog

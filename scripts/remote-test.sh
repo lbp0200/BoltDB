@@ -72,10 +72,47 @@ for arg in "${ARGS[@]}"; do
     QUOTED_ARGS+=" $(printf '%q' "$arg")"
 done
 
-echo "=== Running tests on remote ($REMOTE_HOST): go test${QUOTED_ARGS}"
+# === Memory guard: detect total RAM, limit test parallelism, set GOMEMLIMIT ===
+# Prevents test suite from exhausting RAM and locking the remote host.
+# GOMEMLIMIT is a *soft* target — Go can exceed it under allocation bursts.
+# The hard cap comes from -p (package parallelism) and -count=1.
+MEMGUARD_ARGS=""
+GOMEMLIMIT_ENV=""
+PARALLEL_ARG=""
+MEMINFO=$(ssh $SSH_OPTS -i "$REMOTE_KEY" -l "$REMOTE_USER" "$REMOTE_HOST" \
+    "cat /proc/meminfo 2>/dev/null | grep ^MemTotal | awk '{print \$2}'" 2>/dev/null || echo "")
+if [ -n "$MEMINFO" ] && [ "$MEMINFO" -gt 0 ]; then
+    TOTAL_MB=$((MEMINFO / 1024))
+    # Reserve 2GB (2048 MiB) for OS; if the machine has < 4GB, reserve 50%.
+    if [ "$TOTAL_MB" -le 4096 ]; then
+        RESERVE_MB=$((TOTAL_MB / 2))
+    else
+        RESERVE_MB=2048
+    fi
+    MAX_MB=$((TOTAL_MB - RESERVE_MB))
+    MAX_BYTES=$((MAX_MB * 1024 * 1024))
+    GOMEMLIMIT_ENV="GOMEMLIMIT=${MAX_BYTES} "
+
+    # Limit test binary parallelism to avoid N × BadgerDB × race multiplier OOM.
+    # With -race, each BadgerDB instance (7 memtables × 64MB + 100MB index cache)
+    # uses ~500MB+; running 16 test binaries simultaneously guarantees OOM.
+    # Use -p=2 for full suites, but allow user-override via GOTESTPARALLEL.
+    if [[ " ${ARGS[*]} " =~ " ./internal/..." ]] || [[ " ${ARGS[*]} " =~ " ./..." ]]; then
+        if [ -z "${GOTESTPARALLEL:-}" ]; then
+            PARALLEL_ARG="-p=2"
+        else
+            PARALLEL_ARG="-p=$GOTESTPARALLEL"
+        fi
+    fi
+
+    echo "=== Memory guard: ${TOTAL_MB}MiB total → GOMEMLIMIT=${MAX_MB}MiB ${PARALLEL_ARG}"
+fi
+
+echo "=== Running tests on remote ($REMOTE_HOST): go test${QUOTED_ARGS} ${PARALLEL_ARG}"
 ssh $SSH_OPTS -i "$REMOTE_KEY" -l "$REMOTE_USER" "$REMOTE_HOST" \
     "export PATH=\$HOME/go/bin:$GO_BIN:\$PATH && \
+     export ${GOMEMLIMIT_ENV}GOGC=100 && \
      cd $REMOTE_DIR && \
-     go test${QUOTED_ARGS}"
+     go test${QUOTED_ARGS} ${PARALLEL_ARG}"
 
 echo "=== Done"

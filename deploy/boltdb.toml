@@ -1,0 +1,102 @@
+##############################################
+# BoltDB Configuration
+# 优化基准: CPU 4 核 / RAM 8GB / SSD
+#
+# 使用方式:
+#   boltDB --dump-config > boltdb.toml
+#   boltDB -config=boltdb.toml
+#
+# 优先级链（高 → 低）:
+#   CLI flag > 配置文件 > 自动推导(基于RAM) > 硬编码默认值
+#
+# 环境变量:
+#   BOLTDB_ADDR      覆盖 [server] addr
+#   BOLTDB_DIR       覆盖 [server] dir
+#   BOLTDB_LOG_LEVEL 覆盖 [server] log-level
+#   GOMEMLIMIT       覆盖 [memory] gomemlimit
+##############################################
+
+[server]
+  # 监听地址，格式 host:port
+  # 环境变量: BOLTDB_ADDR
+  # 默认: ":6337"（区别于 Redis 默认 :6379）
+  # addr = ":6337"
+
+  # 数据目录，BadgerDB 存储路径
+  # 环境变量: BOLTDB_DIR
+  # 默认: 系统临时目录
+  # 生产环境务必指定持久化路径，如 /var/lib/boltdb
+  # dir = ""
+
+  # 日志级别，可选: DEBUG | INFO | WARNING | ERROR
+  # 环境变量: BOLTDB_LOG_LEVEL
+  # 默认: WARNING（不设置时日志最少）
+  # log-level = ""
+
+  # 最大并发连接数，0 表示不限制
+  # 超限时新连接被拒绝并返回 ERR max number of clients reached
+  # 4C8G 基准: 10000（约占用 800MB 内存用于连接缓冲区）
+  # 2GB VPS 建议: 1000
+  # max-clients = 10000
+
+  # 空闲连接超时秒数，0 表示不超时
+  # 到达超时后服务器主动断开该连接
+  # 生产环境建议设置 300（5 分钟）防止 zombie 连接堆积
+  # timeout = 0
+
+[memory]
+  # Go 堆内存软限制，格式如 "6GB"、"4GB"
+  # 环境变量: GOMEMLIMIT（优先级最高，推荐用环境变量设置）
+  # 未设置时自动计算: totalRAM - 2GB，不低于 256MB，不超过 90%
+  # 作用: 告诉 Go GC 在堆接近此值时积极回收，防止 OOM
+  # 注意: 这是软限制，瞬时峰值可能超过此值
+  # gomemlimit = ""
+
+  # 每连接累计输入字节上限，0 表示不限制
+  # 防止慢速攻击: 单连接长期发送大量请求耗服务器内存
+  # 4C8G 基准: 1GB，超限服务器主动断开连接
+  # 64GB 服务器建议: 8GB，2GB VPS 建议: 128MB
+  # max-input-bytes = "1GB"
+
+  # 每连接输出缓冲区硬限制(bytes)，0 表示不限制
+  # 保护: 慢客户端不消费响应时积压数据无界增长
+  # 超限服务器主动断开该连接
+  # 4C8G 基准: 32MB，自动推导: min(32MB, RAM/256)
+  # PubSub 订阅者建议单独配置更小值
+  # client-output-buffer-limit = "32MB"
+
+  # RESP 协议 bulk string 最大长度(bytes)
+  # 防止客户端发送超大单条数据耗尽解析内存
+  # 4C8G 基准: 64MB（256MB 对 8GB 机器过于激进）
+  # proto-max-bulk-len = "64MB"
+
+[replication]
+  # 复制积压缓冲区大小，格式如 "100mb"、"1gb"
+  # 决定 PARTIAL RESYNC (PSYNC) 能补多大范围的丢失数据
+  # 积压越大，从节点短时断连后越可能走 CONTINUE 而非 FULLRESYNC
+  # 默认: 1MB，高写入量建议: 100MB 或更大
+  # backlog-size = ""
+
+  # 主从复制: 指定主节点地址 host:port
+  # 设置后本节点启动后自动连接主节点并执行 PSYNC
+  # 运行时也可通过 SLAVEOF / REPLICAOF 命令动态切换
+  # replicaof = ""
+
+[tls]
+  # TLS 证书 PEM 文件路径
+  # 启用 TLS 后，所有客户端连接必须使用 TLS 加密
+  # 与 tls-key 必须同时设置
+  # cert = ""
+
+  # TLS 私钥 PEM 文件路径
+  # 与 tls-cert 必须同时设置
+  # key = ""
+
+  # CA 证书 PEM 文件路径（可选，用于客户端证书验证）
+  # 设置后服务器要求客户端提供有效证书
+  # ca = ""
+
+  # 是否拒绝非 TLS 连接
+  # tls-require = true 时，非 TLS 连接直接被拒绝
+  # 仅在 tls-cert 和 tls-key 已设置时生效
+  # require = false

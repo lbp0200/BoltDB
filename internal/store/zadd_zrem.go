@@ -478,6 +478,8 @@ func zUnionScoresInTxn(txn *badger.Txn, keys []string, weights []float64, aggreg
 }
 
 // zInterScoresInTxn computes intersection of scores from multiple zsets.
+// Only the first set is fully read; subsequent sets use txn.Get (O(log n))
+// for member existence checks instead of full index scans.
 func zInterScoresInTxn(txn *badger.Txn, keys []string, weights []float64, aggregate string) (map[string]float64, error) {
 	if len(keys) == 0 {
 		return nil, nil
@@ -492,37 +494,44 @@ func zInterScoresInTxn(txn *badger.Txn, keys []string, weights []float64, aggreg
 		return nil, err
 	}
 
-	memberScores := make(map[string]float64)
+	memberScores := make(map[string]float64, len(firstMembers))
 	for _, m := range firstMembers {
 		memberScores[m.Member] = m.Score * firstWeight
 	}
 
-	for i := 1; i < len(keys); i++ {
+	for i := 1; i < len(keys) && len(memberScores) > 0; i++ {
 		weight := 1.0
 		if i < len(weights) && weights[i] != 0 {
 			weight = weights[i]
 		}
-		otherMembers, err := zReadZSetMembersInTxn(txn, keys[i])
-		if err != nil {
-			return nil, err
-		}
-		otherMemberMap := make(map[string]float64, len(otherMembers))
-		for _, m := range otherMembers {
-			otherMemberMap[m.Member] = m.Score * weight
-		}
+
 		for member := range memberScores {
-			if otherScore, exists := otherMemberMap[member]; exists {
-				existing := memberScores[member]
-				memberScores[member] = applyAggregateScore(existing, true, otherScore, aggregate)
-			} else {
+			memberDataKey := sortedSetKeyMember(keys[i], member)
+			item, err := txn.Get(memberDataKey)
+			if errors.Is(err, badger.ErrKeyNotFound) {
 				delete(memberScores, member)
+				continue
 			}
+			if err != nil {
+				return nil, err
+			}
+			var otherScore float64
+			if valErr := item.Value(func(val []byte) error {
+				otherScore, _ = decodeDataValue(val)
+				return nil
+			}); valErr != nil {
+				return nil, valErr
+			}
+			existing := memberScores[member]
+			memberScores[member] = applyAggregateScore(existing, true, otherScore*weight, aggregate)
 		}
 	}
 	return memberScores, nil
 }
 
 // zDiffMembersInTxn computes difference of members from multiple zsets.
+// Only the first set is fully read; subsequent sets use txn.Get (O(log n))
+// for member existence checks instead of full index scans.
 func zDiffMembersInTxn(txn *badger.Txn, keys []string) ([]ZSetMember, error) {
 	if len(keys) == 0 {
 		return nil, nil
@@ -533,20 +542,28 @@ func zDiffMembersInTxn(txn *badger.Txn, keys []string) ([]ZSetMember, error) {
 		return nil, err
 	}
 
-	otherMembers := make(map[string]bool)
+	// Build existence map from all subsequent sets using txn.Get
+	excludeSet := make(map[string]struct{})
 	for i := 1; i < len(keys); i++ {
-		members, err := zReadZSetMembersInTxn(txn, keys[i])
-		if err != nil {
-			return nil, err
-		}
-		for _, m := range members {
-			otherMembers[m.Member] = true
+		for _, m := range firstMembers {
+			if _, excluded := excludeSet[m.Member]; excluded {
+				continue
+			}
+			memberDataKey := sortedSetKeyMember(keys[i], m.Member)
+			_, err := txn.Get(memberDataKey)
+			if errors.Is(err, badger.ErrKeyNotFound) {
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			excludeSet[m.Member] = struct{}{}
 		}
 	}
 
 	var result []ZSetMember
 	for _, m := range firstMembers {
-		if !otherMembers[m.Member] {
+		if _, excluded := excludeSet[m.Member]; !excluded {
 			result = append(result, m)
 		}
 	}

@@ -108,6 +108,14 @@ type BotreonStore struct {
 	// 避免操作结束后 channel 残留。
 	closeCh   chan struct{}
 	closeOnce sync.Once
+
+	// scanBookmarks 存储 SCAN/HSCAN/SSCAN/ZSCAN 的游标书签。
+	// cursor_id → last_key（完整 Badger key bytes）。
+	// 替代之前 O(n²) 的位置计数器游标，实现 O(n) 全表遍历。
+	// 上限 10000 条目，超出时淘汰最旧条目，防止客户端泄漏书签。
+	scanBookmarks   map[uint64][]byte
+	scanBookmarkSeq atomic.Uint64
+	scanBookmarkMu  sync.Mutex
 }
 
 // SetErrorInjector 设置错误注入器（仅测试用）。传 nil 可禁用。
@@ -452,6 +460,7 @@ func NewBotreonStoreWithCompression(path string, compressionType CompressionType
 		streamBlockingChans: make(map[string][]chan StreamReadResult),
 		l0Cache:             &l0Cache{},
 		closeCh:             make(chan struct{}),
+		scanBookmarks:       make(map[uint64][]byte),
 	}
 	s.backpressure.Store(p)
 	cfg := bpConfig

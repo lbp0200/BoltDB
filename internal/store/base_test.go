@@ -1,12 +1,12 @@
 package store
 
 import (
-	"context"
 	"testing"
 )
 
 // setupTestStore creates a new store in a temp directory for each test.
 // The store is automatically closed and cleaned up via t.Cleanup.
+// Uses CloseWithTimeout to prevent BadgerDB goroutine leak on test exit.
 func setupTestStore(t *testing.T) *BotreonStore {
 	t.Helper()
 	dir := t.TempDir()
@@ -15,16 +15,12 @@ func setupTestStore(t *testing.T) *BotreonStore {
 		t.Fatalf("failed to create store: %v", err)
 	}
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), CloseTimeout)
-		defer cancel()
-		done := make(chan error, 1)
-		go func() {
-			done <- store.Close()
-		}()
-		select {
-		case <-done:
-		case <-ctx.Done():
-		}
+		// CloseWithTimeout prevents BadgerDB's doWrites drain bug
+		// from hanging the test suite. A leaking Close() goroutine
+		// blocks t.Cleanup from returning; CloseWithTimeout ensures
+		// the goroutine is abandoned after CloseTimeout (2s) rather
+		// than leaking into the next test.
+		_ = store.CloseWithTimeout(CloseTimeout)
 	})
 	return store
 }

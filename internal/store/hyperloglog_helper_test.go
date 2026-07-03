@@ -1,6 +1,7 @@
 package store
 
 import (
+	"math/bits"
 	"testing"
 )
 
@@ -85,7 +86,7 @@ func TestHashData(t *testing.T) {
 	}
 }
 
-// TestCountTrailingZeros tests countTrailingZeros
+// TestCountTrailingZeros tests bits.TrailingZeros64 (replaces hand-written countTrailingZeros)
 func TestCountTrailingZeros(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -105,9 +106,9 @@ func TestCountTrailingZeros(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := countTrailingZeros(tt.input)
+			result := bits.TrailingZeros64(tt.input)
 			if result != tt.expected {
-				t.Errorf("countTrailingZeros(%d) = %d, want %d", tt.input, result, tt.expected)
+				t.Errorf("bits.TrailingZeros64(%d) = %d, want %d", tt.input, result, tt.expected)
 			}
 		})
 	}

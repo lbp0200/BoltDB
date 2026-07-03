@@ -524,6 +524,10 @@ func (c *Cluster) MigrateSlot(slot uint32, targetNodeID string, copyKeys bool) e
 	// 数据重复或 slot 归属不一致。
 	// 完整的 crash-safe 迁移（WAL + 两阶段提交）预计需要 2-3 周开发。
 	// 当前建议：slot 调整仅在集群初始化或重启时静态配置。参见 docs/plans/TODO.md E3。
+	logger.Logger.Warn().
+		Uint32("slot", slot).
+		Str("target", targetNodeID).
+		Msg("PREVIEW: slot migration is not crash-safe (see docs/failures/slot-migration-unsafe.md). Use only for testing.")
 	if slot >= SlotCount {
 		return fmt.Errorf("slot %d out of range", slot)
 	}

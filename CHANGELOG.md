@@ -1,8 +1,50 @@
 # Changelog
 
+## v8.34.0 (2026-07-03) — TOML 配置文件 + 4C8G 出厂默认值 + OOM 防护
+
+> **P0：新增 TOML 配置文件系统（`-config` + `--dump-config`），CLI flag > 配置文件 > 自动推导 > 硬编码默认值的优先级链。以 4C8G 为基准调优所有出厂默认值。补齐 OOM 防护最后一层缺口（`max-input-bytes` 默认 1GB + 按 RAM 比例自动推导）。**
+
+### 新功能
+
+- **TOML 配置文件**：新增 `-config` flag 加载 `.toml` 配置文件，`--dump-config` 打印完整中文注释的配置模板
+  - 四节：`[server]` `[memory]` `[replication]` `[tls]`，每项均有详细中文注释
+  - 优先级链验证：CLI flag > 配置文件 > 自动推导 > 硬编码默认值
+  - `applyConfigOverlay()` 返回被配置文件设置的 key 集合，防止自动推导覆盖
+
+- **启动 banner**：启动时打印检测到的硬件信息和生效配置摘要
+  ```
+  === BoltDB Configuration ===
+  Detected: CPU 8 cores / RAM 64GB
+  Active config:
+    GOMEMLIMIT=58GB  max-input-bytes=1GB
+    client-output-buffer-limit=32MB  max-clients=10000
+    proto-max-bulk-len=64MB
+  ============================
+  ```
+
+- **默认配置文件**：`deploy/boltdb.toml`（102 行全中文注释）
+
+### 出厂默认值调优（4C8G 基准）
+
+| 参数 | 旧默认值 | 新默认值 | 理由 |
+|------|---------|---------|------|
+| `proto-max-bulk-len` | 256MB | **64MB** | 8GB 内存机器更合理 |
+| `max-input-bytes` | 0（不限制） | **1GB** + 按 RAM/8 自动推导 | 防止慢速攻击 |
+| `client-output-buffer-limit` | 32MB | 32MB + 按 RAM/256 自动推导 | 小内存机器更安全 |
+
+### OOM 防护
+
+- **`max-input-bytes` 默认值 1GB**：每连接累计输入上限，超限断开连接，防止慢速攻击耗尽内存
+- **按 RAM 比例自动推导**：`OutputBufferLimit = min(32MB, RAM/256)`，`MaxInputBytes = min(1GB, RAM/8)`，手动设置优先
+- **启动时确认**：banner 打印所有生效配置值
+
+### 依赖
+
+- 新增 `github.com/BurntSushi/toml v1.6.0`（TOML 解析）
+
 ## v8.33.0 (2026-07-02) — TLS 全链路加密 + 集群 Slot 迁移 + 安全加固
 
-> **P0 安全：TLS 全链路加密（监听器、复制、集群总线、哨兵连接）。P1 集群：Slot 迁移完整实现（MIGRATESLOT + 中断恢复 + 集成测试）。修复 Gossip data race、ClusterBus 生命周期上下文、二进制协议编码。所有整改计划 11 大项全部完成。**
+> **P0 安全：TLS 全链路加密（监听器、复制、集群总线、哨兵连接）。P1 集群：Slot 迁移实现（MIGRATESLOT + 中断恢复 + 集成测试，⚠️ 预览特性 — 非 crash-safe，生产环境使用可能导致数据丢失）。修复 Gossip data race、ClusterBus 生命周期上下文、二进制协议编码。所有整改计划 11 大项全部完成。**
 
 ### 安全（P0）
 

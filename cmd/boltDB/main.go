@@ -3,10 +3,15 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -29,17 +34,19 @@ var (
 	clusterEnabledFlag      = flag.Bool("cluster", false, "enable cluster mode")
 	replicaofFlag           = flag.String("replicaof", "", "replicaof master host:port")
 	skipStartupCleanup      = flag.Bool("skip-startup-cleanup", false, "skip startup cleanup (data integrity check)")
-	clientOutputBufferLimit = flag.Int64("client-output-buffer-limit", 0, "per-client output buffer hard limit in bytes (0 = unlimited)")
+	clientOutputBufferLimit = flag.Int64("client-output-buffer-limit", 32<<20, "per-client output buffer hard limit in bytes (default 32MB, 0 = unlimited)")
 	replBacklogSizeFlag     = flag.String("repl-backlog-size", "", "replication backlog size (e.g. 100mb, 1gb, default 1mb)")
 	metricsAddrFlag         = flag.String("metrics-addr", "", "metrics HTTP listen addr (e.g. :6338, empty = disabled)")
 	maxClientsFlag          = flag.Int("maxclients", 10000, "max number of connected clients (0 = unlimited)")
 	idleTimeoutFlag         = flag.Int("timeout", 0, "idle client timeout in seconds (0 = no timeout)")
-	protoMaxBulkLenFlag     = flag.Int64("proto-max-bulk-len", 256*1024*1024, "max bulk string length in bytes (default 256MB)")
-	maxInputBytesFlag       = flag.Int64("max-input-bytes", 0, "per-client cumulative input byte limit (0 = unlimited)")
+	protoMaxBulkLenFlag     = flag.Int64("proto-max-bulk-len", 64*1024*1024, "max bulk string length in bytes (default 64MB, recommended for 4C8G)")
+	maxInputBytesFlag       = flag.Int64("max-input-bytes", 1<<30, "per-client cumulative input byte limit (default 1GB, 0 = unlimited)")
 	tlsCertFlag             = flag.String("tls-cert", "", "path to TLS certificate PEM file (empty = no TLS)")
 	tlsKeyFlag              = flag.String("tls-key", "", "path to TLS private key PEM file (empty = no TLS)")
 	tlsCAFlag               = flag.String("tls-ca", "", "path to CA certificate PEM file for client verification (optional)")
 	tlsRequireFlag          = flag.Bool("tls-require", false, "reject non-TLS connections when TLS is enabled")
+	configFileFlag          = flag.String("config", "", "path to TOML config file")
+	dumpConfigFlag          = flag.Bool("dump-config", false, "print default config template and exit")
 )
 
 // getEnv returns the value of the environment variable named by key, or
@@ -51,8 +58,83 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+// detectTotalMemory 检测系统总内存（字节数）。
+// 返回 0 表示无法检测。
+func detectTotalMemory() int64 {
+	// Linux: /proc/meminfo MemTotal (kB)
+	data, err := os.ReadFile("/proc/meminfo")
+	if err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(line, "MemTotal:") {
+				var totalKB int64
+				if _, err := fmt.Sscanf(line, "MemTotal: %d kB", &totalKB); err == nil && totalKB > 0 {
+					return totalKB * 1024
+				}
+			}
+		}
+	}
+
+	// macOS: sysctl hw.memsize (bytes)
+	_, err = os.Stat("/usr/sbin/sysctl")
+	if err == nil {
+		// sysctl is available, try to execute it
+		cmd := exec.Command("/usr/sbin/sysctl", "-n", "hw.memsize")
+		output, err := cmd.Output()
+		if err == nil {
+			var totalBytes int64
+			if _, err := fmt.Sscanf(strings.TrimSpace(string(output)), "%d", &totalBytes); err == nil && totalBytes > 0 {
+				return totalBytes
+			}
+		}
+	}
+
+	return 0
+}
+
+// formatBytes 将字节数格式化为人类可读的字符串（如 "1GB", "64MB"）
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%dB", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; exp++ {
+		div *= unit
+		n /= unit
+	}
+	return fmt.Sprintf("%.0f%cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
 func main() {
 	flag.Parse()
+
+	// 记录哪些 flag 被用户显式设置（用于后续 auto-config 判断：手动设置优先）
+	seenFlags := make(map[string]bool)
+	flag.Visit(func(f *flag.Flag) {
+		seenFlags[f.Name] = true
+	})
+
+	// --dump-config: 打印默认配置模板并退出
+	if *dumpConfigFlag {
+		dumpConfigTemplate()
+		os.Exit(0)
+	}
+
+	// 如果指定了 -config，加载 TOML 配置文件并覆盖未被 CLI 显式设置的 flag
+	cfgSet := make(map[string]bool) // 被配置文件设置的 flag
+	if *configFileFlag != "" {
+		cfg, err := loadConfigFile(*configFileFlag)
+		if err != nil {
+			logger.Logger.Fatal().Err(err).Str("config", *configFileFlag).Msg("Failed to load config file")
+		}
+		cfgSet = applyConfigOverlay(cfg, seenFlags)
+		logger.Logger.Info().Str("file", *configFileFlag).Msg("Config file loaded")
+	}
+
+	// 合并被设置的 flag（CLI + 配置文件），用于后续自动推导判断
+	isSet := func(name string) bool {
+		return seenFlags[name] || cfgSet[name]
+	}
 
 	// 启动时校验 isWriteCommand map 与 dispatch switch 一致性
 	if err := server.ValidateWriteCommandConsistency(); err != nil {
@@ -66,6 +148,98 @@ func main() {
 
 	// 设置 RESP 协议限制
 	proto.SetMaxBulkLen(*protoMaxBulkLenFlag)
+
+	// 自动设置 GOMEMLIMIT（Go 堆软限制），防止高并发下堆无界增长导致 OOM
+	// 如果 GOMEMLIMIT 环境变量已设置，优先尊重用户显式配置
+	// 检测策略：
+	//   - Linux: /proc/meminfo MemTotal（kB）
+	//   - macOS: sysctl hw.memsize（bytes）
+	//   - 其他/失败: 不设置（fallback 到 Go 运行时默认行为）
+	// 公式：limit = min(total - 2GB, total × 90%)，不低于 256MB
+	if os.Getenv("GOMEMLIMIT") == "" {
+		if limitBytes := detectTotalMemory(); limitBytes > 0 {
+			const (
+				reserveBytes = 2 << 30   // 2GB
+				minLimit     = 256 << 20 // 256MB
+			)
+			limit := limitBytes - reserveBytes
+			if limit <= 0 {
+				limit = limitBytes * 75 / 100
+			}
+			// 不超过总内存的 90%
+			pctLimit := int64(float64(limitBytes) * 0.9)
+			if limit > pctLimit {
+				limit = pctLimit
+			}
+			if limit < minLimit {
+				limit = minLimit
+			}
+			debug.SetMemoryLimit(limit)
+			logger.Logger.Info().Int64("bytes", limit).Msg("GOMEMLIMIT 自动设置完成")
+		} else {
+			logger.Logger.Info().Msg("无法检测系统内存，跳过 GOMEMLIMIT 自动设置（可手动设置 GOMEMLIMIT 环境变量）")
+		}
+	} else {
+		logger.Logger.Info().Msg("GOMEMLIMIT 环境变量已设置，跳过自动检测")
+	}
+
+	// 自动推导基于 RAM 比例的内存参数（仅当用户未手动或配置文件设置时）
+	// 公式：
+	//   client-output-buffer-limit = min(32MB, RAM/256)
+	//   max-input-bytes = min(1GB, RAM/8)
+	// CLI flag > 配置文件 > 自动推导 > 硬编码默认值
+	if memBytes := detectTotalMemory(); memBytes > 0 {
+		if !isSet("client-output-buffer-limit") {
+			autoVal := memBytes / 256
+			if autoVal > 32<<20 {
+				autoVal = 32 << 20
+			}
+			if autoVal < 1<<20 { // 不低于 1MB
+				autoVal = 1 << 20
+			}
+			*clientOutputBufferLimit = autoVal
+			logger.Logger.Debug().Int64("bytes", autoVal).Msg("client-output-buffer-limit 自动计算完成")
+		}
+
+		if !isSet("max-input-bytes") {
+			autoVal := memBytes / 8
+			if autoVal > 1<<30 {
+				autoVal = 1 << 30
+			}
+			if autoVal < 128<<20 { // 不低于 128MB
+				autoVal = 128 << 20
+			}
+			*maxInputBytesFlag = autoVal
+			logger.Logger.Debug().Int64("bytes", autoVal).Msg("max-input-bytes 自动计算完成")
+		}
+	}
+
+	// 启动 banner：打印检测到的硬件信息和生效配置摘要
+	{
+		cpuCores := runtime.NumCPU()
+		memBytes := detectTotalMemory()
+
+		gomemlimit := os.Getenv("GOMEMLIMIT")
+		if gomemlimit == "" {
+			if l := debug.SetMemoryLimit(-1); l > 0 && l < 1<<50 {
+				gomemlimit = formatBytes(l)
+			} else {
+				gomemlimit = "unlimited"
+			}
+		}
+
+		fmt.Fprintf(os.Stderr, "\n=== BoltDB Configuration ===\n")
+		fmt.Fprintf(os.Stderr, "Detected: CPU %d cores", cpuCores)
+		if memBytes > 0 {
+			fmt.Fprintf(os.Stderr, " / RAM %s", formatBytes(memBytes))
+		}
+		fmt.Fprintf(os.Stderr, "\n")
+		fmt.Fprintf(os.Stderr, "Active config:\n")
+		fmt.Fprintf(os.Stderr, "  GOMEMLIMIT=%s  max-input-bytes=%s\n", gomemlimit, formatBytes(*maxInputBytesFlag))
+		fmt.Fprintf(os.Stderr, "  client-output-buffer-limit=%s  max-clients=%d\n", formatBytes(*clientOutputBufferLimit), *maxClientsFlag)
+		fmt.Fprintf(os.Stderr, "  proto-max-bulk-len=%s\n", formatBytes(*protoMaxBulkLenFlag))
+		fmt.Fprintf(os.Stderr, "============================\n\n")
+	}
 
 	db, err := store.NewBotreonStore(*dbPathFlag)
 	if err != nil {

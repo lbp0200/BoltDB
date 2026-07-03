@@ -348,6 +348,7 @@ func (s *BotreonStore) SMembers(key string) ([]string, error) {
 
 // SPop 实现 Redis SPOP 命令，随机弹出并删除一个成员
 // 优化：使用迭代器随机选择，避免加载所有成员
+// 双向搜索：目标索引在后半部时从末尾反向扫描，平均迭代步数 N/2 → N/4
 func (s *BotreonStore) SPop(key string) (string, error) {
 	var member string
 	err := s.retryUpdate(func(txn *badger.Txn) error {
@@ -377,34 +378,58 @@ func (s *BotreonStore) SPop(key string) (string, error) {
 		// 使用迭代器遍历到目标索引位置
 		prefix := s.setKey(key, "member")
 		prefixBytes := []byte(prefix + ":")
-		iter := txn.NewIterator(badger.DefaultIteratorOptions)
-		defer iter.Close()
 
-		currentIndex := 0
-		for iter.Seek(prefixBytes); iter.ValidForPrefix(prefixBytes); iter.Next() {
-			if currentIndex == targetIndex {
-				// 找到目标成员
-				k := iter.Item().Key()
-				kStr := string(k)
-				// 提取成员名：SET:key:member:memberName
-				if strings.HasPrefix(kStr, prefix+":") {
-					member = kStr[len(prefix)+1:] // 跳过 "SET:key:member:" 前缀
+		// 双向搜索：随机索引在后半部时反向扫描，减半平均迭代步数
+		if uint64(targetIndex) < count/2 {
+			// 正向扫描
+			iter := txn.NewIterator(badger.DefaultIteratorOptions)
+			defer iter.Close()
 
-					// 删除成员
-					if err := txn.Delete(k); err != nil {
-						return err
+			currentIndex := 0
+			for iter.Seek(prefixBytes); iter.ValidForPrefix(prefixBytes); iter.Next() {
+				if currentIndex == targetIndex {
+					k := iter.Item().Key()
+					kStr := string(k)
+					if strings.HasPrefix(kStr, prefix+":") {
+						member = kStr[len(prefix)+1:]
+						if err := txn.Delete(k); err != nil {
+							return err
+						}
+						count--
+						return txn.Set([]byte(countKey), helper.Uint64ToBytes(count))
 					}
-
-					// 更新计数器
-					count--
-					return txn.Set([]byte(countKey), helper.Uint64ToBytes(count))
 				}
+				currentIndex++
 			}
-			currentIndex++
+		} else {
+			// 反向扫描：从最后一个成员向前
+			reverseOpts := badger.DefaultIteratorOptions
+			reverseOpts.Reverse = true
+			iter := txn.NewIterator(reverseOpts)
+			defer iter.Close()
+
+			targetFromEnd := int(count) - 1 - targetIndex
+			// Seek 到 prefix + 0xFF 即最后一个可能的 key
+			endKey := append(prefixBytes, 0xFF)
+			currentFromEnd := 0
+			for iter.Seek(endKey); iter.ValidForPrefix(prefixBytes); iter.Next() {
+				if currentFromEnd == targetFromEnd {
+					k := iter.Item().Key()
+					kStr := string(k)
+					if strings.HasPrefix(kStr, prefix+":") {
+						member = kStr[len(prefix)+1:]
+						if err := txn.Delete(k); err != nil {
+							return err
+						}
+						count--
+						return txn.Set([]byte(countKey), helper.Uint64ToBytes(count))
+					}
+				}
+				currentFromEnd++
+			}
 		}
 
 		// 如果迭代器没有找到（理论上不应该发生），回退到旧方法
-		// 但这种情况应该很少见
 		return nil
 	}, 30) // 最多重试 30 次（高并发时需要更多重试）
 	return member, err
@@ -964,6 +989,9 @@ func (s *BotreonStore) SScan(key string, cursor uint64, pattern string, count in
 		count = 10 // 默认值
 	}
 
+	seekKey := s.scanBookmarkLookup(cursor)
+	s.scanBookmarkRelease(cursor)
+
 	err := s.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		prefix := []byte(KeyTypeSet + ":" + key + ":member:")
@@ -973,19 +1001,14 @@ func (s *BotreonStore) SScan(key string, cursor uint64, pattern string, count in
 		iter := txn.NewIterator(opts)
 		defer iter.Close()
 
-		currentPos := uint64(0)
-		collected := 0
-
-		// 如果cursor不为0，需要跳过前面的成员
-		if cursor > 0 {
-			for iter.Seek(prefix); iter.ValidForPrefix(prefix) && currentPos < cursor; iter.Next() {
-				currentPos++
-			}
+		if seekKey != nil {
+			iter.Seek(seekKey)
 		} else {
 			iter.Seek(prefix)
 		}
 
-		// 收集匹配的成员
+		collected := 0
+		var lastKey []byte
 		for iter.ValidForPrefix(prefix) && collected < count {
 			item := iter.Item()
 			keyBytes := item.KeyCopy(nil)
@@ -998,13 +1021,13 @@ func (s *BotreonStore) SScan(key string, cursor uint64, pattern string, count in
 				collected++
 			}
 
-			currentPos++
+			lastKey = keyBytes
 			iter.Next()
 		}
 
 		// 检查是否还有更多成员
 		if iter.ValidForPrefix(prefix) {
-			result.Cursor = currentPos
+			result.Cursor = s.scanBookmarkStore(lastKey)
 		} else {
 			result.Cursor = 0 // 0表示迭代完成
 		}

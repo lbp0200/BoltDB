@@ -273,7 +273,6 @@ func (c *Cluster) MigrateSlotCrashSafe(slot uint32, targetNodeID string, copyKey
 	}
 	defer mc.close()
 
-	allCopied := true
 	for i := range journal.Keys {
 		// 跳过已经复制过的 key（中断恢复）
 		if journal.Keys[i].Copied {
@@ -311,12 +310,6 @@ func (c *Cluster) MigrateSlotCrashSafe(slot uint32, targetNodeID string, copyKey
 		}
 	}
 
-	if !allCopied {
-		// 有 key 复制失败，保持 COPYING 状态以便重试
-		_ = c.saveJournal(journal)
-		return fmt.Errorf("slot %d migration incomplete: some keys failed to copy", slot)
-	}
-
 	// Phase 1 完成
 	journal.Phase = PhaseCopied
 	if err := c.saveJournal(journal); err != nil {
@@ -345,28 +338,15 @@ func (c *Cluster) MigrateSlotCrashSafe(slot uint32, targetNodeID string, copyKey
 		return fmt.Errorf("save COMMIT journal: %w", err)
 	}
 
-	// 批量删除源端 key（在同一个 BadgerDB 事务中）
-	err = c.Store.GetDB().Update(func(txn *badger.Txn) error {
-		for _, ks := range journal.Keys {
-			if !ks.Copied {
-				continue
-			}
-			// 删除 TYPE_ 记录
-			typeKey := append([]byte("TYPE_"), []byte(ks.Key)...)
-			if err := txn.Delete(typeKey); err != nil {
-				return fmt.Errorf("delete type key for %s: %w", ks.Key, err)
-			}
-			// 删除数据 key
-			if err := txn.Delete([]byte(ks.Key)); err != nil {
-				return fmt.Errorf("delete data key for %s: %w", ks.Key, err)
-			}
+	// 批量删除源端 key（逐个调用 Store.Del 以正确处理所有复合类型的二级索引）
+	for _, ks := range journal.Keys {
+		if !ks.Copied {
+			continue
 		}
-		return nil
-	})
-	if err != nil {
-		// 批量删除失败，保持 COMMIT 状态以便重试
-		_ = c.saveJournal(journal)
-		return fmt.Errorf("batch delete keys for slot %d: %w", slot, err)
+		if _, err := c.Store.Del(ks.Key); err != nil {
+			_ = c.saveJournal(journal)
+			return fmt.Errorf("delete key %s during slot %d migration: %w", ks.Key, slot, err)
+		}
 	}
 
 	// 原子切换 slot 归属
@@ -501,20 +481,14 @@ func (c *Cluster) retryCommitPhase(journal *migrationJournal) error {
 	slot := journal.Slot
 
 	if !journal.CopyKeys {
-		// 删除源端 key（幂等：已经删除的 key 再次 delete 不会报错）
-		err := c.Store.GetDB().Update(func(txn *badger.Txn) error {
-			for _, ks := range journal.Keys {
-				if !ks.Copied {
-					continue
-				}
-				typeKey := append([]byte("TYPE_"), []byte(ks.Key)...)
-				_ = txn.Delete(typeKey)
-				_ = txn.Delete([]byte(ks.Key))
+		// 删除源端 key（逐个调用 Store.Del 以正确处理所有复合类型的二级索引；幂等：Del 对不存在的 key 返回 0 不报错）
+		for _, ks := range journal.Keys {
+			if !ks.Copied {
+				continue
 			}
-			return nil
-		})
-		if err != nil {
-			return fmt.Errorf("retry batch delete for slot %d: %w", slot, err)
+			if _, err := c.Store.Del(ks.Key); err != nil {
+				return fmt.Errorf("retry delete key %s for slot %d: %w", ks.Key, slot, err)
+			}
 		}
 	}
 
