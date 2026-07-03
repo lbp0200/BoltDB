@@ -80,6 +80,7 @@ jobs:
           SKIP="$SKIP|TestGracefulShutdown"
           SKIP="$SKIP|TestRegressionFailoverOscillation"
           SKIP="$SKIP|TestSplitBrain"
+          SKIP="$SKIP|TestReplication(NewCommands|StreamXDelex|SortedSetCommands|Completeness_Key)"
           go test -race -timeout 600s -skip "$SKIP" -count=1 ./cmd/integration/
 
   # Tier B — Post-Merge: heavy integration (< 20 min)
