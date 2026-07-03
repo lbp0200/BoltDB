@@ -247,6 +247,9 @@ func (w *BacklogWAL) Truncate(retainedStartOffset int64) error {
 
 // Close flushes pending data and closes the WAL file.
 func (w *BacklogWAL) Close() error {
+	if w.closed.Load() {
+		return nil // already closed
+	}
 	w.closed.Store(true)
 	if err := w.Flush(); err != nil {
 		w.file.Close() //nolint:errcheck
