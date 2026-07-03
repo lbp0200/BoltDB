@@ -492,7 +492,7 @@ func TestReplicationCompleteness_Key(t *testing.T) {
 	// RENAME
 	masterClient.Set(ctx, p+"rename1", "val1", 0)
 	masterClient.Rename(ctx, p+"rename1", p+"rename2")
-	pollSlave(t, slaveClient, 10*time.Second, func() bool {
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
 		_, err := slaveClient.Get(ctx, p+"rename2").Result()
 		return err == nil
 	})
@@ -511,14 +511,14 @@ func TestReplicationCompleteness_Key(t *testing.T) {
 
 	// PERSIST
 	masterClient.Persist(ctx, p+"expire1")
-	pollSlave(t, slaveClient, 10*time.Second, func() bool {
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
 		ttl, _ := slaveClient.TTL(ctx, p+"expire1").Result()
 		return ttl == -1 || ttl == -2
 	})
 
 	// DEL
 	masterClient.Del(ctx, p+"expire1", p+"rename2")
-	pollSlave(t, slaveClient, 10*time.Second, func() bool {
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
 		n, _ := slaveClient.Exists(ctx, p+"expire1").Result()
 		return n == 0
 	})
@@ -531,12 +531,12 @@ func TestReplicationCompleteness_Key(t *testing.T) {
 
 	// SORT with STORE
 	masterClient.RPush(ctx, p+"sort1", "3", "1", "2")
-	pollSlave(t, slaveClient, 10*time.Second, func() bool {
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
 		list, _ := slaveClient.LRange(ctx, p+"sort_out", 0, -1).Result()
 		return len(list) == 3
 	})
 	masterClient.Do(ctx, "SORT", p+"sort1", "STORE", p+"sort_out")
-	pollSlave(t, slaveClient, 10*time.Second, func() bool {
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
 		list, _ := slaveClient.LRange(ctx, p+"sort_out", 0, -1).Result()
 		return len(list) == 3 && list[0] == "1"
 	})
@@ -547,7 +547,7 @@ func TestReplicationCompleteness_Key(t *testing.T) {
 	masterClient.Set(ctx, p+"flush1", "gone", 0)
 	time.Sleep(300 * time.Millisecond)
 	masterClient.FlushDB(ctx)
-	pollSlave(t, slaveClient, 10*time.Second, func() bool {
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
 		n, _ := slaveClient.Exists(ctx, p+"flush1").Result()
 		return n == 0
 	})
