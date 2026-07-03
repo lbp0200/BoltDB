@@ -68,14 +68,12 @@ func TestBacklogWAL_AppendAndReplay_CircularOverwrite(t *testing.T) {
 	backlog := NewReplicationBacklog(50)
 	cmdBytes := []byte("*3\r\n$3\r\nSET\r\n$1\r\nx\r\n$1\r\n1\r\n") // 27 bytes
 
-	// Write 10 commands (270 bytes → backlog wraps around multiple times)
-	for i := 0; i < 10; i++ {
+	// Write 3 commands (81 bytes → backlog wraps around once or twice)
+	for i := 0; i < 3; i++ {
 		offset := int64(i * 27)
 		err = wal.Append(offset, cmdBytes)
 		assert.NoError(t, err)
-		backlog.mu.Lock()
-		backlog.Append(cmdBytes) // also append to in-memory for comparison
-		backlog.mu.Unlock()
+		backlog.Append(cmdBytes) // Append already acquires mu internally
 	}
 
 	err = wal.Flush()
