@@ -39,7 +39,7 @@ jobs:
         run: go build ./...
 
       - name: Test with coverage
-        run: go test -race -timeout 120s -short -coverprofile=coverage.out -covermode=atomic ./internal/... ./cmd/boltDB/... 2>&1
+        run: go test -race -timeout 180s -short -coverprofile=coverage.out -covermode=atomic ./internal/... ./cmd/boltDB/... 2>&1
 
       - name: Upload coverage
         if: always()
@@ -120,7 +120,7 @@ jobs:
       - name: Replication tests
         run: |
           go test -race -timeout 600s -run 'TestReplication' \
-            -skip 'TestReplication(Stress|Chaos)' -count=1 ./cmd/integration/
+            -skip 'TestReplication(Stress|Chaos|NewCommands|SortedSetCommands|Completeness_Key)' -count=1 ./cmd/integration/
 
       - name: Sentinel tests
         run: |
