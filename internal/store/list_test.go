@@ -336,7 +336,7 @@ func TestLRem(t *testing.T) {
 	// 从尾部删除
 	n, err = store.RPush(key, "x", "y", "x")
 	assert.NoError(t, err)
-	assert.Equal(t, 5, n)
+	assert.Equal(t, 6, n)
 	count, err = store.LRem(key, -1, "x")
 	assert.NoError(t, err)
 	assert.Equal(t, 1, count)

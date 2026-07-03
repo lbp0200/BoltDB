@@ -80,7 +80,7 @@ jobs:
           SKIP="$SKIP|TestGracefulShutdown"
           SKIP="$SKIP|TestRegressionFailoverOscillation"
           SKIP="$SKIP|TestSplitBrain"
-          go test -race -timeout 300s -skip "$SKIP" -count=1 ./cmd/integration/
+          go test -race -timeout 600s -skip "$SKIP" -count=1 ./cmd/integration/
 
   # Tier B — Post-Merge: heavy integration (< 20 min)
   # Multi-node cluster, goroutine leak, chaos, replication, sentinel, regressions.

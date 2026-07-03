@@ -154,39 +154,42 @@ func (s *BotreonStore) LRem(key string, count int64, value string) (int, error) 
 		visitedCount := 0
 		visitedNodes := make(map[string]bool)
 
-		for visitedCount < int(length) {
-			if visitedNodes[currentNodeID] {
-				break
-			}
-			visitedNodes[currentNodeID] = true
-
-			nodeKey := s.listKey(key, currentNodeID)
-			item, err := txn.Get([]byte(nodeKey))
-			if err != nil {
-				break
-			}
-			valueBytes, err := item.ValueCopy(nil)
-			if err != nil {
-				return err
-			}
-			if string(valueBytes) == value {
-				nodesToRemove = append(nodesToRemove, currentNodeID)
-				if count > 0 && len(nodesToRemove) >= int(count) {
+		// Forward scan (only for count > 0 or count == 0)
+		if count >= 0 {
+			for visitedCount < int(length) {
+				if visitedNodes[currentNodeID] {
 					break
 				}
-			}
+				visitedNodes[currentNodeID] = true
 
-			nextKey := s.listKey(key, currentNodeID, "next")
-			item, err = txn.Get([]byte(nextKey))
-			if err != nil {
-				break
+				nodeKey := s.listKey(key, currentNodeID)
+				item, err := txn.Get([]byte(nodeKey))
+				if err != nil {
+					break
+				}
+				valueBytes, err := item.ValueCopy(nil)
+				if err != nil {
+					return err
+				}
+				if string(valueBytes) == value {
+					nodesToRemove = append(nodesToRemove, currentNodeID)
+					if count > 0 && len(nodesToRemove) >= int(count) {
+						break
+					}
+				}
+
+				nextKey := s.listKey(key, currentNodeID, "next")
+				item, err = txn.Get([]byte(nextKey))
+				if err != nil {
+					break
+				}
+				nextVal, err := item.ValueCopy(nil)
+				if err != nil {
+					return err
+				}
+				currentNodeID = string(nextVal)
+				visitedCount++
 			}
-			nextVal, err := item.ValueCopy(nil)
-			if err != nil {
-				return err
-			}
-			currentNodeID = string(nextVal)
-			visitedCount++
 		}
 
 		if count < 0 {
