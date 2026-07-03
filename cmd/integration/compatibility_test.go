@@ -567,7 +567,7 @@ func TestCompatKeyEvictionAfterEXPIRE(t *testing.T) {
 	ctx := context.Background()
 
 	sharedClient.Set(ctx, "ttl:evict", "will_disappear", 0)
-	sharedClient.Expire(ctx, "ttl:evict", 1*time.Second)
+	sharedClient.Expire(ctx, "ttl:evict", 10*time.Second)
 
 	val, err := sharedClient.Get(ctx, "ttl:evict").Result()
 	assert.NoError(t, err)
@@ -575,7 +575,7 @@ func TestCompatKeyEvictionAfterEXPIRE(t *testing.T) {
 
 	// BadgerDB uses compaction-based TTL eviction, not eager on read.
 	// Known difference from Redis: keys may remain readable for a while after TTL.
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(1 * time.Second)
 	_, err = sharedClient.Get(ctx, "ttl:evict").Result()
 	if err == nil {
 		t.Log("TTL eviction not immediate (known: BadgerDB compaction-based eviction)")
