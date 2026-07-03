@@ -65,10 +65,13 @@ func (h *HyperLogLog) Estimate() float64 {
 
 	// 标准 HLL 估计: E = α_m * m² / Σ 2^{-M[j]}
 	estimate := hllAlpha * float64(hllRegisterCount) * float64(hllRegisterCount) / sum
-	zeros := h.countZeros()
-	if zeros > 0 {
-		linearCount := float64(hllRegisterCount) * math.Log(float64(hllRegisterCount)/float64(zeros))
-		if estimate < linearCount/2 {
+
+	// 小基数校正: 当 raw estimate 低于 5m/2 阈值时使用线性计数
+	// 标准 HLL 论文 (Flajolet+ 2007): 若 E ≤ 5m/2 且存在零寄存器，线性计数更精确
+	const linearThreshold = 5 * hllRegisterCount / 2 // 5m/2 = 40960
+	if estimate <= linearThreshold {
+		if zeros := h.countZeros(); zeros > 0 {
+			linearCount := float64(hllRegisterCount) * math.Log(float64(hllRegisterCount)/float64(zeros))
 			return linearCount
 		}
 	}
