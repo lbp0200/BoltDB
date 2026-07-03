@@ -539,11 +539,17 @@ func TestLRemRemoveNegativeCount(t *testing.T) {
 	t.Parallel()
 	s := setupTestStore(t)
 
-	_, err := s.LPush("lrem_n", "b", "a", "b", "a")
+	n, err := s.LPush("lrem_n", "b", "a", "b", "a")
 	assert.NoError(t, err)
+	assert.Equal(t, 4, n, "LPush should return 4")
 	count, err := s.LRem("lrem_n", -1, "a")
 	assert.NoError(t, err)
-	assert.Equal(t, 1, count) // removes from tail
+	assert.Equal(t, 1, count, "LRem should remove 1 element from tail")
+
+	// Verify final state
+	vals, err := s.LRange("lrem_n", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"a", "b", "b"}, vals)
 }
 
 func TestLSetValidIndex(t *testing.T) {

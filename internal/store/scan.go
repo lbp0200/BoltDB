@@ -78,6 +78,10 @@ func (s *BotreonStore) Scan(cursor uint64, pattern string, count int) (ScanResul
 		prefix := prefixKeyTypeBytes
 		if seekKey != nil {
 			iter.Seek(seekKey)
+			// 跳过 bookmark key 本身，避免重复返回
+			if iter.ValidForPrefix(prefix) {
+				iter.Next()
+			}
 		} else {
 			iter.Seek(prefix)
 		}
