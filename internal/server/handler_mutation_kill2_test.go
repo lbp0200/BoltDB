@@ -407,7 +407,7 @@ func TestKeyMutationKill_DUMPExistingKey(t *testing.T) {
 // ---------- Key: RESTORE error paths ----------
 
 func TestKeyMutationKill_RESTORENoArgs(t *testing.T) {
-	t.Parallel()
+	// Not parallel — avoids BadgerDB contention on slow CI runners
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 

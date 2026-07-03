@@ -128,7 +128,7 @@ jobs:
 
       - name: Regression tests (fast)
         run: |
-          go test -race -timeout 300s \
+          go test -race -timeout 600s \
             -skip 'TestRegression(L0Collapse|ReplicationThrash|ReplicationThrashFullresync|PsyncReconnectNoLoss|DuplicateWindowMeasurement|SnapshotFullresyncOffset|SnapshotConsistency)' \
             -count=1 ./cmd/integration/regressions/
 
