@@ -447,7 +447,7 @@ func TestBZMPOP_ZeroTimeoutEmptyKey(t *testing.T) {
 	defer handler.Db.Close()
 
 	resp := handler.executeCommand(state, "BZMPOP", [][]byte{[]byte("0"), []byte("1"), []byte("bzmpop_empty"), []byte("MIN")}, "127.0.0.1:12345")
-	_, ok := resp.(*proto.NilArray)
+	_, ok := resp.(proto.NilArray)
 	assert.True(t, ok)
 }
 
