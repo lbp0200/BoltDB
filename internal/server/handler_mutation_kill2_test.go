@@ -694,7 +694,7 @@ func TestAdminMutationKill_DebugBoundary(t *testing.T) {
 // ---------- Bitmap: BITOP error paths ----------
 
 func TestBitmapMutationKill_BitopErrors(t *testing.T) {
-	t.Parallel()
+	// Not parallel — avoids BadgerDB contention on slow CI runners
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 

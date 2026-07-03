@@ -356,7 +356,7 @@ func TestServerObjectCommands(t *testing.T) {
 
 // TestServerClientCommands tests CLIENT commands
 func TestServerClientCommands(t *testing.T) {
-	t.Parallel()
+	// Not parallel — avoids BadgerDB contention on slow CI runners
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 

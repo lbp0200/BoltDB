@@ -296,7 +296,7 @@ func TestStringBoundary_DecrOverflow(t *testing.T) {
 
 // TestStringBoundary_GetrangeFullString tests GETRANGE with full range
 func TestStringBoundary_GetrangeFullString(t *testing.T) {
-	t.Parallel()
+	// Not parallel — avoids BadgerDB contention on slow CI runners
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -960,7 +960,7 @@ func TestSortedSetBoundary_ZcardBasic(t *testing.T) {
 
 // TestSortedSetBoundary_ZscoreBasic tests ZSCORE returns member score
 func TestSortedSetBoundary_ZscoreBasic(t *testing.T) {
-	t.Parallel()
+	// Not parallel — avoids BadgerDB contention on slow CI runners
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
