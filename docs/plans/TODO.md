@@ -94,7 +94,23 @@ Active config:
 
 ## 待办项
 
-### 配置文件支持（P0 — TOML 格式）
+### CI 稳定性（P1 — 预存 flaky 测试修复）
+
+**现状：** Tier A（test-fast/PR 门禁）已稳定全绿。剩余 3 类预存 flaky：
+
+- [ ] **单元测试随机 mutation kill flaky** — `Test*Boundary_*` `Test*MutationKill_*` 在 GHA 慢 runner 上随机失败。每次 CI 出现 1-5 个不同测试失败。
+  - 根本原因：BadgerDB 在 `-race` + `t.Parallel()` 下写竞争。
+  - 对策：批量移除 `internal/server/` 和 `internal/store/` 中所有 boundary/mutation kill 测试的 `t.Parallel()`。
+  - 估算：约 40 个测试文件，每文件 5-10 个测试函数。
+
+- [ ] **复制集成测试 GHA 超时** — `TestReplicationNewCommands`、`TestReplicationSortedSetCommands`、`TestReplicationCompleteness_Key` 在 GHA runner 上 FULLRESYNC 需要 20-30s，pollSlave 超时。
+  - 已从 Tier A 移至 Tier B，但仍不可靠。
+  - 对策：优化 `setupMasterSlaveServer` 速度，或只在本地/远程测试服务器运行。
+
+- [ ] **TestRegressionFailoverOscillation 超时** — 在 GHA 上耗时 33s+，regression 测试包超时。
+  - 已从 300s 提到 600s，观察是否稳定。
+
+### 配置文件支持（已完成 ✅）
 
 - [x] **定义 Config struct + TOML tag**：`cmd/boltDB/config.go`
 - [x] **添加 BurntSushi/toml 依赖**：`v1.6.0`
