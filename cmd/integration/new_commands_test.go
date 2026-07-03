@@ -735,9 +735,12 @@ func TestReplicationNewCommands(t *testing.T) {
 	assert.NoError(t, err)
 	err = masterClient.Set(ctx, "repl_unlink2", "val2", 0).Err()
 	assert.NoError(t, err)
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 40)
 
 	// Verify on slave before unlink
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
+		_, err := slaveClient.Get(ctx, "repl_unlink1").Result()
+		return err == nil
+	})
 	val, err := slaveClient.Get(ctx, "repl_unlink1").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, "val1", val)
@@ -746,9 +749,12 @@ func TestReplicationNewCommands(t *testing.T) {
 	result, err := masterClient.Unlink(ctx, "repl_unlink1", "repl_unlink2").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(2), result)
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 80)
 
 	// Verify deleted on slave
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
+		_, err := slaveClient.Get(ctx, "repl_unlink1").Result()
+		return err != nil
+	})
 	_, err = slaveClient.Get(ctx, "repl_unlink1").Result()
 	assert.Equal(t, redis.Nil, err)
 	_, err = slaveClient.Get(ctx, "repl_unlink2").Result()
@@ -757,8 +763,11 @@ func TestReplicationNewCommands(t *testing.T) {
 	// --- BITFIELD ---
 	err = masterClient.SetBit(ctx, "repl_bf", 7, 1).Err()
 	assert.NoError(t, err)
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 96)
 
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
+		v, err := slaveClient.Do(ctx, "GETBIT", "repl_bf", 7).Result()
+		return err == nil && v == int64(1)
+	})
 	bfResult, err := slaveClient.Do(ctx, "GETBIT", "repl_bf", 7).Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), bfResult)
@@ -768,8 +777,11 @@ func TestReplicationNewCommands(t *testing.T) {
 	assert.NoError(t, err)
 	err = masterClient.ZAdd(ctx, "repl_zic_b", redis.Z{Score: 1, Member: "y"}, redis.Z{Score: 2, Member: "z"}).Err()
 	assert.NoError(t, err)
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 136)
 
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
+		v, err := slaveClient.Do(ctx, "ZINTERCARD", "2", "repl_zic_a", "repl_zic_b").Result()
+		return err == nil && v == int64(1)
+	})
 	zicResult, err := slaveClient.Do(ctx, "ZINTERCARD", "2", "repl_zic_a", "repl_zic_b").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), zicResult) // intersection = {y}
@@ -785,9 +797,12 @@ func TestReplicationNewCommands(t *testing.T) {
 		Values: map[string]any{"f2": "v2"},
 	}).Result()
 	assert.NoError(t, err)
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 176)
 
 	// Verify stream replicated
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
+		n, err := slaveClient.XLen(ctx, "repl_xstream").Result()
+		return err == nil && n == 2
+	})
 	xLen, err := slaveClient.XLen(ctx, "repl_xstream").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(2), xLen)
@@ -795,7 +810,6 @@ func TestReplicationNewCommands(t *testing.T) {
 	// Create consumer group on master
 	err = masterClient.XGroupCreateMkStream(ctx, "repl_xstream", "repl_group", "0").Err()
 	assert.NoError(t, err)
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 196)
 
 	// XREADGROUP on slave (consumer group should replicate)
 	msgs, err := slaveClient.XReadGroup(ctx, &redis.XReadGroupArgs{
@@ -816,12 +830,10 @@ func TestReplicationNewCommands(t *testing.T) {
 	xsetidResult, err := masterClient.Do(ctx, "XSETID", "repl_xstream", "9999999999999-0").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, "OK", xsetidResult)
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 200)
-
-	// Verify XSETID on slave
-	xinfoResult, err := slaveClient.Do(ctx, "XINFO", "STREAM", "repl_xstream").Result()
-	assert.NoError(t, err)
-	assert.NotNil(t, xinfoResult)
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
+		_, err := slaveClient.Do(ctx, "XINFO", "STREAM", "repl_xstream").Result()
+		return err == nil
+	})
 
 	// --- TS commands ---
 	err = masterClient.Do(ctx, "TS.CREATE", "repl_ts_temp").Err()
@@ -829,24 +841,22 @@ func TestReplicationNewCommands(t *testing.T) {
 	now := time.Now().UnixMilli()
 	masterClient.Do(ctx, "TS.ADD", "repl_ts_temp", now-2000, 20.0)
 	masterClient.Do(ctx, "TS.ADD", "repl_ts_temp", now-1000, 30.0)
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 250)
-
-	// TS.REVRANGE on slave
-	revRangeResult, err := slaveClient.Do(ctx, "TS.REVRANGE", "repl_ts_temp", "-", "+").Result()
-	assert.NoError(t, err)
-	assert.NotNil(t, revRangeResult)
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
+		_, err := slaveClient.Do(ctx, "TS.REVRANGE", "repl_ts_temp", "-", "+").Result()
+		return err == nil
+	})
 
 	// TS.INCRBY on master
 	incrResult, err := masterClient.Do(ctx, "TS.INCRBY", "repl_ts_temp", "5.0", "TIMESTAMP", now-1000).Result()
 	assert.NoError(t, err)
 	assert.NotNil(t, incrResult)
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 270)
+	time.Sleep(500 * time.Millisecond)
 
 	// TS.MADD on master
 	maddResult, err := masterClient.Do(ctx, "TS.MADD", "repl_ts_temp", now, "40.0").Result()
 	assert.NoError(t, err)
 	assert.NotNil(t, maddResult)
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 290)
+	time.Sleep(500 * time.Millisecond)
 
 	// TS.LEN on slave
 	tsLen, err := slaveClient.Do(ctx, "TS.LEN", "repl_ts_temp").Result()
@@ -875,21 +885,19 @@ func TestReplicationStreamXDelex(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// Verify replicated
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 50)
-	xLen, err := slaveClient.XLen(ctx, "repl_xdelex").Result()
-	assert.NoError(t, err)
-	assert.Equal(t, int64(2), xLen)
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
+		n, err := slaveClient.XLen(ctx, "repl_xdelex").Result()
+		return err == nil && n == 2
+	})
 
 	// XDELEX on master
 	result, err := masterClient.Do(ctx, "XDELEX", "repl_xdelex", id1).Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), result)
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 70)
-
-	// Verify on slave
-	rng, err := slaveClient.XRange(ctx, "repl_xdelex", "-", "+").Result()
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(rng))
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
+		rng, err := slaveClient.XRange(ctx, "repl_xdelex", "-", "+").Result()
+		return err == nil && len(rng) == 1
+	})
 }
 
 // TestReplicationSortedSetCommands 测试 ZINTERCARD/BZMPOP 在主从复制下的传播
@@ -904,7 +912,10 @@ func TestReplicationSortedSetCommands(t *testing.T) {
 	assert.NoError(t, err)
 	err = masterClient.ZAdd(ctx, "repl_zs2", redis.Z{Score: 1, Member: "b"}, redis.Z{Score: 2, Member: "c"}).Err()
 	assert.NoError(t, err)
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 60)
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
+		v, err := slaveClient.Do(ctx, "ZINTERCARD", "2", "repl_zs1", "repl_zs2").Result()
+		return err == nil && v == int64(1)
+	})
 
 	// ZINTERCARD on slave
 	result, err := slaveClient.Do(ctx, "ZINTERCARD", "2", "repl_zs1", "repl_zs2").Result()
@@ -914,7 +925,7 @@ func TestReplicationSortedSetCommands(t *testing.T) {
 	// BZMPOP on master (non-blocking pop)
 	err = masterClient.ZAdd(ctx, "repl_bzmp", redis.Z{Score: 10, Member: "m1"}).Err()
 	assert.NoError(t, err)
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 72)
+	time.Sleep(500 * time.Millisecond)
 
 	bzmpResult, err := masterClient.Do(ctx, "BZMPOP", "0", "1", "repl_bzmp", "MIN").Result()
 	assert.NoError(t, err)

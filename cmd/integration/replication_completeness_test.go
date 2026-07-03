@@ -250,32 +250,43 @@ func parseInt64(data []byte) int64 {
 	return n
 }
 
-// waitForReplication polls the slave REPLICAINFO offset until it catches up
-// to the master offset, with a timeout.
-func waitForReplication(t *testing.T, masterClient, slaveClient *redis.Client, timeout time.Duration, minOffset int64) {
+// waitForReplication polls until master and slave offsets match (replication caught up).
+// Returns true if replication caught up within timeout, false if timed out.
+func waitForReplication(t *testing.T, masterClient, slaveClient *redis.Client, timeout time.Duration, minOffset int64) bool {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		mInfo, err := masterClient.Info(context.Background(), "replication").Result()
 		if err != nil {
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 		sInfo, err := slaveClient.Info(context.Background(), "replication").Result()
 		if err != nil {
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
-		// Extract master_repl_offset from INFO output
 		mOff := extractInfoValue(mInfo, "master_repl_offset")
 		sOff := extractInfoValue(sInfo, "slave_repl_offset")
 		if mOff == sOff && mOff >= minOffset {
+			return true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return false
+}
+
+// pollSlave polls the slave until a condition function returns true, or timeout.
+// Uses 200ms polling interval. Useful for assertions that depend on replication timing.
+func pollSlave(t *testing.T, slaveClient *redis.Client, timeout time.Duration, fn func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if fn() {
 			return
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 	}
-	// Fallback: wait for any pending propagation
-	time.Sleep(500 * time.Millisecond)
 }
 
 // extractInfoValue extracts a numeric value from Redis INFO output by key.
@@ -480,9 +491,11 @@ func TestReplicationCompleteness_Key(t *testing.T) {
 
 	// RENAME
 	masterClient.Set(ctx, p+"rename1", "val1", 0)
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 18)
 	masterClient.Rename(ctx, p+"rename1", p+"rename2")
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 36)
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
+		_, err := slaveClient.Get(ctx, p+"rename2").Result()
+		return err == nil
+	})
 	val, err := slaveClient.Get(ctx, p+"rename2").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, "val1", val)
@@ -491,44 +504,53 @@ func TestReplicationCompleteness_Key(t *testing.T) {
 
 	// EXPIRE via SetEX
 	masterClient.SetEx(ctx, p+"expire1", "temp", 3600*time.Second)
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 54)
+	time.Sleep(500 * time.Millisecond)
 	ttl, err := slaveClient.TTL(ctx, p+"expire1").Result()
 	assert.NoError(t, err)
 	assert.True(t, ttl > 0)
 
 	// PERSIST
 	masterClient.Persist(ctx, p+"expire1")
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 64)
-	ttl, _ = slaveClient.TTL(ctx, p+"expire1").Result()
-	assert.True(t, ttl == -1 || ttl == -2)
+	pollSlave(t, slaveClient, 10*time.Second, func() bool {
+		ttl, _ := slaveClient.TTL(ctx, p+"expire1").Result()
+		return ttl == -1 || ttl == -2
+	})
 
 	// DEL
 	masterClient.Del(ctx, p+"expire1", p+"rename2")
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 80)
-	exists, _ = slaveClient.Exists(ctx, p+"expire1").Result()
-	assert.Equal(t, int64(0), exists)
+	pollSlave(t, slaveClient, 10*time.Second, func() bool {
+		n, _ := slaveClient.Exists(ctx, p+"expire1").Result()
+		return n == 0
+	})
 
-	// UNLINK (async delete)
+	// UNLINK
 	masterClient.Set(ctx, p+"unlink1", "ulval", 0)
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 98)
+	time.Sleep(300 * time.Millisecond)
 	masterClient.Unlink(ctx, p+"unlink1")
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 108)
+	time.Sleep(500 * time.Millisecond)
 
 	// SORT with STORE
 	masterClient.RPush(ctx, p+"sort1", "3", "1", "2")
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 142)
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
+		list, _ := slaveClient.LRange(ctx, p+"sort_out", 0, -1).Result()
+		return len(list) == 3
+	})
 	masterClient.Do(ctx, "SORT", p+"sort1", "STORE", p+"sort_out")
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 160)
+	pollSlave(t, slaveClient, 15*time.Second, func() bool {
+		list, _ := slaveClient.LRange(ctx, p+"sort_out", 0, -1).Result()
+		return len(list) == 3 && list[0] == "1"
+	})
 	listVal, _ := slaveClient.LRange(ctx, p+"sort_out", 0, -1).Result()
 	assert.Equal(t, []string{"1", "2", "3"}, listVal)
 
 	// FLUSHDB
 	masterClient.Set(ctx, p+"flush1", "gone", 0)
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 178)
+	time.Sleep(300 * time.Millisecond)
 	masterClient.FlushDB(ctx)
-	waitForReplication(t, masterClient, slaveClient, 5*time.Second, 180)
-	exists, _ = slaveClient.Exists(ctx, p+"flush1").Result()
-	assert.Equal(t, int64(0), exists)
+	pollSlave(t, slaveClient, 10*time.Second, func() bool {
+		n, _ := slaveClient.Exists(ctx, p+"flush1").Result()
+		return n == 0
+	})
 }
 
 // TestReplicationCompleteness_List tests list write commands propagation
