@@ -27,12 +27,12 @@ func TestBacklogWAL_AppendAndReplay(t *testing.T) {
 	assert.NoError(t, err)
 	defer wal.Close()
 
-	// Append some entries
+	// Append some entries (each command is 27 bytes)
 	err = wal.Append(0, []byte("*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\n1\r\n"))
 	assert.NoError(t, err)
-	err = wal.Append(18, []byte("*3\r\n$3\r\nSET\r\n$1\r\nb\r\n$1\r\n2\r\n"))
+	err = wal.Append(27, []byte("*3\r\n$3\r\nSET\r\n$1\r\nb\r\n$1\r\n2\r\n"))
 	assert.NoError(t, err)
-	err = wal.Append(36, []byte("*3\r\n$3\r\nSET\r\n$1\r\nc\r\n$1\r\n3\r\n"))
+	err = wal.Append(54, []byte("*3\r\n$3\r\nSET\r\n$1\r\nc\r\n$1\r\n3\r\n"))
 	assert.NoError(t, err)
 
 	err = wal.Flush()
@@ -47,12 +47,12 @@ func TestBacklogWAL_AppendAndReplay(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify replay: offset should match last entry's end
-	assert.Equal(t, int64(54), backlog.GetCurrentOffset())
+	assert.Equal(t, int64(81), backlog.GetCurrentOffset())
 	avail := backlog.GetAvailableLength()
 	assert.True(t, avail > 0)
 
 	// Verify data accessible
-	data, err := backlog.GetRange(0, 18)
+	data, err := backlog.GetRange(0, 27)
 	assert.NoError(t, err)
 	assert.Equal(t, "*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\n1\r\n", string(data))
 }
@@ -66,11 +66,11 @@ func TestBacklogWAL_AppendAndReplay_CircularOverwrite(t *testing.T) {
 
 	// Append enough entries to fill a small backlog multiple times
 	backlog := NewReplicationBacklog(50)
-	cmdBytes := []byte("*3\r\n$3\r\nSET\r\n$1\r\nx\r\n$1\r\n1\r\n") // 18 bytes
+	cmdBytes := []byte("*3\r\n$3\r\nSET\r\n$1\r\nx\r\n$1\r\n1\r\n") // 27 bytes
 
-	// Write 10 commands (180 bytes → backlog wraps around multiple times)
+	// Write 10 commands (270 bytes → backlog wraps around multiple times)
 	for i := 0; i < 10; i++ {
-		offset := int64(i * 18)
+		offset := int64(i * 27)
 		err = wal.Append(offset, cmdBytes)
 		assert.NoError(t, err)
 		backlog.mu.Lock()
@@ -160,17 +160,17 @@ func TestBacklogWAL_Truncate(t *testing.T) {
 	assert.NoError(t, err)
 	defer wal.Close()
 
-	// Write entries at offsets 0, 18, 36, 54
+	// Write entries at offsets 0, 27, 54, 81 (each command is 27 bytes)
 	for i := 0; i < 4; i++ {
-		offset := int64(i * 18)
+		offset := int64(i * 27)
 		err = wal.Append(offset, []byte("*3\r\n$3\r\nSET\r\n$1\r\nx\r\n$1\r\n1\r\n"))
 		assert.NoError(t, err)
 	}
 	err = wal.Flush()
 	assert.NoError(t, err)
 
-	// Truncate everything before offset 36 (keep last 2 entries)
-	err = wal.Truncate(36)
+	// Truncate everything before offset 54 (keep last 2 entries)
+	err = wal.Truncate(54)
 	assert.NoError(t, err)
 
 	// Read remaining file
@@ -202,17 +202,17 @@ func TestBacklogWAL_ReplayTruncated(t *testing.T) {
 	wal, err := NewBacklogWAL(dir)
 	assert.NoError(t, err)
 
-	// Write 4 entries
+	// Write 4 entries (each command is 27 bytes)
 	for i := 0; i < 4; i++ {
-		offset := int64(i * 18)
+		offset := int64(i * 27)
 		err = wal.Append(offset, []byte("*3\r\n$3\r\nSET\r\n$1\r\nx\r\n$1\r\n1\r\n"))
 		assert.NoError(t, err)
 	}
 	err = wal.Flush()
 	assert.NoError(t, err)
 
-	// Truncate at offset 36 (keep entries at offset 36 and 54)
-	err = wal.Truncate(36)
+	// Truncate at offset 54 (keep entries at offset 54 and 81)
+	err = wal.Truncate(54)
 	assert.NoError(t, err)
 
 	err = wal.Close()
@@ -227,8 +227,8 @@ func TestBacklogWAL_ReplayTruncated(t *testing.T) {
 	err = wal2.Replay(backlog)
 	assert.NoError(t, err)
 
-	// Should have the last 2 entries (offset 36 + 18 = 54, then 54 + 18 = 72)
-	assert.Equal(t, int64(72), backlog.GetCurrentOffset())
+	// Should have the last 2 entries (offset 54 + 27 = 81, then 81 + 27 = 108)
+	assert.Equal(t, int64(108), backlog.GetCurrentOffset())
 }
 
 func TestBacklogWAL_Append_AfterClose(t *testing.T) {
@@ -253,9 +253,9 @@ func TestBacklogWAL_CrashRecovery(t *testing.T) {
 	wal, err := NewBacklogWAL(dir)
 	assert.NoError(t, err)
 
-	// Write entries
+	// Write entries (each command is 27 bytes)
 	for i := 0; i < 3; i++ {
-		offset := int64(i * 18)
+		offset := int64(i * 27)
 		err = wal.Append(offset, []byte("*3\r\n$3\r\nSET\r\n$1\r\nx\r\n$1\r\n1\r\n"))
 		assert.NoError(t, err)
 	}

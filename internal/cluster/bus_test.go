@@ -2,7 +2,6 @@ package cluster
 
 import (
 	"bytes"
-	"encoding/json"
 	"net"
 	"strings"
 	"testing"
@@ -60,18 +59,20 @@ func TestWriteBusMsgWithPayload(t *testing.T) {
 	data := buf.String()
 	assert.True(t, strings.HasPrefix(data, "*3\r\n"))
 
+	// Message format: *3\r\n$4\r\nPONG\r\n$7\r\nnode456\r\n$<len>\r\n<binary>\r\n
 	parts := strings.Split(data, "\r\n")
-	for _, p := range parts {
-		if strings.HasPrefix(p, "{") {
-			var decoded GossipPayload
-			err := json.Unmarshal([]byte(p), &decoded)
+	for i, p := range parts {
+		if strings.HasPrefix(p, "G") || strings.HasPrefix(p, "J") {
+			decoded, err := unmarshalGossipPayload([]byte(p))
 			assert.NoError(t, err)
+			assert.NotNil(t, decoded)
 			assert.Equal(t, int64(42), decoded.Epoch)
 			assert.Equal(t, "0-16383", decoded.Slots)
 			return
 		}
+		_ = i
 	}
-	t.Fatal("JSON payload not found in bus message")
+	t.Fatal("gossip payload not found in bus message")
 }
 
 func TestFormatSlotsBrief(t *testing.T) {

@@ -91,8 +91,9 @@ func TestBacklogPersistence_CrashLoss(t *testing.T) {
 	avail := rm2.GetBacklog().GetAvailableLength()
 	assert.Equal(t, int64(0), avail)
 
-	// Verify: HandlePSync with old offset should trigger FULLRESYNC (F1d)
-	result, err := HandlePSync(rm2, rm2.GetReplicationID(), 0)
+	// Verify: HandlePSync with non-zero offset should trigger FULLRESYNC (F1d)
+	// because backlog is empty after crash — the range check would fail.
+	result, err := HandlePSync(rm2, rm2.GetReplicationID(), 1)
 	assert.NoError(t, err)
 	assert.True(t, result.FullResync)
 }

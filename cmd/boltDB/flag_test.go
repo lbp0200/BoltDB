@@ -51,7 +51,7 @@ func TestClientOutputBufferLimitFlag(t *testing.T) {
 	if f == nil {
 		t.Error("expected -client-output-buffer-limit flag to be defined, but it was not found")
 	}
-	if f.DefValue != "0" {
-		t.Errorf("expected default value '0', got '%s'", f.DefValue)
+	if f.DefValue != "33554432" {
+		t.Errorf("expected default value '33554432 (32MB)', got '%s'", f.DefValue)
 	}
 }
