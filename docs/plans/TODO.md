@@ -251,9 +251,12 @@ README 宣称 *"Memory Redis can only store 64GB? BoltDB can handle 100TB!"*，�
 **发现：** `internal/replication/psync.go:172-1846` 包含一个 1675 行的 switch 语句，逐一复制了 handler dispatch 中的命令执行逻辑。每条新增命令和每次 handler 行为变更都需要手动同步到此路径。default branch 仅打一行 log 后 `return nil`，未识别命令被静默跳过。
 
 **建议修复（轻量方案，2 天）：**
-- [ ] 提取 `CommandHandler` 接口，handler dispatch 和 replication dispatch 共享同一个注册表
-- [ ] 命令元数据增加 `IsReplicated` 字段
-- [ ] 添加自动化测试验证 handler 与 replication 的命令覆盖对称性
+- [x] 创建 `ReplicatedCommands` 注册表 (`internal/replication/commands.go`)，列出所有可复制的写命令
+- [x] 创建 `ReplicatedCommandsExcluded` 记录有意不实现的命令及原因（MIGRATE、PUBLISH 等 14 个）
+- [x] 新增 `TestReplicationSymmetry_WriteCommandsCovered` — 拦截未覆盖的写命令 drift
+- [x] 新增 `TestReplicationSymmetry_NoOrphanCommands` — 拦截已删除的孤立命令
+- [x] 补齐 `UNLINK` 到 `executeReplicatedCommand`（与 DEL 共用 case）
+- [ ] 逐步补齐剩余 14 个排除命令（见 `ReplicatedCommandsExcluded`，多为 BoltDB 扩展/DB 级操作）
 
 #### SORT 的有序性缺失（★★★★☆）
 

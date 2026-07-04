@@ -309,11 +309,11 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			}
 		}
 
-	case "DEL":
+	case "DEL", "UNLINK":
 		if len(args) >= 2 {
 			for i := 1; i < len(args); i++ {
 				if _, err := s.Del(string(args[i])); err != nil {
-					return fmt.Errorf("DEL %s: %w", string(args[i]), err)
+					return fmt.Errorf("%s %s: %w", cmd, string(args[i]), err)
 				}
 			}
 			return nil
