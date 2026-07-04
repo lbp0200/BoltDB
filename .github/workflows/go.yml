@@ -67,19 +67,29 @@ jobs:
           cache: true
 
       - name: Fast integration tests (Tier A)
+        # 注意: 下方跳过的测试不是因为不重要，而是因为它们
+        # 需要在特定条件/更长超时下运行，放在 test-heavy (post-merge) 中。
+        # 修改跳过列表时请在对应项后注明原因。
         run: |
+          # ----- 多节点集群测试 (需要启动多个进程, 放 Tier B) -----
           SKIP='TestCluster(MultiNode|Gossip|SlotSync|SetSlotNodePropagation|MovedRedirect|AskRedirect|Failover|MigrateKey|Soak|BlockingFuzz)'
-          SKIP="$SKIP|TestGoroutineLeak"
-          SKIP="$SKIP|TestSoak|TestSoakReplication|TestSoakReplicationShortStrict"
-          SKIP="$SKIP|TestFuzzServer"
-          SKIP="$SKIP|TestChaos"
-          SKIP="$SKIP|TestMixedCluster"
-          SKIP="$SKIP|TestSentinel"
-          SKIP="$SKIP|TestRegression"
-          SKIP="$SKIP|TestShutdownWithReplication"
-          SKIP="$SKIP|TestGracefulShutdown"
-          SKIP="$SKIP|TestRegressionFailoverOscillation"
-          SKIP="$SKIP|TestSplitBrain"
+          # ----- 长时间运行 / 资源密集型 -----
+          SKIP="$SKIP|TestGoroutineLeak"                                          # 需要完整的 goroutine 跟踪
+          SKIP="$SKIP|TestSoak|TestSoakReplication|TestSoakReplicationShortStrict" # 耗时 > 5min
+          SKIP="$SKIP|TestFuzzServer"                                               # 随机 fuzz, 时间不可控
+          SKIP="$SKIP|TestChaos"                                                    # 混沌测试
+          # ----- 多服务依赖 (需要 Redis 或额外实例) -----
+          SKIP="$SKIP|TestMixedCluster"     # 需要外部 Redis 实例
+          SKIP="$SKIP|TestSentinel"          # 需要 sentinel 集群
+          # ----- 回归 / 稳定性 (放 Tier B 单独跑) -----
+          SKIP="$SKIP|TestRegression"       # 回归套件 ~10min
+          # ----- 关闭顺序测试 (需要单独的服务器实例) -----
+          SKIP="$SKIP|TestShutdownWithReplication"  # 主从关闭顺序
+          SKIP="$SKIP|TestGracefulShutdown"         # 优雅关闭
+          # ----- flaky on GHA (资源竞争 / 超时) -----
+          SKIP="$SKIP|TestRegressionFailoverOscillation"  # GHA runner 慢, 33s+ 超时 (独立步骤在 test-heavy 中覆盖)
+          SKIP="$SKIP|TestSplitBrain"                      # GHA 上不可靠 (独立步骤在 test-heavy 中覆盖)
+          # ----- 复制测试 (GHA 上 FULLRESYNC 需要 20-30s, pollSlave 易超时) -----
           SKIP="$SKIP|TestReplication(NewCommands|StreamXDelex|SortedSetCommands|Completeness_Key)"
           go test -race -timeout 600s -skip "$SKIP" -count=1 ./cmd/integration/
 
@@ -127,6 +137,8 @@ jobs:
           go test -race -timeout 120s -run 'TestSentinel' -count=1 ./cmd/integration/
 
       - name: Regression tests (fast)
+        # FailoverOscillation 跳过说明: 已知 flaky（GHA 上 33s+ 超时），
+        # 由下方独立的 "Split brain tests" 步骤覆盖（超时 120s）。
         run: |
           go test -race -timeout 600s \
             -skip 'TestRegression(L0Collapse|ReplicationThrash|ReplicationThrashFullresync|PsyncReconnectNoLoss|DuplicateWindowMeasurement|SnapshotFullresyncOffset|SnapshotConsistency|FailoverOscillation)' \
