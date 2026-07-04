@@ -121,11 +121,14 @@ Active config:
 - [x] **优先级链**：CLI flag > 配置文件 > 自动推导 > 硬编码默认值
 - [x] **deploy/boltdb.toml**：102 行全中文注释的默认配置文件
 
-### ZRANK / ZRANGE by rank — 无跳表 O(n) 线性扫描 ⏳
+### ZRANK / ZRANGE by rank — 无跳表 O(n) 线性扫描 ⏳ → 🔴 P0
 
 **位置：** `internal/store/zrange.go:93-144`、`internal/store/zrank.go:60-82`
 
-**决策：** P2，等 benchmark 证明是热点后再加内存 B-tree 缓存。当前 mid-point 优化已提供部分缓解。
+**原状态：** P2（搁置 5 个月，等 benchmark 证明是热点）
+**新状态：** **P0** — 2026-07-04 第七轮竞争对手架构评审中，被明确指出这是 feature gap 而非实现缺陷。对于一个宣称兼容 Redis sorted set 的数据库，ZRANK O(n) vs Redis O(log n) 是可测量、可沟通的竞争劣势。升级为 P0。
+
+**决策：** 加内存跳跃表或 B-tree 缓存（mid-point 优化仅减半常数，不改变 O(n)）。
 
 ### 规模化验证（P1 — 收购阻塞项，唯一主要缺口）
 
@@ -211,3 +214,74 @@ README 宣称 *"Memory Redis can only store 64GB? BoltDB can handle 100TB!"*，�
 #### Command dispatch 899 行 switch（★☆☆☆☆）
 
 **类型：** 架构偏好，非功能缺陷。当前 switch 模式在 Go 中可正常工作，golangci-lint 可静态检查锁泄漏。建议未来引入命令表（`map[string]Handler`）以支持元数据管理和扩展性，但不阻塞当前开发。
+
+---
+
+## 第七轮：竞争对手架构评审（2026-07-04）
+
+> Redis 核心维护者视角的深度架构评审，覆盖冒泡排序、LSM 天花板、Go GC 三条攻击线。详见本文件最后附注。
+
+### 评审结论：可修复性问题优先级
+
+| 优先级 | 问题 | 代价 | 影响 | 性质 |
+|--------|------|------|------|------|
+| **P0** | **SORT 冒泡排序 → `sort.Slice`** | < 1 人天 | 消除 "amateur" 标签，降低维护成本 | 工程质量 |
+| **P0** | **ZRANK O(n) → O(log n)** | 1-2 周 | 消除 feature gap，提升 sorted set 竞争力 | 功能缺口 |
+| **P1** | **`executeReplicatedCommand` 1675 行 switch 去重** | 2 天-2 周 | 降低复制路径与处理路径 drift 风险 | 工程质量 |
+| **P1** | **规模化验证（10GB→100GB→1TB）** | 2 周-1 月 | 验证 "100TB" 宣称可信度 | 验证缺口 |
+| **P2** | **Go GC 优化（pooling、zero-alloc 路径）** | 持续投入 | 提升 P99，增加并发密度 | 性能优化 |
+| **❌** | **LSM 写放大 / compaction 风暴** | 不可修（路线选择） | 接受为差异化定位的前提条件 | 架构边界 |
+
+### 已确认的待办项
+
+#### SORT 冒泡排序（★★★★★）
+
+**发现：** `internal/server/key_commands.go:721-746` 和 `internal/replication/psync.go:1651-1816` 均手写冒泡排序 O(n²)。Go 标准库 `sort.Slice` / `slices.SortFunc` 可用。
+
+**真正的风险不是主从不一致**（两份代码相同，排序结果一致），而是：
+1. 同为 O(n²) 但冒泡在数据量稍大时（如几千）就明显慢于快排
+2. 代码重复：`executeReplicatedCommand` 的 1675 行 switch 与 handler dispatch 高度重复，未来某一边改排序算法但另一边遗漏时才会出问题
+
+**建议修复：**
+- [x] 两处 SORT 统一替换为 `sort.Slice()`（需带 `alpha`、`asc`/`desc`、`by` 等选项的组合比较器）
+- [x] 补充 `SORT` 的有序性测试（19 个测试，覆盖 list/set/string/zset、ASC/DESC/ALPHA、BY/GET/STORE/LIMIT、重复值、空键、错误类型）
+
+#### executeReplicatedCommand 代码重复（★★★★☆）
+
+**发现：** `internal/replication/psync.go:172-1846` 包含一个 1675 行的 switch 语句，逐一复制了 handler dispatch 中的命令执行逻辑。每条新增命令和每次 handler 行为变更都需要手动同步到此路径。default branch 仅打一行 log 后 `return nil`，未识别命令被静默跳过。
+
+**建议修复（轻量方案，2 天）：**
+- [ ] 提取 `CommandHandler` 接口，handler dispatch 和 replication dispatch 共享同一个注册表
+- [ ] 命令元数据增加 `IsReplicated` 字段
+- [ ] 添加自动化测试验证 handler 与 replication 的命令覆盖对称性
+
+#### SORT 的有序性缺失（★★★★☆）
+
+**发现：** `SORT` 命令当前没有专门的排序正确性测试。`TestRESPShape` 只检查返回类型，不检查元素顺序。只有 `redis-py compat` 和 `node-redis compat` 间接覆盖，但覆盖率不定。
+
+**建议修复：**
+- [ ] 添加 `TestSORTOrdering`：插入已知顺序的数据，验证 `SORT ASC` / `SORT DESC` / `SORT ALPHA` 的返回顺序
+- [ ] 验证 `SORT STORE` + replication 后从节点的顺序一致
+
+### 架构评估：不做修复的记录
+
+以下问题经评审被归类为"路线选择"，不需要"修复"：
+
+| 问题 | 原因 |
+|------|------|
+| LSM 写放大 / compaction 风暴 | BadgerDB 的物理规律，不可消除。已存在的背压系统 + 收敛监测为合理缓解策略 |
+| Go GC 开销 | Go 运行时的固有代价。fork 是 Redis 的对应代价，两者是不同维度而非一方占优 |
+| 协议兼容 ≠ 语义兼容（大规模下） | 这是规模化验证计划要回答的问题，不是代码能直接修的 |
+
+### 评审质量自评
+
+> 第七轮评审以 Redis 核心维护者身份完成，后被内部 reviewer 拆解，发现：
+> - ✅ **SORT 冒泡排序**：真实发现的代码缺陷，9.5/10
+> - ⚠️ **LSM 架构批评**：核心取舍抓得准，但把 Redis 的 fork/AOF rewrite 等代价弱化了，8.5/10
+> - ❌ **Go GC 批评**：基于对旧版 Go GC 的认知，忽视了 1.19+ 并发 GC 的改进，6.5/10
+> - **主从不一致攻击点不成立**：两份代码相同，排序结果必然一致。真正的攻击点是 code duplication + maintenance risk。
+>
+> **内部 reviewer 给出的 3 个更高价值的攻击点：**
+> 1. Redis 命令复杂度失真（SCAN/ZRANGE/SORT 的实际复杂度与 Redis 官方复杂度是否一致）
+> 2. LSM 无法提供 Redis 的尾延迟可预测性（P99/P999 是 LSM 固有弱点）
+> 3. 内存数据结构服务器 vs KV 引擎的语义映射鸿沟（protocol compatibility ≠ semantic compatibility）

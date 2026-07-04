@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -718,30 +719,38 @@ func (h *Handler) handleSORT(state *connState, args [][]byte, remoteAddr string)
 		}
 	}
 
-	// Simple bubble sort (for simplicity)
-	n := len(values)
-	for i := 0; i < n-1; i++ {
-		for j := 0; j < n-i-1; j++ {
-			swap := false
-			if alpha {
-				if asc {
-					swap = values[j] > values[j+1]
-				} else {
-					swap = values[j] < values[j+1]
-				}
-			} else {
-				if asc {
-					swap = scores[j] > scores[j+1]
-				} else {
-					swap = scores[j] < scores[j+1]
-				}
+	// Sort values using standard library (O(n log n))
+	// Use helper struct to keep values and scores in sync
+	type sortItem struct {
+		value string
+		score float64
+	}
+	items := make([]sortItem, len(values))
+	for i := range values {
+		items[i] = sortItem{value: values[i]}
+		if i < len(scores) {
+			items[i].score = scores[i]
+		}
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if alpha {
+			if asc {
+				return items[i].value < items[j].value
 			}
-			if swap {
-				values[j], values[j+1] = values[j+1], values[j]
-				if len(scores) > 0 {
-					scores[j], scores[j+1] = scores[j+1], scores[j]
-				}
-			}
+			return items[i].value > items[j].value
+		}
+		if asc {
+			return items[i].score < items[j].score
+		}
+		return items[i].score > items[j].score
+	})
+	for i := range items {
+		values[i] = items[i].value
+	}
+	if len(scores) > 0 {
+		scores = make([]float64, len(items))
+		for i := range items {
+			scores[i] = items[i].score
 		}
 	}
 
