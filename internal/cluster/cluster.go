@@ -519,15 +519,13 @@ func (c *Cluster) ClearSlotMigration(slot uint32) {
 // 自动从源节点读取所有属于该槽位的 key，通过 DUMP/RESTORE 传输到目标节点，
 // 迁移完成后更新 slot 归属到目标节点。
 func (c *Cluster) MigrateSlot(slot uint32, targetNodeID string, copyKeys bool) error {
-	// 警告：当前实现不是 crash-safe 的。逐 key 迁移（DUMP → TCP → RESTORE → DEL）
-	// 没有两阶段提交、重做日志或回滚机制。连接中断或进程崩溃可能导致数据丢失、
-	// 数据重复或 slot 归属不一致。
-	// 完整的 crash-safe 迁移（WAL + 两阶段提交）预计需要 2-3 周开发。
-	// 当前建议：slot 调整仅在集群初始化或重启时静态配置。参见 docs/plans/TODO.md E3。
+	// 已弃用：请使用 MigrateSlotCrashSafe（migration_journal.go），带有两阶段提交 + 日志恢复。
+	// 本方法没有日志回滚机制，连接中断或进程崩溃可能导致数据丢失。
+	// 保留仅用于向后兼容简单一次性迁移场景。
 	logger.Logger.Warn().
 		Uint32("slot", slot).
 		Str("target", targetNodeID).
-		Msg("PREVIEW: slot migration is not crash-safe (see docs/failures/slot-migration-unsafe.md). Use only for testing.")
+		Msg("DEPRECATED: use MigrateSlotCrashSafe() for crash-safe migration")
 	if slot >= SlotCount {
 		return fmt.Errorf("slot %d out of range", slot)
 	}

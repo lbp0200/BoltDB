@@ -548,7 +548,28 @@ redis-cli -p 6379 GET "test"  # Returns "hello"
 
 1. **RDB Format Incompatibility**: BoltDB and Redis use different RDB formats and cannot exchange RDB snapshot files directly
 2. ~~BoltDB SLAVEOF~~: ✅ **Fixed** — BoltDB now supports the `SLAVEOF`/`REPLICAOF` command, enabling it to act as a replica of a Redis master. Use `SLAVEOF <host> <port>` or start with `--replicaof host:port`.
-3. **No Lua Scripting (EVAL/SCRIPT)**: BoltDB intentionally does not implement Lua scripting (`EVAL`/`SCRIPT` commands). This is a conscious design decision to avoid the security risks (sandbox escape), maintenance burden, and complexity of embedding a Lua runtime. BoltDB is a disk-persistent KV store, not a full Redis replacement — clients should implement script logic on their end.
+3. **No Lua Scripting (EVAL/SCRIPT)**: BoltDB does not support Lua scripting (`EVAL`/`EVALSHA`/`SCRIPT`/`FCALL`). This is a deliberate design decision driven by BoltDB's storage architecture, not a missing feature.
+
+   **Why not?** — The core issue is **long-lived transactions on an LSM-tree**. Redis achieves Lua atomicity by blocking its single-threaded event loop for the script's duration — a natural fit. BoltDB is built on BadgerDB (MVCC + LSM-tree), and wrapping a Lua script in a `db.Update(fn)` transaction would:
+   - Hold a read timestamp for the entire script duration (potentially 100ms+)
+   - Block LSM compaction from dropping old versions under that timestamp
+   - Cause L0 table accumulation, triggering backpressure, delaying or rejecting all other writes
+   - Negate the project's prior engineering work on backpressure (L0 thresholds, write throttling, degradation monitoring)
+
+   **Alternative approaches considered but rejected:**
+   - *Command logging + replay* (execute Lua without a transaction, then replay writes in a short txn): breaks scripts that depend on read-modify-write patterns (most real Lua scripts)
+   - *Per-key locking*: doesn't scale to multi-key scripts, and BadgerDB's MVCC already handles this poorly for long-running access patterns
+
+   **If implemented in the future**, the first version would be a **restricted sandbox** with hard limits:
+   - Max execution time (e.g. 100ms)
+   - Max `redis.call()` invocations per script (e.g. 10,000)
+   - Max return payload (e.g. 8MB)
+   - No dangerous libraries, no non-deterministic operations
+   - All monitored for L0 impact and backpressure interaction
+
+   **Workaround**: For atomic multi-key operations, use `MULTI/EXEC` with `WATCH` (optimistic locking). For high-contention scenarios (distributed locks, rate limiters, counters), the bottleneck is rarely the atomicity mechanism — if you need server-side scripting, consider a client-side Lua library or a separate scripting layer in front of BoltDB.
+
+   See [docs/plans/lua-scripting.md](docs/plans/lua-scripting.md) for full technical analysis and future implementation plan.
 
 ---
 

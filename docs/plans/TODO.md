@@ -18,6 +18,7 @@
 | Redis 8 命令补齐 | 5/5 批次完成 |
 | 全命令准确性测试 | 239/239 命令已覆盖 |
 | Mutation Testing | 5,201 变异体，100% efficacy，Store mcover 90.17% ✅ |
+| Lua 脚本（EVAL/SCRIPT）技术分析 | 已完成，确认不实现，见 [lua-scripting.md](lua-scripting.md) |
 | 收购审查 A–D（第一阶段） | 19/19 项全部完成 |
 | 收购审查 E–F（第二阶段） | 14/14 项全部完成（含 E3 方案B ✅） |
 | 竞争对手算法缺陷修复 | 五轮审查 17/17 项完成（16 已修复 ✅，1 待 benchmark ⏳） |

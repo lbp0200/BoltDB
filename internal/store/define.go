@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -454,7 +455,7 @@ func NewBotreonStoreWithCompression(path string, compressionType CompressionType
 	s := &BotreonStore{
 		db:                  db,
 		compressionType:     compressionType,
-		keyLockMgr:          NewKeyLockManager(256),
+		keyLockMgr:          NewKeyLockManager(runtime.GOMAXPROCS(0) * 16),
 		blockingPopChans:    make(map[string][]chan BlockingResult),
 		blockingZPopChans:   make(map[string][]chan string),
 		streamBlockingChans: make(map[string][]chan StreamReadResult),
