@@ -792,7 +792,6 @@ func TestSPopNEmptyReturnsEmptyArray(t *testing.T) {
 }
 
 func TestSPopNEmptyReturnsEmptyArray_RESP3(t *testing.T) {
-	t.Parallel()
 	handler, state := setupRESP3(t)
 	defer handler.Db.Close()
 
@@ -855,7 +854,6 @@ func TestRESP3Shape_MemoryUsageMissingReturnsNull(t *testing.T) {
 }
 
 func TestRESP3Shape_BLMoveMissingReturnsNull(t *testing.T) {
-	t.Parallel()
 	handler, state := setupRESP3(t)
 	defer handler.Db.Close()
 
@@ -864,7 +862,6 @@ func TestRESP3Shape_BLMoveMissingReturnsNull(t *testing.T) {
 }
 
 func TestRESP3Shape_RPopLPushMissingReturnsNull(t *testing.T) {
-	t.Parallel()
 	handler, state := setupRESP3(t)
 	defer handler.Db.Close()
 

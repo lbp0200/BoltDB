@@ -834,7 +834,6 @@ func TestExecuteCommand_LINSERT_AFTER_Coverage(t *testing.T) {
 
 // TestExecuteCommand_LSET_Coverage tests LSET command
 func TestExecuteCommand_LSET_Coverage(t *testing.T) {
-	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1083,7 +1082,6 @@ func TestExecuteCommand_ZINTERSTORE_Coverage(t *testing.T) {
 
 // TestExecuteCommand_ZDIFFSTORE_Coverage tests ZDIFFSTORE command
 func TestExecuteCommand_ZDIFFSTORE_Coverage(t *testing.T) {
-	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 

@@ -108,7 +108,6 @@ func TestJSONTypeArray(t *testing.T) {
 
 func TestCompressionSnappyWithTTL(t *testing.T) {
 
-
 	// Use a store with Snappy compression
 	dir := t.TempDir()
 	cs, err := NewBotreonStoreWithCompression(dir, CompressionSnappy)
