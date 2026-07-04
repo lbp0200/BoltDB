@@ -121,19 +121,21 @@ Active config:
 - [x] **优先级链**：CLI flag > 配置文件 > 自动推导 > 硬编码默认值
 - [x] **deploy/boltdb.toml**：102 行全中文注释的默认配置文件
 
-### ZRANK / ZRANGE by rank — 无跳表 O(n) 线性扫描 ⏳ → 🔴 P0（待数据决策）
+### ZRANK / ZRANGE by rank — 无跳表 O(n) 线性扫描 → ❌ 暂不实施（建立基准测试替代）
 
 **位置：** `internal/store/zrange.go:93-144`、`internal/store/zrank.go:60-82`
 
-**原状态：** P2（搁置 5 个月，等 benchmark 证明是热点）
-**新状态：** **P0 — 先设计后决策**。设计文档见 [zrank-cache-design.md](zrank-cache-design.md)。
+**最终决策（2026-07-04）：不做。** 理由：
 
-**设计结论：** 推荐方案 A（`google/btree` B-tree 缓存 + write-through + 启动重建），但 **建议先采集使用率数据再实施**。涉及 ~15 个写路径修改，投入 1-2 周，需要数据证明 ROI。
+1. **高投入、高维护成本。** 引入内存 B-tree 缓存需修改 ~15 个写路径 + 启动重建 + 一致性保证，长期维护成本高。
+2. **无生产数据。** 没有用户证明 ZRANK 是热点或瓶颈。
+3. **理论 O(n) ≠ 实际瓶颈。** 在 10K 条目以下，BadgerDB 线性扫描延迟 0.2-2ms，对大多数场景可接受。
 
-**前置条件（1 天）：**
-- [x] 在 metrics 中添加 ZRANK/ZREVRANK/ZRANGE by rank 命令计数（`Handler.incrementCmdCounter`）
-- [ ] 在 soak 或 staging 采集使用率
-- [ ] 如果 ZRANK + ZRANGE by rank < 5%，关闭此任务
+**替代方案：建立性能基线**
+- [ ] 编写 zset 基准测试（100/1K/10K/100K 条目），覆盖 ZRANK/ZRANGE/ZADD
+- [ ] 与 Redis 横向对比，确认瓶颈在排序集索引还是 BadgerDB I/O
+- [ ] 如果 10K+ 条目时 ZRANK 延迟 > 1ms，重新评估缓存方案
+- [ ] 设计文档保留在 `docs/plans/zrank-cache-design.md`，供后续参考
 
 ### 规模化验证（P1 — 收购阻塞项，唯一主要缺口）
 
