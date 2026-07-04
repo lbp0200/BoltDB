@@ -15,7 +15,7 @@ import (
 // ---------- ZMPop (sorted_set.go) ----------
 
 func TestZMPopMultipleKeys(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zmpop_mk1", []ZSetMember{
@@ -32,7 +32,7 @@ func TestZMPopMultipleKeys(t *testing.T) {
 }
 
 func TestZMPopEmptyKeys(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	key, members, err := s.ZMPop([]string{"zmpop_empty1", "zmpop_empty2"}, "MIN", 1)
@@ -42,7 +42,7 @@ func TestZMPopEmptyKeys(t *testing.T) {
 }
 
 func TestZMPopWrongType(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("zmpop_wt", "val")
@@ -51,7 +51,7 @@ func TestZMPopWrongType(t *testing.T) {
 }
 
 func TestZMPopMaxModifier(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zmpop_max", []ZSetMember{
@@ -70,7 +70,7 @@ func TestZMPopMaxModifier(t *testing.T) {
 // ---------- ZUnionStore (sorted_set.go) ----------
 
 func TestZUnionStoreBasic(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zus_a", []ZSetMember{
@@ -88,7 +88,7 @@ func TestZUnionStoreBasic(t *testing.T) {
 }
 
 func TestZUnionStoreWithWeights(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zusw_a", []ZSetMember{
@@ -104,7 +104,7 @@ func TestZUnionStoreWithWeights(t *testing.T) {
 }
 
 func TestZUnionStoreAggregateMax(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zusmax_a", []ZSetMember{
@@ -123,7 +123,7 @@ func TestZUnionStoreAggregateMax(t *testing.T) {
 }
 
 func TestZUnionStoreAggregateMin(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zusmin_a", []ZSetMember{
@@ -144,7 +144,7 @@ func TestZUnionStoreAggregateMin(t *testing.T) {
 // ---------- ZInterStore (sorted_set.go) ----------
 
 func TestZInterStoreBasicP4(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zis_a", []ZSetMember{
@@ -164,7 +164,7 @@ func TestZInterStoreBasicP4(t *testing.T) {
 // ---------- ZDiffStore (sorted_set.go) ----------
 
 func TestZDiffStoreBasic(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zds_a", []ZSetMember{
@@ -184,7 +184,7 @@ func TestZDiffStoreBasic(t *testing.T) {
 // ---------- ZRangeByLex (sorted_set.go) ----------
 
 func TestZRangeByLexEmptyP4(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	results, err := s.ZRangeByLex("zbl_empty", "-", "+", 0, -1)
@@ -193,7 +193,7 @@ func TestZRangeByLexEmptyP4(t *testing.T) {
 }
 
 func TestZRangeByLexWithOffsetP4(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zbl_offset", []ZSetMember{
@@ -213,7 +213,7 @@ func TestZRangeByLexWithOffsetP4(t *testing.T) {
 // ---------- ZRevRangeByLex (sorted_set.go) ----------
 
 func TestZRevRangeByLexP4(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrbl_ok", []ZSetMember{
@@ -231,7 +231,7 @@ func TestZRevRangeByLexP4(t *testing.T) {
 // ---------- ZRemRangeByLex (sorted_set.go) ----------
 
 func TestZRemRangeByLexP4(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrrbl_ok", []ZSetMember{
@@ -252,7 +252,7 @@ func TestZRemRangeByLexP4(t *testing.T) {
 // ---------- ZInterCard (sorted_set.go) ----------
 
 func TestZInterCardBasic(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zic_a", []ZSetMember{
@@ -270,7 +270,7 @@ func TestZInterCardBasic(t *testing.T) {
 }
 
 func TestZInterCardWithLimitP4(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zicl_a", []ZSetMember{
@@ -292,7 +292,7 @@ func TestZInterCardWithLimitP4(t *testing.T) {
 // ---------- ZSetDel (sorted_set.go) ----------
 
 func TestZSetDelP4(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zsd_ok", []ZSetMember{
@@ -310,7 +310,7 @@ func TestZSetDelP4(t *testing.T) {
 // ---------- LPos (list.go) ----------
 
 func TestLPosP4(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lpos_ok", "c", "b", "a")
@@ -322,7 +322,7 @@ func TestLPosP4(t *testing.T) {
 }
 
 func TestLPosNotFoundP4(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lpos_nf", "a", "b")
@@ -334,7 +334,7 @@ func TestLPosNotFoundP4(t *testing.T) {
 }
 
 func TestLPosWithRankP4(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lpos_rk", "a", "b", "a")
@@ -350,7 +350,7 @@ func TestLPosWithRankP4(t *testing.T) {
 // ---------- LMove (list.go) ----------
 
 func TestLMoveP4(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lmove_src", "b", "a")
@@ -370,7 +370,7 @@ func TestLMoveP4(t *testing.T) {
 // ---------- LRem (list.go) ----------
 
 func TestLRemP4(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lrem_ok", "a", "b", "a", "c", "a")
@@ -386,7 +386,7 @@ func TestLRemP4(t *testing.T) {
 // ---------- LSet (list.go) ----------
 
 func TestLSetP4(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lset_ok", "b", "a")
@@ -401,7 +401,7 @@ func TestLSetP4(t *testing.T) {
 // ---------- LTrim (list.go) ----------
 
 func TestLTrimP4(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("ltrim_ok", "e", "d", "c", "b", "a")
@@ -416,7 +416,7 @@ func TestLTrimP4(t *testing.T) {
 // ---------- LInsert (list.go) ----------
 
 func TestLInsertP4(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lins_ok", "c", "a")
@@ -433,7 +433,7 @@ func TestLInsertP4(t *testing.T) {
 // ---------- HGetAll (hash.go) ----------
 
 func TestHGetAllStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("hga_ok", "f1", "v1")
@@ -447,7 +447,7 @@ func TestHGetAllStorePhase3(t *testing.T) {
 // ---------- HIncrBy (hash.go) ----------
 
 func TestHIncrByStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("hib_ok", "f1", "10")
@@ -460,7 +460,7 @@ func TestHIncrByStorePhase3(t *testing.T) {
 // ---------- HIncrByFloat (hash.go) ----------
 
 func TestHIncrByFloatStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("hibf_ok", "f1", "1.5")
@@ -473,7 +473,7 @@ func TestHIncrByFloatStorePhase3(t *testing.T) {
 // ---------- HScan (hash.go) ----------
 
 func TestHScanStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("hs_ok", "f1", "v1")
@@ -488,7 +488,7 @@ func TestHScanStorePhase3(t *testing.T) {
 // ---------- HRandField (hash.go) ----------
 
 func TestHRandFieldStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("hrf_ok", "f1", "v1")
@@ -503,7 +503,7 @@ func TestHRandFieldStorePhase3(t *testing.T) {
 // ---------- SScan (set.go) ----------
 
 func TestSScanStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("sscan_ok", "a", "b", "c", "d")
@@ -516,7 +516,7 @@ func TestSScanStorePhase3(t *testing.T) {
 // ---------- SRandMember (set.go) ----------
 
 func TestSRandMemberStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("srm_ok", "a", "b", "c")
@@ -529,7 +529,7 @@ func TestSRandMemberStorePhase3(t *testing.T) {
 // ---------- SPop (set.go) ----------
 
 func TestSPopStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("spop_ok", "a", "b", "c")
@@ -545,7 +545,7 @@ func TestSPopStorePhase3(t *testing.T) {
 // ---------- SInterStore (set.go) ----------
 
 func TestSInterStoreStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("sis_a", "a", "b")
@@ -559,7 +559,7 @@ func TestSInterStoreStorePhase3(t *testing.T) {
 // ---------- SUnionStore (set.go) ----------
 
 func TestSUnionStoreStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("sus_a", "a", "b")
@@ -573,7 +573,7 @@ func TestSUnionStoreStorePhase3(t *testing.T) {
 // ---------- SDiffStore (set.go) ----------
 
 func TestSDiffStoreStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("sds_a", "a", "b", "c")
@@ -587,7 +587,7 @@ func TestSDiffStoreStorePhase3(t *testing.T) {
 // ---------- SMove (set.go) ----------
 
 func TestSMoveStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("smv_src", "a", "b")
@@ -606,7 +606,7 @@ func TestSMoveStorePhase3(t *testing.T) {
 // ---------- SInter (set.go) ----------
 
 func TestSInterStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("si_a", "a", "b")
@@ -620,7 +620,7 @@ func TestSInterStorePhase3(t *testing.T) {
 // ---------- SDiff (set.go) ----------
 
 func TestSDiffStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("sd_a", "a", "b", "c")
@@ -634,7 +634,7 @@ func TestSDiffStorePhase3(t *testing.T) {
 // ---------- SUnion (set.go) ----------
 
 func TestSUnionStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("su_a", "a", "b")
@@ -648,7 +648,7 @@ func TestSUnionStorePhase3(t *testing.T) {
 // ---------- PFAdd / PFCount (hyperloglog.go) ----------
 
 func TestPFAddStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	added, err := s.PFAdd("pfadd_ok", "a", "b", "c")
@@ -657,7 +657,7 @@ func TestPFAddStorePhase3(t *testing.T) {
 }
 
 func TestPFCountStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.PFAdd("pfcount_ok", "a", "b", "c")
@@ -669,7 +669,7 @@ func TestPFCountStorePhase3(t *testing.T) {
 // ---------- PFMerge (hyperloglog.go) ----------
 
 func TestPFMergeStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.PFAdd("pfm_a", "a", "b")

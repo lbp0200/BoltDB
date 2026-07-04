@@ -18,7 +18,7 @@ import (
 // ---------- Del: JSON key cleanup ----------
 
 func TestDelJSONKey(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, err := s.JSONSet("del_json_key", "$", `{"a":1}`, false, false)
@@ -34,7 +34,7 @@ func TestDelJSONKey(t *testing.T) {
 }
 
 func TestDelJSONKeyNonExistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	deleted, err := s.Del("del_json_nonexist")
@@ -43,7 +43,7 @@ func TestDelJSONKeyNonExistent(t *testing.T) {
 }
 
 func TestDelJSONKeyMultiple(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, err := s.JSONSet("del_json_a", "$", `{"x":1}`, false, false)
@@ -68,7 +68,7 @@ func TestDelJSONKeyMultiple(t *testing.T) {
 // ---------- Del: TimeSeries key cleanup ----------
 
 func TestDelTimeSeriesKey(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, err := s.TSAdd("del_ts_key", 1000, 1.0, TSAddOptions{})
@@ -84,7 +84,7 @@ func TestDelTimeSeriesKey(t *testing.T) {
 }
 
 func TestDelTimeSeriesKeyNonExistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	deleted, err := s.Del("del_ts_nonexist")
@@ -95,7 +95,7 @@ func TestDelTimeSeriesKeyNonExistent(t *testing.T) {
 // ---------- Del: multiple key types in one call ----------
 
 func TestDelMultipleKeyTypesInOneCall(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "del_multi_str", "val1")
@@ -121,7 +121,7 @@ func TestDelMultipleKeyTypesInOneCall(t *testing.T) {
 // ---------- Del: key type-specific cleanup depth ----------
 
 func TestDelStreamKeyWithMultipleEntries(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	for i := 0; i < 5; i++ {
@@ -141,7 +141,7 @@ func TestDelStreamKeyWithMultipleEntries(t *testing.T) {
 }
 
 func TestDelHLLKey(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, err := s.PFAdd("del_hll_key", "a", "b", "c")
@@ -156,7 +156,7 @@ func TestDelHLLKey(t *testing.T) {
 }
 
 func TestDelGeoKeyViaDel(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, err := s.GeoAdd("del_geo_key", []GeoMember{{Member: "m1", Lon: 1.0, Lat: 2.0}})
@@ -173,7 +173,7 @@ func TestDelGeoKeyViaDel(t *testing.T) {
 // ---------- Rename: all type branches when destination exists ----------
 
 func TestRenameOverwriteString(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "rn_str_src", "old")
@@ -191,7 +191,7 @@ func TestRenameOverwriteString(t *testing.T) {
 }
 
 func TestRenameOverwriteList(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("rn_list_src", "a", "b")
@@ -208,7 +208,7 @@ func TestRenameOverwriteList(t *testing.T) {
 }
 
 func TestRenameOverwriteHash(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("rn_hash_src", "f1", "v1")
@@ -226,7 +226,7 @@ func TestRenameOverwriteHash(t *testing.T) {
 }
 
 func TestRenameOverwriteSet(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("rn_set_src", "a", "b")
@@ -243,7 +243,7 @@ func TestRenameOverwriteSet(t *testing.T) {
 }
 
 func TestRenameOverwriteSortedSet(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "rn_zset_src", []ZSetMember{{Member: "m1", Score: 1.0}})
@@ -262,7 +262,7 @@ func TestRenameOverwriteSortedSet(t *testing.T) {
 // ---------- Rename: TTL preservation ----------
 
 func TestRenameStringWithTTL(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("rn_ttl_src", "val")
@@ -280,7 +280,7 @@ func TestRenameStringWithTTL(t *testing.T) {
 }
 
 func TestRenameListWithTTL(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("rn_list_ttl_src", "a")
@@ -295,7 +295,7 @@ func TestRenameListWithTTL(t *testing.T) {
 }
 
 func TestRenameHashWithTTL(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("rn_hash_ttl_src", "f", "v")
@@ -314,7 +314,7 @@ func TestRenameHashWithTTL(t *testing.T) {
 }
 
 func TestRenameSetWithTTL(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("rn_set_ttl_src", "a")
@@ -329,7 +329,7 @@ func TestRenameSetWithTTL(t *testing.T) {
 }
 
 func TestRenameSortedSetWithTTL(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "rn_zset_ttl_src", []ZSetMember{{Member: "m1", Score: 1.0}})
@@ -346,7 +346,7 @@ func TestRenameSortedSetWithTTL(t *testing.T) {
 // ---------- TTL: nano format, nonexistent key, expired key ----------
 
 func TestTTLKeyNonExistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	ttl, err := s.TTL("ttl_nonexist_key")
@@ -355,7 +355,7 @@ func TestTTLKeyNonExistent(t *testing.T) {
 }
 
 func TestTTLKeyNoExpiry(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "ttl_noexpire", "val")
@@ -365,7 +365,7 @@ func TestTTLKeyNoExpiry(t *testing.T) {
 }
 
 func TestTTLKeyWithSecondFormatExpiry(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("ttl_sec_fmt", "val")
@@ -377,7 +377,7 @@ func TestTTLKeyWithSecondFormatExpiry(t *testing.T) {
 }
 
 func TestTTLKeyWithExpiredSecondFormat(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "ttl_expired_sec", "val")
@@ -396,7 +396,7 @@ func TestTTLKeyWithExpiredSecondFormat(t *testing.T) {
 // ---------- TTL: Value key deleted (corrupted state) ----------
 
 func TestTTLKeyCorruptedValueDeleted(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "ttl_corrupt", "val")
@@ -418,7 +418,7 @@ func TestTTLKeyCorruptedValueDeleted(t *testing.T) {
 // ---------- PTTL: same patterns ----------
 
 func TestPTTLKeyNonExistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	pttl, err := s.PTTL("pttl_nonexist_key")
@@ -427,7 +427,7 @@ func TestPTTLKeyNonExistent(t *testing.T) {
 }
 
 func TestPTTLKeyNoExpiry(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "pttl_noexpire", "val")
@@ -437,7 +437,7 @@ func TestPTTLKeyNoExpiry(t *testing.T) {
 }
 
 func TestPTTLKeyWithExpiry(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("pttl_with_expire", "val")
@@ -451,7 +451,7 @@ func TestPTTLKeyWithExpiry(t *testing.T) {
 // ---------- ExpireAt / PExpireAt ----------
 
 func TestExpireAtInPast(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "ea_past", "val")
@@ -464,7 +464,7 @@ func TestExpireAtInPast(t *testing.T) {
 }
 
 func TestPExpireAtInPast(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "pea_past", "val")
@@ -476,7 +476,7 @@ func TestPExpireAtInPast(t *testing.T) {
 // ---------- ObjectEncoding ----------
 
 func TestObjectEncodingAllTypes(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "obj_str", "val")
@@ -504,7 +504,7 @@ func TestObjectEncodingAllTypes(t *testing.T) {
 }
 
 func TestObjectEncodingNonExistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	enc, err := s.ObjectEncoding("obj_nonexist")
@@ -515,7 +515,7 @@ func TestObjectEncodingNonExistent(t *testing.T) {
 // ---------- ObjectRefCount ----------
 
 func TestObjectRefCountExistingKey(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "refcount_key", "val")
@@ -525,7 +525,7 @@ func TestObjectRefCountExistingKey(t *testing.T) {
 }
 
 func TestObjectRefCountNonExistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	rc, err := s.ObjectRefCount("refcount_nonexist")
@@ -536,7 +536,7 @@ func TestObjectRefCountNonExistent(t *testing.T) {
 // ---------- ObjectIdleTime ----------
 
 func TestObjectIdleTime(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "idletime_key", "val")
@@ -548,7 +548,7 @@ func TestObjectIdleTime(t *testing.T) {
 // ---------- Scan with patterns ----------
 
 func TestScanWithPattern(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "scan:abc", "1")
@@ -562,7 +562,7 @@ func TestScanWithPattern(t *testing.T) {
 }
 
 func TestScanWithCount(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	for i := 0; i < 10; i++ {
@@ -579,7 +579,7 @@ func TestScanWithCount(t *testing.T) {
 }
 
 func TestScanZeroCount(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "scan_zc", "val")
@@ -592,7 +592,7 @@ func TestScanZeroCount(t *testing.T) {
 // ---------- Keys with patterns ----------
 
 func TestKeysPatternStar(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "kpat_a", "1")
@@ -604,7 +604,7 @@ func TestKeysPatternStar(t *testing.T) {
 }
 
 func TestKeysPatternQuestionMark(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "kq_a", "1")
@@ -617,7 +617,7 @@ func TestKeysPatternQuestionMark(t *testing.T) {
 }
 
 func TestKeysPatternBacktrack(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "kb_abc", "1")
@@ -631,7 +631,7 @@ func TestKeysPatternBacktrack(t *testing.T) {
 }
 
 func TestKeysPatternStarAtEnd(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "kse_hello", "1")
@@ -645,7 +645,7 @@ func TestKeysPatternStarAtEnd(t *testing.T) {
 // ---------- RandomKey ----------
 
 func TestRandomKeyEmpty(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	key, err := s.RandomKey()
@@ -654,7 +654,7 @@ func TestRandomKeyEmpty(t *testing.T) {
 }
 
 func TestRandomKeySingle(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "rkey_single", "val")
@@ -664,7 +664,7 @@ func TestRandomKeySingle(t *testing.T) {
 }
 
 func TestRandomKeyMultiple(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "rkey_a", "1")
@@ -679,7 +679,7 @@ func TestRandomKeyMultiple(t *testing.T) {
 // ---------- Dump: all types ----------
 
 func TestDumpString(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "dump_str", "hello")
@@ -690,7 +690,7 @@ func TestDumpString(t *testing.T) {
 }
 
 func TestDumpList(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("dump_list", "a", "b")
@@ -700,7 +700,7 @@ func TestDumpList(t *testing.T) {
 }
 
 func TestDumpHash(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("dump_hash", "f", "v")
@@ -710,7 +710,7 @@ func TestDumpHash(t *testing.T) {
 }
 
 func TestDumpSet(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("dump_set", "m1", "m2")
@@ -720,7 +720,7 @@ func TestDumpSet(t *testing.T) {
 }
 
 func TestDumpSortedSet(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "dump_zset", []ZSetMember{
@@ -733,7 +733,7 @@ func TestDumpSortedSet(t *testing.T) {
 }
 
 func TestDumpNonExistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, err := s.Dump("dump_nonexist")
@@ -741,7 +741,7 @@ func TestDumpNonExistent(t *testing.T) {
 }
 
 func TestDumpStringWithTTL(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "dump_ttl_str", "val")
@@ -757,7 +757,7 @@ func TestDumpStringWithTTL(t *testing.T) {
 // ---------- Expire: various edge cases ----------
 
 func TestExpireNonExistentKey(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	result, err := s.Expire("expire_nonexist", 10)
@@ -766,7 +766,7 @@ func TestExpireNonExistentKey(t *testing.T) {
 }
 
 func TestExpireZeroTTL(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "expire_zero", "val")
@@ -778,7 +778,7 @@ func TestExpireZeroTTL(t *testing.T) {
 }
 
 func TestExpireNegativeTTL(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "expire_neg", "val")
@@ -790,7 +790,7 @@ func TestExpireNegativeTTL(t *testing.T) {
 }
 
 func TestPExpireNonExistentKey(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	result, err := s.PExpire("pexpire_nonexist", 10000)
@@ -799,7 +799,7 @@ func TestPExpireNonExistentKey(t *testing.T) {
 }
 
 func TestPersistNonExistentKey(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	result, err := s.Persist("persist_nonexist")
@@ -808,7 +808,7 @@ func TestPersistNonExistentKey(t *testing.T) {
 }
 
 func TestPersistKeyWithTTL(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "persist_with_ttl", "val")
@@ -825,7 +825,7 @@ func TestPersistKeyWithTTL(t *testing.T) {
 // ---------- Match pattern edge cases ----------
 
 func TestMatchPatternEmptyKey(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "", "val")
@@ -835,7 +835,7 @@ func TestMatchPatternEmptyKey(t *testing.T) {
 }
 
 func TestMatchPatternComplex(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "abc123", "1")
@@ -849,7 +849,7 @@ func TestMatchPatternComplex(t *testing.T) {
 }
 
 func TestMatchPatternNoMatch(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "hello", "1")
@@ -861,7 +861,7 @@ func TestMatchPatternNoMatch(t *testing.T) {
 // ---------- RenameNX ----------
 
 func TestRenameNXDestinationExists(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "rnx_src", "val1")
@@ -879,7 +879,7 @@ func TestRenameNXDestinationExists(t *testing.T) {
 }
 
 func TestRenameNXSourceNotExists(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	result, err := s.RenameNX("rnx_nosrc", "rnx_dst2")
@@ -890,7 +890,7 @@ func TestRenameNXSourceNotExists(t *testing.T) {
 // ---------- Scan with cursor ----------
 
 func TestScanWithCursor(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	for i := 0; i < 5; i++ {
@@ -913,7 +913,7 @@ func TestScanWithCursor(t *testing.T) {
 // ---------- Exists with multiple keys ----------
 
 func TestExistsMultipleKeys(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "exists_a", "1")
@@ -935,7 +935,7 @@ func TestExistsMultipleKeys(t *testing.T) {
 // ---------- Type ----------
 
 func TestTypeAllTypes(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustSet(t, s, "type_str", "val")
@@ -965,7 +965,7 @@ func TestTypeAllTypes(t *testing.T) {
 }
 
 func TestTypeNonExistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	kt, err := s.Type("type_nonexist")

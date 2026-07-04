@@ -18,7 +18,7 @@ import (
 // ================== base.go RDB length encoding ==================
 
 func TestRDBLengthRoundtripSmall(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// Test RDB length encoding at boundary: 63 (max 6-bit)
@@ -38,7 +38,7 @@ func TestRDBLengthRoundtripSmall(t *testing.T) {
 }
 
 func TestRDBLengthRoundtrip14BitP6(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// Test Dump/Restore preserves value (RDB encoding exercised internally)
@@ -56,7 +56,7 @@ func TestRDBLengthRoundtrip14BitP6(t *testing.T) {
 }
 
 func TestRDBLengthRoundtripLarge32BitP6(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// Test Dump/Restore with a unique large value (no null bytes)
@@ -76,7 +76,7 @@ func TestRDBLengthRoundtripLarge32BitP6(t *testing.T) {
 // ================== base.go TTL/PTTL expired paths ==================
 
 func TestTTLExpiredNanoFormatP6(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// Create a key with TTL that will expire quickly
@@ -89,7 +89,7 @@ func TestTTLExpiredNanoFormatP6(t *testing.T) {
 }
 
 func TestPTTLExpiredNanoFormatP6(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SetWithTTL("pttl_en", "val", 1*time.Second)
@@ -101,7 +101,7 @@ func TestPTTLExpiredNanoFormatP6(t *testing.T) {
 }
 
 func TestTTLExpiredSecondFormat(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// Use TTL that's very short
@@ -114,7 +114,7 @@ func TestTTLExpiredSecondFormat(t *testing.T) {
 }
 
 func TestPTTLExpiredSecondFormat(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SetWithTTL("pttl_es", "val", 1*time.Second)
@@ -128,7 +128,7 @@ func TestPTTLExpiredSecondFormat(t *testing.T) {
 // ================== base.go TTL/PTTL no expiry ==================
 
 func TestTTLNoExpiry(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("ttl_no", "val")
@@ -138,7 +138,7 @@ func TestTTLNoExpiry(t *testing.T) {
 }
 
 func TestPTTLNoExpiry(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("pttl_no", "val")
@@ -148,7 +148,7 @@ func TestPTTLNoExpiry(t *testing.T) {
 }
 
 func TestTTLNonexistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	ttl, err := s.TTL("ttl_nx")
@@ -157,7 +157,7 @@ func TestTTLNonexistent(t *testing.T) {
 }
 
 func TestPTTLNonexistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	pttl, err := s.PTTL("pttl_nx")
@@ -168,7 +168,7 @@ func TestPTTLNonexistent(t *testing.T) {
 // ================== base.go Dump/Restore TTL preservation ==================
 
 func TestDumpRestoreWithTTL(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SetWithTTL("dr_ttl", "hello", 30*time.Second)
@@ -185,7 +185,7 @@ func TestDumpRestoreWithTTL(t *testing.T) {
 }
 
 func TestDumpRestoreStringAllTypes(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// Test Dump/Restore for string
@@ -200,7 +200,7 @@ func TestDumpRestoreStringAllTypes(t *testing.T) {
 }
 
 func TestDumpRestoreList(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("dr_list", "c", "b", "a")
@@ -214,7 +214,7 @@ func TestDumpRestoreList(t *testing.T) {
 }
 
 func TestDumpRestoreHash(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("dr_hash", "f1", "v1")
@@ -229,7 +229,7 @@ func TestDumpRestoreHash(t *testing.T) {
 }
 
 func TestDumpRestoreSet(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("dr_set", "x", "y", "z")
@@ -243,7 +243,7 @@ func TestDumpRestoreSet(t *testing.T) {
 }
 
 func TestDumpRestoreSortedSet(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("dr_zset", []ZSetMember{
@@ -261,7 +261,7 @@ func TestDumpRestoreSortedSet(t *testing.T) {
 }
 
 func TestDumpNonexistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	data, err := s.Dump("dr_ne")
@@ -270,7 +270,7 @@ func TestDumpNonexistent(t *testing.T) {
 }
 
 func TestDumpEmptyString(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("dr_es", "")
@@ -284,7 +284,7 @@ func TestDumpEmptyString(t *testing.T) {
 }
 
 func TestRestoreWithTTL0NoExpiry(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("r_ttl0", "value")
@@ -301,7 +301,7 @@ func TestRestoreWithTTL0NoExpiry(t *testing.T) {
 // ================== base.go MatchPattern ==================
 
 func TestMatchPatternExact(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("mp_a", "1")
@@ -315,7 +315,7 @@ func TestMatchPatternExact(t *testing.T) {
 }
 
 func TestMatchPatternSingleChar(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("ms_a", "1")
@@ -328,7 +328,7 @@ func TestMatchPatternSingleChar(t *testing.T) {
 }
 
 func TestMatchPatternNoMatchP6(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("mn_x", "1")
@@ -338,7 +338,7 @@ func TestMatchPatternNoMatchP6(t *testing.T) {
 }
 
 func TestMatchPatternAll(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("ma_a", "1")
@@ -352,7 +352,7 @@ func TestMatchPatternAll(t *testing.T) {
 // ================== base.go Scan ==================
 
 func TestScanBasic(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("sc_a", "1")
@@ -365,7 +365,7 @@ func TestScanBasic(t *testing.T) {
 }
 
 func TestScanWithCountP6(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	for i := 0; i < 20; i++ {
@@ -382,7 +382,7 @@ func TestScanWithCountP6(t *testing.T) {
 }
 
 func TestScanNoMatch(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("snm_a", "1")
@@ -394,7 +394,7 @@ func TestScanNoMatch(t *testing.T) {
 // ================== base.go MemoryUsage ==================
 
 func TestMemoryUsageString(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("mu_str", "hello world")
@@ -404,7 +404,7 @@ func TestMemoryUsageString(t *testing.T) {
 }
 
 func TestMemoryUsageList(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("mu_list", "a", "b", "c")
@@ -414,7 +414,7 @@ func TestMemoryUsageList(t *testing.T) {
 }
 
 func TestMemoryUsageHash(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("mu_hash", "f1", "v1")
@@ -425,7 +425,7 @@ func TestMemoryUsageHash(t *testing.T) {
 }
 
 func TestMemoryUsageSet(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("mu_set", "x", "y")
@@ -435,7 +435,7 @@ func TestMemoryUsageSet(t *testing.T) {
 }
 
 func TestMemoryUsageZSet(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("mu_zset", []ZSetMember{
@@ -448,7 +448,7 @@ func TestMemoryUsageZSet(t *testing.T) {
 }
 
 func TestMemoryUsageNonexistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, err := s.MemoryUsage("mu_ne")
@@ -458,7 +458,7 @@ func TestMemoryUsageNonexistent(t *testing.T) {
 // ================== base.go ExpireTime / PExpireTime ==================
 
 func TestExpireTimeWithExpiry(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SetWithTTL("et_e", "val", 60*time.Second)
@@ -468,7 +468,7 @@ func TestExpireTimeWithExpiry(t *testing.T) {
 }
 
 func TestExpireTimeNoExpiry(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("et_n", "val")
@@ -478,7 +478,7 @@ func TestExpireTimeNoExpiry(t *testing.T) {
 }
 
 func TestPExpireTimeWithExpiry(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SetWithTTL("pet_e", "val", 60*time.Second)
@@ -488,7 +488,7 @@ func TestPExpireTimeWithExpiry(t *testing.T) {
 }
 
 func TestPExpireTimeNoExpiry(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("pet_n", "val")
@@ -500,7 +500,7 @@ func TestPExpireTimeNoExpiry(t *testing.T) {
 // ================== base.go Rename ==================
 
 func TestRenameWithTTL(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SetWithTTL("rn_ttl", "val", 30*time.Second)
@@ -515,7 +515,7 @@ func TestRenameWithTTL(t *testing.T) {
 }
 
 func TestRenameOverwriteStringP6(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("rn_ow1", "old")
@@ -530,7 +530,7 @@ func TestRenameOverwriteStringP6(t *testing.T) {
 // ================== sorted_set.go ==================
 
 func TestZRangeByScoreExclusive(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrbs_ex", []ZSetMember{
@@ -547,7 +547,7 @@ func TestZRangeByScoreExclusive(t *testing.T) {
 }
 
 func TestZRangeByScoreInclusiveBounds(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrbs_inc", []ZSetMember{
@@ -562,7 +562,7 @@ func TestZRangeByScoreInclusiveBounds(t *testing.T) {
 }
 
 func TestZRangeByScoreWithLimit(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrbs_lim", []ZSetMember{
@@ -579,7 +579,7 @@ func TestZRangeByScoreWithLimit(t *testing.T) {
 }
 
 func TestZRevRangeByScoreExclusive(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrrbs_ex", []ZSetMember{
@@ -595,7 +595,7 @@ func TestZRevRangeByScoreExclusive(t *testing.T) {
 }
 
 func TestZRemRangeByScoreExclusiveP6(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrrbs_del", []ZSetMember{
@@ -614,7 +614,7 @@ func TestZRemRangeByScoreExclusiveP6(t *testing.T) {
 }
 
 func TestZCountExclusive(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zc_ex", []ZSetMember{
@@ -630,7 +630,7 @@ func TestZCountExclusive(t *testing.T) {
 }
 
 func TestZScoreNonexistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zs_ne", []ZSetMember{
@@ -644,7 +644,7 @@ func TestZScoreNonexistent(t *testing.T) {
 }
 
 func TestZRankNonexistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zr_ne", []ZSetMember{
@@ -658,7 +658,7 @@ func TestZRankNonexistent(t *testing.T) {
 }
 
 func TestZRevRankNonexistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrr_ne", []ZSetMember{
@@ -671,7 +671,7 @@ func TestZRevRankNonexistent(t *testing.T) {
 }
 
 func TestZLexCountBasic(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zlc_b", []ZSetMember{
@@ -687,7 +687,7 @@ func TestZLexCountBasic(t *testing.T) {
 }
 
 func TestZRangeByLexExclusiveBounds(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrbl_ex", []ZSetMember{
@@ -703,7 +703,7 @@ func TestZRangeByLexExclusiveBounds(t *testing.T) {
 }
 
 func TestZRevRangeByLexExclusiveBounds(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrrbl_ex", []ZSetMember{
@@ -719,7 +719,7 @@ func TestZRevRangeByLexExclusiveBounds(t *testing.T) {
 }
 
 func TestZRemRangeByLexExclusiveP6(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrrbl_del2", []ZSetMember{
@@ -741,7 +741,7 @@ func TestZRemRangeByLexExclusiveP6(t *testing.T) {
 // ================== sorted_set.go normalizeRankRange ==================
 
 func TestZRangeNegativeRank(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrn_neg", []ZSetMember{
@@ -757,7 +757,7 @@ func TestZRangeNegativeRank(t *testing.T) {
 }
 
 func TestZRangeStopExceedsLength(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrn_stop", []ZSetMember{
@@ -772,7 +772,7 @@ func TestZRangeStopExceedsLength(t *testing.T) {
 }
 
 func TestZRevRangeNegativeRank(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrr_neg", []ZSetMember{
@@ -789,7 +789,7 @@ func TestZRevRangeNegativeRank(t *testing.T) {
 // ================== sorted_set.go applyAggregateScore ==================
 
 func TestZUnionStoreAggMax(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zus_max1", []ZSetMember{{Member: "a", Score: 1.0}})
@@ -804,7 +804,7 @@ func TestZUnionStoreAggMax(t *testing.T) {
 }
 
 func TestZUnionStoreAggMin(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zus_min1", []ZSetMember{{Member: "a", Score: 1.0}})
@@ -819,7 +819,7 @@ func TestZUnionStoreAggMin(t *testing.T) {
 }
 
 func TestZUnionStoreAggSum(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zus_sum1", []ZSetMember{{Member: "a", Score: 1.0}})
@@ -836,7 +836,7 @@ func TestZUnionStoreAggSum(t *testing.T) {
 // ================== sorted_set.go ZInterStore ==================
 
 func TestZInterStoreSum(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zis_s1", []ZSetMember{
@@ -859,7 +859,7 @@ func TestZInterStoreSum(t *testing.T) {
 // ================== base.go NextStartup / cleanup ==================
 
 func TestNextStartupCleansOrphans(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// Create a key, then manually delete the type key to simulate orphan
@@ -875,7 +875,7 @@ func TestNextStartupCleansOrphans(t *testing.T) {
 }
 
 func TestNextStartupCleansOrphanedList(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("ns_orl", "a", "b")
@@ -889,7 +889,7 @@ func TestNextStartupCleansOrphanedList(t *testing.T) {
 }
 
 func TestNextStartupCleansOrphanedHash(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("ns_orh", "f1", "v1")
@@ -903,7 +903,7 @@ func TestNextStartupCleansOrphanedHash(t *testing.T) {
 }
 
 func TestNextStartupCleansOrphanedSet(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("ns_ors", "x", "y")
@@ -917,7 +917,7 @@ func TestNextStartupCleansOrphanedSet(t *testing.T) {
 }
 
 func TestNextStartupCleansOrphanedZSet(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("ns_orz", []ZSetMember{{Member: "a", Score: 1.0}})

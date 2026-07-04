@@ -16,7 +16,7 @@ import (
 // ================== sorted_set.go memberInLexRange boundary cases ==================
 
 func TestZRangeByLexMaxPlus(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrbl_p", []ZSetMember{
@@ -32,7 +32,7 @@ func TestZRangeByLexMaxPlus(t *testing.T) {
 }
 
 func TestZRangeByLexMaxExclusive(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrbl_me", []ZSetMember{
@@ -48,7 +48,7 @@ func TestZRangeByLexMaxExclusive(t *testing.T) {
 }
 
 func TestZRangeByLexMaxInclusive(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrbl_mi", []ZSetMember{
@@ -64,7 +64,7 @@ func TestZRangeByLexMaxInclusive(t *testing.T) {
 }
 
 func TestZRangeByLexMaxPlain(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrbl_mp", []ZSetMember{
@@ -82,7 +82,7 @@ func TestZRangeByLexMaxPlain(t *testing.T) {
 // ================== sorted_set.go ZRank / ZRevRank ==================
 
 func TestZRankBasic(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zr_b", []ZSetMember{
@@ -97,7 +97,7 @@ func TestZRankBasic(t *testing.T) {
 }
 
 func TestZRankFirst(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zr_f", []ZSetMember{
@@ -111,7 +111,7 @@ func TestZRankFirst(t *testing.T) {
 }
 
 func TestZRankLast(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zr_l", []ZSetMember{
@@ -126,7 +126,7 @@ func TestZRankLast(t *testing.T) {
 }
 
 func TestZRevRankBasic(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrr_b", []ZSetMember{
@@ -141,7 +141,7 @@ func TestZRevRankBasic(t *testing.T) {
 }
 
 func TestZRevRankFirst(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrr_f", []ZSetMember{
@@ -158,7 +158,7 @@ func TestZRevRankFirst(t *testing.T) {
 // ================== sorted_set.go ZScore ==================
 
 func TestZScoreExists(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zs_e", []ZSetMember{
@@ -172,7 +172,7 @@ func TestZScoreExists(t *testing.T) {
 }
 
 func TestZScoreNonExist(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zs_ne", []ZSetMember{
@@ -188,7 +188,7 @@ func TestZScoreNonExist(t *testing.T) {
 // ================== sorted_set.go ZRange boundary ==================
 
 func TestZRangeStartExceedsTotal(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zr_se", []ZSetMember{
@@ -203,7 +203,7 @@ func TestZRangeStartExceedsTotal(t *testing.T) {
 }
 
 func TestZRangeBothNegativeBeyond(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zr_bn", []ZSetMember{
@@ -218,7 +218,7 @@ func TestZRangeBothNegativeBeyond(t *testing.T) {
 }
 
 func TestZRangeEmptySet(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	results, err := s.ZRange("zr_empty", 0, -1)
@@ -227,7 +227,7 @@ func TestZRangeEmptySet(t *testing.T) {
 }
 
 func TestZRevRangeStopBeyond(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zrr_sb", []ZSetMember{
@@ -243,7 +243,7 @@ func TestZRevRangeStopBeyond(t *testing.T) {
 // ================== sorted_set.go ZSetDel ==================
 
 func TestZSetDelP8(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zsd_p8", []ZSetMember{
@@ -261,7 +261,7 @@ func TestZSetDelP8(t *testing.T) {
 // ================== sorted_set.go ZMPop ==================
 
 func TestZMPopMin(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zmp_min", []ZSetMember{
@@ -278,7 +278,7 @@ func TestZMPopMin(t *testing.T) {
 }
 
 func TestZMPopMaxP8(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zmp_max", []ZSetMember{
@@ -297,7 +297,7 @@ func TestZMPopMaxP8(t *testing.T) {
 // ================== sorted_set.go ZInterCard ==================
 
 func TestZInterCardNoOverlap(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zic_no", []ZSetMember{
@@ -313,7 +313,7 @@ func TestZInterCardNoOverlap(t *testing.T) {
 }
 
 func TestZInterCardAllOverlap(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("zic_all", []ZSetMember{
@@ -333,14 +333,14 @@ func TestZInterCardAllOverlap(t *testing.T) {
 // ================== define.go additional ==================
 
 func TestGetDBNotNil(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 	db := s.GetDB()
 	assert.NotNil(t, db)
 }
 
 func TestCheckP8(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 	err := s.Check()
 	assert.NoError(t, err)
@@ -349,7 +349,7 @@ func TestCheckP8(t *testing.T) {
 // ================== base.go remaining ==================
 
 func TestObjectEncodingString(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("oe_s", "hello")
@@ -359,7 +359,7 @@ func TestObjectEncodingString(t *testing.T) {
 }
 
 func TestObjectRefCount(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("or_s", "hello")
@@ -369,7 +369,7 @@ func TestObjectRefCount(t *testing.T) {
 }
 
 func TestObjectIdleTimeP8(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("oi_s", "hello")
@@ -381,7 +381,7 @@ func TestObjectIdleTimeP8(t *testing.T) {
 // ================== timeseries.go TSIncrBy edge cases ==================
 
 func TestTSIncrByNoExistingTS(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.TSCreate("tsi_ne", TSCreateOptions{})
@@ -394,7 +394,7 @@ func TestTSIncrByNoExistingTS(t *testing.T) {
 }
 
 func TestLMPopMultipleKeys(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lmpk_a", "a1", "a2")
@@ -407,7 +407,7 @@ func TestLMPopMultipleKeys(t *testing.T) {
 }
 
 func TestLMPopRightMultipleElements(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lmpr_a", "d", "c", "b", "a")
@@ -420,7 +420,7 @@ func TestLMPopRightMultipleElements(t *testing.T) {
 // ================== list.go LMove edge cases ==================
 
 func TestLMoveSameKey(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lmss", "b", "a")
@@ -432,7 +432,7 @@ func TestLMoveSameKey(t *testing.T) {
 // ================== list.go LTrim edge cases ==================
 
 func TestLTrimToEmpty(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("ltm_e", "c", "b", "a")
@@ -446,7 +446,7 @@ func TestLTrimToEmpty(t *testing.T) {
 // ================== hash.go HScan additional ==================
 
 func TestHScanPatternMatch(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("hsp_a", "field1", "val1")
@@ -461,7 +461,7 @@ func TestHScanPatternMatch(t *testing.T) {
 // ================== set.go additional ==================
 
 func TestSInterCardBasicP8(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("sic_a_p8", "a", "b")
@@ -473,7 +473,7 @@ func TestSInterCardBasicP8(t *testing.T) {
 }
 
 func TestSMoveP8(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("smv_src_p8", "a", "b")
@@ -490,7 +490,7 @@ func TestSMoveP8(t *testing.T) {
 }
 
 func TestSMoveNonExistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("smv_ne_p8", "a")

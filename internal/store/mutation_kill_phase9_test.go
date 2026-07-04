@@ -16,7 +16,7 @@ import (
 // ================== json.go NX/XX ==================
 
 func TestJSONSetNX(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// NX=true, key doesn't exist → should set
@@ -31,7 +31,7 @@ func TestJSONSetNX(t *testing.T) {
 }
 
 func TestJSONSetXX(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// XX=true, key doesn't exist → should skip
@@ -49,7 +49,7 @@ func TestJSONSetXX(t *testing.T) {
 }
 
 func TestJSONSetNXAndXX(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// Both NX and XX → always skip
@@ -57,7 +57,7 @@ func TestJSONSetNXAndXX(t *testing.T) {
 }
 
 func TestJSONClearP9(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.JSONSet("jclr", "$", `{"a":1,"b":2}`, false, false)
@@ -67,7 +67,7 @@ func TestJSONClearP9(t *testing.T) {
 }
 
 func TestJSONNumIncrByNonExistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, err := s.JSONNumIncrBy("jsinc_ne", "$", 1.0)
@@ -75,7 +75,7 @@ func TestJSONNumIncrByNonExistent(t *testing.T) {
 }
 
 func TestJSONDebugMemoryP9(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.JSONSet("jsdm", "$", `{"key":"value"}`, false, false)
@@ -85,7 +85,7 @@ func TestJSONDebugMemoryP9(t *testing.T) {
 }
 
 func TestJSONTypeP9(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.JSONSet("jst", "$", `{"key":"value"}`, false, false)
@@ -95,7 +95,7 @@ func TestJSONTypeP9(t *testing.T) {
 }
 
 func TestJSONTypeArray(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.JSONSet("jsta", "$", `[1,2,3]`, false, false)
@@ -107,7 +107,7 @@ func TestJSONTypeArray(t *testing.T) {
 // ================== compression.go TTL paths ==================
 
 func TestCompressionSnappyWithTTL(t *testing.T) {
-	t.Parallel()
+
 
 	// Use a store with Snappy compression
 	dir := t.TempDir()
@@ -124,7 +124,7 @@ func TestCompressionSnappyWithTTL(t *testing.T) {
 }
 
 func TestCompressionLZ4WithTTL(t *testing.T) {
-	t.Parallel()
+
 	dir := t.TempDir()
 	cs, err := NewBotreonStoreWithCompression(dir, CompressionLZ4)
 	assert.NoError(t, err)
@@ -137,7 +137,7 @@ func TestCompressionLZ4WithTTL(t *testing.T) {
 }
 
 func TestCompressionNoneWithTTL(t *testing.T) {
-	t.Parallel()
+
 	dir := t.TempDir()
 	cs, err := NewBotreonStoreWithCompression(dir, CompressionNone)
 	assert.NoError(t, err)
@@ -152,7 +152,7 @@ func TestCompressionNoneWithTTL(t *testing.T) {
 // ================== geospatial.go internal ==================
 
 func TestGeoDistKM(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.GeoAdd("gd_km", []GeoMember{
@@ -166,7 +166,7 @@ func TestGeoDistKM(t *testing.T) {
 }
 
 func TestGeoDistMI(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.GeoAdd("gd_mi", []GeoMember{
@@ -180,7 +180,7 @@ func TestGeoDistMI(t *testing.T) {
 }
 
 func TestGeoDistFT(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.GeoAdd("gd_ft", []GeoMember{
@@ -194,7 +194,7 @@ func TestGeoDistFT(t *testing.T) {
 }
 
 func TestGeoDistUnsupportedUnit(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.GeoAdd("gd_un", []GeoMember{
@@ -209,7 +209,7 @@ func TestGeoDistUnsupportedUnit(t *testing.T) {
 // ================== backpressure.go ==================
 
 func TestPreWriteCheckWithConfig(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// Enable backpressure with high thresholds
@@ -228,7 +228,7 @@ func TestPreWriteCheckWithConfig(t *testing.T) {
 }
 
 func TestGetRetryMetricsAfterWrite(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("grem_a", "val")
@@ -240,7 +240,7 @@ func TestGetRetryMetricsAfterWrite(t *testing.T) {
 // ================== hash.go additional ==================
 
 func TestHScanWithPattern(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("hs_p1", "name", "Alice")
@@ -253,7 +253,7 @@ func TestHScanWithPattern(t *testing.T) {
 }
 
 func TestHLenP9(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("hl1", "f1", "v1")
@@ -266,7 +266,7 @@ func TestHLenP9(t *testing.T) {
 }
 
 func TestHExistsP9(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("he1", "f1", "v1")
@@ -283,7 +283,7 @@ func TestHExistsP9(t *testing.T) {
 // ================== list.go additional ==================
 
 func TestLIndexHead(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lih", "c", "b", "a")
@@ -293,7 +293,7 @@ func TestLIndexHead(t *testing.T) {
 }
 
 func TestLIndexTail(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lit", "c", "b", "a")
@@ -303,7 +303,7 @@ func TestLIndexTail(t *testing.T) {
 }
 
 func TestLIndexMiddle(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lim", "c", "b", "a")
@@ -313,7 +313,7 @@ func TestLIndexMiddle(t *testing.T) {
 }
 
 func TestLLenP9(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("llen1", "c", "b", "a")
@@ -323,7 +323,7 @@ func TestLLenP9(t *testing.T) {
 }
 
 func TestLPushAndRPop(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lpr1", "a", "b")
@@ -335,7 +335,7 @@ func TestLPushAndRPop(t *testing.T) {
 // ================== set.go additional ==================
 
 func TestSMembersP9(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("sm1", "a", "b", "c")
@@ -345,7 +345,7 @@ func TestSMembersP9(t *testing.T) {
 }
 
 func TestSIsMemberTrue(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("sim1", "a", "b")
@@ -355,7 +355,7 @@ func TestSIsMemberTrue(t *testing.T) {
 }
 
 func TestSIsMemberFalse(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("simf", "a")
@@ -365,7 +365,7 @@ func TestSIsMemberFalse(t *testing.T) {
 }
 
 func TestTSGetWithData(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.TSCreate("tsgd", TSCreateOptions{})
@@ -379,7 +379,7 @@ func TestTSGetWithData(t *testing.T) {
 }
 
 func TestTSRangeAllPoints(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.TSCreate("tsra", TSCreateOptions{})
@@ -393,7 +393,7 @@ func TestTSRangeAllPoints(t *testing.T) {
 }
 
 func TestTSExists(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.TSCreate("tsex", TSCreateOptions{})

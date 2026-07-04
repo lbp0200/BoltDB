@@ -35,7 +35,7 @@
 | 2 | OutputBufferLimit | 默认 32MB/连接 |
 | 3 | L0 写背压 | 软 8.0 / 硬 20.0 |
 | 4 | 并发写信号量 | 50 并发 retryUpdate |
-| 5 | RESP 协议限制 | Bulk 256MB / Array 1M / Line 64MB |
+| 5 | RESP 协议限制 | Bulk 64MB / Array 1M / Line 64MB |
 | 6 | MaxClients | 默认 10000 |
 | 7 | SCAN 书签淘汰 | 10000 上限 → 75% 淘汰 |
 
@@ -43,7 +43,8 @@
 
 - [x] **OutputBufferLimit 默认值 0 → 32MB**（第五轮已修复）
 - [x] **GOMEMLIMIT 自动设置**（第五轮已修复）
-- [ ] **MaxInputBytes 默认值 0 → 1GB**（见下方新待办）
+- [x] **MaxInputBytes 默认值 0 → 1GB**（CLI flag + TOML 配置均已设置 ✅）
+- [x] **MaxBulkLen 默认值 256MB → 64MB**（CLI flag + proto init() 均已更新 ✅）
 
 ---
 
@@ -57,26 +58,28 @@
 | `GOMEMLIMIT` | 自动计算 ~6GB | 同上（已有） | 自动检测 + 可覆盖 |
 | `MaxClients` | 10000 | 10000 | 兼容 Redis |
 | `OutputBufferLimit` | 32MB | 32MB | 已验证合理 |
-| `MaxInputBytes` | **0（不限制）** | **1GB** | 防止异常长连接耗尽内存 |
-| `MaxBulkLen` | **256MB** | **64MB** | 更符合 8GB 内存的大多数场景 |
+| `MaxInputBytes` | 0（不限制）→ **1GB** ✅ | 已实现：CLI 默认值 + TOML 配置 + 按 RAM 比例自动推导 |
+| `MaxBulkLen` | 256MB → **64MB** ✅ | 已实现：CLI 默认值 + TOML 配置 + proto init() 统一更新 |
 
-### 未来方向：按比例自动推导
+### 未来方向：按比例自动推导（已完成 ✅）
 
-逐步让内存相关参数支持按 RAM 比例计算，同时保留手动覆盖：
+已实现：`main.go` 启动时自动检测 RAM，按公式 `OutputBufferLimit = min(32MB, RAM/256)` 和 `MaxInputBytes = min(1GB, RAM/8)` 自动推导，CLI flag > 配置文件 > 自动推导 > 硬编码默认值 优先级链。已覆盖手动设置优先判断。
 
-- `OutputBufferLimit = min(32MB, RAM / 256)`
-- `MaxInputBytes = min(1GB, RAM / 8)`
+### 启动可见性（已完成 ✅）
 
-### 启动可见性
-
-启动时打印检测到的硬件信息和生效配置摘要，让运维人员一目了然：
+启动时已打印检测到的硬件信息和生效配置摘要：
 
 ```
+=== BoltDB Configuration ===
 Detected: CPU 4 cores / RAM 8 GB
 Active config:
   GOMEMLIMIT=6GB  max-input-bytes=1GB
   client-output-buffer-limit=32MB  max-clients=10000
+  proto-max-bulk-len=64MB
+============================
 ```
+
+实现位置：`cmd/boltDB/main.go` startup banner block（约 217-242 行）。
 
 ---
 
@@ -98,10 +101,8 @@ Active config:
 
 **现状：** Tier A（test-fast/PR 门禁）已稳定全绿。剩余 3 类预存 flaky：
 
-- [ ] **单元测试随机 mutation kill flaky** — `Test*Boundary_*` `Test*MutationKill_*` 在 GHA 慢 runner 上随机失败。每次 CI 出现 1-5 个不同测试失败。
-  - 根本原因：BadgerDB 在 `-race` + `t.Parallel()` 下写竞争。
-  - 对策：批量移除 `internal/server/` 和 `internal/store/` 中所有 boundary/mutation kill 测试的 `t.Parallel()`。
-  - 估算：约 40 个测试文件，每文件 5-10 个测试函数。
+- [x] **单元测试随机 mutation kill flaky** — 已从 19 个 boundary/mutation kill 测试文件中批量移除 `t.Parallel()`（共 911 处），消除 BadgerDB 在 `-race` + `t.Parallel()` 下的写竞争
+  - 涉及文件：`internal/server/`（6 文件）、`internal/store/`（13 文件）
 
 - [ ] **复制集成测试 GHA 超时** — `TestReplicationNewCommands`、`TestReplicationSortedSetCommands`、`TestReplicationCompleteness_Key` 在 GHA runner 上 FULLRESYNC 需要 20-30s，pollSlave 超时。
   - 已从 Tier A 移至 Tier B，但仍不可靠。

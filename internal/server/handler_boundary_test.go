@@ -12,7 +12,7 @@ import (
 
 // TestBoundary_EmptyCommandName verifies that an empty command name returns an error.
 func TestBoundary_EmptyCommandName(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -26,7 +26,7 @@ func TestBoundary_EmptyCommandName(t *testing.T) {
 
 // TestBoundary_UnknownCommand verifies that an unknown command returns an error.
 func TestBoundary_UnknownCommand(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -38,7 +38,7 @@ func TestBoundary_UnknownCommand(t *testing.T) {
 
 // TestBoundary_INCR_NonExistentKey verifies INCR on a nonexistent key starts from 0.
 func TestBoundary_INCR_NonExistentKey(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -50,7 +50,7 @@ func TestBoundary_INCR_NonExistentKey(t *testing.T) {
 
 // TestBoundary_INCR_NonIntegerValue verifies INCR on a non-integer string returns error.
 func TestBoundary_INCR_NonIntegerValue(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -64,7 +64,7 @@ func TestBoundary_INCR_NonIntegerValue(t *testing.T) {
 
 // TestBoundary_INCR_WrongType verifies INCR on a list key returns WRONGTYPE.
 func TestBoundary_INCR_WrongType(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -78,7 +78,7 @@ func TestBoundary_INCR_WrongType(t *testing.T) {
 
 // TestBoundary_SET_EmptyKey verifies SET with an empty key succeeds (Redis allows it).
 func TestBoundary_SET_EmptyKey(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -90,7 +90,7 @@ func TestBoundary_SET_EmptyKey(t *testing.T) {
 
 // TestBoundary_SET_EmptyValue verifies SET with an empty value succeeds.
 func TestBoundary_SET_EmptyValue(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -108,7 +108,7 @@ func TestBoundary_SET_EmptyValue(t *testing.T) {
 
 // TestBoundary_SET_MissingArgs verifies SET with no args returns error.
 func TestBoundary_SET_MissingArgs(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -127,7 +127,7 @@ func TestBoundary_SET_MissingArgs(t *testing.T) {
 
 // TestBoundary_GET_NonExistentKey verifies GET on nonexistent key returns nil BulkString.
 func TestBoundary_GET_NonExistentKey(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -139,7 +139,7 @@ func TestBoundary_GET_NonExistentKey(t *testing.T) {
 
 // TestBoundary_DEL_NonExistentKey verifies DEL on nonexistent key returns 0.
 func TestBoundary_DEL_NonExistentKey(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -151,7 +151,7 @@ func TestBoundary_DEL_NonExistentKey(t *testing.T) {
 
 // TestBoundary_EXISTS_NonExistentKey verifies EXISTS on nonexistent key returns 0.
 func TestBoundary_EXISTS_NonExistentKey(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -163,7 +163,7 @@ func TestBoundary_EXISTS_NonExistentKey(t *testing.T) {
 
 // TestBoundary_TYPE_NonExistentKey verifies TYPE on nonexistent key returns "none".
 func TestBoundary_TYPE_NonExistentKey(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -175,7 +175,7 @@ func TestBoundary_TYPE_NonExistentKey(t *testing.T) {
 
 // TestBoundary_TTL_NonExistentKey verifies TTL on nonexistent key returns -2.
 func TestBoundary_TTL_NonExistentKey(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -187,7 +187,7 @@ func TestBoundary_TTL_NonExistentKey(t *testing.T) {
 
 // TestBoundary_ZADD_MissingScore verifies ZADD with member but no score returns error.
 func TestBoundary_ZADD_MissingScore(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -200,7 +200,7 @@ func TestBoundary_ZADD_MissingScore(t *testing.T) {
 
 // TestBoundary_ZADD_InvalidScore verifies ZADD with non-numeric score returns error.
 func TestBoundary_ZADD_InvalidScore(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -212,7 +212,7 @@ func TestBoundary_ZADD_InvalidScore(t *testing.T) {
 
 // TestBoundary_ZADD_EmptyKey verifies ZADD with empty key succeeds.
 func TestBoundary_ZADD_EmptyKey(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -224,7 +224,7 @@ func TestBoundary_ZADD_EmptyKey(t *testing.T) {
 
 // TestBoundary_ZRANK_NonMember verifies ZRANK on nonexistent member returns nil/empty.
 func TestBoundary_ZRANK_NonMember(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -237,7 +237,7 @@ func TestBoundary_ZRANK_NonMember(t *testing.T) {
 
 // TestBoundary_HSET_EmptyKey verifies HSET with empty key succeeds.
 func TestBoundary_HSET_EmptyKey(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -249,7 +249,7 @@ func TestBoundary_HSET_EmptyKey(t *testing.T) {
 
 // TestBoundary_HSET_OddArgs verifies HSET with odd field/value args returns error.
 func TestBoundary_HSET_OddArgs(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -262,7 +262,7 @@ func TestBoundary_HSET_OddArgs(t *testing.T) {
 
 // TestBoundary_HGET_NonExistentField verifies HGET on nonexistent field returns nil.
 func TestBoundary_HGET_NonExistentField(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -277,7 +277,7 @@ func TestBoundary_HGET_NonExistentField(t *testing.T) {
 
 // TestBoundary_SADD_MissingMember verifies SADD with no member returns error.
 func TestBoundary_SADD_MissingMember(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -289,7 +289,7 @@ func TestBoundary_SADD_MissingMember(t *testing.T) {
 
 // TestBoundary_LINDEX_OutOfRange verifies LINDEX on out-of-range index returns nil.
 func TestBoundary_LINDEX_OutOfRange(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -304,7 +304,7 @@ func TestBoundary_LINDEX_OutOfRange(t *testing.T) {
 
 // TestBoundary_LINDEX_NegativeIndex verifies LINDEX with negative index.
 func TestBoundary_LINDEX_NegativeIndex(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -319,7 +319,7 @@ func TestBoundary_LINDEX_NegativeIndex(t *testing.T) {
 
 // TestBoundary_LRANGE_EmptyList verifies LRANGE on empty list returns empty array.
 func TestBoundary_LRANGE_EmptyList(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -331,7 +331,7 @@ func TestBoundary_LRANGE_EmptyList(t *testing.T) {
 
 // TestBoundary_Append_NonStringKey verifies APPEND on a list key returns WRONGTYPE.
 func TestBoundary_Append_NonStringKey(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -345,7 +345,7 @@ func TestBoundary_Append_NonStringKey(t *testing.T) {
 
 // TestBoundary_MultipleWrongType verifies WRONGTYPE errors for various cross-type operations.
 func TestBoundary_MultipleWrongType(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -373,7 +373,7 @@ func TestBoundary_MultipleWrongType(t *testing.T) {
 
 // TestBoundary_VeryLongKeyName verifies operations with a 256-byte key name.
 func TestBoundary_VeryLongKeyName(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -392,7 +392,7 @@ func TestBoundary_VeryLongKeyName(t *testing.T) {
 
 // TestBoundary_VeryLongValue verifies SET/GET with a 64KB value.
 func TestBoundary_VeryLongValue(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -407,7 +407,7 @@ func TestBoundary_VeryLongValue(t *testing.T) {
 
 // TestBoundary_LPushNoArgs verifies LPUSH with no elements returns error.
 func TestBoundary_LPushNoArgs(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -419,7 +419,7 @@ func TestBoundary_LPushNoArgs(t *testing.T) {
 
 // TestBoundary_ZCard_EmptySet verifies ZCARD on nonexistent sorted set returns 0.
 func TestBoundary_ZCard_EmptySet(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -431,7 +431,7 @@ func TestBoundary_ZCard_EmptySet(t *testing.T) {
 
 // TestBoundary_SCard_EmptySet verifies SCARD on nonexistent set returns 0.
 func TestBoundary_SCard_EmptySet(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -443,7 +443,7 @@ func TestBoundary_SCard_EmptySet(t *testing.T) {
 
 // TestBoundary_HLen_EmptyHash verifies HLEN on nonexistent hash returns 0.
 func TestBoundary_HLen_EmptyHash(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -455,7 +455,7 @@ func TestBoundary_HLen_EmptyHash(t *testing.T) {
 
 // TestBoundary_SpecialCharsInValues verifies SET/GET with binary and special characters.
 func TestBoundary_SpecialCharsInValues(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -479,7 +479,7 @@ func TestBoundary_SpecialCharsInValues(t *testing.T) {
 
 // TestBoundary_DEL_MultipleKeys verifies DEL with multiple keys returns correct count.
 func TestBoundary_DEL_MultipleKeys(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -495,7 +495,7 @@ func TestBoundary_DEL_MultipleKeys(t *testing.T) {
 
 // TestBoundary_EXISTS_MultipleKeys verifies EXISTS with multiple keys.
 func TestBoundary_EXISTS_MultipleKeys(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -511,7 +511,7 @@ func TestBoundary_EXISTS_MultipleKeys(t *testing.T) {
 
 // TestBoundary_INCRBY_NonIntegerArg verifies INCRBY with non-integer increment.
 func TestBoundary_INCRBY_NonIntegerArg(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -523,7 +523,7 @@ func TestBoundary_INCRBY_NonIntegerArg(t *testing.T) {
 
 // TestBoundary_INCRBY_WrongType verifies INCRBY on a hash key returns WRONGTYPE.
 func TestBoundary_INCRBY_WrongType(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -537,7 +537,7 @@ func TestBoundary_INCRBY_WrongType(t *testing.T) {
 
 // TestBoundary_ZSCORE_EmptySet verifies ZSCORE on nonexistent member returns nil.
 func TestBoundary_ZSCORE_EmptySet(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -549,7 +549,7 @@ func TestBoundary_ZSCORE_EmptySet(t *testing.T) {
 
 // TestBoundary_RENAME_SameKey verifies RENAME with same source and dest.
 func TestBoundary_RENAME_SameKey(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -566,7 +566,7 @@ func TestBoundary_RENAME_SameKey(t *testing.T) {
 
 // TestBoundary_RENAME_NonExistentKey verifies RENAME on nonexistent key returns error.
 func TestBoundary_RENAME_NonExistentKey(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -578,7 +578,7 @@ func TestBoundary_RENAME_NonExistentKey(t *testing.T) {
 
 // TestBoundary_PING_WithArg verifies PING returns PONG even with an argument.
 func TestBoundary_PING_WithArg(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -590,7 +590,7 @@ func TestBoundary_PING_WithArg(t *testing.T) {
 
 // TestBoundary_ECHO_Verifies ECHO returns the argument.
 func TestBoundary_ECHO_Verifies(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -602,7 +602,7 @@ func TestBoundary_ECHO_Verifies(t *testing.T) {
 
 // TestBoundary_GetSet_Atomicity verifies GETSET returns old value and sets new.
 func TestBoundary_GetSet_Atomicity(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -621,7 +621,7 @@ func TestBoundary_GetSet_Atomicity(t *testing.T) {
 
 // TestBoundary_INCRBYFLOAT_NonFloatArg verifies INCRBYFLOAT with non-numeric arg.
 func TestBoundary_INCRBYFLOAT_NonFloatArg(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -633,7 +633,7 @@ func TestBoundary_INCRBYFLOAT_NonFloatArg(t *testing.T) {
 
 // TestBoundary_Expire_NonExistentKey verifies EXPIRE on nonexistent key returns 0.
 func TestBoundary_Expire_NonExistentKey(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -645,7 +645,7 @@ func TestBoundary_Expire_NonExistentKey(t *testing.T) {
 
 // TestBoundary_SET_InvalidExpiry verifies SET with invalid EX/PX values.
 func TestBoundary_SET_InvalidExpiry(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -658,7 +658,7 @@ func TestBoundary_SET_InvalidExpiry(t *testing.T) {
 
 // TestBoundary_ZRANGE_EmptySet verifies ZRANGE on empty sorted set returns empty array.
 func TestBoundary_ZRANGE_EmptySet(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -670,7 +670,7 @@ func TestBoundary_ZRANGE_EmptySet(t *testing.T) {
 
 // TestBoundary_SMembers_EmptySet verifies SMEMBERS on empty set returns empty array.
 func TestBoundary_SMembers_EmptySet(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -682,7 +682,7 @@ func TestBoundary_SMembers_EmptySet(t *testing.T) {
 
 // TestBoundary_HGetAll_EmptyHash verifies HGETALL on empty hash returns empty array.
 func TestBoundary_HGetAll_EmptyHash(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -694,7 +694,7 @@ func TestBoundary_HGetAll_EmptyHash(t *testing.T) {
 
 // TestBoundary_STRLEN_NonExistentKey verifies STRLEN on nonexistent key returns 0.
 func TestBoundary_STRLEN_NonExistentKey(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -706,7 +706,7 @@ func TestBoundary_STRLEN_NonExistentKey(t *testing.T) {
 
 // TestBoundary_GetRange_BeyondEnd verifies GETRANGE beyond string end.
 func TestBoundary_GetRange_BeyondEnd(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -720,7 +720,7 @@ func TestBoundary_GetRange_BeyondEnd(t *testing.T) {
 
 // TestBoundary_GetRange_NegativeIndices verifies GETRANGE with negative indices.
 func TestBoundary_GetRange_NegativeIndices(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -735,7 +735,7 @@ func TestBoundary_GetRange_NegativeIndices(t *testing.T) {
 
 // TestBoundary_SetEX_ZeroTTL verifies SETEX with 0 TTL returns error.
 func TestBoundary_SetEX_ZeroTTL(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -750,7 +750,7 @@ func TestBoundary_SetEX_ZeroTTL(t *testing.T) {
 
 // TestBoundary_IncrBy_ManyGoroutines verifies INCRBY with large increments.
 func TestBoundary_IncrBy_LargeIncrement(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -767,7 +767,7 @@ func TestBoundary_IncrBy_LargeIncrement(t *testing.T) {
 
 // TestBoundary_ZRangeByScore_InvalidRange verifies ZRANGEBYSCORE with invalid args.
 func TestBoundary_ZRangeByScore_EmptyResult(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -787,7 +787,7 @@ func TestBoundary_ZRangeByScore_EmptyResult(t *testing.T) {
 
 // TestBoundary_SETEX_TTLEdgeCases verifies SETEX behavior at TTL boundaries.
 func TestBoundary_SETEX_TTLEdgeCases(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -820,7 +820,7 @@ func TestBoundary_SETEX_TTLEdgeCases(t *testing.T) {
 
 // TestBoundary_PSETEX_TTLEdgeCases verifies PSETEX behavior at TTL boundaries.
 func TestBoundary_PSETEX_TTLEdgeCases(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -852,7 +852,7 @@ func TestBoundary_PSETEX_TTLEdgeCases(t *testing.T) {
 
 // TestBoundary_RENAME_CrossType verifies RENAME between different key types.
 func TestBoundary_RENAME_CrossType(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -882,7 +882,7 @@ func TestBoundary_RENAME_CrossType(t *testing.T) {
 
 // TestBoundary_RENAME_SameKey_PreservesValue verifies RENAME k k doesn't destroy data.
 func TestBoundary_RENAME_SameKey_PreservesValue(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 

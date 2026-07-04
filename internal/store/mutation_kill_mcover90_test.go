@@ -17,7 +17,7 @@ import (
 // ---------- sorted_set.go: decodeDataValue boundary (line 130) ----------
 
 func TestDecodeDataValue8ByteLegacy(t *testing.T) {
-	t.Parallel()
+
 	// Legacy 8-byte format: score only, no version
 	val := encodeScore(42.5)
 	score, version := decodeDataValue(val)
@@ -26,7 +26,7 @@ func TestDecodeDataValue8ByteLegacy(t *testing.T) {
 }
 
 func TestDecodeDataValue12Byte(t *testing.T) {
-	t.Parallel()
+
 	val := make([]byte, 12)
 	copy(val[:8], encodeScore(99.0))
 	binary.BigEndian.PutUint32(val[8:], 7)
@@ -36,7 +36,7 @@ func TestDecodeDataValue12Byte(t *testing.T) {
 }
 
 func TestDecodeDataValueShort(t *testing.T) {
-	t.Parallel()
+
 	val := make([]byte, 4)
 	score, version := decodeDataValue(val)
 	assert.Equal(t, 0.0, score)
@@ -46,14 +46,14 @@ func TestDecodeDataValueShort(t *testing.T) {
 // ---------- sorted_set.go: memberInLexRange switch cases (lines 358-365) ----------
 
 func TestMemberInLexRangeMaxPlus(t *testing.T) {
-	t.Parallel()
+
 	// max == "+" means unbounded upper
 	assert.True(t, memberInLexRange("b", "-", "+"))
 	assert.True(t, memberInLexRange("z", "-", "+"))
 }
 
 func TestMemberInLexRangeMaxExclusive(t *testing.T) {
-	t.Parallel()
+
 	// max = "(c" means exclusive upper bound < "c"
 	assert.True(t, memberInLexRange("a", "-", "(c"))
 	assert.True(t, memberInLexRange("b", "-", "(c"))
@@ -62,7 +62,7 @@ func TestMemberInLexRangeMaxExclusive(t *testing.T) {
 }
 
 func TestMemberInLexRangeMaxInclusive(t *testing.T) {
-	t.Parallel()
+
 	// max = "[c" means inclusive upper bound <= "c"
 	assert.True(t, memberInLexRange("a", "-", "[c"))
 	assert.True(t, memberInLexRange("c", "-", "[c"))
@@ -70,7 +70,7 @@ func TestMemberInLexRangeMaxInclusive(t *testing.T) {
 }
 
 func TestMemberInLexRangeMaxPlain(t *testing.T) {
-	t.Parallel()
+
 	// plain max "c" means <= "c"
 	assert.True(t, memberInLexRange("a", "-", "c"))
 	assert.True(t, memberInLexRange("c", "-", "c"))
@@ -78,14 +78,14 @@ func TestMemberInLexRangeMaxPlain(t *testing.T) {
 }
 
 func TestMemberInLexRangeMinExclusive(t *testing.T) {
-	t.Parallel()
+
 	// min = "(a" means exclusive lower bound > "a"
 	assert.False(t, memberInLexRange("a", "(a", "+"))
 	assert.True(t, memberInLexRange("b", "(a", "+"))
 }
 
 func TestMemberInLexRangeMinInclusive(t *testing.T) {
-	t.Parallel()
+
 	// min = "[a" means inclusive lower bound >= "a"
 	assert.True(t, memberInLexRange("a", "[a", "+"))
 	assert.True(t, memberInLexRange("b", "[a", "+"))
@@ -93,7 +93,7 @@ func TestMemberInLexRangeMinInclusive(t *testing.T) {
 }
 
 func TestMemberInLexRangeBothBounds(t *testing.T) {
-	t.Parallel()
+
 	assert.True(t, memberInLexRange("b", "[a", "(d"))
 	assert.False(t, memberInLexRange("d", "[a", "(d"))
 }
@@ -101,7 +101,7 @@ func TestMemberInLexRangeBothBounds(t *testing.T) {
 // ---------- list.go: LPos extreme negative rank (line 808) ----------
 
 func TestLPosExtremeNegativeRank(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lpos_neg", "a", "b", "c", "d", "e") // length=5, order: e,d,c,b,a (head to tail)
@@ -117,7 +117,7 @@ func TestLPosExtremeNegativeRank(t *testing.T) {
 }
 
 func TestLPosNegativeRankExactBoundary(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lpos_bound", "x", "y", "z") // length=3
@@ -136,7 +136,7 @@ func TestLPosNegativeRankExactBoundary(t *testing.T) {
 // ---------- define.go: extractRawKey branches (lines 157-260) ----------
 
 func TestExtractRawKeyListUUIDNext(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// Create a list with at least one element
@@ -153,7 +153,7 @@ func TestExtractRawKeyListUUIDNext(t *testing.T) {
 }
 
 func TestExtractRawKeyHashColonInKeyName(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// Hash key with colon in name
@@ -164,7 +164,7 @@ func TestExtractRawKeyHashColonInKeyName(t *testing.T) {
 }
 
 func TestExtractRawKeySetWithMember(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("myset", "member1", "member2")
@@ -174,7 +174,7 @@ func TestExtractRawKeySetWithMember(t *testing.T) {
 }
 
 func TestExtractRawKeyZSetMeta(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.ZAdd("myzset", []ZSetMember{{Member: "m1", Score: 1.0}})
@@ -185,7 +185,7 @@ func TestExtractRawKeyZSetMeta(t *testing.T) {
 }
 
 func TestExtractRawKeyStreamData(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, err := s.XAdd("mystream", StreamXAddOptions{}, "*", map[string]string{"k": "v"})
@@ -196,7 +196,7 @@ func TestExtractRawKeyStreamData(t *testing.T) {
 }
 
 func TestExtractRawKeyGeo(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, err := s.GeoAdd("mygeo", []GeoMember{{
@@ -206,7 +206,7 @@ func TestExtractRawKeyGeo(t *testing.T) {
 }
 
 func TestExtractRawKeyHLL(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.PFAdd("myhll", "a", "b", "c")
@@ -216,7 +216,7 @@ func TestExtractRawKeyHLL(t *testing.T) {
 }
 
 func TestExtractRawKeyTS(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	err := s.TSCreate("myts", TSCreateOptions{})
@@ -228,7 +228,7 @@ func TestExtractRawKeyTS(t *testing.T) {
 // ---------- string.go: SET wrong type path (line 67) ----------
 
 func TestSetOverwritesExistingString(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// SET same key twice - should overwrite
@@ -242,7 +242,7 @@ func TestSetOverwritesExistingString(t *testing.T) {
 }
 
 func TestSetEmptyKeyType(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// Key doesn't exist → keyType is empty → should proceed normally
@@ -256,7 +256,7 @@ func TestSetEmptyKeyType(t *testing.T) {
 // ---------- list.go: LLen/RPop error paths (lines 253, 497) ----------
 
 func TestRPopEmptyList(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// Create then fully pop the list
@@ -269,7 +269,7 @@ func TestRPopEmptyList(t *testing.T) {
 }
 
 func TestLRemOnNonExistentKey(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// LRem on key that never existed → listGetMetaTxn returns error with length=0
@@ -281,7 +281,7 @@ func TestLRemOnNonExistentKey(t *testing.T) {
 // ---------- hash.go: HLen/HExists paths ----------
 
 func TestHLenMultipleFields(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	for i := 0; i < 50; i++ {
@@ -293,7 +293,7 @@ func TestHLenMultipleFields(t *testing.T) {
 }
 
 func TestHExistsAfterDelete(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("hdel_test", "f1", "v1")
@@ -310,7 +310,7 @@ func TestHExistsAfterDelete(t *testing.T) {
 // ---------- list.go: LRange edge cases (line 654) ----------
 
 func TestLRangeNegativeStartBeyondLength(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lrange_neg", "a", "b", "c")
@@ -320,7 +320,7 @@ func TestLRangeNegativeStartBeyondLength(t *testing.T) {
 }
 
 func TestLRangeStartEqualsStop(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lrange_eq", "a", "b", "c")
@@ -332,7 +332,7 @@ func TestLRangeStartEqualsStop(t *testing.T) {
 // ---------- set.go: SMembers/SIsMember paths ----------
 
 func TestSMembersAfterRemove(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("smem_rm", "a", "b", "c")
@@ -345,7 +345,7 @@ func TestSMembersAfterRemove(t *testing.T) {
 // ---------- base.go: Persist on non-existent key ----------
 
 func TestPersistNonExistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// Persist on key that doesn't exist — should return false
@@ -357,7 +357,7 @@ func TestPersistNonExistent(t *testing.T) {
 // ---------- base.go: RandomKey edge cases ----------
 
 func TestRandomKeyFromMultiTypeDB(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("rk_str", "val")
@@ -374,7 +374,7 @@ func TestRandomKeyFromMultiTypeDB(t *testing.T) {
 // ---------- base.go: Dump/Restore round-trip for specific types ----------
 
 func TestDumpRestoreHashMcover90(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("drh_key", "f1", "v1")
@@ -393,7 +393,7 @@ func TestDumpRestoreHashMcover90(t *testing.T) {
 }
 
 func TestDumpRestoreSetMcover90(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("drs_key", "a", "b", "c")
@@ -412,7 +412,7 @@ func TestDumpRestoreSetMcover90(t *testing.T) {
 // ---------- base.go: ObjectEncoding for various types ----------
 
 func TestObjectEncodingStringMcover90(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("oes_key", "hello")
@@ -422,7 +422,7 @@ func TestObjectEncodingStringMcover90(t *testing.T) {
 }
 
 func TestObjectEncodingHashMcover90(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("oeh_key", "f", "v")
@@ -434,7 +434,7 @@ func TestObjectEncodingHashMcover90(t *testing.T) {
 // ---------- define.go: deleteBatch backoff (line 565) ----------
 
 func TestDeleteBatchRetryLogic(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// Create many keys to exercise batch delete
@@ -449,7 +449,7 @@ func TestDeleteBatchRetryLogic(t *testing.T) {
 // ---------- base.go: Exists for multiple keys ----------
 
 func TestExistsMultipleKeysMcover90(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("ex_mc1", "v1")
@@ -471,7 +471,7 @@ func TestExistsMultipleKeysMcover90(t *testing.T) {
 // ---------- base.go: Scan iteration ----------
 
 func TestScanSmallDB(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	err := s.Set("scan_a", "1")
@@ -498,7 +498,7 @@ func TestScanSmallDB(t *testing.T) {
 // ---------- base.go: RenameNX ----------
 
 func TestRenameNXSourceNotExist(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// RenameNX on non-existent source returns error (Rename internally fails)
@@ -507,7 +507,7 @@ func TestRenameNXSourceNotExist(t *testing.T) {
 }
 
 func TestRenameNXDestExist(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("rndst2", "val")
@@ -524,7 +524,7 @@ func TestRenameNXDestExist(t *testing.T) {
 // ---------- base.go: computeAbsoluteExpiry boundary (line 527) ----------
 
 func TestExpireAtZeroTimestamp(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("eat_zero", "v")
@@ -540,7 +540,7 @@ func TestExpireAtZeroTimestamp(t *testing.T) {
 // ---------- base.go: PExpireTime/ExpireTime for non-existent key ----------
 
 func TestPExpireTimeNonExistentMcover90(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	result, err := s.PExpireTime("pet_ne_mc")
@@ -550,7 +550,7 @@ func TestPExpireTimeNonExistentMcover90(t *testing.T) {
 }
 
 func TestExpireTimeNonExistentMcover90(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	result, err := s.ExpireTime("et_ne_mc")
@@ -561,7 +561,7 @@ func TestExpireTimeNonExistentMcover90(t *testing.T) {
 // ---------- sorted_set.go: normalizeRankRange (lines 370-386) ----------
 
 func TestNormalizeRankRangeEmpty(t *testing.T) {
-	t.Parallel()
+
 	start, stop, ok := normalizeRankRange(0, 0, -1)
 	assert.False(t, ok)
 	_ = start
@@ -569,7 +569,7 @@ func TestNormalizeRankRangeEmpty(t *testing.T) {
 }
 
 func TestNormalizeRankRangeNegative(t *testing.T) {
-	t.Parallel()
+
 	start, stop, ok := normalizeRankRange(10, -3, -1)
 	assert.True(t, ok)
 	assert.Equal(t, int64(7), start)
@@ -577,7 +577,7 @@ func TestNormalizeRankRangeNegative(t *testing.T) {
 }
 
 func TestNormalizeRankRangeBeyondTotal(t *testing.T) {
-	t.Parallel()
+
 	start, stop, ok := normalizeRankRange(5, 0, 100)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), start)
@@ -585,7 +585,7 @@ func TestNormalizeRankRangeBeyondTotal(t *testing.T) {
 }
 
 func TestNormalizeRankRangeStartBeyondStop(t *testing.T) {
-	t.Parallel()
+
 	_, _, ok := normalizeRankRange(5, 4, 3)
 	assert.False(t, ok)
 }
@@ -593,7 +593,7 @@ func TestNormalizeRankRangeStartBeyondStop(t *testing.T) {
 // ---------- base.go: ObjectIdleTime / ObjectRefCount ----------
 
 func TestObjectIdleTimeExistentKey(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("oit_key", "v")
@@ -604,7 +604,7 @@ func TestObjectIdleTimeExistentKey(t *testing.T) {
 }
 
 func TestObjectRefCountExistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("orc_key", "v")
@@ -617,7 +617,7 @@ func TestObjectRefCountExistent(t *testing.T) {
 // ---------- base.go: checkKeyType / checkDataExists paths ----------
 
 func TestCheckDataExistsAllTypes(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("cde_str", "v")
@@ -640,7 +640,7 @@ func TestCheckDataExistsAllTypes(t *testing.T) {
 // ---------- base.go: TTL/PTTL boundary values ----------
 
 func TestTTLNegativeOneForNoExpiry(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("ttl_noexp", "v")
@@ -651,7 +651,7 @@ func TestTTLNegativeOneForNoExpiry(t *testing.T) {
 }
 
 func TestPTTLNegativeOneForNoExpiry(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("pttl_noexp", "v")
@@ -663,7 +663,7 @@ func TestPTTLNegativeOneForNoExpiry(t *testing.T) {
 // ---------- base.go: Expire/PExpire boundary ----------
 
 func TestExpireZeroDeletesKey(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("exp_zero", "v")
@@ -674,7 +674,7 @@ func TestExpireZeroDeletesKey(t *testing.T) {
 }
 
 func TestPExpireZeroDeletesKey(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("pexp_zero", "v")
@@ -686,7 +686,7 @@ func TestPExpireZeroDeletesKey(t *testing.T) {
 // ---------- base.go: ExpireAt/PExpireAt boundary ----------
 
 func TestExpireAtPastDeletesKey(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("eat_past", "v")
@@ -699,7 +699,7 @@ func TestExpireAtPastDeletesKey(t *testing.T) {
 }
 
 func TestPExpireAtPastDeletesKey(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("peat_past", "v")
@@ -714,7 +714,7 @@ func TestPExpireAtPastDeletesKey(t *testing.T) {
 // ---------- base.go: Type for all types ----------
 
 func TestTypeAllTypesMcover90(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("typ_mstr", "v")
@@ -744,7 +744,7 @@ func TestTypeAllTypesMcover90(t *testing.T) {
 // ---------- base.go: Keys pattern matching ----------
 
 func TestKeysGlobPattern(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("glob_a1", "1")
@@ -759,7 +759,7 @@ func TestKeysGlobPattern(t *testing.T) {
 // ---------- base.go: Time ----------
 
 func TestTimeReturnsNonZero(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	sec, nsec, err := s.Time()
@@ -772,7 +772,7 @@ func TestTimeReturnsNonZero(t *testing.T) {
 // ---------- base.go: MemoryUsage ----------
 
 func TestMemoryUsageStringMcover90(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("mum_key", "hello world")

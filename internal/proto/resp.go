@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	// MaxBulkLen 是 RESP bulk string 的最大长度限制（默认 256MB）
+	// MaxBulkLen 是 RESP bulk string 的最大长度限制（默认 64MB）
 	// 可通过 SetMaxBulkLen() 在启动时调整
 	MaxBulkLen atomic.Int64
 	// MaxArrayLen 是 RESP array 的最大元素数
@@ -24,7 +24,7 @@ var (
 )
 
 func init() {
-	MaxBulkLen.Store(256 * 1024 * 1024)
+	MaxBulkLen.Store(64 * 1024 * 1024)
 	MaxArrayLen.Store(1024 * 1024)
 	MaxLineLen.Store(64 * 1024 * 1024)
 }

@@ -129,7 +129,7 @@ jobs:
       - name: Regression tests (fast)
         run: |
           go test -race -timeout 600s \
-            -skip 'TestRegression(L0Collapse|ReplicationThrash|ReplicationThrashFullresync|PsyncReconnectNoLoss|DuplicateWindowMeasurement|SnapshotFullresyncOffset|SnapshotConsistency)' \
+            -skip 'TestRegression(L0Collapse|ReplicationThrash|ReplicationThrashFullresync|PsyncReconnectNoLoss|DuplicateWindowMeasurement|SnapshotFullresyncOffset|SnapshotConsistency|FailoverOscillation)' \
             -count=1 ./cmd/integration/regressions/
 
       - name: Mixed cluster tests

@@ -15,7 +15,7 @@ import (
 // ================== string.go BitPos ==================
 
 func TestBitPosEmptyStringBit1(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("bp_e1", "")
@@ -25,7 +25,7 @@ func TestBitPosEmptyStringBit1(t *testing.T) {
 }
 
 func TestBitPosEmptyStringBit0(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("bp_e0", "")
@@ -35,7 +35,7 @@ func TestBitPosEmptyStringBit0(t *testing.T) {
 }
 
 func TestBitPosAllZeros(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("bp_az", "\x00\x00\x00")
@@ -45,7 +45,7 @@ func TestBitPosAllZeros(t *testing.T) {
 }
 
 func TestBitPosAllOnes(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("bp_a1", "\xff\xff")
@@ -55,7 +55,7 @@ func TestBitPosAllOnes(t *testing.T) {
 }
 
 func TestBitPosNegativeStart(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("bp_ns", "\x80\x00") // byte 0: 10000000, byte 1: 00000000
@@ -67,7 +67,7 @@ func TestBitPosNegativeStart(t *testing.T) {
 }
 
 func TestBitPosStartGreaterThanLen(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("bp_sg", "\x00")
@@ -77,7 +77,7 @@ func TestBitPosStartGreaterThanLen(t *testing.T) {
 }
 
 func TestBitPosEndExceedsLen(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("bp_ee", "\x80") // bit 0 is set
@@ -87,7 +87,7 @@ func TestBitPosEndExceedsLen(t *testing.T) {
 }
 
 func TestBitPosStartGreaterThanEnd(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("bp_se", "\xff")
@@ -99,7 +99,7 @@ func TestBitPosStartGreaterThanEnd(t *testing.T) {
 // ================== string.go BitLen ==================
 
 func TestBitLenBasic(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("bl_b", "hello")
@@ -109,7 +109,7 @@ func TestBitLenBasic(t *testing.T) {
 }
 
 func TestBitLenEmpty(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("bl_e", "")
@@ -119,7 +119,7 @@ func TestBitLenEmpty(t *testing.T) {
 }
 
 func TestBitLenSingleByte(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("bl_s", "A")
@@ -131,7 +131,7 @@ func TestBitLenSingleByte(t *testing.T) {
 // ================== string.go BitField ==================
 
 func TestBitFieldGetBasic(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("bf_gb", "\xff\x00")
@@ -142,7 +142,7 @@ func TestBitFieldGetBasic(t *testing.T) {
 }
 
 func TestBitFieldSetBasic(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("bf_sb", "\x00\x00")
@@ -152,7 +152,7 @@ func TestBitFieldSetBasic(t *testing.T) {
 }
 
 func TestBitFieldIncrbySignedOverflow(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("bf_so", "\x00\x00\x00\x00")
@@ -168,7 +168,7 @@ func TestBitFieldIncrbySignedOverflow(t *testing.T) {
 }
 
 func TestBitFieldIncrbyUnsignedOverflow(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("bf_uo", "\x00\x00\x00\x00")
@@ -184,7 +184,7 @@ func TestBitFieldIncrbyUnsignedOverflow(t *testing.T) {
 }
 
 func TestBitFieldIncrbyUnsignedNegative(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("bf_un", "\x00\x00\x00\x00")
@@ -200,7 +200,7 @@ func TestBitFieldIncrbyUnsignedNegative(t *testing.T) {
 }
 
 func TestBitFieldMultipleOps(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("bf_mo", "\x00\x00\x00\x00")
@@ -213,7 +213,7 @@ func TestBitFieldMultipleOps(t *testing.T) {
 }
 
 func TestBitField64Bits(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("bf_64", "\x00\x00\x00\x00\x00\x00\x00\x00")
@@ -230,7 +230,7 @@ func TestBitField64Bits(t *testing.T) {
 // ================== list.go additional paths ==================
 
 func TestLMPopLeft(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lmp_l", "c", "b", "a")
@@ -243,7 +243,7 @@ func TestLMPopLeft(t *testing.T) {
 }
 
 func TestLMPopRight(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lmp_r", "c", "b", "a")
@@ -256,7 +256,7 @@ func TestLMPopRight(t *testing.T) {
 }
 
 func TestLMPopSingleElement(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lmp_s", "a")
@@ -267,7 +267,7 @@ func TestLMPopSingleElement(t *testing.T) {
 }
 
 func TestLMPopEmpty(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	key, values, err := s.LMPop([]string{"lmp_e"}, "LEFT", 1)
@@ -279,7 +279,7 @@ func TestLMPopEmpty(t *testing.T) {
 // ================== timeseries.go additional ==================
 
 func TestTSRangeEmptyKeyP7(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, err := s.TSRange("ts_ne", "0", "100", 0)
@@ -287,7 +287,7 @@ func TestTSRangeEmptyKeyP7(t *testing.T) {
 }
 
 func TestTSRevRangeEmptyKeyP7(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, err := s.TSRevRange("ts_ne_rev", "0", "100", 0)
@@ -295,7 +295,7 @@ func TestTSRevRangeEmptyKeyP7(t *testing.T) {
 }
 
 func TestTSDelNonexistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, err := s.TSDel("ts_del_ne", "0", "100")
@@ -303,7 +303,7 @@ func TestTSDelNonexistent(t *testing.T) {
 }
 
 func TestTSMGetMixed(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.TSCreate("tsmg_a", TSCreateOptions{})
@@ -317,7 +317,7 @@ func TestTSMGetMixed(t *testing.T) {
 }
 
 func TestTSQueryIndex(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.TSCreate("tsqi_a", TSCreateOptions{})
@@ -329,7 +329,7 @@ func TestTSQueryIndex(t *testing.T) {
 }
 
 func TestTSQueryIndexEmpty(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	keys, err := s.TSQueryIndex([]string{})
@@ -341,7 +341,7 @@ func TestTSQueryIndexEmpty(t *testing.T) {
 // ================== define.go additional ==================
 
 func TestCheckOnFreshDB(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	err := s.Check()
@@ -349,7 +349,7 @@ func TestCheckOnFreshDB(t *testing.T) {
 }
 
 func TestFlushDBOnEmpty(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	err := s.FlushDB()
@@ -357,7 +357,7 @@ func TestFlushDBOnEmpty(t *testing.T) {
 }
 
 func TestFlushDBWithData(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("fdb_a", "1")
@@ -370,7 +370,7 @@ func TestFlushDBWithData(t *testing.T) {
 }
 
 func TestClearAllData(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("cad_a", "1")
@@ -386,7 +386,7 @@ func TestClearAllData(t *testing.T) {
 // ================== base.go additional ==================
 
 func TestDelGeoKeyP7(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.GeoAdd("del_geo", []GeoMember{
@@ -402,7 +402,7 @@ func TestDelGeoKeyP7(t *testing.T) {
 }
 
 func TestDelStreamKeyP7(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.XAdd("del_stream", StreamXAddOptions{}, "*", map[string]string{"f": "v"})
@@ -416,7 +416,7 @@ func TestDelStreamKeyP7(t *testing.T) {
 }
 
 func TestDelHLLKeyP7(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.PFAdd("del_hll", "a", "b")
@@ -430,7 +430,7 @@ func TestDelHLLKeyP7(t *testing.T) {
 }
 
 func TestTypeOfKeyGetStream(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.XAdd("tok_s", StreamXAddOptions{}, "*", map[string]string{"k": "v"})
@@ -439,7 +439,7 @@ func TestTypeOfKeyGetStream(t *testing.T) {
 }
 
 func TestTypeOfKeyGetHLL(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.PFAdd("tok_h", "a")
@@ -448,7 +448,7 @@ func TestTypeOfKeyGetHLL(t *testing.T) {
 }
 
 func TestTypeOfKeyGetGeo(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.GeoAdd("tok_g", []GeoMember{
@@ -461,7 +461,7 @@ func TestTypeOfKeyGetGeo(t *testing.T) {
 // ================== hash.go additional ==================
 
 func TestHScanCountZero(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("hs_z", "f1", "v1")
@@ -474,7 +474,7 @@ func TestHScanCountZero(t *testing.T) {
 }
 
 func TestHScanWithNonMatchingPattern(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("hs_nm2", "f1", "v1")
@@ -486,7 +486,7 @@ func TestHScanWithNonMatchingPattern(t *testing.T) {
 // ================== geospatial.go additional ==================
 
 func TestExpandBoundingBoxNoClampP7(t *testing.T) {
-	t.Parallel()
+
 	minLat, maxLat, minLon, maxLon := expandBoundingBox(0, 0, 0, 0, 1000)
 	assert.True(t, minLat < 0)
 	assert.True(t, maxLat > 0)
@@ -495,25 +495,25 @@ func TestExpandBoundingBoxNoClampP7(t *testing.T) {
 }
 
 func TestFormatGeoDistanceMP7(t *testing.T) {
-	t.Parallel()
+
 	d := formatGeoDistance(500, "M")
 	assert.Equal(t, 500.0, d)
 }
 
 func TestFormatGeoDistanceEmptyUnit(t *testing.T) {
-	t.Parallel()
+
 	d := formatGeoDistance(500, "")
 	assert.Equal(t, 500.0, d)
 }
 
 func TestConvertGeoRadiusMeters(t *testing.T) {
-	t.Parallel()
+
 	m := convertGeoRadiusToMeters(1, "M")
 	assert.Equal(t, 1.0, m)
 }
 
 func TestConvertGeoRadiusEmptyUnit(t *testing.T) {
-	t.Parallel()
+
 	m := convertGeoRadiusToMeters(5, "")
 	assert.Equal(t, 5.0, m)
 }

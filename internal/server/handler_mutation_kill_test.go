@@ -23,7 +23,7 @@ import (
 // TestGeoMutationKill_GeoradiusOptions 验证 GEORADIUS 各选项返回精确值
 // 目标变异体: geo_commands.go:158-173 (INCREMENT_DECREMENT, CONDITIONALS_NEGATION)
 func TestGeoMutationKill_GeoradiusOptions(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -115,7 +115,7 @@ func TestGeoMutationKill_GeoradiusOptions(t *testing.T) {
 // TestGeoMutationKill_GeosearchFrommemberSwap 验证 GEOSEARCH FROMMEMBER 坐标不互换
 // 目标变异体: geo_commands.go:239-240 (centerLon/centerLat 赋值)
 func TestGeoMutationKill_GeosearchFrommemberSwap(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -149,7 +149,7 @@ func TestGeoMutationKill_GeosearchFrommemberSwap(t *testing.T) {
 // TestGeoMutationKill_GeosearchBybox 验证 BYBOX width/height 解析
 // 目标变异体: geo_commands.go:271-281 (BYBOX width/2, args[i+3])
 func TestGeoMutationKill_GeosearchBybox(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -182,7 +182,7 @@ func TestGeoMutationKill_GeosearchBybox(t *testing.T) {
 // TestGeoMutationKill_GeosearchstoreOptions 验证 GEOSEARCHSTORE 选项
 // 目标变异体: geo_commands.go:352-427 (STOREDIST, COUNT, option loop)
 func TestGeoMutationKill_GeosearchstoreOptions(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -235,7 +235,7 @@ func TestGeoMutationKill_GeosearchstoreOptions(t *testing.T) {
 //
 //	key_commands.go:132 (ttl = time.Duration(ttlMS-now) arithmetic)
 func TestRestoreMutationKill_Absttl(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -309,7 +309,7 @@ func TestRestoreMutationKill_Absttl(t *testing.T) {
 // TestSortMutationKill_Combinations 验证 SORT 复杂选项组合
 // 目标变异体: key_commands.go:548-591 (BY/GET/ASC/DESC/ALPHA/STORE option loop)
 func TestSortMutationKill_Combinations(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -379,7 +379,7 @@ func TestSortMutationKill_Combinations(t *testing.T) {
 // TestSortMutationKill_LimitBoundaries 验证 SORT LIMIT 边界
 // 目标变异体: key_commands.go:558 (offset/count parsing)
 func TestSortMutationKill_LimitBoundaries(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -435,7 +435,7 @@ func TestSortMutationKill_LimitBoundaries(t *testing.T) {
 // TestClientMutationKill_InfoOptions 验证 CLIENT INFO 返回可解析的字段
 // 目标变异体: client_commands.go:52-108 (CONDITIONALS_NEGATION in option parsing)
 func TestClientMutationKill_InfoOptions(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -460,7 +460,7 @@ func TestClientMutationKill_InfoOptions(t *testing.T) {
 // TestInfoMutationKill_StatsFields 验证 INFO stats 返回可解析字段
 // 目标变异体: info.go:56-105 (ARITHMETIC_BASE in calculations)
 func TestInfoMutationKill_StatsFields(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -479,7 +479,7 @@ func TestInfoMutationKill_StatsFields(t *testing.T) {
 // TestBitmapMutationKill_BitposEdgeCases 验证 BITPOS 边界
 // 目标变异体: bitmap_commands.go:61-164 (CONDITIONALS_NEGATION)
 func TestBitmapMutationKill_BitposEdgeCases(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -516,7 +516,7 @@ func TestBitmapMutationKill_BitposEdgeCases(t *testing.T) {
 // TestHashMutationKill_HrandfieldEdgeCases 验证 HRANDFIELD 边界
 // 目标变异体: hash_commands.go:361-362
 func TestHashMutationKill_HrandfieldEdgeCases(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -550,7 +550,7 @@ func TestHashMutationKill_HrandfieldEdgeCases(t *testing.T) {
 // TestReplicaofMutationKill_ErrorPath 验证 REPLICAOF 错误路径
 // 目标变异体: handler_core.go:509-524 (CONDITIONALS_NEGATION)
 func TestReplicaofMutationKill_ErrorPath(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 	// No replication manager set — should return error
@@ -565,7 +565,7 @@ func TestReplicaofMutationKill_ErrorPath(t *testing.T) {
 // TestGensearchstoreMutationKill_Fromlonlat 验证 GEOSEARCHSTORE FROMLONLAT 精确值
 // 目标变异体: geo_commands.go:382-383 (ARITHMETIC_BASE in ParseFloat)
 func TestGensearchstoreMutationKill_Fromlonlat(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -596,7 +596,7 @@ func TestGensearchstoreMutationKill_Fromlonlat(t *testing.T) {
 // TestExpireMutationKill_PexpireatConversion 验证 EXPIRE→PEXPIREAT 转换
 // 目标变异体: handler_core.go:534 (ARITHMETIC_BASE in time conversion)
 func TestExpireMutationKill_PexpireatConversion(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -636,7 +636,7 @@ func TestExpireMutationKill_PexpireatConversion(t *testing.T) {
 
 // TestSortMutationKill_EmptyKey 验证 SORT 空键行为
 func TestSortMutationKill_EmptyKey(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -649,7 +649,7 @@ func TestSortMutationKill_EmptyKey(t *testing.T) {
 
 // TestGensearchstoreMutationKill_CountZero 验证 GEOSEARCHSTORE COUNT 0
 func TestGensearchstoreMutationKill_CountZero(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 

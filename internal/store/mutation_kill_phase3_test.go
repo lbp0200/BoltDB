@@ -19,7 +19,7 @@ import (
 // ---------- GetRange: negative index normalization (string.go 556-578) ----------
 
 func TestGetRangeNegativeIndices(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("gr_neg", "hello") // len=5
@@ -58,7 +58,7 @@ func TestGetRangeNegativeIndices(t *testing.T) {
 // ---------- SetRange (string.go 584+) ----------
 
 func TestSetRangeExistingKey(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("sr_ex", "hello")
@@ -71,7 +71,7 @@ func TestSetRangeExistingKey(t *testing.T) {
 }
 
 func TestSetRangeExtendKey(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("sr_ext", "hi")
@@ -84,7 +84,7 @@ func TestSetRangeExtendKey(t *testing.T) {
 }
 
 func TestSetRangeNonExistentKey(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	length, err := s.SetRange("sr_ne", 0, "abc")
@@ -98,7 +98,7 @@ func TestSetRangeNonExistentKey(t *testing.T) {
 // ---------- GetBit / SetBit (string.go 646+) ----------
 
 func TestGetBitStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("gb_ok", "A") // 0x41 = 01000001
@@ -120,7 +120,7 @@ func TestGetBitStorePhase3(t *testing.T) {
 }
 
 func TestSetBitStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("sb_ok", "\x00")
@@ -143,7 +143,7 @@ func TestSetBitStorePhase3(t *testing.T) {
 // ---------- StrLen (string.go 506+) ----------
 
 func TestStrLenExisting(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("strlen_ex", "hello")
@@ -153,7 +153,7 @@ func TestStrLenExisting(t *testing.T) {
 }
 
 func TestStrLenNonExistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	length, err := s.StrLen("strlen_ne")
@@ -164,7 +164,7 @@ func TestStrLenNonExistent(t *testing.T) {
 // ---------- XReadImmediate with COUNT (stream.go 684) ----------
 
 func TestXReadImmediateCount(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// Add 5 entries
@@ -188,7 +188,7 @@ func TestXReadImmediateCount(t *testing.T) {
 // ---------- XReadImmediate with $ startID (stream.go 652-673) ----------
 
 func TestXReadImmediateDollarID(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, _ = s.XAdd("xri_dollar", StreamXAddOptions{}, "*",
@@ -203,7 +203,7 @@ func TestXReadImmediateDollarID(t *testing.T) {
 // ---------- XRange with count (stream.go 714+) ----------
 
 func TestXRangeWithCount(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	for i := 0; i < 10; i++ {
@@ -218,7 +218,7 @@ func TestXRangeWithCount(t *testing.T) {
 }
 
 func TestXRangeEmpty(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	entries, err := s.XRange("xr_empty", "-", "+", 0)
@@ -229,7 +229,7 @@ func TestXRangeEmpty(t *testing.T) {
 // ---------- XRevRange (stream.go) ----------
 
 func TestXRevRange(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	for i := 0; i < 5; i++ {
@@ -245,7 +245,7 @@ func TestXRevRange(t *testing.T) {
 // ---------- XAck (stream.go) ----------
 
 func TestXAck(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, _ = s.XAdd("xack_ok", StreamXAddOptions{}, "*",
@@ -278,7 +278,7 @@ func TestXAck(t *testing.T) {
 // ---------- XPending (stream.go) ----------
 
 func TestXPending(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, _ = s.XAdd("xpend_ok", StreamXAddOptions{}, "*",
@@ -295,7 +295,7 @@ func TestXPending(t *testing.T) {
 // ---------- XInfo (stream.go) ----------
 
 func TestXInfo(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, _ = s.XAdd("xinfo_ok", StreamXAddOptions{}, "*",
@@ -307,7 +307,7 @@ func TestXInfo(t *testing.T) {
 }
 
 func TestXInfoGroups(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, _ = s.XAdd("xinfo_grp", StreamXAddOptions{}, "*",
@@ -323,7 +323,7 @@ func TestXInfoGroups(t *testing.T) {
 // ---------- ZPopMax / ZPopMin (sorted_set.go) ----------
 
 func TestZPopMaxStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zpopmax_ok", []ZSetMember{
@@ -339,7 +339,7 @@ func TestZPopMaxStorePhase3(t *testing.T) {
 }
 
 func TestZPopMinStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zpopmin_ok", []ZSetMember{
@@ -357,7 +357,7 @@ func TestZPopMinStorePhase3(t *testing.T) {
 // ---------- ZScan (sorted_set.go) ----------
 
 func TestZScanStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zscan_ok", []ZSetMember{
@@ -373,7 +373,7 @@ func TestZScanStorePhase3(t *testing.T) {
 }
 
 func TestZScanWithMatch(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zscan_m", []ZSetMember{
@@ -390,7 +390,7 @@ func TestZScanWithMatch(t *testing.T) {
 // ---------- ZRandMember (sorted_set.go) ----------
 
 func TestZRandMemberStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zrm_ok", []ZSetMember{
@@ -407,7 +407,7 @@ func TestZRandMemberStorePhase3(t *testing.T) {
 // ---------- ZMScore (sorted_set.go) ----------
 
 func TestZMScoreStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zmscore_ok", []ZSetMember{
@@ -425,7 +425,7 @@ func TestZMScoreStorePhase3(t *testing.T) {
 // ---------- ZInter / ZUnion (sorted_set.go) ----------
 
 func TestZInterStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zinter_a", []ZSetMember{
@@ -444,7 +444,7 @@ func TestZInterStorePhase3(t *testing.T) {
 }
 
 func TestZUnionStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	mustZAdd(t, s, "zunion_a", []ZSetMember{
@@ -464,7 +464,7 @@ func TestZUnionStorePhase3(t *testing.T) {
 // ---------- MemoryUsage (base.go) ----------
 
 func TestMemoryUsage(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("mem_ok", "hello")
@@ -474,7 +474,7 @@ func TestMemoryUsage(t *testing.T) {
 }
 
 func TestMemoryUsageNonExistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	usage, err := s.MemoryUsage("mem_ne")
@@ -485,7 +485,7 @@ func TestMemoryUsageNonExistent(t *testing.T) {
 // ---------- Restore (base.go) ----------
 
 func TestRestoreRoundTrip(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	// Set a value
@@ -512,7 +512,7 @@ func TestRestoreRoundTrip(t *testing.T) {
 // ---------- ExpireTime / PExpireTime (base.go) ----------
 
 func TestExpireTimeExisting(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("et_ok", "val")
@@ -524,7 +524,7 @@ func TestExpireTimeExisting(t *testing.T) {
 }
 
 func TestExpireTimeNonExistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	expireTime, err := s.ExpireTime("et_ne")
@@ -533,7 +533,7 @@ func TestExpireTimeNonExistent(t *testing.T) {
 }
 
 func TestPExpireTimeExisting(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("pet_ok", "val")
@@ -545,7 +545,7 @@ func TestPExpireTimeExisting(t *testing.T) {
 }
 
 func TestPExpireTimeNonExistent(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	expireTime, err := s.PExpireTime("pet_ne")
@@ -556,7 +556,7 @@ func TestPExpireTimeNonExistent(t *testing.T) {
 // ---------- GetSet (string.go) ----------
 
 func TestGetSetStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("gs_ok", "old")
@@ -569,7 +569,7 @@ func TestGetSetStorePhase3(t *testing.T) {
 }
 
 func TestGetSetNonExistentStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	old, err := s.GetSet("gs_ne", "val")
@@ -580,7 +580,7 @@ func TestGetSetNonExistentStorePhase3(t *testing.T) {
 // ---------- SetEX / PSETEX (string.go) ----------
 
 func TestSetEXStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	err := s.SetEX("setex_ok", "val", 60)
@@ -594,7 +594,7 @@ func TestSetEXStorePhase3(t *testing.T) {
 }
 
 func TestPSETEXStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	err := s.PSETEX("psetex_ok", "val", 60000)
@@ -610,7 +610,7 @@ func TestPSETEXStorePhase3(t *testing.T) {
 // ---------- SetNX (string.go) ----------
 
 func TestSetNXStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	ok, err := s.SetNX("setnx_ok", "val")
@@ -629,7 +629,7 @@ func TestSetNXStorePhase3(t *testing.T) {
 // ---------- INCRBYFLOAT (string.go) ----------
 
 func TestIncrByFloatStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("ibf_ok", "1.5")
@@ -641,7 +641,7 @@ func TestIncrByFloatStorePhase3(t *testing.T) {
 // ---------- APPEND (string.go) ----------
 
 func TestAppendStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.Set("append_ok", "hello")
@@ -654,7 +654,7 @@ func TestAppendStorePhase3(t *testing.T) {
 }
 
 func TestAppendNonExistentStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	length, err := s.APPEND("append_ne", "hello")
@@ -665,7 +665,7 @@ func TestAppendNonExistentStorePhase3(t *testing.T) {
 // ---------- MGet / MSet (string.go) ----------
 
 func TestMGetMSetStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.MSet("m1", "v1", "m2", "v2", "m3", "v3")
@@ -682,7 +682,7 @@ func TestMGetMSetStorePhase3(t *testing.T) {
 // ---------- List operations (list.go) ----------
 
 func TestLRangeFullStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("lr_full", "c", "b", "a")
@@ -695,7 +695,7 @@ func TestLRangeFullStorePhase3(t *testing.T) {
 }
 
 func TestLIndexStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("li_ok", "a", "b", "c")
@@ -706,7 +706,7 @@ func TestLIndexStorePhase3(t *testing.T) {
 }
 
 func TestLIndexNonExistentStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	_, err := s.LIndex("li_ne", 0)
@@ -715,7 +715,7 @@ func TestLIndexNonExistentStorePhase3(t *testing.T) {
 }
 
 func TestLLenStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.LPush("llen_ok", "a", "b")
@@ -727,7 +727,7 @@ func TestLLenStorePhase3(t *testing.T) {
 // ---------- Hash operations (hash.go) ----------
 
 func TestHGetHSetStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("hgs_ok", "f1", "v1")
@@ -737,7 +737,7 @@ func TestHGetHSetStorePhase3(t *testing.T) {
 }
 
 func TestHDelStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("hdl_ok", "f1", "v1")
@@ -751,7 +751,7 @@ func TestHDelStorePhase3(t *testing.T) {
 }
 
 func TestHLenStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("hlen_ok", "f1", "v1")
@@ -762,7 +762,7 @@ func TestHLenStorePhase3(t *testing.T) {
 }
 
 func TestHExistsStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.HSet("hex_ok", "f1", "v1")
@@ -778,7 +778,7 @@ func TestHExistsStorePhase3(t *testing.T) {
 // ---------- Set operations (set.go) ----------
 
 func TestSAddSMembersStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("sasm_ok", "a", "b", "c")
@@ -788,7 +788,7 @@ func TestSAddSMembersStorePhase3(t *testing.T) {
 }
 
 func TestSRemStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("srem_ok", "a", "b", "c")
@@ -801,7 +801,7 @@ func TestSRemStorePhase3(t *testing.T) {
 }
 
 func TestSCardStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("scard_ok", "a", "b")
@@ -811,7 +811,7 @@ func TestSCardStorePhase3(t *testing.T) {
 }
 
 func TestSIsMemberStorePhase3(t *testing.T) {
-	t.Parallel()
+
 	s := setupTestStore(t)
 
 	s.SAdd("sim_ok", "a", "b")

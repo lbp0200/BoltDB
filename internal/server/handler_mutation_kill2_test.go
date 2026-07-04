@@ -20,7 +20,7 @@ import (
 // ---------- GEO: arg-count error paths (7 mutations) ----------
 
 func TestGeoMutationKill_ArgCountErrors(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -76,7 +76,7 @@ func TestGeoMutationKill_ArgCountErrors(t *testing.T) {
 // ---------- GEO: option parsing boundary paths ----------
 
 func TestGeoMutationKill_GeoSearchFromMemberNonExistent(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -92,7 +92,7 @@ func TestGeoMutationKill_GeoSearchFromMemberNonExistent(t *testing.T) {
 }
 
 func TestGeoMutationKill_GeoSearchStoreFromMemberNonExistent(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -109,7 +109,7 @@ func TestGeoMutationKill_GeoSearchStoreFromMemberNonExistent(t *testing.T) {
 }
 
 func TestGeoMutationKill_GeoSearchFromMemberMissingArgs(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -124,7 +124,7 @@ func TestGeoMutationKill_GeoSearchFromMemberMissingArgs(t *testing.T) {
 }
 
 func TestGeoMutationKill_GeoSearchFromLonLatMissingArgs(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -139,7 +139,7 @@ func TestGeoMutationKill_GeoSearchFromLonLatMissingArgs(t *testing.T) {
 }
 
 func TestGeoMutationKill_GeoSearchStoreMissingArgs(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -154,7 +154,7 @@ func TestGeoMutationKill_GeoSearchStoreMissingArgs(t *testing.T) {
 }
 
 func TestGeoMutationKill_GeoSearchStoreUnknownOption(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -178,7 +178,7 @@ func TestGeoMutationKill_GeoSearchStoreUnknownOption(t *testing.T) {
 }
 
 func TestGeoMutationKill_GeoSearchInvalidFloat(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -205,7 +205,7 @@ func TestGeoMutationKill_GeoSearchInvalidFloat(t *testing.T) {
 }
 
 func TestGeoMutationKill_GeoAddInvalidFloat(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -228,7 +228,7 @@ func TestGeoMutationKill_GeoAddInvalidFloat(t *testing.T) {
 }
 
 func TestGeoMutationKill_GeoAddMultiMember(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -244,7 +244,7 @@ func TestGeoMutationKill_GeoAddMultiMember(t *testing.T) {
 }
 
 func TestGeoMutationKill_GeodistCustomUnit(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -273,7 +273,7 @@ func TestGeoMutationKill_GeodistCustomUnit(t *testing.T) {
 }
 
 func TestGeoMutationKill_GeoradiusInvalidArgs(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -312,7 +312,7 @@ func TestGeoMutationKill_GeoradiusInvalidArgs(t *testing.T) {
 // ---------- Key: UNLINK error paths (5 mutations) ----------
 
 func TestKeyMutationKill_UNLINKNoArgs(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -325,7 +325,7 @@ func TestKeyMutationKill_UNLINKNoArgs(t *testing.T) {
 }
 
 func TestKeyMutationKill_UNLINKMultiKey(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -344,7 +344,7 @@ func TestKeyMutationKill_UNLINKMultiKey(t *testing.T) {
 }
 
 func TestKeyMutationKill_UNLINKPartialDelete(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -361,7 +361,7 @@ func TestKeyMutationKill_UNLINKPartialDelete(t *testing.T) {
 }
 
 func TestKeyMutationKill_DELNoArgs(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -374,7 +374,7 @@ func TestKeyMutationKill_DELNoArgs(t *testing.T) {
 }
 
 func TestKeyMutationKill_EXISTSNoArgs(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -389,7 +389,7 @@ func TestKeyMutationKill_EXISTSNoArgs(t *testing.T) {
 // ---------- Key: DUMP success path ----------
 
 func TestKeyMutationKill_DUMPExistingKey(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -428,7 +428,7 @@ func TestKeyMutationKill_RESTORENoArgs(t *testing.T) {
 // ---------- JSON: WRONGTYPE paths (9 mutations) ----------
 
 func TestJsonMutationKill_WRONGTYPEPaths(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -518,7 +518,7 @@ func TestJsonMutationKill_WRONGTYPEPaths(t *testing.T) {
 // ---------- JSON: ParseFloat boundary (2 mutations) ----------
 
 func TestJsonMutationKill_ParseFloatErrors(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -548,7 +548,7 @@ func TestJsonMutationKill_ParseFloatErrors(t *testing.T) {
 // ---------- JSON: NX/XX option boundary (4 mutations) ----------
 
 func TestJsonMutationKill_SetNXOption(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -571,7 +571,7 @@ func TestJsonMutationKill_SetNXOption(t *testing.T) {
 }
 
 func TestJsonMutationKill_SetXXOption(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -597,7 +597,7 @@ func TestJsonMutationKill_SetXXOption(t *testing.T) {
 // ---------- Admin: SLOWLOG/MEMORY/DEBUG boundary paths ----------
 
 func TestAdminMutationKill_SlowlogHelp(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -615,7 +615,7 @@ func TestAdminMutationKill_SlowlogHelp(t *testing.T) {
 }
 
 func TestAdminMutationKill_MemoryBoundary(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -651,7 +651,7 @@ func TestAdminMutationKill_MemoryBoundary(t *testing.T) {
 }
 
 func TestAdminMutationKill_DebugBoundary(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -711,7 +711,7 @@ func TestBitmapMutationKill_BitopErrors(t *testing.T) {
 // ---------- Client: NO-TOUCH/CACHING boundary ----------
 
 func TestClientMutationKill_NoTouchCaching(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -763,7 +763,7 @@ func TestClientMutationKill_NoTouchCaching(t *testing.T) {
 // ---------- Key: TYPE no-args ----------
 
 func TestKeyMutationKill_TYPENoArgs(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
