@@ -121,14 +121,19 @@ Active config:
 - [x] **优先级链**：CLI flag > 配置文件 > 自动推导 > 硬编码默认值
 - [x] **deploy/boltdb.toml**：102 行全中文注释的默认配置文件
 
-### ZRANK / ZRANGE by rank — 无跳表 O(n) 线性扫描 ⏳ → 🔴 P0
+### ZRANK / ZRANGE by rank — 无跳表 O(n) 线性扫描 ⏳ → 🔴 P0（待数据决策）
 
 **位置：** `internal/store/zrange.go:93-144`、`internal/store/zrank.go:60-82`
 
 **原状态：** P2（搁置 5 个月，等 benchmark 证明是热点）
-**新状态：** **P0** — 2026-07-04 第七轮竞争对手架构评审中，被明确指出这是 feature gap 而非实现缺陷。对于一个宣称兼容 Redis sorted set 的数据库，ZRANK O(n) vs Redis O(log n) 是可测量、可沟通的竞争劣势。升级为 P0。
+**新状态：** **P0 — 先设计后决策**。设计文档见 [zrank-cache-design.md](zrank-cache-design.md)。
 
-**决策：** 加内存跳跃表或 B-tree 缓存（mid-point 优化仅减半常数，不改变 O(n)）。
+**设计结论：** 推荐方案 A（`google/btree` B-tree 缓存 + write-through + 启动重建），但 **建议先采集使用率数据再实施**。涉及 ~15 个写路径修改，投入 1-2 周，需要数据证明 ROI。
+
+**前置条件（1 天）：**
+- [ ] 在 metrics 中添加 ZRANK/ZREVRANK/ZRANGE by rank 命令计数
+- [ ] 在 soak 或 staging 采集使用率
+- [ ] 如果 ZRANK + ZRANGE by rank < 5%，关闭此任务
 
 ### 规模化验证（P1 — 收购阻塞项，唯一主要缺口）
 
