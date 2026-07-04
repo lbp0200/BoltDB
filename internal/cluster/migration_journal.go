@@ -29,21 +29,15 @@ const (
 	PhaseDone    = "DONE"    // 迁移完成
 )
 
-// keyStatus 记录单个 key 的迁移状态。
-type keyStatus struct {
-	Key    string `json:"key"`
-	Copied bool   `json:"copied"` // 是否已成功复制到目标
-}
-
 // migrationJournal 记录一次 slot 迁移的所有状态。
 // 持久化在 BadgerDB 中，crash 后可通过 RecoverSlotMigration 恢复。
+// 注意：不再存储 Keys 字段（全量 key 列表），Phase 2 的 key 删除改为重新扫描 slot。
 type migrationJournal struct {
-	Slot       uint32      `json:"slot"`
-	TargetID   string      `json:"target_id"`
-	TargetAddr string      `json:"target_addr"`
-	Phase      string      `json:"phase"`
-	Keys       []keyStatus `json:"keys"`
-	CopyKeys   bool        `json:"copy_keys"` // 是否 COPY 模式（不删除源端）
+	Slot       uint32 `json:"slot"`
+	TargetID   string `json:"target_id"`
+	TargetAddr string `json:"target_addr"`
+	Phase      string `json:"phase"`
+	CopyKeys   bool   `json:"copy_keys"` // 是否 COPY 模式（不删除源端）
 }
 
 // journalKey 返回槽位对应迁移日志的 BadgerDB key。
@@ -173,6 +167,18 @@ func isErrorResponse(resp *proto.Array) bool {
 	return resp.Args[0][0] == '-'
 }
 
+// collectSlotKeys 收集指定 slot 的所有 key。
+func (c *Cluster) collectSlotKeys(slot uint32) ([]string, error) {
+	var keys []string
+	err := c.Store.IterateRawKeys(func(rawKey string) bool {
+		if Slot(rawKey) == slot {
+			keys = append(keys, rawKey)
+		}
+		return true
+	})
+	return keys, err
+}
+
 // MigrateSlotCrashSafe 是 MigrateSlot 的 crash-safe 版本（两阶段提交）。
 // 它使用迁移日志记录每个 key 的迁移进度，在 crash 后可恢复。
 //
@@ -225,13 +231,7 @@ func (c *Cluster) MigrateSlotCrashSafe(slot uint32, targetNodeID string, copyKey
 		Msg("MigrateSlotCrashSafe: starting two-phase slot migration")
 
 	// 收集所有属于该 slot 的 key
-	var keys []string
-	err = c.Store.IterateRawKeys(func(rawKey string) bool {
-		if Slot(rawKey) == slot {
-			keys = append(keys, rawKey)
-		}
-		return true
-	})
+	keys, err := c.collectSlotKeys(slot)
 	if err != nil {
 		return fmt.Errorf("iterate keys for slot %d: %w", slot, err)
 	}
@@ -241,17 +241,13 @@ func (c *Cluster) MigrateSlotCrashSafe(slot uint32, targetNodeID string, copyKey
 		Int("key_count", len(keys)).
 		Msg("MigrateSlotCrashSafe: collected keys to migrate")
 
-	// 初始化迁移日志
+	// 初始化迁移日志（不再存储全量 key 列表，避免 O(N) 内存占用和序列化开销）
 	journal := &migrationJournal{
 		Slot:       slot,
 		TargetID:   targetNodeID,
 		TargetAddr: targetNode.Addr,
 		Phase:      PhaseInit,
 		CopyKeys:   copyKeys,
-		Keys:       make([]keyStatus, len(keys)),
-	}
-	for i, k := range keys {
-		journal.Keys[i] = keyStatus{Key: k, Copied: false}
 	}
 
 	// 持久化 INIT 状态
@@ -273,40 +269,21 @@ func (c *Cluster) MigrateSlotCrashSafe(slot uint32, targetNodeID string, copyKey
 	}
 	defer mc.close()
 
-	for i := range journal.Keys {
-		// 跳过已经复制过的 key（中断恢复）
-		if journal.Keys[i].Copied {
-			continue
-		}
-
-		key := journal.Keys[i].Key
-
+	// 逐 key DUMP → RESTORE（不持久化逐 key 状态；若 crash，recovery 对 Phase 1 做回滚而非恢复）
+	for _, key := range keys {
 		// DUMP key
 		data, err := c.Store.Dump(key)
 		if err != nil {
 			if strings.Contains(err.Error(), "no such key") {
-				// key 在收集中存在但在 DUMP 时已被删除，标记为已复制（跳过）
-				journal.Keys[i].Copied = true
+				// key 在收集中存在但在 DUMP 时已被删除，跳过
 				continue
 			}
-			journal.Keys[i].Copied = false
-			_ = c.saveJournal(journal)
 			return fmt.Errorf("dump key %s: %w", key, err)
 		}
 
 		// 发送 RESTORE 到目标
 		if err := mc.sendRestore(key, data); err != nil {
-			journal.Keys[i].Copied = false
-			_ = c.saveJournal(journal)
 			return fmt.Errorf("restore key %s on target: %w", key, err)
-		}
-
-		// 标记为已复制，每复制 10 个 key 更新一次日志
-		journal.Keys[i].Copied = true
-		if i%10 == 0 {
-			if err := c.saveJournal(journal); err != nil {
-				logger.Logger.Warn().Err(err).Uint32("slot", slot).Msg("failed to update migration journal during copy")
-			}
 		}
 	}
 
@@ -327,7 +304,7 @@ func (c *Cluster) MigrateSlotCrashSafe(slot uint32, targetNodeID string, copyKey
 		logger.Logger.Info().
 			Uint32("slot", slot).
 			Str("target", targetNodeID).
-			Int("copied", len(journal.Keys)).
+			Int("copied", len(keys)).
 			Msg("MigrateSlotCrashSafe: copy completed")
 		return nil
 	}
@@ -338,14 +315,16 @@ func (c *Cluster) MigrateSlotCrashSafe(slot uint32, targetNodeID string, copyKey
 		return fmt.Errorf("save COMMIT journal: %w", err)
 	}
 
-	// 批量删除源端 key（逐个调用 Store.Del 以正确处理所有复合类型的二级索引）
-	for _, ks := range journal.Keys {
-		if !ks.Copied {
-			continue
-		}
-		if _, err := c.Store.Del(ks.Key); err != nil {
+	// 重新扫描 slot 的 key 并删除（而非依赖迁移开始时收集的列表）
+	// 这样做的好处是：避免在 journal 中存储全量 key 列表，且 Del 对不存在的 key 幂等返回 0
+	slotKeys, err := c.collectSlotKeys(slot)
+	if err != nil {
+		return fmt.Errorf("re-collect keys for slot %d during commit: %w", slot, err)
+	}
+	for _, key := range slotKeys {
+		if _, err := c.Store.Del(key); err != nil {
 			_ = c.saveJournal(journal)
-			return fmt.Errorf("delete key %s during slot %d migration: %w", ks.Key, slot, err)
+			return fmt.Errorf("delete key %s during slot %d migration: %w", key, slot, err)
 		}
 	}
 
@@ -381,7 +360,7 @@ func (c *Cluster) MigrateSlotCrashSafe(slot uint32, targetNodeID string, copyKey
 	logger.Logger.Info().
 		Uint32("slot", slot).
 		Str("target", targetNodeID).
-		Int("migrated", len(journal.Keys)).
+		Int("migrated", len(keys)).
 		Msg("MigrateSlotCrashSafe: migration completed successfully")
 
 	return nil
@@ -428,7 +407,6 @@ func (c *Cluster) RecoverSlotMigrations() error {
 		logger.Logger.Info().
 			Uint32("slot", slot).
 			Str("phase", journal.Phase).
-			Int("keys", len(journal.Keys)).
 			Msg("RecoverSlotMigrations: found incomplete migration")
 
 		switch journal.Phase {
@@ -481,13 +459,15 @@ func (c *Cluster) retryCommitPhase(journal *migrationJournal) error {
 	slot := journal.Slot
 
 	if !journal.CopyKeys {
-		// 删除源端 key（逐个调用 Store.Del 以正确处理所有复合类型的二级索引；幂等：Del 对不存在的 key 返回 0 不报错）
-		for _, ks := range journal.Keys {
-			if !ks.Copied {
-				continue
-			}
-			if _, err := c.Store.Del(ks.Key); err != nil {
-				return fmt.Errorf("retry delete key %s for slot %d: %w", ks.Key, slot, err)
+		// 重新扫描 slot 的 key 并删除（而非依赖存储在 journal 中的全量 key 列表）
+		// Del 对不存在的 key 幂等返回 0，不会报错
+		slotKeys, err := c.collectSlotKeys(slot)
+		if err != nil {
+			return fmt.Errorf("re-collect keys for slot %d during retry commit: %w", slot, err)
+		}
+		for _, key := range slotKeys {
+			if _, err := c.Store.Del(key); err != nil {
+				return fmt.Errorf("retry delete key %s for slot %d: %w", key, slot, err)
 			}
 		}
 	}

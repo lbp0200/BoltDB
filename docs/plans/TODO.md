@@ -181,3 +181,33 @@ README 宣称 *"Memory Redis can only store 64GB? BoltDB can handle 100TB!"*，�
 | 第三轮 | 2026-07-03 | 2 ✅ | SCAN 书签淘汰无界增长、HLL `countTrailingZeros` 手写→`bits.TrailingZeros64` |
 | 第四轮 | 2026-07-03 | 3 ✅ | `randomIntn` crypto→math/rand/v2、SPop 线性扫描→双向搜索、`matchPattern` 灾难性回溯→DP |
 | 第五轮 | 2026-07-03 | 6 ✅ | Gossip 全量拷贝+全洗牌→蓄水池采样、HRandField/H走读MBER 全量加载优化、remote-test.sh OOM、输出缓冲区默认值、启动设置 MemoryLimit |
+| 第六轮 | 2026-07-04 | 3 项（1 已修复 ✅, 1 已降级 ⏳→✅, 1 架构评价） | **CRC64 只写不验**（★★★★★）**已修复**、**backlog resize 丢历史**（★★★★☆→★★☆☆☆）、command dispatch 899 行 switch 架构评价（★★☆☆☆） |
+
+### 第六轮（2026-07-04）具体待办
+
+#### RDB CRC64 校验缺失（★★★★★）
+
+**发现：** `internal/replication/rdb.go:288-294` 在 `WriteFooter()` 中写入 8 字节 CRC64 校验码，但 `internal/replication/rdb_loader.go:183-189` 遇到 `0xFF` 结束符后直接 break，未读取/验证 CRC64。
+
+**影响：** RDB 快照在磁盘静默错误、截断、程序 bug 或传输异常后，从节点加载时零感知、零告警，损坏数据可正常入库。
+
+**建议修复：**
+- [ ] `loadRDBEntries` 在遇到 `0xFF` 后读取后续 8 字节 CRC64
+- [ ] 用与 encoder 相同的 `crc64.MakeTable(crc64.ECMA)` 重新计算并比对
+- [ ] 校验失败时返回明确的错误信息（含期望值 vs 实际值）
+- [ ] 考虑在大 RDB 加载时启用流式 CRC（边解析边校验，当前是全量 buffer 后解析）
+
+#### Backlog resize 丢失历史数据（★★★★☆）
+
+**发现：** `internal/replication/replication.go:88-98` 的 `SetBacklogSize` 直接 `rm.backlog = NewReplicationBacklog(size)`，新缓冲区从 offset=0 开始，旧数据全部丢弃。所有等待 PSYNC CONTINUE 的从节点会因 offset 不可用而回退到 FULLRESYNC。
+
+**⏳ 待确认：** 需要确认此接口是否暴露了运行时 `CONFIG SET` 或存在运行期调用路径。若仅用于启动配置（重启生效），则评级降为 ★★☆☆☆。
+
+**建议修复（若需支持热修改）：**
+- [ ] resize 时计算当前有效窗口范围（`[rb.offset - rb.size, rb.offset)`）
+- [ ] 分配新 buffer 后，将有效窗口的旧数据复制到新 buffer 的对应位置
+- [ ] 更新 `rb.offset` 和 `rb.size` 时保证原子性（或在新 buffer 就绪后再替换指针）
+
+#### Command dispatch 899 行 switch（★☆☆☆☆）
+
+**类型：** 架构偏好，非功能缺陷。当前 switch 模式在 Go 中可正常工作，golangci-lint 可静态检查锁泄漏。建议未来引入命令表（`map[string]Handler`）以支持元数据管理和扩展性，但不阻塞当前开发。

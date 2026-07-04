@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"hash/crc64"
+	"io"
 	"strconv"
 	"time"
 
@@ -16,14 +18,16 @@ const rdbBatchSize = 1000
 
 // RDBDecoder RDB解码器
 type RDBDecoder struct {
-	buf     *bytes.Buffer
-	version string
+	buf      *bytes.Buffer
+	version  string
+	origData []byte // 原始数据副本，用于 CRC64 校验
 }
 
 // NewRDBDecoder 创建新的RDB解码器
 func NewRDBDecoder(data []byte) *RDBDecoder {
 	return &RDBDecoder{
-		buf: bytes.NewBuffer(data),
+		buf:      bytes.NewBuffer(data),
+		origData: data,
 	}
 }
 
@@ -506,6 +510,47 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 		logger.Logger.Warn().Err(fsErr).Msg("最终刷新字符串批量缓冲区失败")
 	}
 
-	logger.Logger.Info().Msg("RDB数据加载完成")
+	// CRC64 校验：验证 RDB 尾部 8 字节校验和
+	const crc64Size = 8
+
+	// 先消费 0xFF 结束符（loop 只检查未消费）
+	if dec.buf.Len() == 0 {
+		return fmt.Errorf("RDB file truncated: missing 0xFF end-of-file marker")
+	}
+	marker, err := dec.buf.ReadByte()
+	if err != nil {
+		return fmt.Errorf("failed to read end-of-file marker: %w", err)
+	}
+	if marker != 0xFF {
+		return fmt.Errorf("invalid RDB end-of-file marker: expected 0xFF, got 0x%02x", marker)
+	}
+
+	// 剩余字节应是 8 字节 CRC64
+	if dec.buf.Len() < crc64Size {
+		return fmt.Errorf("RDB file truncated: expected 8-byte CRC64 checksum, got %d bytes remaining", dec.buf.Len())
+	}
+	if dec.buf.Len() > crc64Size {
+		logger.Logger.Warn().Int("extra_bytes", dec.buf.Len()-crc64Size).Msg("RDB has trailing data beyond CRC64 checksum")
+	}
+
+	storedCRC := make([]byte, crc64Size)
+	if _, err := io.ReadFull(dec.buf, storedCRC); err != nil {
+		return fmt.Errorf("failed to read CRC64 checksum: %w", err)
+	}
+
+	// CRC 覆盖整个 RDB 文件（magic + version + 条目 + 0xFF 结束符），不含校验和自身
+	totalLen := len(dec.origData)
+	if totalLen <= crc64Size {
+		return fmt.Errorf("RDB data too short: %d bytes", totalLen)
+	}
+	hash := crc64.New(crc64.MakeTable(crc64.ECMA))
+	hash.Write(dec.origData[:totalLen-crc64Size])
+	expectedCRC := hash.Sum(nil)
+
+	if !bytes.Equal(storedCRC, expectedCRC) {
+		return fmt.Errorf("RDB CRC64 checksum mismatch: stored %x, computed %x", storedCRC, expectedCRC)
+	}
+
+	logger.Logger.Info().Msg("RDB数据加载完成，CRC64校验通过")
 	return nil
 }
