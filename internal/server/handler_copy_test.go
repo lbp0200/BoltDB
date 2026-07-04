@@ -10,7 +10,7 @@ import (
 
 // TestGetResponseType tests getResponseType function
 func TestGetResponseType(t *testing.T) {
-	t.Parallel()
+
 	tests := []struct {
 		name     string
 		resp     proto.RESP
@@ -58,7 +58,7 @@ func TestGetResponseType(t *testing.T) {
 
 // TestBoolToInt tests boolToInt function
 func TestBoolToInt(t *testing.T) {
-	t.Parallel()
+
 	tests := []struct {
 		name     string
 		input    bool
@@ -78,7 +78,7 @@ func TestBoolToInt(t *testing.T) {
 
 // TestCopyList tests copyList function
 func TestCopyList(t *testing.T) {
-	t.Parallel()
+
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -97,7 +97,7 @@ func TestCopyList(t *testing.T) {
 
 // TestCopyListEmpty tests copyList with empty source
 func TestCopyListEmpty(t *testing.T) {
-	t.Parallel()
+
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -108,7 +108,7 @@ func TestCopyListEmpty(t *testing.T) {
 
 // TestCopyHash tests copyHash function
 func TestCopyHash(t *testing.T) {
-	t.Parallel()
+
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -127,7 +127,7 @@ func TestCopyHash(t *testing.T) {
 
 // TestCopyHashEmpty tests copyHash with empty source
 func TestCopyHashEmpty(t *testing.T) {
-	t.Parallel()
+
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -138,7 +138,7 @@ func TestCopyHashEmpty(t *testing.T) {
 
 // TestCopySet tests copySet function
 func TestCopySet(t *testing.T) {
-	t.Parallel()
+
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -157,7 +157,7 @@ func TestCopySet(t *testing.T) {
 
 // TestCopySetEmpty tests copySet with empty source
 func TestCopySetEmpty(t *testing.T) {
-	t.Parallel()
+
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -168,7 +168,7 @@ func TestCopySetEmpty(t *testing.T) {
 
 // TestCopySortedSet tests copySortedSet function
 func TestCopySortedSet(t *testing.T) {
-	t.Parallel()
+
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -186,7 +186,7 @@ func TestCopySortedSet(t *testing.T) {
 
 // TestCopySortedSetEmpty tests copySortedSet with empty source
 func TestCopySortedSetEmpty(t *testing.T) {
-	t.Parallel()
+
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 

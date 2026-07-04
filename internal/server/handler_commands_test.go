@@ -10,7 +10,7 @@ import (
 
 // TestServerStringCommands tests string type commands
 func TestServerStringCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -219,7 +219,7 @@ func TestServerStringCommands(t *testing.T) {
 
 // TestServerKeyCommands tests key management commands
 func TestServerKeyCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -403,7 +403,7 @@ func TestServerKeyCommands(t *testing.T) {
 
 // TestServerHashCommands tests hash type commands
 func TestServerHashCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -610,7 +610,7 @@ func TestServerHashCommands(t *testing.T) {
 
 // TestServerSetCommands tests set type commands
 func TestServerSetCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -753,7 +753,7 @@ func TestServerSetCommands(t *testing.T) {
 
 // TestServerSortedSetCommands tests sorted set commands
 func TestServerSortedSetCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -929,7 +929,7 @@ func TestServerSortedSetCommands(t *testing.T) {
 
 // TestServerListCommands tests list type commands
 func TestServerListCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 

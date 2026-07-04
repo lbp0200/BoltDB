@@ -10,7 +10,7 @@ import (
 
 // TestServerBitCommands tests BIT commands
 func TestServerBitCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -123,7 +123,7 @@ func TestServerTransactionCommands(t *testing.T) {
 
 // TestServerGeoCommands tests GEO commands
 func TestServerGeoCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -178,7 +178,7 @@ func TestServerGeoCommands(t *testing.T) {
 
 // TestServerStreamCommands tests Stream commands
 func TestServerStreamCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -232,7 +232,7 @@ func TestServerStreamCommands(t *testing.T) {
 
 // TestServerScanCommands tests SCAN commands
 func TestServerScanCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -298,7 +298,7 @@ func TestServerScanCommands(t *testing.T) {
 
 // TestServerObjectCommands tests OBJECT commands
 func TestServerObjectCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -419,7 +419,7 @@ func TestServerClientCommands(t *testing.T) {
 
 // TestServerConfigCommands tests CONFIG commands
 func TestServerConfigCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -462,7 +462,7 @@ func TestServerConfigCommands(t *testing.T) {
 
 // TestServerClusterCommands tests CLUSTER commands (basic)
 func TestServerClusterCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -524,7 +524,7 @@ func TestServerClusterCommands(t *testing.T) {
 
 // TestServerReplConfCommands tests REPLCONF commands
 func TestServerReplConfCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -568,7 +568,7 @@ func TestServerReplConfCommands(t *testing.T) {
 
 // TestServerSaveCommands tests SAVE commands
 func TestServerSaveCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 

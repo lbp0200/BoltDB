@@ -10,7 +10,7 @@ import (
 
 // TestExecuteCommand_DUMP_NonExistent_Coverage tests DUMP command on non-existent key
 func TestExecuteCommand_DUMP_NonExistent_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -23,7 +23,7 @@ func TestExecuteCommand_DUMP_NonExistent_Coverage(t *testing.T) {
 
 // TestExecuteCommand_OBJECT_REFCOUNT_Coverage tests OBJECT REFCOUNT command
 func TestExecuteCommand_OBJECT_REFCOUNT_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -39,7 +39,7 @@ func TestExecuteCommand_OBJECT_REFCOUNT_Coverage(t *testing.T) {
 
 // TestExecuteCommand_CLIENT_NOEVICT2_Coverage tests CLIENT NOEVICT command
 func TestExecuteCommand_CLIENT_NOEVICT2_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -54,7 +54,7 @@ func TestExecuteCommand_CLIENT_NOEVICT2_Coverage(t *testing.T) {
 
 // TestExecuteCommand_CLIENT_NOEVICT_Error_Coverage tests CLIENT NOEVICT with invalid args
 func TestExecuteCommand_CLIENT_NOEVICT_Error_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -67,7 +67,7 @@ func TestExecuteCommand_CLIENT_NOEVICT_Error_Coverage(t *testing.T) {
 
 // TestExecuteCommand_CLIENT_TRACKING_Coverage2 tests CLIENT TRACKING command
 func TestExecuteCommand_CLIENT_TRACKING_Coverage2(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -82,7 +82,7 @@ func TestExecuteCommand_CLIENT_TRACKING_Coverage2(t *testing.T) {
 
 // TestExecuteCommand_CLIENT_TRACKING_Error_Coverage tests CLIENT TRACKING with invalid args
 func TestExecuteCommand_CLIENT_TRACKING_Error_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -95,7 +95,7 @@ func TestExecuteCommand_CLIENT_TRACKING_Error_Coverage(t *testing.T) {
 
 // TestExecuteCommand_PFINFO_Coverage tests PFINFO command
 func TestExecuteCommand_PFINFO_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -111,7 +111,7 @@ func TestExecuteCommand_PFINFO_Coverage(t *testing.T) {
 
 // TestExecuteCommand_SWAPDB_Coverage2 tests SWAPDB command
 func TestExecuteCommand_SWAPDB_Coverage2(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -129,7 +129,7 @@ func TestExecuteCommand_SWAPDB_Coverage2(t *testing.T) {
 
 // TestExecuteCommand_RANDOMKEY_Coverage2 tests RANDOMKEY command
 func TestExecuteCommand_RANDOMKEY_Coverage2(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 

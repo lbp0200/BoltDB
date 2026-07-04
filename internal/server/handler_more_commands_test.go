@@ -11,7 +11,7 @@ import (
 
 // TestServerMoreStringCommands tests more string commands
 func TestServerMoreStringCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -117,7 +117,7 @@ func TestServerMoreStringCommands(t *testing.T) {
 
 // TestServerKeyExpirationCommands tests key expiration commands
 func TestServerKeyExpirationCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -219,7 +219,7 @@ func TestServerKeyExpirationCommands(t *testing.T) {
 
 // TestServerTypeAndExistsCommands tests TYPE and EXISTS commands
 func TestServerTypeAndExistsCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -324,7 +324,7 @@ func TestServerTypeAndExistsCommands(t *testing.T) {
 
 // TestSETModifiers 验证 SET 修饰符的实际效果（TTL、NX、XX、KEEPTTL）
 func TestSETModifiers(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 

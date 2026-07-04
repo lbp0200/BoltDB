@@ -8,7 +8,7 @@ import (
 )
 
 func TestExecuteCommand_JSON_SET_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -19,7 +19,7 @@ func TestExecuteCommand_JSON_SET_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_JSON_SET_WrongArgs_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -30,7 +30,7 @@ func TestExecuteCommand_JSON_SET_WrongArgs_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_JSON_GET_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -42,7 +42,7 @@ func TestExecuteCommand_JSON_GET_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_JSON_GET_WrongArgs_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -53,7 +53,7 @@ func TestExecuteCommand_JSON_GET_WrongArgs_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_JSON_DEL_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -65,7 +65,7 @@ func TestExecuteCommand_JSON_DEL_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_JSON_TYPE_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -77,7 +77,7 @@ func TestExecuteCommand_JSON_TYPE_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_JSON_TYPE_NotFound_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -88,7 +88,7 @@ func TestExecuteCommand_JSON_TYPE_NotFound_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_JSON_MGET_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -101,7 +101,7 @@ func TestExecuteCommand_JSON_MGET_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_JSON_MGET_WrongArgs_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -112,7 +112,7 @@ func TestExecuteCommand_JSON_MGET_WrongArgs_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_JSON_ARRAPPEND_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -124,7 +124,7 @@ func TestExecuteCommand_JSON_ARRAPPEND_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_JSON_NUMINCRBY_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -136,7 +136,7 @@ func TestExecuteCommand_JSON_NUMINCRBY_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_JSON_NUMMULTBY_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -148,7 +148,7 @@ func TestExecuteCommand_JSON_NUMMULTBY_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_JSON_ARRLEN_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -160,7 +160,7 @@ func TestExecuteCommand_JSON_ARRLEN_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_JSON_CLEAR_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -172,7 +172,7 @@ func TestExecuteCommand_JSON_CLEAR_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_TS_CREATE_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -183,7 +183,7 @@ func TestExecuteCommand_TS_CREATE_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_TS_CREATE_WithOptions_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -194,7 +194,7 @@ func TestExecuteCommand_TS_CREATE_WithOptions_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_TS_ADD_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -205,7 +205,7 @@ func TestExecuteCommand_TS_ADD_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_TS_GET_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -217,7 +217,7 @@ func TestExecuteCommand_TS_GET_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_TS_GET_NotFound_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -228,7 +228,7 @@ func TestExecuteCommand_TS_GET_NotFound_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_TS_LEN_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -241,7 +241,7 @@ func TestExecuteCommand_TS_LEN_Coverage(t *testing.T) {
 }
 
 func TestExecuteCommand_TS_DEL_Coverage(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 

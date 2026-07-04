@@ -12,7 +12,7 @@ import (
 
 // TestMaxClients_RejectsNewConnections 验证 maxclients 超限时拒绝新连接
 func TestMaxClients_RejectsNewConnections(t *testing.T) {
-	t.Parallel()
+
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -41,7 +41,6 @@ func TestMaxClients_RejectsNewConnections(t *testing.T) {
 
 // TestGetMaxClients 默认值验证
 func TestGetMaxClients(t *testing.T) {
-	t.Parallel()
 
 	// 未配置时默认 10000
 	h1 := &Handler{}
@@ -58,7 +57,7 @@ func TestGetMaxClients(t *testing.T) {
 
 // TestIdleTimeout_ReadDeadline 验证空闲超时设置
 func TestIdleTimeout_ReadDeadline(t *testing.T) {
-	t.Parallel()
+
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -78,7 +77,6 @@ func TestIdleTimeout_ReadDeadline(t *testing.T) {
 
 // TestIdleTimeout_ZeroDefault 验证默认无超时
 func TestIdleTimeout_ZeroDefault(t *testing.T) {
-	t.Parallel()
 
 	h := &Handler{}
 	assert.Equal(t, time.Duration(0), h.Timeout)
@@ -87,7 +85,7 @@ func TestIdleTimeout_ZeroDefault(t *testing.T) {
 // TestAUTH_TimingAttackResistance 验证密码比较使用 constant-time compare，
 // 防止时序侧信道攻击。正确密码和错误密码的比较时间应一致。
 func TestAUTH_TimingAttackResistance(t *testing.T) {
-	t.Parallel()
+
 	os.Setenv("BOLTDB_PASSWORD", "correct-password-12345")
 	defer os.Unsetenv("BOLTDB_PASSWORD")
 

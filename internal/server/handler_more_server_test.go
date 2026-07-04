@@ -11,7 +11,7 @@ import (
 
 // TestServerAdditionalCommands tests additional server commands
 func TestServerAdditionalCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -178,7 +178,7 @@ func TestServerAdditionalCommands(t *testing.T) {
 
 // TestServerPubSubCommands tests PUBSUB commands
 func TestServerPubSubCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -251,7 +251,7 @@ func TestServerPubSubCommands(t *testing.T) {
 
 // TestServerDebugCommands tests DEBUG commands
 func TestServerDebugCommands(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -315,7 +315,7 @@ func TestServerDebugCommands(t *testing.T) {
 
 // TestServerRoleCommand tests ROLE command
 func TestServerRoleCommand(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 

@@ -10,7 +10,7 @@ import (
 
 // TestServerListCommands2 tests more list commands
 func TestServerListCommands2(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -58,7 +58,7 @@ func TestServerListCommands2(t *testing.T) {
 
 // TestServerSetCommands2 tests more set commands
 func TestServerSetCommands2(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -116,7 +116,7 @@ func TestServerSetCommands2(t *testing.T) {
 
 // TestServerSortedSetCommands2 tests more sorted set commands
 func TestServerSortedSetCommands2(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -166,7 +166,7 @@ func TestServerSortedSetCommands2(t *testing.T) {
 
 // TestServerHashCommands2 tests more hash commands
 func TestServerHashCommands2(t *testing.T) {
-	t.Parallel()
+
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
