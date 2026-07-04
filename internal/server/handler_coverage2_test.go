@@ -93,7 +93,6 @@ func TestExecuteCommand_CLIENT_TRACKING_Coverage(t *testing.T) {
 
 // TestExecuteCommand_BITFIELD_Coverage tests BITFIELD command
 func TestExecuteCommand_BITFIELD_Coverage(t *testing.T) {
-	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 

@@ -87,7 +87,6 @@ func TestServerBitCommands(t *testing.T) {
 
 // TestServerTransactionCommands tests MULTI/EXEC commands
 func TestServerTransactionCommands(t *testing.T) {
-	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
