@@ -9,6 +9,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,6 +26,11 @@ func setupTestHandler(t *testing.T) (*Handler, *connState) {
 	return &Handler{
 		Db:    db,
 		conns: make(map[*connState]*connMeta),
+		cmdCounters: map[string]*atomic.Int64{
+			"ZRANK":    new(atomic.Int64),
+			"ZREVRANK": new(atomic.Int64),
+			"ZRANGE":   new(atomic.Int64),
+		},
 	}, &connState{}
 }
 

@@ -447,6 +447,7 @@ func (h *Handler) handleZSCORE(state *connState, args [][]byte, remoteAddr strin
 
 // handleZRANK 实现 ZRANK 命令
 func (h *Handler) handleZRANK(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	h.incrementCmdCounter("ZRANK")
 	if len(args) < 2 {
 		return proto.NewError("ERR wrong number of arguments for 'ZRANK' command")
 	}
@@ -466,6 +467,7 @@ func (h *Handler) handleZRANK(state *connState, args [][]byte, remoteAddr string
 
 // handleZREVRANK 实现 ZREVRANK 命令
 func (h *Handler) handleZREVRANK(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	h.incrementCmdCounter("ZREVRANK")
 	if len(args) < 2 {
 		return proto.NewError("ERR wrong number of arguments for 'ZREVRANK' command")
 	}
@@ -547,6 +549,7 @@ func (h *Handler) handleZMSCORE(state *connState, args [][]byte, remoteAddr stri
 
 // handleZRANGE 实现 ZRANGE 命令
 func (h *Handler) handleZRANGE(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	h.incrementCmdCounter("ZRANGE")
 	if len(args) < 3 {
 		return proto.NewError("ERR wrong number of arguments for 'ZRANGE' command")
 	}

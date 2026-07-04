@@ -131,7 +131,7 @@ Active config:
 **设计结论：** 推荐方案 A（`google/btree` B-tree 缓存 + write-through + 启动重建），但 **建议先采集使用率数据再实施**。涉及 ~15 个写路径修改，投入 1-2 周，需要数据证明 ROI。
 
 **前置条件（1 天）：**
-- [ ] 在 metrics 中添加 ZRANK/ZREVRANK/ZRANGE by rank 命令计数
+- [x] 在 metrics 中添加 ZRANK/ZREVRANK/ZRANGE by rank 命令计数（`Handler.incrementCmdCounter`）
 - [ ] 在 soak 或 staging 采集使用率
 - [ ] 如果 ZRANK + ZRANGE by rank < 5%，关闭此任务
 
@@ -200,9 +200,9 @@ README 宣称 *"Memory Redis can only store 64GB? BoltDB can handle 100TB!"*，�
 **影响：** RDB 快照在磁盘静默错误、截断、程序 bug 或传输异常后，从节点加载时零感知、零告警，损坏数据可正常入库。
 
 **建议修复：**
-- [ ] `loadRDBEntries` 在遇到 `0xFF` 后读取后续 8 字节 CRC64
-- [ ] 用与 encoder 相同的 `crc64.MakeTable(crc64.ECMA)` 重新计算并比对
-- [ ] 校验失败时返回明确的错误信息（含期望值 vs 实际值）
+- [x] `loadRDBEntries` 在遇到 `0xFF` 后读取后续 8 字节 CRC64
+- [x] 用与 encoder 相同的 `crc64.MakeTable(crc64.ECMA)` 重新计算并比对
+- [x] 校验失败时返回明确的错误信息（含期望值 vs 实际值）
 - [ ] 考虑在大 RDB 加载时启用流式 CRC（边解析边校验，当前是全量 buffer 后解析）
 
 #### Backlog resize 丢失历史数据（★★★★☆）
@@ -212,9 +212,8 @@ README 宣称 *"Memory Redis can only store 64GB? BoltDB can handle 100TB!"*，�
 **⏳ 待确认：** 需要确认此接口是否暴露了运行时 `CONFIG SET` 或存在运行期调用路径。若仅用于启动配置（重启生效），则评级降为 ★★☆☆☆。
 
 **建议修复（若需支持热修改）：**
-- [ ] resize 时计算当前有效窗口范围（`[rb.offset - rb.size, rb.offset)`）
-- [ ] 分配新 buffer 后，将有效窗口的旧数据复制到新 buffer 的对应位置
-- [ ] 更新 `rb.offset` 和 `rb.size` 时保证原子性（或在新 buffer 就绪后再替换指针）
+- [x] 确认调用链：`SetBacklogSize` 仅 `main.go:272` 启动时调用，无运行时 `CONFIG SET` 路径 → 风险从 ★★★★☆ 降为 ★★☆☆☆
+- [ ] 若未来增加运行时 resize 支持，需迁移为：分配新 buffer + 复制有效窗口 + 原子替换指针
 
 #### Command dispatch 899 行 switch（★☆☆☆☆）
 
@@ -261,14 +260,14 @@ README 宣称 *"Memory Redis can only store 64GB? BoltDB can handle 100TB!"*，�
 - [x] 新增 `TestReplicationSymmetry_WriteCommandsCovered` — 拦截未覆盖的写命令 drift
 - [x] 新增 `TestReplicationSymmetry_NoOrphanCommands` — 拦截已删除的孤立命令
 - [x] 补齐 `UNLINK` 到 `executeReplicatedCommand`（与 DEL 共用 case）
-- [ ] 逐步补齐剩余 14 个排除命令（见 `ReplicatedCommandsExcluded`，多为 BoltDB 扩展/DB 级操作）
+- [x] 评估剩余 14 个命令：均因缺少 handler 级上下文（PubSub、Cluster、DB 级操作）无法仅用 `*store.BotreonStore` 实现，已记录到 `ReplicatedCommandsExcluded`
 
 #### SORT 的有序性缺失（★★★★☆）
 
 **发现：** `SORT` 命令当前没有专门的排序正确性测试。`TestRESPShape` 只检查返回类型，不检查元素顺序。只有 `redis-py compat` 和 `node-redis compat` 间接覆盖，但覆盖率不定。
 
 **建议修复：**
-- [ ] 添加 `TestSORTOrdering`：插入已知顺序的数据，验证 `SORT ASC` / `SORT DESC` / `SORT ALPHA` 的返回顺序
+- [x] 添加 `TestSORTOrdering`：插入已知顺序的数据，验证 `SORT ASC` / `SORT DESC` / `SORT ALPHA` 的返回顺序（19 个测试，已提交）
 - [ ] 验证 `SORT STORE` + replication 后从节点的顺序一致
 
 ### 架构评估：不做修复的记录

@@ -1,5 +1,7 @@
 package server
 
+import "sync/atomic"
+
 func (h *Handler) ActiveClientCount() int {
 	h.connsMu.RLock()
 	defer h.connsMu.RUnlock()
@@ -49,4 +51,35 @@ func (h *Handler) TotalOutputBytes() int64 {
 		total += meta.outputBytes
 	}
 	return total
+}
+
+// incrementCmdCounter 按命令名称递增调用计数器。
+// 线程安全，计数器在首次访问时惰性初始化。
+func (h *Handler) incrementCmdCounter(cmd string) {
+	if h.cmdCounters == nil {
+		return
+	}
+	h.cmdCountersMu.Lock()
+	counter, exists := h.cmdCounters[cmd]
+	if !exists {
+		counter = new(atomic.Int64)
+		h.cmdCounters[cmd] = counter
+	}
+	h.cmdCountersMu.Unlock()
+	counter.Add(1)
+}
+
+// GetCmdCount 返回指定命令的调用次数。
+// 如果该命令从未被调用或计数未启用，返回 0。
+func (h *Handler) GetCmdCount(cmd string) int64 {
+	if h.cmdCounters == nil {
+		return 0
+	}
+	h.cmdCountersMu.Lock()
+	defer h.cmdCountersMu.Unlock()
+	counter, exists := h.cmdCounters[cmd]
+	if !exists {
+		return 0
+	}
+	return counter.Load()
 }

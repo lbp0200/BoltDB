@@ -88,6 +88,11 @@ type Handler struct {
 	// goroutines that register after the conns iteration can exit promptly
 	// instead of blocking on ReadRESP with nobody to close their connection.
 	shuttingDown atomic.Int32
+
+	// cmdCounters 按命令名统计调用次数，用于使用率分析。
+	// 添加新命令计数时在对应的 handleXXX 函数中调用 h.incrementCmdCounter("CMD")。
+	cmdCounters   map[string]*atomic.Int64
+	cmdCountersMu sync.Mutex
 }
 
 // connMeta 连接元数据
