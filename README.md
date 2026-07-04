@@ -643,6 +643,44 @@ redis-benchmark -h localhost -p 6337 -t PING,SET,GET,INCR,LPUSH -c 50 -n 10000
 
 ---
 
+## Limitations
+
+BoltDB is built on BadgerDB (LSM-tree), which gives it a fundamentally different performance model from in-memory Redis.
+
+### Query Complexity Model
+
+```
+point query      → O(log n) average (LSM has no worst-case guarantee)
+range query      → O(n)
+ranking query    → O(n)
+geo query        → O(n + geohash cell filter)
+set operations   → O(n·k)
+```
+
+**Key difference:** All composite structure operations (`ZRANK`/`ZRANGE`/`GEORADIUS`/`ZINTERSTORE`/`HGETALL`/`SMEMBERS` etc.) are implemented via BadgerDB prefix scans with O(total dataset size) complexity. In Redis, the same operations use in-memory skip lists / hash tables with O(log n) or O(result size) complexity.
+
+This means:
+- **Query latency scales with total data volume, not query range**
+- Range scan operations degrade significantly on datasets exceeding 100K elements
+- This is an inherent consequence of disk-based KV storage vs in-memory data structures
+
+### Built-in Safeguards
+
+| Guard | Description | Configuration |
+|-------|-------------|---------------|
+| GeoRadius upper bound | Prunes scan range by geohash bounding box | Built-in, no config needed |
+| LCS input guard | Limits LCS inputs to 10KB | Built-in, no config needed |
+| QueryBudget | Limits max scan iterations per query | `SetQueryBudgetConfig()` API |
+
+### Recommendations
+
+- **Good for:** Large-scale cost-effective storage, disk persistence, Redis protocol compatibility
+- **Not ideal for:** Workloads requiring sub-millisecond latency on sorted set / geo / set operations
+- Before using `ZRANK`/`ZRANGE` on large sorted sets, benchmark with your actual data volume
+- For Redis-like performance characteristics, use SSD and keep datasets at reasonable scale
+
+---
+
 ## Platform Support | 平台支持
 
 | OS | Architecture | Status |

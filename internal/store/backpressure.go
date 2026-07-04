@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"math"
 	"sync/atomic"
 	"time"
@@ -167,4 +168,61 @@ func (s *BotreonStore) GetRetryMetrics() RetryMetrics {
 		L0Delayed:     s.retryMetrics.l0Delayed,
 		LastL0Score:   s.l0ScoreCached(),
 	}
+}
+
+// ============================================================
+// Query Budget — 防止单次 O(n) scan 消耗过多系统资源
+// ============================================================
+
+const (
+	// DefaultMaxScanIterations 是每个 scan 迭代器的默认最大迭代次数。
+	// 0 表示不限制（默认兼容现有行为）。
+	defaultMaxScanIterations int64 = 0
+)
+
+// ErrQueryBudgetExceeded is returned when a query exceeds the configured iteration budget.
+var ErrQueryBudgetExceeded = errors.New("query budget exceeded: too many scan iterations")
+
+// QueryBudgetConfig 控制查询预算。
+// MaxScanIterations=0 表示不限制（默认）。
+// MaxScanDuration=0 表示不限制。
+type QueryBudgetConfig struct {
+	MaxScanIterations int64
+	MaxScanDuration   time.Duration
+}
+
+// DefaultQueryBudgetConfig 返回默认查询预算配置（不限制）。
+func DefaultQueryBudgetConfig() QueryBudgetConfig {
+	return QueryBudgetConfig{
+		MaxScanIterations: defaultMaxScanIterations,
+		MaxScanDuration:   0,
+	}
+}
+
+// GetQueryBudgetConfig 返回当前查询预算配置。
+func (s *BotreonStore) GetQueryBudgetConfig() QueryBudgetConfig {
+	cfg := s.queryBudgetConfig.Load()
+	if cfg == nil {
+		return DefaultQueryBudgetConfig()
+	}
+	return *cfg
+}
+
+// SetQueryBudgetConfig 设置查询预算配置。
+func (s *BotreonStore) SetQueryBudgetConfig(cfg QueryBudgetConfig) {
+	s.queryBudgetConfig.Store(&cfg)
+}
+
+// checkScanBudget 检查 scan 迭代次数是否超出预算。
+// iterations 当前已扫描的元素数。
+// 超出预算时返回 ErrQueryBudgetExceeded。
+func (s *BotreonStore) checkScanBudget(iterations int64) error {
+	cfg := s.queryBudgetConfig.Load()
+	if cfg == nil {
+		return nil
+	}
+	if cfg.MaxScanIterations > 0 && iterations > cfg.MaxScanIterations {
+		return ErrQueryBudgetExceeded
+	}
+	return nil
 }

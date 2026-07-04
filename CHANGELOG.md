@@ -1,6 +1,24 @@
 # Changelog
 
-## v8.34.0 (2026-07-03) — TOML 配置文件 + 4C8G 出厂默认值 + OOM 防护
+## v8.35.0 (2026-07-05) — 性能模型文档化 + GeoRadius 上界 + LCS 守卫 + QueryBudget
+
+> **P0：公开性能模型局限性。修复 GeoRadius 无界扫描退化问题。添加 LCS 输入守卫和通用 QueryBudget 框架。更新 README 和 TODO 文档以反映架构决策：接受 O(n) 模型，不加内存索引，让 O(n) 可预测、有上限、有文档。**
+
+### 架构决策
+
+- **性能模型公开化**：README 新增"局限性说明"章节，明确定义 BoltDB 的查询复杂度模型（point O(log n) 平均 / range O(n) / ranking O(n) / geo O(n) / set O(n·k)），说明与 Redis 的架构差异
+- **不做跳表**：确认 ZRANK/ZRANGE 保持 O(n) prefix scan 模型，不引入内存索引层
+- **TODO 文档**：第八轮架构审查记录写入 `docs/plans/TODO.md`
+
+### Bug 修复
+
+- **GeoRadius 无界扫描**：`geoRadiusInTxn` 缺失 maxScore 上界，导致半径查询从扫描 geohash cell 退化为全表扫描。现完整捕获扩展 bounding box 的 min/max 四维，计算 maxScore 并在扫描中加 break 条件
+- **LCS 输入守卫**：`computeLCS`/`computeLCSLength`/`ComputeLCSMatches` 三个入口点均未设输入上限，O(mn) DP 表可被大输入触发 OOM。现增加 10KB 上限检查（`MaxLCSInputSize`），超限返回空值
+
+### 新功能
+
+- **QueryBudget 机制**：新增 `QueryBudgetConfig`（`MaxScanIterations`）+ `ErrQueryBudgetExceeded` + `checkScanBudget()`，与现有 Backpressure 系统并列。GeoRadius 扫描循环已集成。默认不限制（兼容现有行为），可通过 `SetQueryBudgetConfig()` API 配置
+- **`QueryBudgetConfig`**：新增 `GetQueryBudgetConfig()` / `SetQueryBudgetConfig()` 方法，`atomic.Pointer` 线程安全更新
 
 > **P0：新增 TOML 配置文件系统（`-config` + `--dump-config`），CLI flag > 配置文件 > 自动推导 > 硬编码默认值的优先级链。以 4C8G 为基准调优所有出厂默认值。补齐 OOM 防护最后一层缺口（`max-input-bytes` 默认 1GB + 按 RAM 比例自动推导）。**
 

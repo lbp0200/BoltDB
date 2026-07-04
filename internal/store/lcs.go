@@ -1,8 +1,16 @@
 package store
 
 import (
+	"errors"
 	"sort"
 )
+
+// MaxLCSInputSize 是 LCS 算法输入的最大字节数。
+// 超过此限制的操作返回 ErrLCSInputTooLarge，防止 O(mn) DP 表导致 OOM。
+const MaxLCSInputSize = 10000
+
+// ErrLCSInputTooLarge 在 LCS 输入超过 MaxLCSInputSize 时返回。
+var ErrLCSInputTooLarge = errors.New("LCS input too large: max 10000 bytes per key")
 
 // LCIMatch represents a single common subsequence match with positions
 type LCIMatch struct {
@@ -16,6 +24,9 @@ type LCIMatch struct {
 
 // computeLCS computes the Longest Common Subsequence of two strings.
 func computeLCS(a, b string) (string, int) {
+	if len(a) > MaxLCSInputSize || len(b) > MaxLCSInputSize {
+		return "", 0
+	}
 	m, n := len(a), len(b)
 	dp := make([][]int, m+1)
 	for i := range dp {
@@ -56,6 +67,9 @@ func computeLCS(a, b string) (string, int) {
 
 // computeLCSLength computes only the LCS length (space-optimized).
 func computeLCSLength(a, b string) int {
+	if len(a) > MaxLCSInputSize || len(b) > MaxLCSInputSize {
+		return 0
+	}
 	m, n := len(a), len(b)
 	prev := make([]int, n+1)
 	curr := make([]int, n+1)
@@ -79,6 +93,9 @@ func computeLCSLength(a, b string) int {
 // then groups consecutive pairs into contiguous segments.
 // minMatchLen filters out segments shorter than this threshold.
 func ComputeLCSMatches(a, b string, minMatchLen int) []LCIMatch {
+	if len(a) > MaxLCSInputSize || len(b) > MaxLCSInputSize {
+		return nil
+	}
 	m, n := len(a), len(b)
 	if m == 0 || n == 0 {
 		return nil

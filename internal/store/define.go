@@ -91,6 +91,9 @@ type BotreonStore struct {
 	bpConfig     atomic.Pointer[BackpressureConfig]
 	l0Cache      *l0Cache
 
+	// 查询预算 — O(n) scan 防退化
+	queryBudgetConfig atomic.Pointer[QueryBudgetConfig]
+
 	// 重试指标
 	retryMu      sync.Mutex
 	retryMetrics struct {
@@ -466,6 +469,8 @@ func NewBotreonStoreWithCompression(path string, compressionType CompressionType
 	s.backpressure.Store(p)
 	cfg := bpConfig
 	s.bpConfig.Store(&cfg)
+	qbCfg := DefaultQueryBudgetConfig()
+	s.queryBudgetConfig.Store(&qbCfg)
 	return s, nil
 }
 

@@ -590,6 +590,44 @@ redis-benchmark -h localhost -p 6379 -t PING,SET,GET,INCR,LPUSH -c 50 -n 10000
 
 ---
 
+## 局限性说明
+
+BoltDB 基于 BadgerDB（LSM 树）实现，与内存版 Redis 有不同的性能模型。
+
+### 查询复杂度模型
+
+```
+point query      → O(log n) 平均（LSM 无 worst-case 保证）
+range query      → O(n)
+ranking query    → O(n)
+geo query        → O(n + geohash cell filter)
+set operations   → O(n·k)
+```
+
+**关键差异：** BoltDB 的所有复合结构操作（`ZRANK`/`ZRANGE`/`GEORADIUS`/`ZINTERSTORE`/`HGETALL`/`SMEMBERS`等）基于 BadgerDB 前缀扫描实现，复杂度为 O(数据总量)，而 Redis 的同名操作由于使用内存跳表/哈希表，复杂度通常为 O(log n) 或 O(结果集大小)。
+
+这意味着：
+- **查询延迟由数据总量决定，而非查询范围决定**
+- 在十万级以上数据中执行范围扫描操作时，性能会显著下降
+- 这是磁盘型 KV 存储与内存数据结构服务器的本质区别
+
+### 已实施的防护
+
+| 防护机制 | 说明 | 配置方式 |
+|---------|------|---------|
+| GeoRadius 上界裁剪 | 根据 geohash bounding box 裁剪扫描范围 | 内置，无需配置 |
+| LCS 输入守卫 | 限制 LCS 输入为 10KB | 内置，无需配置 |
+| QueryBudget | 限制单次扫描的最大迭代次数 | `SetQueryBudgetConfig()` API |
+
+### 建议
+
+- **适合场景：** 大数据量低成本存储、磁盘持久化、Redis 协议兼容
+- **不适合场景：** 对排序集合/地理位置/集合运算有毫秒级低延迟要求的场景
+- 在大型排序集合上执行 `ZRANK`/`ZRANGE` 前，建议先通过实际数据量评估延迟
+- 如需要接近 Redis 的性能特征，建议使用 SSD 并保持数据集在合理规模
+
+---
+
 ## 平台支持
 
 | 操作系统 | 架构 | 状态 |

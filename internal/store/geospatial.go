@@ -466,15 +466,16 @@ func formatGeoDistance(distM float64, unit string) float64 {
 }
 
 // geoRadiusInTxn searches geo members within radius inside an open transaction.
-func geoRadiusInTxn(txn *badger.Txn, key string, lon, lat, radiusM float64, unit string, count int, withDist, withHash, withCoord bool) ([]GeoSearchResult, error) {
+func geoRadiusInTxn(s *BotreonStore, txn *badger.Txn, key string, lon, lat, radiusM float64, unit string, count int, withDist, withHash, withCoord bool) ([]GeoSearchResult, error) {
 	if err := checkKeyType(txn, key, KeyTypeGeo); err != nil {
 		return nil, err
 	}
 
 	centerHash := encodeGeoHash(lat, lon)
-	minLat, _, minLon, _ := geoHashToBoundingBox(centerHash)
-	minLat, minLon, _, _ = expandBoundingBox(minLat, minLat, minLon, minLon, radiusM)
+	minLat, maxLat, minLon, maxLon := geoHashToBoundingBox(centerHash)
+	minLat, maxLat, minLon, maxLon = expandBoundingBox(minLat, maxLat, minLon, maxLon, radiusM)
 	minScore := float64(encodeGeoHash(minLat, minLon))
+	maxScore := float64(encodeGeoHash(maxLat, maxLon))
 
 	opts := badger.DefaultIteratorOptions
 	prefix := keyBadgerGet(prefixKeySortedSetBytes, []byte(key+sortedSetIndex))
@@ -485,11 +486,20 @@ func geoRadiusInTxn(txn *badger.Txn, key string, lon, lat, radiusM float64, unit
 	defer it.Close()
 
 	var results []GeoSearchResult
+	var scanCount int64
 	startKey := append(prefix, encodeScore(minScore)...)
 	for it.Seek(startKey); it.ValidForPrefix(prefix); it.Next() {
+		scanCount++
+		if err := s.checkScanBudget(scanCount); err != nil {
+			return nil, err
+		}
 		score, member, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
 		if !ok {
 			continue
+		}
+		// 上界裁剪：超过扩展后的 geohash 范围则停止扫描
+		if score > maxScore {
+			break
 		}
 		memberHash := score
 		memberLat, memberLon := DecodeGeoHash(uint64(memberHash))
@@ -530,7 +540,7 @@ func (s *BotreonStore) GeoRadius(key string, lon, lat, radius float64, unit stri
 	var results []GeoSearchResult
 	err := s.db.View(func(txn *badger.Txn) error {
 		var err error
-		results, err = geoRadiusInTxn(txn, key, lon, lat, radiusM, unit, count, withDist, withHash, withCoord)
+		results, err = geoRadiusInTxn(s, txn, key, lon, lat, radiusM, unit, count, withDist, withHash, withCoord)
 		return err
 	})
 	return results, err
@@ -549,7 +559,7 @@ func (s *BotreonStore) GeoSearchStore(dstKey, srcKey string, centerLon, centerLa
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		added = 0
 		addedNewMember = false
-		results, err := geoRadiusInTxn(txn, srcKey, centerLon, centerLat, radiusM, unit, count, storeDist, false, false)
+		results, err := geoRadiusInTxn(s, txn, srcKey, centerLon, centerLat, radiusM, unit, count, storeDist, false, false)
 		if err != nil {
 			return err
 		}
@@ -685,7 +695,7 @@ func (s *BotreonStore) GeoRadiusByMember(key, member string, radius float64, uni
 			return err
 		}
 		lat, lon := DecodeGeoHash(hash)
-		results, err = geoRadiusInTxn(txn, key, lon, lat, radiusM, unit, count, withDist, withHash, withCoord)
+		results, err = geoRadiusInTxn(s, txn, key, lon, lat, radiusM, unit, count, withDist, withHash, withCoord)
 		return err
 	})
 	return results, err

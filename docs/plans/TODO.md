@@ -294,3 +294,39 @@ README 宣称 *"Memory Redis can only store 64GB? BoltDB can handle 100TB!"*，�
 > 1. Redis 命令复杂度失真（SCAN/ZRANGE/SORT 的实际复杂度与 Redis 官方复杂度是否一致）
 > 2. LSM 无法提供 Redis 的尾延迟可预测性（P99/P999 是 LSM 固有弱点）
 > 3. 内存数据结构服务器 vs KV 引擎的语义映射鸿沟（protocol compatibility ≠ semantic compatibility）
+
+---
+
+## 第八轮：性能模型与查询预算（2026-07-05）
+
+> 从"算法缺陷查找"升级到"架构性能模型审查"。核心发现：系统只有 KV 级 sublinear guarantee，所有复合结构操作（ZRANK/ZRANGE/GEO/ZINTER/HGETALL/SMEMBERS）均为 O(n) prefix scan + filter。
+>
+> **结论：这不是实现缺陷，是数据模型选择。修复方向不是加内存索引，而是让 O(n) 模型可预测、有上限、有文档。**
+
+### 本轮修改
+
+| 修改 | 文件 | 性质 | 备注 |
+|------|------|------|------|
+| GeoRadius maxScore 上界 | `internal/store/geospatial.go` | 正确性修复 | 缺失上界导致半径查询退化为全表扫描 |
+| LCS 输入守卫 (10KB) | `internal/store/lcs.go` | 安全围栏 | O(mn) DP 表防 OOM |
+| QueryBudget 机制 | `internal/store/backpressure.go` | 通用框架 | `MaxScanIterations` 配置，防止慢查询拖垮系统 |
+
+### 架构决策：不做跳表
+
+| 方案 | 决策 | 理由 |
+|------|------|------|
+| 加内存 skiplist 修 ZRANK | ❌ 不做 | 违背 disk-backed 核心卖点，破坏 convergence |
+| 替换 BadgerDB | ❌ 不做 | 全盘重做，否定现有架构 |
+| 接受 O(n) 模型 + budget guard + 文档 | ✅ 当前路线 | 符合项目定位，收敛优先 |
+
+### 性能模型总结
+
+```
+point query      → O(log n) 平均（LSM 无 worst-case 保证）
+range query      → O(n)
+ranking query    → O(n)
+geo query        → O(n + geohash cell filter)
+set operations   → O(n·k)
+```
+
+所有用户感知的操作集中在 O(n) 层。详见 [README 局限性说明](../../README_CN.md#局限性说明)。
