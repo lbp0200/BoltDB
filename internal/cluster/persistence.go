@@ -144,6 +144,32 @@ func (c *Cluster) LoadConfig() (bool, error) {
 	return true, nil
 }
 
+// loadPersistedNodeID 读取持久化的节点 ID。
+// 用于重启时复用相同的节点 ID，避免槽位表丢失。
+func loadPersistedNodeID(db *badger.DB) string {
+	var nodeID string
+	err := db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(configKey))
+		if err != nil {
+			return err
+		}
+		data, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		var state persistedClusterState
+		if err := json.Unmarshal(data, &state); err != nil {
+			return err
+		}
+		nodeID = state.NodeID
+		return nil
+	})
+	if err != nil {
+		return ""
+	}
+	return nodeID
+}
+
 func (c *Cluster) loadState(state persistedClusterState) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

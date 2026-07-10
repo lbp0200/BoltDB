@@ -55,6 +55,8 @@ func (cc *ClusterCommands) HandleCommand(args []string) (interface{}, error) {
 		return cc.handleSaveConfig(subArgs)
 	case "ADDSLOTS":
 		return cc.handleAddSlots(subArgs)
+	case "ADDSLOTSRANGE":
+		return cc.handleAddSlotsRange(subArgs)
 	case "DELSLOTS":
 		return cc.handleDelSlots(subArgs)
 	case "FLUSHSLOTS":
@@ -106,6 +108,12 @@ func (cc *ClusterCommands) handleInfo(args []string) (string, error) {
 	cc.cluster.mu.RLock()
 	totalNodes := len(cc.cluster.Nodes)
 	totalSlots := 0
+	clusterSize := 0
+	for _, node := range cc.cluster.Nodes {
+		if node.IsMaster() && !node.HasFailFlag() {
+			clusterSize++
+		}
+	}
 	for i := uint32(0); i < SlotCount; i++ {
 		if cc.cluster.Slots[i] == myself {
 			totalSlots++
@@ -119,12 +127,12 @@ cluster_slots_ok:%d
 cluster_slots_pfail:0
 cluster_slots_fail:0
 cluster_known_nodes:%d
-cluster_size:1
+cluster_size:%d
 cluster_current_epoch:%d
 cluster_my_epoch:%d
 cluster_stats_messages_sent:0
 cluster_stats_messages_received:0`,
-		totalSlots, totalSlots, totalNodes, epoch, myself.Epoch)
+		totalSlots, totalSlots, totalNodes, clusterSize, epoch, myself.Epoch)
 
 	return info, nil
 }
@@ -460,6 +468,34 @@ func (cc *ClusterCommands) handleAddSlots(args []string) (string, error) {
 		if err := cc.cluster.AssignSlot(uint32(slot), cc.cluster.Myself.ID); err != nil {
 			return "", err
 		}
+	}
+
+	return "OK", nil
+}
+
+// handleAddSlotsRange 处理CLUSTER ADDSLOTSRANGE <start> <end>命令
+// 将连续范围内的所有槽位分配给当前节点
+func (cc *ClusterCommands) handleAddSlotsRange(args []string) (string, error) {
+	if len(args) < 2 {
+		return "", fmt.Errorf("ERR wrong number of arguments for 'CLUSTER ADDSLOTSRANGE' command")
+	}
+
+	start, err := strconv.ParseUint(args[0], 10, 32)
+	if err != nil {
+		return "", fmt.Errorf("ERR invalid start slot number: %s", args[0])
+	}
+
+	end, err := strconv.ParseUint(args[1], 10, 32)
+	if err != nil {
+		return "", fmt.Errorf("ERR invalid end slot number: %s", args[1])
+	}
+
+	if start > end {
+		return "", fmt.Errorf("ERR start slot %d is greater than end slot %d", start, end)
+	}
+
+	if err := cc.cluster.AssignSlotRange(uint32(start), uint32(end), cc.cluster.Myself.ID); err != nil {
+		return "", err
 	}
 
 	return "OK", nil

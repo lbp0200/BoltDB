@@ -130,7 +130,7 @@ jobs:
       - name: Replication tests
         run: |
           go test -race -timeout 600s -run 'TestReplication' \
-            -skip 'TestReplication(Stress|Chaos|NewCommands|SortedSetCommands|Completeness_Key)' -count=1 ./cmd/integration/
+            -skip 'TestReplication(Stress|Chaos)' -count=1 ./cmd/integration/
 
       - name: Sentinel tests
         run: |

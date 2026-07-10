@@ -31,10 +31,10 @@ func TestSetEX(t *testing.T) {
 	t.Parallel()
 	store := setupTestStore(t)
 
-	err := store.SetEX("key1", "value1", 1)
+	// 使用较长的TTL以确保在测试期间不会过期（Badger的TTL清理是异步的）
+	err := store.SetEX("key1", "value1", 10)
 	assert.NoError(t, err)
 
-	// 验证值已设置（不测试过期，因为Badger的TTL清理是异步的）
 	value, err := store.Get("key1")
 	assert.NoError(t, err)
 	assert.Equal(t, "value1", value)

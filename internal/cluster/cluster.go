@@ -34,11 +34,17 @@ type Cluster struct {
 // NewCluster 创建新集群
 func NewCluster(store *store.BotreonStore, nodeID, addr string) (*Cluster, error) {
 	if nodeID == "" {
-		// 生成随机节点ID
-		var err error
-		nodeID, err = generateNodeID()
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate node ID: %w", err)
+		// 尝试从持久化配置恢复节点 ID，确保重启后 ID 不变
+		persistedID := loadPersistedNodeID(store.GetDB())
+		if persistedID != "" {
+			nodeID = persistedID
+		} else {
+			// 首次启动：生成随机节点 ID
+			var err error
+			nodeID, err = generateNodeID()
+			if err != nil {
+				return nil, fmt.Errorf("failed to generate node ID: %w", err)
+			}
 		}
 	}
 
@@ -71,6 +77,11 @@ func NewCluster(store *store.BotreonStore, nodeID, addr string) (*Cluster, error
 			cluster.Slots[i] = myself
 		}
 		myself.AddSlotRange(0, SlotCount-1)
+
+		// 首次启动立即持久化，确保重启后节点 ID 和槽位配置可恢复
+		if err := cluster.SaveConfig(); err != nil {
+			logger.Logger.Warn().Err(err).Msg("NewCluster: failed to persist initial config")
+		}
 	}
 
 	// 初始化 gossip（使用 background context；生产环境由 main.go 替换）

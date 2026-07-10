@@ -429,6 +429,11 @@ func (b *ClusterBus) ApplyGossipPayloadFrom(reporterID string, payload *GossipPa
 		if existing, ok := b.cluster.Nodes[gi.ID]; ok {
 			existing.MergeGossipState(gi.Epoch, gi.PongRecv)
 		} else {
+			// 防幽灵节点：gossip 可能带来 MEET 过程中残留的 placeholder
+			//（不同 NodeID 但同 Addr），跳过已存在相同地址的条目
+			if nodeByAddr := findNodeByAddr(b.cluster.Nodes, gi.Addr); nodeByAddr != nil {
+				continue
+			}
 			node := NewNodeFromGossip(gi.ID, gi.Addr, gi.Flags, gi.Epoch, gi.PingSent, gi.PongRecv)
 			b.cluster.Nodes[gi.ID] = node
 			logger.Logger.Info().Str("peer", gi.ID).Str("addr", gi.Addr).Msg("cluster gossip: learned new node")
@@ -691,4 +696,15 @@ func formatSlotsBrief(ranges []SlotRange) string {
 	}
 	// For multiple ranges, just show count
 	return fmt.Sprintf("%d ranges", len(ranges))
+}
+
+// findNodeByAddr 在 Nodes 表中查找指定地址的节点。
+// 用于 gossip 处理时跳过幽灵节点（不同 NodeID 但同 IP:Port）。
+func findNodeByAddr(nodes map[string]*Node, addr string) *Node {
+	for _, n := range nodes {
+		if n.Addr == addr {
+			return n
+		}
+	}
+	return nil
 }
