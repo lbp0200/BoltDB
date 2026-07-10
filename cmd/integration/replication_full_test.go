@@ -139,11 +139,9 @@ func setupMasterSlaveServer(t *testing.T) (masterClient, slaveClient *redis.Clie
 	}
 
 	// 等待 FULLRESYNC 完成（GHA runner 上可能需 20-30s）
-	waitForFullresync(t, slaveClient, 60*time.Second)
+	  waitForFullresync(t, slaveClient, 60*time.Second)
 
-	}
-
-	cleanup = func() {
+	  cleanup = func() {
 		slaveClient.Close()
 		masterClient.Close()
 		slaveListener.Close()
