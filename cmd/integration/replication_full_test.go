@@ -139,7 +139,7 @@ func setupMasterSlaveServer(t *testing.T) (masterClient, slaveClient *redis.Clie
 	}
 
 	// 等待 FULLRESYNC 完成（GHA runner 上可能需 20-30s）
-	waitForFullresync(t, slaveClient, 60*time.Second)
+	waitForFullresync(t, masterClient, slaveClient, 60*time.Second)
 
 	cleanup = func() {
 		slaveClient.Close()
@@ -157,17 +157,31 @@ func setupMasterSlaveServer(t *testing.T) (masterClient, slaveClient *redis.Clie
 
 // waitForFullresync 等待从节点完全同步（FULLRESYNC 完成）。
 // GHA runner 上 FULLRESYNC 可能需要 20-30s，此函数避免测试在同步完成前超时。
-func waitForFullresync(t *testing.T, slaveClient *redis.Client, timeout time.Duration) {
+// 注意：master_link_status:up 在 INFO 中是硬编码的，不能用于判断同步状态。
+// 因此此函数写入一个测试键，轮询从库直到读到它，再删除。
+func waitForFullresync(t *testing.T, masterClient, slaveClient *redis.Client, timeout time.Duration) {
 	t.Helper()
+	ctx := context.Background()
+
+	replSyncKey := "__boltdb_sync_check__"
+	if err := masterClient.Set(ctx, replSyncKey, "1", 0).Err(); err != nil {
+		t.Logf("WARNING: failed to set sync check key: %v", err)
+		return
+	}
+
 	deadline := time.Now().Add(timeout)
+	synced := false
 	for time.Now().Before(deadline) {
-		info, err := slaveClient.Info(context.Background(), "replication").Result()
-		if err == nil && strings.Contains(info, "master_link_status:up") {
-			return
+		if _, err := slaveClient.Get(ctx, replSyncKey).Result(); err == nil {
+			synced = true
+			break
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	t.Logf("WARNING: slave FULLRESYNC not completed within %v (GHA runner may be slow)", timeout)
+	masterClient.Del(ctx, replSyncKey)
+	if !synced {
+		t.Logf("WARNING: slave FULLRESYNC not confirmed within %v (GHA runner may be slow)", timeout)
+	}
 }
 
 // TestReplicationMasterSlaveBasic 测试基本的主从复制
