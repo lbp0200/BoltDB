@@ -628,11 +628,12 @@ func TestXAckDelRemoveRefs(t *testing.T) {
 
 // TestXIsAckedByAllGroups 验证 XACKDEL ACKED 模式下双 group 确认语义
 // 场景: 0 个 group / 1 个 group / 2 个 group / 3 个 group
-//   → 0 group: vacuous truth → true
-//   → 1 group, ACKed → true
-//   → 2 groups, 1 ACKed → false
-//   → 2 groups, both ACKed → true
-//   → 3 groups, 2 ACKed → false
+//
+//	→ 0 group: vacuous truth → true
+//	→ 1 group, ACKed → true
+//	→ 2 groups, 1 ACKed → false
+//	→ 2 groups, both ACKed → true
+//	→ 3 groups, 2 ACKed → false
 func TestXIsAckedByAllGroups(t *testing.T) {
 	t.Parallel()
 	store := setupTestStore(t)
@@ -708,34 +709,39 @@ func TestXIsAckedByAllGroups(t *testing.T) {
 	assert.Equal(t, int64(1), acked)
 
 	// 边缘场景 7: 3 个 group, 均已 ACK → 应返回 true
-	  allAcked, err = store.XIsAckedByAllGroups(stream, id)
-	  assert.NoError(t, err)
-	  assert.True(t, allAcked)
-	 }
+	allAcked, err = store.XIsAckedByAllGroups(stream, id)
+	assert.NoError(t, err)
+	assert.True(t, allAcked)
+}
 
-	 // 边缘场景 8: entry 已从 stream 中删除 → 应返回 true（dataKey 不存在）
-	 func TestXIsAckedByAllGroups_EntryDeleted(t *testing.T) {
-	  t.Parallel()
-	  store := setupTestStore(t)
-	  stream := "xackdel_deleted_entry"
+// 边缘场景 8: entry 已从 stream 中删除 → 应返回 true（dataKey 不存在）
+func TestXIsAckedByAllGroups_EntryDeleted(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+	stream := "xackdel_deleted_entry"
 
-	  // 添加 entry 并创建 group，产生 PEL
-	  id, err := store.XAdd(stream, StreamXAddOptions{}, "1000000000000-0", map[string]string{"f": "v"})
-	  assert.NoError(t, err)
-	  err = store.XGroupCreate(stream, "g1", "0")
-	  assert.NoError(t, err)
-	  _, err = store.XReadGroup(nil, "g1", "c1", 10, 0, stream, ">")
-	  assert.NoError(t, err)
+	// 添加 entry 并创建 group，产生 PEL
+	id, err := store.XAdd(stream, StreamXAddOptions{}, "1000000000000-0", map[string]string{"f": "v"})
+	assert.NoError(t, err)
+	err = store.XGroupCreate(stream, "g1", "0")
+	assert.NoError(t, err)
+	_, err = store.XReadGroup(nil, "g1", "c1", 10, 0, stream, ">")
+	assert.NoError(t, err)
 
-	  // 先 ACK 再删除 entry
-	  _, err = store.XAck(stream, "g1", id)
-	  assert.NoError(t, err)
-	  del, err := store.XDel(stream, id)
-	  assert.NoError(t, err)
-	  assert.Equal(t, int64(1), del)
+	// 先 ACK 再删除 entry
+	_, err = store.XAck(stream, "g1", id)
+	assert.NoError(t, err)
+	del, err := store.XDel(stream, id)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), del)
 
-	  // entry 已从 stream 中删除 → XIsAckedByAllGroups 应短路返回 true
-	  allAcked, err := store.XIsAckedByAllGroups(stream, id)
-	  assert.NoError(t, err)
-	  assert.True(t, allAcked)
-	 }
+	// 验证 entry 确实已从 stream 中删除
+	entries, err := store.XRange(stream, "-", "+", 0)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(entries))
+
+	// entry 已从 stream 中删除 → XIsAckedByAllGroups 应短路返回 true
+	allAcked, err := store.XIsAckedByAllGroups(stream, id)
+	assert.NoError(t, err)
+	assert.True(t, allAcked)
+}

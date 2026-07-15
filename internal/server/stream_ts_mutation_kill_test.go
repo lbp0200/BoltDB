@@ -893,27 +893,116 @@ func TestXACKDEL_DELREF_ClearsPEL(t *testing.T) {
 		[]byte("GROUP"), []byte("g2"), []byte("c2"), []byte("STREAMS"), []byte("xackdel_delref"), []byte(">"),
 	}, "127.0.0.1:12345")
 
-	// XACKDEL with DELREF — should delete entry + clean PEL across all groups
-	resp = handler.executeCommand(state, "XACKDEL", [][]byte{
-		[]byte("xackdel_delref"), []byte("g1"), []byte("DELREF"), []byte("IDS"), []byte("1"), []byte("1000000000000-0"),
-	}, "127.0.0.1:12345")
-	nested, ok := resp.(*proto.NestedArray)
-	assert.True(t, ok)
-	assert.Equal(t, 1, len(nested.Elems))
-
-	// XPENDING both groups — should be empty
+	// 验证操作前两个 group 的 PEL 都有该 entry
 	resp = handler.executeCommand(state, "XPENDING", [][]byte{
 		[]byte("xackdel_delref"), []byte("g1"),
 	}, "127.0.0.1:12345")
-	_, ok = resp.(*proto.Array)
+	nested, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
-	// An empty pending list is a []byte{} array, not nil — just confirm no error
+	assert.Equal(t, 4, len(nested.Elems))
+	countResp, ok := nested.Elems[0].(proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(countResp))
 
 	resp = handler.executeCommand(state, "XPENDING", [][]byte{
 		[]byte("xackdel_delref"), []byte("g2"),
 	}, "127.0.0.1:12345")
-	_, ok = resp.(*proto.Array)
+	nested, ok = resp.(*proto.NestedArray)
 	assert.True(t, ok)
+	assert.Equal(t, 4, len(nested.Elems))
+	countResp, ok = nested.Elems[0].(proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(countResp))
+
+	// XACKDEL with DELREF — should delete entry + clean PEL across all groups
+	resp = handler.executeCommand(state, "XACKDEL", [][]byte{
+		[]byte("xackdel_delref"), []byte("g1"), []byte("DELREF"), []byte("IDS"), []byte("1"), []byte("1000000000000-0"),
+	}, "127.0.0.1:12345")
+	nested, ok = resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(nested.Elems))
+
+	// XPENDING both groups — should be empty (count == 0)
+	resp = handler.executeCommand(state, "XPENDING", [][]byte{
+		[]byte("xackdel_delref"), []byte("g1"),
+	}, "127.0.0.1:12345")
+	nested, ok = resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 4, len(nested.Elems))
+	countResp, ok = nested.Elems[0].(proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(countResp))
+
+	resp = handler.executeCommand(state, "XPENDING", [][]byte{
+		[]byte("xackdel_delref"), []byte("g2"),
+	}, "127.0.0.1:12345")
+	nested, ok = resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 4, len(nested.Elems))
+	countResp, ok = nested.Elems[0].(proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(countResp))
+}
+
+func TestXACKDEL_DELREF_DanglingPEL(t *testing.T) {
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// XADD a stream entry
+	resp := handler.executeCommand(state, "XADD", [][]byte{
+		[]byte("xackdel_dangling"), []byte("1000000000000-0"), []byte("f"), []byte("v"),
+	}, "127.0.0.1:12345")
+	_, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+
+	// Create a group and read to create PEL entry
+	resp = handler.executeCommand(state, "XGROUP", [][]byte{
+		[]byte("CREATE"), []byte("xackdel_dangling"), []byte("g1"), []byte("0"),
+	}, "127.0.0.1:12345")
+	_, ok = resp.(*proto.SimpleString)
+	assert.True(t, ok)
+
+	handler.executeCommand(state, "XREADGROUP", [][]byte{
+		[]byte("GROUP"), []byte("g1"), []byte("c1"), []byte("STREAMS"), []byte("xackdel_dangling"), []byte(">"),
+	}, "127.0.0.1:12345")
+
+	// 手动删除 stream entry（模拟 entry 已被其他方式删除但 PEL 仍然残留）
+	resp = handler.executeCommand(state, "XDEL", [][]byte{
+		[]byte("xackdel_dangling"), []byte("1000000000000-0"),
+	}, "127.0.0.1:12345")
+	intResp, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*intResp))
+
+	// 验证删除后 PEL 仍然存在（entry 已删除但 group 未 ACK，PEL 残留）
+	resp = handler.executeCommand(state, "XPENDING", [][]byte{
+		[]byte("xackdel_dangling"), []byte("g1"),
+	}, "127.0.0.1:12345")
+	nested, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 4, len(nested.Elems))
+	countResp, ok := nested.Elems[0].(proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(countResp))
+
+	// XACKDEL with DELREF — should clean up dangling PEL refs even though entry is gone
+	resp = handler.executeCommand(state, "XACKDEL", [][]byte{
+		[]byte("xackdel_dangling"), []byte("g1"), []byte("DELREF"), []byte("IDS"), []byte("1"), []byte("1000000000000-0"),
+	}, "127.0.0.1:12345")
+	nested, ok = resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(nested.Elems))
+
+	// 验证 PEL 已被清理
+	resp = handler.executeCommand(state, "XPENDING", [][]byte{
+		[]byte("xackdel_dangling"), []byte("g1"),
+	}, "127.0.0.1:12345")
+	nested, ok = resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 4, len(nested.Elems))
+	countResp, ok = nested.Elems[0].(proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(countResp))
 }
 
 func TestXACKDEL_ACKED_RequiresAllGroups(t *testing.T) {

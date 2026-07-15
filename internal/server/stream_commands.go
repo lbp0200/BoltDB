@@ -1024,14 +1024,14 @@ func (h *Handler) executeXACKDEL(state *connState, key, group, mode string, ids 
 			if err != nil {
 				return wrapStoreError(err)
 			}
+			// Always remove PEL refs from all groups, regardless of deletion
+			if refErr := h.Db.XAckDelRemoveRefs(key, id); refErr != nil {
+				logger.Logger.Warn().Err(refErr).Str("key", key).Str("id", id).
+					Msg("XACKDEL: failed to remove PEL refs")
+			}
 			if deleted > 0 {
 				results[i] = proto.NewInteger(1)
 			} else {
-				// Even if entry is gone, remove dangling PEL refs
-				if refErr := h.Db.XAckDelRemoveRefs(key, id); refErr != nil {
-					logger.Logger.Warn().Err(refErr).Str("key", key).Str("id", id).
-						Msg("XACKDEL: failed to remove dangling PEL refs")
-				}
 				results[i] = proto.NewInteger(1)
 			}
 		}
