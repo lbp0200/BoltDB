@@ -446,7 +446,9 @@ func TestBZMPOP_ZeroTimeoutEmptyKey(t *testing.T) {
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(state, "BZMPOP", [][]byte{[]byte("0"), []byte("1"), []byte("bzmpop_empty"), []byte("MIN")}, "127.0.0.1:12345")
+	// timeout=0 now means "block indefinitely" per Redis protocol.
+	// Use timeout=1 to test the empty-key path with a finite timeout.
+	resp := handler.executeCommand(state, "BZMPOP", [][]byte{[]byte("1"), []byte("1"), []byte("bzmpop_empty"), []byte("MIN")}, "127.0.0.1:12345")
 	_, ok := resp.(proto.NilArray)
 	assert.True(t, ok)
 }

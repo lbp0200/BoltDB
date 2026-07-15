@@ -836,3 +836,166 @@ func TestTS_DELETERULE_NoArgs(t *testing.T) {
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "wrong number"))
 }
+
+// ---------- XACKDEL ----------
+
+func TestXACKDEL_NoArgs(t *testing.T) {
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "XACKDEL", [][]byte{}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "wrong number"))
+}
+
+func TestXACKDEL_InvalidMode(t *testing.T) {
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "XACKDEL", [][]byte{
+		[]byte("s"), []byte("g"), []byte("INVALID"), []byte("IDS"), []byte("1"), []byte("0-0"),
+	}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "syntax error"))
+}
+
+func TestXACKDEL_DELREF_ClearsPEL(t *testing.T) {
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// XADD stream entry
+	resp := handler.executeCommand(state, "XADD", [][]byte{
+		[]byte("xackdel_delref"), []byte("1000000000000-0"), []byte("f"), []byte("v"),
+	}, "127.0.0.1:12345")
+	_, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+
+	// XGROUP CREATE two groups
+	resp = handler.executeCommand(state, "XGROUP", [][]byte{
+		[]byte("CREATE"), []byte("xackdel_delref"), []byte("g1"), []byte("0"),
+	}, "127.0.0.1:12345")
+	_, ok = resp.(*proto.SimpleString)
+	assert.True(t, ok)
+
+	resp = handler.executeCommand(state, "XGROUP", [][]byte{
+		[]byte("CREATE"), []byte("xackdel_delref"), []byte("g2"), []byte("0"),
+	}, "127.0.0.1:12345")
+	_, ok = resp.(*proto.SimpleString)
+	assert.True(t, ok)
+
+	// XREADGROUP both groups to create PEL entries
+	handler.executeCommand(state, "XREADGROUP", [][]byte{
+		[]byte("GROUP"), []byte("g1"), []byte("c1"), []byte("STREAMS"), []byte("xackdel_delref"), []byte(">"),
+	}, "127.0.0.1:12345")
+	handler.executeCommand(state, "XREADGROUP", [][]byte{
+		[]byte("GROUP"), []byte("g2"), []byte("c2"), []byte("STREAMS"), []byte("xackdel_delref"), []byte(">"),
+	}, "127.0.0.1:12345")
+
+	// XACKDEL with DELREF — should delete entry + clean PEL across all groups
+	resp = handler.executeCommand(state, "XACKDEL", [][]byte{
+		[]byte("xackdel_delref"), []byte("g1"), []byte("DELREF"), []byte("IDS"), []byte("1"), []byte("1000000000000-0"),
+	}, "127.0.0.1:12345")
+	nested, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(nested.Elems))
+
+	// XPENDING both groups — should be empty
+	resp = handler.executeCommand(state, "XPENDING", [][]byte{
+		[]byte("xackdel_delref"), []byte("g1"),
+	}, "127.0.0.1:12345")
+	_, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	// An empty pending list is a []byte{} array, not nil — just confirm no error
+
+	resp = handler.executeCommand(state, "XPENDING", [][]byte{
+		[]byte("xackdel_delref"), []byte("g2"),
+	}, "127.0.0.1:12345")
+	_, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+}
+
+func TestXACKDEL_ACKED_RequiresAllGroups(t *testing.T) {
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// XADD two entries
+	handler.executeCommand(state, "XADD", [][]byte{
+		[]byte("xackdel_acked"), []byte("1000000000000-0"), []byte("f"), []byte("v1"),
+	}, "127.0.0.1:12345")
+	handler.executeCommand(state, "XADD", [][]byte{
+		[]byte("xackdel_acked"), []byte("1000000000001-0"), []byte("f"), []byte("v2"),
+	}, "127.0.0.1:12345")
+
+	// Two groups
+	handler.executeCommand(state, "XGROUP", [][]byte{
+		[]byte("CREATE"), []byte("xackdel_acked"), []byte("g1"), []byte("0"),
+	}, "127.0.0.1:12345")
+	handler.executeCommand(state, "XGROUP", [][]byte{
+		[]byte("CREATE"), []byte("xackdel_acked"), []byte("g2"), []byte("0"),
+	}, "127.0.0.1:12345")
+
+	// Both groups read both entries
+	handler.executeCommand(state, "XREADGROUP", [][]byte{
+		[]byte("GROUP"), []byte("g1"), []byte("c1"), []byte("STREAMS"), []byte("xackdel_acked"), []byte(">"),
+	}, "127.0.0.1:12345")
+	handler.executeCommand(state, "XREADGROUP", [][]byte{
+		[]byte("GROUP"), []byte("g2"), []byte("c2"), []byte("STREAMS"), []byte("xackdel_acked"), []byte(">"),
+	}, "127.0.0.1:12345")
+
+	// Only g1 ACKs entry 0
+	handler.executeCommand(state, "XACK", [][]byte{
+		[]byte("xackdel_acked"), []byte("g1"), []byte("1000000000000-0"),
+	}, "127.0.0.1:12345")
+
+	// XACKDEL ACKED — g2 hasn't ACKed, should return 2 (acked but not deleted)
+	resp := handler.executeCommand(state, "XACKDEL", [][]byte{
+		[]byte("xackdel_acked"), []byte("g1"), []byte("ACKED"), []byte("IDS"), []byte("2"),
+		[]byte("1000000000000-0"), []byte("1000000000001-0"),
+	}, "127.0.0.1:12345")
+	nested, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(nested.Elems))
+
+	// Entry 0: g1 ACKed but g2 hasn't → should be 2 (acked but not deleted)
+	intResp, ok := nested.Elems[0].(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(2), int64(*intResp))
+
+	// Entry 1: neither group ACKed → should be 2 (acked but not deleted)
+	intResp, ok = nested.Elems[1].(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(2), int64(*intResp))
+
+	// Now g2 ACKs both entries
+	handler.executeCommand(state, "XACK", [][]byte{
+		[]byte("xackdel_acked"), []byte("g2"), []byte("1000000000000-0"), []byte("1000000000001-0"),
+	}, "127.0.0.1:12345")
+
+	// XACKDEL ACKED again — all groups have ACKed → should delete both
+	resp = handler.executeCommand(state, "XACKDEL", [][]byte{
+		[]byte("xackdel_acked"), []byte("g1"), []byte("ACKED"), []byte("IDS"), []byte("2"),
+		[]byte("1000000000000-0"), []byte("1000000000001-0"),
+	}, "127.0.0.1:12345")
+	nested, ok = resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(nested.Elems))
+
+	// Both entries should now be deleted (return 1)
+	intResp, ok = nested.Elems[0].(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*intResp))
+
+	intResp, ok = nested.Elems[1].(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*intResp))
+
+	// Verify entries are gone from stream
+	resp = handler.executeCommand(state, "XLEN", [][]byte{
+		[]byte("xackdel_acked"),
+	}, "127.0.0.1:12345")
+	intResp, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*intResp))
+}

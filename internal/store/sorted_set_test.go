@@ -1,7 +1,9 @@
 package store
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/zeebo/assert"
 )
@@ -1089,4 +1091,69 @@ func TestUnregisterBlockingZPop_MultipleKeys(t *testing.T) {
 	assert.False(t, existsA)
 	assert.Equal(t, 1, len(chansB))
 	assert.Equal(t, ch2, chansB[0])
+}
+
+// TestBZMPOPBlocking_TimeoutZero 验证 BZMPOP timeout=0 无限阻塞语义
+// Redis 协议: BZMPOP 0 → 阻塞直到有数据可用
+// 启动 goroutine 阻塞等待，通过轮询确认注册后写入数据，验证阻塞解除
+func TestBZMPOPBlocking_TimeoutZero(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	// 先写入一个初始成员，确保 BZMPopBlocking 第一次检查找到数据
+	err := store.ZAdd("bzmpop_block_zero", []ZSetMember{{Member: "a", Score: 1.0}})
+	assert.NoError(t, err)
+
+	// 测试 1: timeout=0 且数据已存在 → 立即返回（不阻塞）
+	ctx := context.Background()
+	key, members, err := store.BZMPopBlocking(ctx, []string{"bzmpop_block_zero"}, "MIN", 1, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, "bzmpop_block_zero", key)
+	assert.Equal(t, 1, len(members))
+	assert.Equal(t, "a", members[0].Member)
+
+	// 测试 2: 空 key，timeout=0 → 阻塞，直到并发写入
+	ctx2, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	errCh := make(chan error, 1)
+	var blockingKey string
+	var blockingMembers []ZSetMember
+	go func() {
+		defer close(done)
+		k, m, err := store.BZMPopBlocking(ctx2, []string{"bzmpop_block_new"}, "MAX", 1, 0)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		blockingKey = k
+		blockingMembers = m
+	}()
+
+	// 轮询等待 goroutine 注册到 blockingZPopChans（带退避，避免 tight spinlock）
+	store.blockingZPopMu.Lock()
+	for len(store.blockingZPopChans["bzmpop_block_new"]) == 0 {
+		store.blockingZPopMu.Unlock()
+		time.Sleep(2 * time.Millisecond)
+		store.blockingZPopMu.Lock()
+	}
+	store.blockingZPopMu.Unlock()
+
+	// 并发写入数据，触发阻塞解除
+	err = store.ZAdd("bzmpop_block_new", []ZSetMember{{Member: "answer", Score: 42.0}})
+	assert.NoError(t, err)
+
+	// 等待阻塞解除（最多 5s 超时）
+	select {
+	case err := <-errCh:
+		t.Fatalf("BZMPopBlocking 返回错误: %v", err)
+	case <-done:
+		assert.Equal(t, "bzmpop_block_new", blockingKey)
+		assert.Equal(t, 1, len(blockingMembers))
+		assert.Equal(t, "answer", blockingMembers[0].Member)
+		assert.Equal(t, 42.0, blockingMembers[0].Score)
+	case <-time.After(5 * time.Second):
+		t.Fatal("BZMPOP timeout=0 应该阻塞直到数据可用，但 5s 后仍未解除")
+	}
 }

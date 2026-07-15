@@ -49,7 +49,7 @@ func (s *BotreonStore) XAck(key, group string, ids ...string) (int64, error) {
 // XAckDelRemoveRefs removes PEL references for an entry from ALL consumer groups
 func (s *BotreonStore) XAckDelRemoveRefs(key, id string) error {
 	return s.retryUpdate(func(txn *badger.Txn) error {
-		prefix := []byte("STREAM:" + key + ":group:")
+		prefix := []byte(prefixStream + key + streamGroups + ":")
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = false
 		it := txn.NewIterator(opts)
@@ -103,7 +103,7 @@ func (s *BotreonStore) XIsAckedByAllGroups(key, id string) (bool, error) {
 			return err
 		}
 
-		prefix := []byte("STREAM:" + key + ":group:")
+		prefix := []byte(prefixStream + key + streamGroups + ":")
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = false
 		it := txn.NewIterator(opts)
