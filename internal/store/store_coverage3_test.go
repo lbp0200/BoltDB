@@ -47,6 +47,14 @@ func TestGeoSearchStore_Coverage(t *testing.T) {
 	n, err := s.GeoSearchStore("gsdst", "gssrc", 116.4, 39.9, 500, "km", 10, false)
 	assert.NoError(t, err)
 	assert.True(t, n > 0)
+	// GEOSEARCHSTORE dest is a zset (Redis semantics), not a geo key
+	card, err := s.ZCard("gsdst")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), card)
+	members, err := s.ZRange("gsdst", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(members))
+	assert.Equal(t, "p1", members[0].Member)
 }
 
 func TestGeoDel_GeoRemove_Coverage(t *testing.T) {
@@ -60,10 +68,22 @@ func TestGeoDel_GeoRemove_Coverage(t *testing.T) {
 
 	err = s.GeoDel("geodel", "pa")
 	assert.NoError(t, err)
+	// pa gone; pb still present
+	h, err := s.GeoGetHash("geodel", "pa")
+	if err == nil && h != "" {
+		t.Fatalf("expected pa removed, still has hash %q", h)
+	}
+	h, err = s.GeoGetHash("geodel", "pb")
+	assert.NoError(t, err)
+	assert.True(t, h != "")
 
 	n, err := s.GeoRemove("geodel", "pb")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), n)
+	h, err = s.GeoGetHash("geodel", "pb")
+	if err == nil && h != "" {
+		t.Fatalf("expected pb removed after GeoRemove, still has hash %q", h)
+	}
 }
 
 func TestGeoGetHash_Coverage(t *testing.T) {
@@ -143,6 +163,15 @@ func TestZMPop_Max_Coverage(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "zmpop1", key)
 	assert.Equal(t, 1, len(members))
+	assert.Equal(t, "b", members[0].Member)
+	// remaining member must be the MIN
+	card, err := s.ZCard("zmpop1")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), card)
+	rem, err := s.ZRange("zmpop1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(rem))
+	assert.Equal(t, "a", rem[0].Member)
 }
 
 func TestZMPop_Min_Coverage(t *testing.T) {
@@ -157,6 +186,11 @@ func TestZMPop_Min_Coverage(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "zmpop2", key)
 	assert.Equal(t, 1, len(members))
+	assert.Equal(t, "a", members[0].Member)
+	rem, err := s.ZRange("zmpop2", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(rem))
+	assert.Equal(t, "b", rem[0].Member)
 }
 
 func TestZMPop_Count_Coverage(t *testing.T) {
@@ -172,6 +206,12 @@ func TestZMPop_Count_Coverage(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "zmpop3", key)
 	assert.Equal(t, 2, len(members))
+	// MAX pops highest scores first (c then b)
+	assert.Equal(t, "c", members[0].Member)
+	assert.Equal(t, "b", members[1].Member)
+	card, err := s.ZCard("zmpop3")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), card)
 }
 
 func TestZMPop_EmptyKey_Coverage(t *testing.T) {

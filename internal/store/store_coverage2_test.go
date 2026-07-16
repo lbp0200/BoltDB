@@ -41,16 +41,25 @@ func TestExpire_PExpire_ExpireAt_PExpireAt_Coverage(t *testing.T) {
 	ok, err := s.ExpireAt("k2", time.Now().Unix()+50)
 	assert.NoError(t, err)
 	assert.True(t, ok)
+	ttl, err := s.TTL("k2")
+	assert.NoError(t, err)
+	assert.True(t, ttl > 0 && ttl <= 50)
 
 	mustSet(t, s, "k3", "v3")
 	ok, err = s.PExpire("k3", 50000)
 	assert.NoError(t, err)
 	assert.True(t, ok)
+	pttl, err := s.PTTL("k3")
+	assert.NoError(t, err)
+	assert.True(t, pttl > 0 && pttl <= 50000)
 
 	mustSet(t, s, "k4", "v4")
 	ok, err = s.PExpireAt("k4", time.Now().UnixMilli()+50000)
 	assert.NoError(t, err)
 	assert.True(t, ok)
+	pttl, err = s.PTTL("k4")
+	assert.NoError(t, err)
+	assert.True(t, pttl > 0 && pttl <= 50000)
 }
 
 func TestExpire_TTL_NonexistentKey_Coverage(t *testing.T) {
@@ -106,10 +115,23 @@ func TestRenameNX_Coverage(t *testing.T) {
 	ok, err := s.RenameNX("a", "b")
 	assert.NoError(t, err)
 	assert.False(t, ok)
+	// Target exists: source and dest unchanged
+	val, err := s.Get("a")
+	assert.NoError(t, err)
+	assert.Equal(t, "va", val)
+	val, err = s.Get("b")
+	assert.NoError(t, err)
+	assert.Equal(t, "vb", val)
 
 	ok, err = s.RenameNX("a", "c")
 	assert.NoError(t, err)
 	assert.True(t, ok)
+	val, err = s.Get("c")
+	assert.NoError(t, err)
+	assert.Equal(t, "va", val)
+	exists, err := s.Exists("a")
+	assert.NoError(t, err)
+	assert.False(t, exists)
 }
 
 // TestRename_WithTTL 验证 RENAME 时保留 TTL
@@ -328,6 +350,10 @@ func TestClearAllData_Coverage(t *testing.T) {
 
 	err := s.ClearAllData()
 	assert.NoError(t, err)
+
+	exists, err := s.Exists("cad1")
+	assert.NoError(t, err)
+	assert.False(t, exists)
 
 	mustSet(t, s, "cad2", "v2")
 	val, err := s.Get("cad2")

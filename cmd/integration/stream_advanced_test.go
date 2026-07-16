@@ -271,14 +271,31 @@ func TestXClaim(t *testing.T) {
 	_, err = sharedClient.Do(ctx, "XREADGROUP", "GROUP", "mygroup", "consumer1", "STREAMS", "claimstream", ">").Result()
 	assert.NoError(t, err)
 
-	// XCLAIM - 认领消息
+	// XCLAIM - 认领消息；Redis 默认形状 [[id, [field, value, ...]], ...]
 	result, err := sharedClient.Do(ctx, "XCLAIM", "claimstream", "mygroup", "consumer2", "0", id1).Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})
 	assert.True(t, ok)
-	// 至少返回ID
 	assert.Equal(t, 1, len(arr))
+	entry, ok := arr[0].([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(entry))
+	assert.Equal(t, id1, entry[0].(string))
+	fields, ok := entry[1].([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(fields)) // field + value1
+	// go-redis typed API must also parse full entry shape
+	claimed, err := sharedClient.XClaim(ctx, &redis.XClaimArgs{
+		Stream:   "claimstream",
+		Group:    "mygroup",
+		Consumer: "consumer3",
+		MinIdle:  0,
+		Messages: []string{id1},
+	}).Result()
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(claimed))
+	assert.Equal(t, id1, claimed[0].ID)
 }
 
 // TestXPending 测试 XPENDING 命令
@@ -303,14 +320,25 @@ func TestXPending(t *testing.T) {
 	_, err = sharedClient.Do(ctx, "XREADGROUP", "GROUP", "mygroup", "consumer1", "STREAMS", "pendingstream", ">").Result()
 	assert.NoError(t, err)
 
-	// XPENDING - 获取pending信息
+	// XPENDING summary: [count, minID, maxID, [[consumer, n], ...]]
 	result, err := sharedClient.Do(ctx, "XPENDING", "pendingstream", "mygroup").Result()
 	assert.NoError(t, err)
-
 	arr, ok := result.([]interface{})
 	assert.True(t, ok)
-	// [pending_count, min_id, consumer_count, entries_list]
 	assert.Equal(t, 4, len(arr))
+	assert.Equal(t, int64(1), arr[0].(int64))
+
+	// Extended form used by go-redis XPendingExt
+	ext, err := sharedClient.XPendingExt(ctx, &redis.XPendingExtArgs{
+		Stream: "pendingstream",
+		Group:  "mygroup",
+		Start:  "-",
+		End:    "+",
+		Count:  10,
+	}).Result()
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(ext))
+	assert.Equal(t, "consumer1", ext[0].Consumer)
 }
 
 // TestXInfoGroups 测试 XINFO GROUPS 命令

@@ -2,6 +2,7 @@ package store
 
 import (
 	"testing"
+	"time"
 
 	"github.com/zeebo/assert"
 )
@@ -41,7 +42,19 @@ func TestNewBadgerStoreWithCompression_Coverage(t *testing.T) {
 func TestKeyLockManager_RLock_RUnlock_Coverage(t *testing.T) {
 	t.Parallel()
 	klm := NewKeyLockManager(64)
+	// Concurrent readers must not block each other indefinitely
+	done := make(chan struct{}, 2)
 	klm.RLock("testkey")
+	go func() {
+		klm.RLock("testkey")
+		done <- struct{}{}
+		klm.RUnlock("testkey")
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("second RLock blocked under shared read lock")
+	}
 	klm.RUnlock("testkey")
 }
 
@@ -49,7 +62,25 @@ func TestKeyLockManager_Lock_Unlock_Coverage(t *testing.T) {
 	t.Parallel()
 	klm := NewKeyLockManager(64)
 	klm.Lock("testkey")
+	// Exclusive lock held: another Lock must wait until Unlock
+	acquired := make(chan struct{})
+	go func() {
+		klm.Lock("testkey")
+		close(acquired)
+		klm.Unlock("testkey")
+	}()
+	select {
+	case <-acquired:
+		t.Fatal("second Lock acquired while exclusive lock held")
+	case <-time.After(50 * time.Millisecond):
+		// expected: blocked
+	}
 	klm.Unlock("testkey")
+	select {
+	case <-acquired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("second Lock did not acquire after Unlock")
+	}
 }
 
 func TestKeyLockManager_NewKeyLockManager_DefaultShards_Coverage(t *testing.T) {

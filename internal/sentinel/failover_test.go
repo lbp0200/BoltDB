@@ -117,11 +117,9 @@ func TestSlaveInstance_Fields(t *testing.T) {
 // TestNewSentinelConnection tests NewSentinelConnection
 func TestNewSentinelConnection(t *testing.T) {
 	t.Parallel()
-	// Test with invalid address (no server running)
-	// This will fail to connect, which is expected
-	_, err := NewSentinelConnection("127.0.0.1:99999")
-	// We expect an error since there's no server at that port
-	assert.True(t, err != nil || err == nil) // Either way is fine
+	// Invalid/unbound port must fail to connect
+	_, err := NewSentinelConnection("127.0.0.1:1")
+	assert.Error(t, err)
 }
 
 // TestFailoverManager_StartFailover_NotDown tests StartFailover when master is not down

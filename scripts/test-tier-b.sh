@@ -4,8 +4,12 @@
 set -euo pipefail
 
 echo "=== Tier B: Multi-node cluster ==="
-CLUSTER_MULTI='TestCluster(MultiNode|GossipPropagation|SlotSync|SetSlotNodePropagation|MovedRedirect|AskRedirect|Failover|MigrateKey|BlockingFuzz)'
-go test -race -timeout 300s -run "${CLUSTER_MULTI}" -count=1 ./cmd/integration/
+CLUSTER_MULTI='TestCluster(MultiNode|GossipPropagation|SlotSync|SetSlotNodePropagation|MovedRedirect|AskRedirect|MigratingSourceWriteFence|ImportingWriteFence|MigrateSlotMultiType|MigrateNoReplacePreservesTarget|MigrateRoundTripStability|MigrateSlot$|Failover|MigrateKey|BlockingFuzz)'
+go test -race -timeout 600s -run "${CLUSTER_MULTI}" -count=1 ./cmd/integration/
+
+echo "=== Tier B: Targeted mutation (server/replication predicates) ==="
+# High-value flips must stay killed by unit oracles (see docs/plans/mutation-baseline.md)
+bash scripts/targeted-mutation-check.sh local
 
 echo "=== Tier B: Goroutine leak ==="
 go test -race -timeout 120s -run 'TestGoroutineLeak' -count=1 ./cmd/integration/

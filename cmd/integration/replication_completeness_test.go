@@ -276,7 +276,8 @@ func waitForReplication(t *testing.T, masterClient, slaveClient *redis.Client, t
 	return false
 }
 
-// pollSlave polls the slave until a condition function returns true, or timeout.
+// pollSlave polls the slave until a condition function returns true, or fails the test.
+// Silent timeout was a false-green hazard (tests continued without the expected state).
 // Uses 200ms polling interval. Useful for assertions that depend on replication timing.
 func pollSlave(t *testing.T, slaveClient *redis.Client, timeout time.Duration, fn func() bool) {
 	t.Helper()
@@ -287,6 +288,7 @@ func pollSlave(t *testing.T, slaveClient *redis.Client, timeout time.Duration, f
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
+	t.Fatalf("pollSlave: condition not met within %v", timeout)
 }
 
 // extractInfoValue extracts a numeric value from Redis INFO output by key.
@@ -525,23 +527,36 @@ func TestReplicationCompleteness_Key(t *testing.T) {
 
 	// UNLINK
 	masterClient.Set(ctx, p+"unlink1", "ulval", 0)
-	time.Sleep(300 * time.Millisecond)
+	pollSlave(t, slaveClient, 20*time.Second, func() bool {
+		n, _ := slaveClient.Exists(ctx, p+"unlink1").Result()
+		return n == 1
+	})
 	masterClient.Unlink(ctx, p+"unlink1")
-	time.Sleep(500 * time.Millisecond)
+	pollSlave(t, slaveClient, 20*time.Second, func() bool {
+		n, _ := slaveClient.Exists(ctx, p+"unlink1").Result()
+		return n == 0
+	})
 
-	// SORT with STORE
+	// SORT with STORE — wait for source list first, then STORE, then ordered dest
 	masterClient.RPush(ctx, p+"sort1", "3", "1", "2")
 	pollSlave(t, slaveClient, 20*time.Second, func() bool {
-		list, _ := slaveClient.LRange(ctx, p+"sort_out", 0, -1).Result()
+		list, _ := slaveClient.LRange(ctx, p+"sort1", 0, -1).Result()
 		return len(list) == 3
 	})
-	masterClient.Do(ctx, "SORT", p+"sort1", "STORE", p+"sort_out")
+	if err := masterClient.Do(ctx, "SORT", p+"sort1", "STORE", p+"sort_out").Err(); err != nil {
+		t.Fatalf("SORT STORE: %v", err)
+	}
 	pollSlave(t, slaveClient, 20*time.Second, func() bool {
 		list, _ := slaveClient.LRange(ctx, p+"sort_out", 0, -1).Result()
 		return len(list) == 3 && list[0] == "1"
 	})
-	listVal, _ := slaveClient.LRange(ctx, p+"sort_out", 0, -1).Result()
+	listVal, err := slaveClient.LRange(ctx, p+"sort_out", 0, -1).Result()
+	assert.NoError(t, err)
 	assert.Equal(t, []string{"1", "2", "3"}, listVal)
+	// Master and slave dest must match (double-prop / non-determinism guard)
+	masterList, err := masterClient.LRange(ctx, p+"sort_out", 0, -1).Result()
+	assert.NoError(t, err)
+	assert.Equal(t, masterList, listVal)
 
 	// FLUSHDB
 	masterClient.Set(ctx, p+"flush1", "gone", 0)
@@ -801,13 +816,15 @@ func TestReplicationCompleteness_Stream(t *testing.T) {
 	masterClient.XGroupCreateMkStream(ctx, p+"s1", p+"grp1", "0")
 	time.Sleep(200 * time.Millisecond)
 
-	// XREADGROUP (read from master, verify group exists on slave)
+	// XREADGROUP mutates PEL — must replicate to slave
 	_ = replicationDo(t, masterAddr, "XREADGROUP", "GROUP", p+"grp1", "consumer1", "COUNT", "1", "STREAMS", p+"s1", ">")
-	time.Sleep(200 * time.Millisecond)
-
-	// XPENDING on slave
-	pending, _ := slaveClient.XPending(ctx, p+"s1", p+"grp1").Result()
-	assert.True(t, pending.Count > 0 || pending.Count == 0) // group exists
+	pollSlave(t, slaveClient, 20*time.Second, func() bool {
+		pending, err := slaveClient.XPending(ctx, p+"s1", p+"grp1").Result()
+		return err == nil && pending.Count > 0
+	})
+	pending, err := slaveClient.XPending(ctx, p+"s1", p+"grp1").Result()
+	assert.NoError(t, err)
+	assert.True(t, pending.Count > 0)
 
 	// XDEL
 	msgs, _ := slaveClient.XRange(ctx, p+"s1", "-", "+").Result()

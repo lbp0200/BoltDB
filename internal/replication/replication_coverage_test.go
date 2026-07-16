@@ -2047,6 +2047,71 @@ func TestHandlePSync_FullResyncDataIntegrity(t *testing.T) {
 	assert.Equal(t, rm.GetReplicationID(), result.ReplId)
 }
 
+// TestExecuteReplicatedCommand_XREADGROUP_UpdatesPEL verifies XREADGROUP apply
+// creates pending entries so subsequent XCLAIM can transfer ownership.
+func TestExecuteReplicatedCommand_XREADGROUP_UpdatesPEL(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	defer s.Close()
+
+	assert.NoError(t, executeReplicatedCommand(s, [][]byte{
+		[]byte("XADD"), []byte("s1"), []byte("*"), []byte("f"), []byte("v"),
+	}))
+	assert.NoError(t, executeReplicatedCommand(s, [][]byte{
+		[]byte("XGROUP"), []byte("CREATE"), []byte("s1"), []byte("g"), []byte("0"),
+	}))
+	assert.NoError(t, executeReplicatedCommand(s, [][]byte{
+		[]byte("XREADGROUP"), []byte("GROUP"), []byte("g"), []byte("c-old"),
+		[]byte("COUNT"), []byte("10"), []byte("STREAMS"), []byte("s1"), []byte(">"),
+	}))
+
+	pending, err := s.XPending("s1", "g")
+	assert.NoError(t, err)
+	assert.True(t, len(pending) >= 1)
+	assert.Equal(t, "c-old", pending[0].Consumer)
+
+	id := pending[0].ID
+	assert.NoError(t, executeReplicatedCommand(s, [][]byte{
+		[]byte("XCLAIM"), []byte("s1"), []byte("g"), []byte("c-new"), []byte("0"), []byte(id),
+	}))
+	pending, err = s.XPending("s1", "g")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(pending))
+	assert.Equal(t, "c-new", pending[0].Consumer)
+}
+
+// TestExecuteReplicatedCommand_XAUTOCLAIM_TransfersPEL verifies XAUTOCLAIM apply
+// on the replica path reassigns pending ownership.
+func TestExecuteReplicatedCommand_XAUTOCLAIM_TransfersPEL(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	defer s.Close()
+
+	assert.NoError(t, executeReplicatedCommand(s, [][]byte{
+		[]byte("XADD"), []byte("s2"), []byte("1-0"), []byte("f"), []byte("v"),
+	}))
+	assert.NoError(t, executeReplicatedCommand(s, [][]byte{
+		[]byte("XGROUP"), []byte("CREATE"), []byte("s2"), []byte("g"), []byte("0"),
+	}))
+	assert.NoError(t, executeReplicatedCommand(s, [][]byte{
+		[]byte("XREADGROUP"), []byte("GROUP"), []byte("g"), []byte("c-old"),
+		[]byte("COUNT"), []byte("10"), []byte("STREAMS"), []byte("s2"), []byte(">"),
+	}))
+	pending, err := s.XPending("s2", "g")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(pending))
+	assert.Equal(t, "c-old", pending[0].Consumer)
+
+	assert.NoError(t, executeReplicatedCommand(s, [][]byte{
+		[]byte("XAUTOCLAIM"), []byte("s2"), []byte("g"), []byte("c-new"),
+		[]byte("0"), []byte("0-0"), []byte("COUNT"), []byte("10"),
+	}))
+	pending, err = s.XPending("s2", "g")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(pending))
+	assert.Equal(t, "c-new", pending[0].Consumer)
+}
+
 // TestIsTransientReplicationError tests isTransientReplicationError function.
 // Backpressure / retry exhaustion must NOT be treated as skippable (would
 // permanently drop replica mutations). Only idempotent "key not found" skips.
@@ -2056,7 +2121,36 @@ func TestIsTransientReplicationError(t *testing.T) {
 	assert.False(t, isTransientReplicationError(nil))
 	assert.False(t, isTransientReplicationError(fmt.Errorf("max retries exhausted after 3 attempts")))
 	assert.False(t, isTransientReplicationError(fmt.Errorf("write rejected by backpressure")))
+	// Exact phrases produced by store/retry_update.go and set.go backpressure paths
+	assert.False(t, isTransientReplicationError(fmt.Errorf("write rejected: L0 score 21.0 exceeds hard threshold 20")))
+	assert.False(t, isTransientReplicationError(fmt.Errorf("max retries exhausted (30): %w", fmt.Errorf("txn conflict"))))
 	assert.True(t, isTransientReplicationError(fmt.Errorf("key not found")))
+	assert.True(t, isTransientReplicationError(fmt.Errorf("ERR key not found")))
 	assert.False(t, isTransientReplicationError(fmt.Errorf("connection refused")))
 	assert.False(t, isTransientReplicationError(fmt.Errorf("")))
+}
+
+// TestReplicationApplyErrorDisposition encodes the oracle for slave apply:
+//   - nil error → advance offset (apply success)
+//   - transient (key not found) → skip without resync, still must not lose later cmds
+//   - backpressure / other → force resync path (return error from readCommandLoop)
+func TestReplicationApplyErrorDisposition(t *testing.T) {
+	t.Parallel()
+
+	disposition := func(err error) string {
+		if err == nil {
+			return "advance"
+		}
+		if isTransientReplicationError(err) {
+			return "skip"
+		}
+		return "resync"
+	}
+
+	assert.Equal(t, "advance", disposition(nil))
+	assert.Equal(t, "skip", disposition(fmt.Errorf("key not found")))
+	assert.Equal(t, "resync", disposition(fmt.Errorf("write rejected: L0 score 25.0 exceeds hard threshold 20")))
+	assert.Equal(t, "resync", disposition(fmt.Errorf("max retries exhausted (30): conflict")))
+	assert.Equal(t, "resync", disposition(fmt.Errorf("WRONGTYPE Operation against a key holding the wrong kind of value")))
+	assert.Equal(t, "resync", disposition(fmt.Errorf("unknown replicated command XYZ")))
 }

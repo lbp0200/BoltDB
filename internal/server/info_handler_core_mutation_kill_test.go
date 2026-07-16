@@ -537,6 +537,21 @@ func TestCheckAndHandleRedirect_ImportingWriteFence(t *testing.T) {
 	state = &connState{clusterAsking: true, currentCmd: "RESTORE"}
 	resp = handler.checkAndHandleRedirect(state, key)
 	assert.True(t, resp == nil)
+
+	// One-shot: after first ASKING command, flag is cleared — second access without
+	// re-ASKING does not take the IMPORTING bypass (redirect or nil depending on ownership).
+	state = &connState{clusterAsking: true, currentCmd: "GET"}
+	_ = handler.checkAndHandleRedirect(state, key)
+	assert.False(t, state.clusterAsking)
+	// Without asking, IMPORTING alone does not grant access if slot not owned
+	// (CheckSlotRedirect returns MOVED when owner is another node).
+	state = &connState{clusterAsking: false, currentCmd: "GET"}
+	// Importing without ownership: no local ownership of slot → MOVED
+	// Assign owner to source so slot maps elsewhere
+	assert.NoError(t, c.AssignSlot(slot, "source-node"))
+	resp = handler.checkAndHandleRedirect(state, key)
+	assert.NotNil(t, resp)
+	assert.True(t, strings.Contains(resp.String(), "MOVED") || strings.Contains(resp.String(), "ASK"))
 }
 
 // TestCheckAndHandleRedirect_MigratingWriteFence blocks writes to existing keys

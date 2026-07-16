@@ -236,6 +236,44 @@ func TestRESPShape_XAUTOCLAIM(t *testing.T) {
 	assert.Equal(t, 2, len(fields.Elems)) // 1 field pair
 }
 
+// TestRESPShape_XCLAIM verifies XCLAIM returns [[id, [field, value...]], ...]
+func TestRESPShape_XCLAIM(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "XADD", [][]byte{[]byte("xclaimk"), []byte("1-0"), []byte("f1"), []byte("v1")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATE"), []byte("xclaimk"), []byte("gg"), []byte("0")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "XREADGROUP", [][]byte{[]byte("GROUP"), []byte("gg"), []byte("c1"), []byte("STREAMS"), []byte("xclaimk"), []byte(">")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand(state, "XCLAIM", [][]byte{[]byte("xclaimk"), []byte("gg"), []byte("c2"), []byte("0"), []byte("1-0")}, "127.0.0.1:12345")
+	na := shapeNestedArray(t, resp, 1)
+	entry, ok := na.Elems[0].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(entry.Elems))
+	assert.Equal(t, "1-0", shapeBulkString(t, entry.Elems[0], 1))
+	fields, ok := entry.Elems[1].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(fields.Elems))
+}
+
+// TestRESPShape_XCLAIM_JUSTID verifies XCLAIM JUSTID returns flat bulk ID array
+func TestRESPShape_XCLAIM_JUSTID(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "XADD", [][]byte{[]byte("xclaimjid"), []byte("1-0"), []byte("f1"), []byte("v1")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATE"), []byte("xclaimjid"), []byte("gg"), []byte("0")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "XREADGROUP", [][]byte{[]byte("GROUP"), []byte("gg"), []byte("c1"), []byte("STREAMS"), []byte("xclaimjid"), []byte(">")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand(state, "XCLAIM", [][]byte{[]byte("xclaimjid"), []byte("gg"), []byte("c2"), []byte("0"), []byte("1-0"), []byte("JUSTID")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(arr.Args))
+	assert.Equal(t, "1-0", string(arr.Args[0]))
+}
+
 // TestRESPShape_XAUTOCLAIM_JUSTID verifies XAUTOCLAIM JUSTID returns [nextID, [id, id, ...]]
 func TestRESPShape_XAUTOCLAIM_JUSTID(t *testing.T) {
 	t.Parallel()
@@ -467,7 +505,7 @@ func TestRESPShape_XREADGROUP(t *testing.T) {
 	assert.True(t, len(entry.Elems) == 2)
 }
 
-// TestRESPShape_XPENDING tests XPENDING returns summary + per-entry arrays
+// TestRESPShape_XPENDING tests XPENDING summary [count, min, max, [[consumer, n]...]]
 func TestRESPShape_XPENDING(t *testing.T) {
 	t.Parallel()
 	handler, state := setupTestHandler(t)
@@ -482,6 +520,29 @@ func TestRESPShape_XPENDING(t *testing.T) {
 	// Element 0: count as Integer (value, not pointer)
 	_, ok := na.Elems[0].(proto.Integer)
 	assert.True(t, ok)
+	// Element 3: consumers [[name, count], ...]
+	cons, ok := na.Elems[3].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(cons.Elems))
+}
+
+// TestRESPShape_XPENDING_Extended tests detail form [[id, consumer, idle, deliveries], ...]
+func TestRESPShape_XPENDING_Extended(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "XADD", [][]byte{[]byte("xpke"), []byte("1-0"), []byte("f"), []byte("v")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATE"), []byte("xpke"), []byte("gg"), []byte("0")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "XREADGROUP", [][]byte{[]byte("GROUP"), []byte("gg"), []byte("c1"), []byte("STREAMS"), []byte("xpke"), []byte(">")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand(state, "XPENDING", [][]byte{[]byte("xpke"), []byte("gg"), []byte("-"), []byte("+"), []byte("10")}, "127.0.0.1:12345")
+	na := shapeNestedArray(t, resp, 1)
+	entry, ok := na.Elems[0].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 4, len(entry.Elems))
+	assert.Equal(t, "1-0", shapeBulkString(t, entry.Elems[0], 1))
+	assert.Equal(t, "c1", shapeBulkString(t, entry.Elems[1], 1))
 }
 
 // TestRESPShape_XINFO_STREAM verifies XINFO STREAM returns flat key-value array

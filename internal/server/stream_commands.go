@@ -3,8 +3,10 @@ package server
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/logger"
 	"github.com/lbp0200/BoltDB/internal/proto"
@@ -554,6 +556,11 @@ func (h *Handler) handleXREADGROUP(state *connState, args [][]byte, remoteAddr s
 		return wrapLogError(err)
 	}
 
+	// PEL / LastDeliveredID mutations must reach replicas (live XCLAIM/XACK)
+	for _, k := range streamKeys {
+		h.markDirtyKeys(state, k)
+	}
+
 	// Format response - XREADGROUP returns [[stream, [[entry1], [entry2], ...]], ...]
 	var response []proto.RESP
 	for _, streamMap := range results {
@@ -589,7 +596,9 @@ func (h *Handler) handleXREADGROUP(state *connState, args [][]byte, remoteAddr s
 	return &proto.NestedArray{Elems: response}
 }
 
-// handleXCLAIM 实现 XCLAIM 命令
+// handleXCLAIM 实现 XCLAIM 命令。
+// Redis 返回：默认 [[id, [field, value, ...]], ...]；JUSTID 时返回 [id, id, ...]。
+// 选项解析（ID 之后）：IDLE/TIME/RETRYCOUNT/LASTID 带一参数，FORCE/JUSTID 无参数。
 func (h *Handler) handleXCLAIM(state *connState, args [][]byte, remoteAddr string) proto.RESP {
 	if len(args) < 5 {
 		return proto.NewError("ERR wrong number of arguments for 'XCLAIM' command")
@@ -601,10 +610,30 @@ func (h *Handler) handleXCLAIM(state *connState, args [][]byte, remoteAddr strin
 	if err != nil {
 		return proto.NewError("ERR value is not an integer")
 	}
-	ids := make([]string, len(args)-4)
+
+	justID := false
+	ids := make([]string, 0, len(args)-4)
 	for i := 4; i < len(args); i++ {
-		ids[i-4] = string(args[i])
+		opt := strings.ToUpper(string(args[i]))
+		switch opt {
+		case "JUSTID":
+			justID = true
+		case "FORCE":
+			// accepted; store path claims only existing PEL entries (FORCE no-op until extended)
+		case "IDLE", "TIME", "RETRYCOUNT", "LASTID":
+			// accept and skip value arg for protocol compatibility
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			i++
+		default:
+			ids = append(ids, string(args[i]))
+		}
 	}
+	if len(ids) == 0 {
+		return proto.NewError("ERR wrong number of arguments for 'XCLAIM' command")
+	}
+
 	h.markDirtyKeys(state, key)
 	claimed, err := h.Db.XClaim(key, group, consumer, minIdleTime, ids...)
 	if err != nil {
@@ -613,11 +642,47 @@ func (h *Handler) handleXCLAIM(state *connState, args [][]byte, remoteAddr strin
 		}
 		return wrapLogError(err)
 	}
-	result := make([][]byte, len(claimed))
-	for i, id := range claimed {
-		result[i] = []byte(id)
+
+	if justID {
+		result := make([][]byte, len(claimed))
+		for i, id := range claimed {
+			result[i] = []byte(id)
+		}
+		return &proto.Array{Args: result}
 	}
-	return &proto.Array{Args: result}
+
+	// Full Redis entry shape: NestedArray of [id, NestedArray(field, value, ...)]
+	entries := make([]proto.RESP, 0, len(claimed))
+	for _, id := range claimed {
+		entry, getErr := h.Db.GetStreamEntry(key, id)
+		if getErr != nil || entry == nil {
+			// Entry claimed in PEL but body missing — still emit id with empty fields
+			entries = append(entries, &proto.NestedArray{
+				Elems: []proto.RESP{
+					proto.NewBulkString([]byte(id)),
+					&proto.NestedArray{Elems: nil},
+				},
+			})
+			continue
+		}
+		fields := make([]proto.RESP, 0, len(entry.Fields)*2)
+		// Stable field order for tests/clients that compare arrays
+		keys := make([]string, 0, len(entry.Fields))
+		for k := range entry.Fields {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			fields = append(fields, proto.NewBulkString([]byte(k)), proto.NewBulkString([]byte(entry.Fields[k])))
+		}
+		entries = append(entries, &proto.NestedArray{
+			Elems: []proto.RESP{
+				proto.NewBulkString([]byte(id)),
+				&proto.NestedArray{Elems: fields},
+			},
+		})
+	}
+	return &proto.NestedArray{Elems: entries}
 }
 
 // handleXAUTOCLAIM 实现 XAUTOCLAIM 命令
@@ -701,7 +766,9 @@ func (h *Handler) handleXAUTOCLAIM(state *connState, args [][]byte, remoteAddr s
 	}
 }
 
-// handleXPENDING 实现 XPENDING 命令
+// handleXPENDING 实现 XPENDING 命令。
+// 摘要：XPENDING key group → [count, min, max, [[consumer, count], ...]]
+// 明细：XPENDING key group start end count [consumer] → [[id, consumer, idle_ms, deliveries], ...]
 func (h *Handler) handleXPENDING(state *connState, args [][]byte, remoteAddr string) proto.RESP {
 	if len(args) < 2 {
 		return proto.NewError("ERR wrong number of arguments for 'XPENDING' command")
@@ -715,12 +782,52 @@ func (h *Handler) handleXPENDING(state *connState, args [][]byte, remoteAddr str
 		}
 		return wrapLogError(err)
 	}
-	response := make([]proto.RESP, 0)
 
+	// Extended form: start end count [consumer]
+	if len(args) >= 5 {
+		// start/end filters: "-" / "+" or explicit IDs (lexicographic stream IDs work for range)
+		start, end := string(args[2]), string(args[3])
+		limit, err := strconv.ParseInt(string(args[4]), 10, 64)
+		if err != nil {
+			return proto.NewError("ERR value is not an integer")
+		}
+		var filterConsumer string
+		if len(args) >= 6 {
+			filterConsumer = string(args[5])
+		}
+		now := time.Now().UnixNano() / int64(time.Millisecond)
+		out := make([]proto.RESP, 0)
+		for _, e := range entries {
+			if start != "-" && e.ID < start {
+				continue
+			}
+			if end != "+" && e.ID > end {
+				continue
+			}
+			if filterConsumer != "" && e.Consumer != filterConsumer {
+				continue
+			}
+			idle := now - e.LastDelivery
+			if idle < 0 {
+				idle = 0
+			}
+			out = append(out, &proto.NestedArray{Elems: []proto.RESP{
+				proto.NewBulkString([]byte(e.ID)),
+				proto.NewBulkString([]byte(e.Consumer)),
+				proto.Integer(idle),
+				proto.Integer(e.DeliveryCount),
+			}})
+			if limit > 0 && int64(len(out)) >= limit {
+				break
+			}
+		}
+		return &proto.NestedArray{Elems: out}
+	}
+
+	// Summary form
 	count := len(entries)
-	response = append(response, proto.Integer(count))
-
 	var minID, maxID string
+	consumerCounts := make(map[string]int64)
 	for _, e := range entries {
 		if minID == "" || e.ID < minID {
 			minID = e.ID
@@ -728,23 +835,27 @@ func (h *Handler) handleXPENDING(state *connState, args [][]byte, remoteAddr str
 		if maxID == "" || e.ID > maxID {
 			maxID = e.ID
 		}
+		consumerCounts[e.Consumer]++
 	}
-	response = append(response, proto.NewBulkString([]byte(minID)))
-	response = append(response, proto.NewBulkString([]byte(maxID)))
-
-	var entriesArray []proto.RESP
-	for _, e := range entries {
-		entryArray := []proto.RESP{
-			proto.NewBulkString([]byte(e.ID)),
-			proto.NewBulkString([]byte(e.Consumer)),
-			proto.Integer(e.DeliveryCount),
-			proto.Integer(e.LastDelivery),
-		}
-		entriesArray = append(entriesArray, &proto.NestedArray{Elems: entryArray})
+	consumers := make([]proto.RESP, 0, len(consumerCounts))
+	// stable order
+	names := make([]string, 0, len(consumerCounts))
+	for n := range consumerCounts {
+		names = append(names, n)
 	}
-	response = append(response, &proto.NestedArray{Elems: entriesArray})
-
-	return &proto.NestedArray{Elems: response}
+	sort.Strings(names)
+	for _, n := range names {
+		consumers = append(consumers, &proto.NestedArray{Elems: []proto.RESP{
+			proto.NewBulkString([]byte(n)),
+			proto.Integer(consumerCounts[n]),
+		}})
+	}
+	return &proto.NestedArray{Elems: []proto.RESP{
+		proto.Integer(count),
+		proto.NewBulkString([]byte(minID)),
+		proto.NewBulkString([]byte(maxID)),
+		&proto.NestedArray{Elems: consumers},
+	}}
 }
 
 // handleXINFO 实现 XINFO 命令

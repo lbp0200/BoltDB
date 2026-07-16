@@ -169,7 +169,9 @@ func getWriteCommandSet() map[string]bool {
 		"GEOADD": true, "GEOSEARCHSTORE": true,
 		"XADD": true, "XDEL": true, "XACK": true,
 		"XCLAIM": true, "XGROUP": true, "XTRIM": true,
-		"XACKDEL": true, "XDELEX": true, "XNACK": true, "XSETID": true, "XCFGSET": true,
+		// XREADGROUP mutates PEL / LastDeliveredID — must replicate or XCLAIM/XACK diverge
+		"XREADGROUP": true,
+		"XACKDEL":    true, "XDELEX": true, "XNACK": true, "XSETID": true, "XCFGSET": true,
 		"SWAPDB": true, "MOVE": true,
 		"PUBLISH":  true,
 		"JSON.SET": true, "JSON.DEL": true, "JSON.ARRAPPEND": true,

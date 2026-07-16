@@ -24,22 +24,37 @@ func TestMasterInstance_SetODown_Coverage(t *testing.T) {
 	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
-	// Set ODown
+	assert.False(t, master.IsODown())
+	assert.Equal(t, "ok", master.GetState())
+
 	master.SetODown()
 
-	// Verify state changed (implementation dependent)
-	// This tests the method can be called without panic
-	assert.True(t, true)
+	assert.True(t, master.IsODown())
+	assert.Equal(t, "odown", master.GetState())
 }
 
 // TestMasterInstance_Stop_Coverage tests Stop method
 func TestMasterInstance_Stop_Coverage(t *testing.T) {
 	t.Parallel()
-	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
+	sentinel := NewSentinel(1, time.Second)
+	defer sentinel.Stop()
 
-	// Stop should not panic
+	master := NewMasterInstance("test-master", "127.0.0.1:1", 2) // unreachable addr
+	done := make(chan struct{})
+	go func() {
+		master.StartMonitoring(sentinel)
+		close(done)
+	}()
+
+	// Stop closes stopCh; monitoring loop must exit (closeOnce makes double-Stop safe)
 	master.Stop()
-	assert.True(t, true)
+	master.Stop()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("StartMonitoring did not exit after Stop")
+	}
 }
 
 // TestMasterInstance_AddSentinel_Coverage tests AddSentinel method
@@ -67,9 +82,13 @@ func TestMasterInstance_UpdateSlaveOffset_Coverage(t *testing.T) {
 	slave := NewSlaveInstance("slave1", "127.0.0.1:6380")
 	master.AddSlave(slave)
 
-	// Update slave offset - should not panic
-	master.UpdateSlaveOffset("slave1", 1000)
-	assert.True(t, true)
+	// UpdateSlaveOffset matches by addr (not ID)
+	master.UpdateSlaveOffset("127.0.0.1:6380", 1000)
+	assert.Equal(t, int64(1000), slave.GetOffset())
+
+	// Wrong key (ID) must not change offset
+	master.UpdateSlaveOffset("slave1", 9999)
+	assert.Equal(t, int64(1000), slave.GetOffset())
 }
 
 // TestSentinelInstance_Coverage tests SentinelInstance creation
@@ -183,10 +202,14 @@ func TestSentinel_GetAllMasters_Coverage(t *testing.T) {
 func TestSentinel_Stop_Coverage(t *testing.T) {
 	t.Parallel()
 	sentinel := NewSentinel(1, time.Second)
+	sentinel.AddMaster("mymaster", "127.0.0.1:1", 2)
+	assert.NotNil(t, sentinel.GetMaster("mymaster"))
 
-	// Stop should not panic
+	// Stop is idempotent (closeOnce) and must not panic
 	sentinel.Stop()
-	assert.True(t, true)
+	sentinel.Stop()
+	// Masters remain addressable after Stop (map not wiped)
+	assert.NotNil(t, sentinel.GetMaster("mymaster"))
 }
 
 // TestMasterInstance_MultipleSlaves_Coverage tests managing multiple slaves
@@ -217,23 +240,31 @@ func TestMasterInstance_SlaveOffset_Coverage(t *testing.T) {
 	slave := NewSlaveInstance("slave1", "127.0.0.1:6380")
 	master.AddSlave(slave)
 
-	// Update offset multiple times
-	master.UpdateSlaveOffset("slave1", 100)
-	master.UpdateSlaveOffset("slave1", 200)
-	master.UpdateSlaveOffset("slave1", 300)
+	// Update offset multiple times by addr
+	master.UpdateSlaveOffset("127.0.0.1:6380", 100)
+	assert.Equal(t, int64(100), slave.GetOffset())
+	master.UpdateSlaveOffset("127.0.0.1:6380", 200)
+	assert.Equal(t, int64(200), slave.GetOffset())
+	master.UpdateSlaveOffset("127.0.0.1:6380", 300)
+	assert.Equal(t, int64(300), slave.GetOffset())
 
-	// Test should complete without error
-	assert.True(t, true)
+	// GetBestSlave picks highest online offset
+	best := master.GetBestSlave()
+	assert.NotNil(t, best)
+	assert.Equal(t, int64(300), best.GetOffset())
 }
 
 // TestMasterInstance_UpdateSlaveOffset_NonExistent_Coverage tests updating offset for non-existent slave
 func TestMasterInstance_UpdateSlaveOffset_NonExistent_Coverage(t *testing.T) {
 	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
+	slave := NewSlaveInstance("slave1", "127.0.0.1:6380")
+	master.AddSlave(slave)
 
-	// Update offset for non-existent slave - should not panic
+	// Update offset for non-existent addr — existing slaves unchanged
 	master.UpdateSlaveOffset("non-existent", 100)
-	assert.True(t, true)
+	assert.Equal(t, int64(0), slave.GetOffset())
+	assert.Equal(t, 1, len(master.GetSlaves()))
 }
 
 // TestMasterInstance_GetState_SetState_Coverage tests GetState and SetState methods

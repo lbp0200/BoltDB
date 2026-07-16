@@ -138,10 +138,23 @@ func TestGossipProtocol_TouchPeer(t *testing.T) {
 	defer sentinel.Stop()
 
 	gp := NewGossipProtocol(sentinel, nil)
-	// Add and touch peer - should not panic
 	gp.addOrUpdatePeer("127.0.0.1:26380", "test-run-id")
+
+	gp.mu.Lock()
+	gp.peers["127.0.0.1:26380"].LastSeen = time.Now().Add(-1 * time.Hour)
+	before := gp.peers["127.0.0.1:26380"].LastSeen
+	gp.mu.Unlock()
+
 	gp.touchPeer("127.0.0.1:26380")
-	assert.True(t, true)
+
+	gp.mu.Lock()
+	after := gp.peers["127.0.0.1:26380"].LastSeen
+	gp.mu.Unlock()
+
+	assert.True(t, after.After(before))
+	// Unknown peer is a no-op
+	gp.touchPeer("127.0.0.1:9999")
+	assert.Equal(t, 1, gp.GetPeersCount())
 }
 
 // TestGossipProtocol_Start_Stop tests Start and Stop methods
@@ -214,9 +227,11 @@ func TestGossipProtocol_BroadcastSdown(t *testing.T) {
 
 	gp := NewGossipProtocol(sentinel, nil)
 
-	// BroadcastSdown should not panic even with no peers
+	// No peers: broadcast is a no-op (no panic, peer table unchanged)
+	assert.Equal(t, 0, gp.GetPeersCount())
 	gp.BroadcastSdown("mymaster", 1)
-	assert.True(t, true)
+	assert.Equal(t, 0, gp.GetPeersCount())
+	assert.NotNil(t, sentinel.GetMaster("mymaster"))
 }
 
 // TestGossipProtocol_managePeers tests managePeers method
@@ -239,9 +254,11 @@ func TestGossipProtocol_managePeers(t *testing.T) {
 	assert.Nil(t, err)
 	defer gp.Stop()
 
-	// Give time for managePeers to run
+	// managePeers ticker is running when Start succeeds
+	assert.True(t, gp.GetPort() > 0)
+	// Give time for managePeers to tick without peers
 	time.Sleep(200 * time.Millisecond)
-	assert.True(t, true)
+	assert.Equal(t, 0, gp.GetPeersCount())
 }
 
 // TestGossipProtocol_sendHello tests sendHello method
@@ -264,8 +281,10 @@ func TestGossipProtocol_handleMessage(t *testing.T) {
 	sentinel := NewSentinel(1, 30000)
 	defer sentinel.Stop()
 
-	// Add a master for SDOWN handling
-	sentinel.AddMaster("mymaster", "127.0.0.1:6379", 2)
+	// quorum=3: assert reporter tracking without reaching ODOWN (would spawn AutoFailover)
+	sentinel.AddMaster("mymaster", "127.0.0.1:6379", 3)
+	master := sentinel.GetMaster("mymaster")
+	assert.NotNil(t, master)
 
 	gp := NewGossipProtocol(sentinel, nil)
 
@@ -280,31 +299,30 @@ func TestGossipProtocol_handleMessage(t *testing.T) {
 	assert.Nil(t, err)
 	defer conn.Close()
 
-	// Test with different message types
-	// Empty message
+	// Benign / malformed messages must not panic or corrupt master state
 	gp.handleMessage(conn, "")
-	// Unknown command
 	gp.handleMessage(conn, "UNKNOWN")
-	// HELLO with valid parts
 	gp.handleMessage(conn, "HELLO runid 26379 1")
-	// HELLO with invalid parts (less than 3)
 	gp.handleMessage(conn, "HELLO runid")
-	// PING
 	gp.handleMessage(conn, "PING")
-	// PONG with runid
 	gp.handleMessage(conn, "PONG runid")
-	// PONG without runid
 	gp.handleMessage(conn, "PONG")
-	// SDOWN with valid parts
-	gp.handleMessage(conn, "SDOWN mymaster 2")
-	// SDOWN with invalid parts
-	gp.handleMessage(conn, "SDOWN mymaster")
-	// SDOWN with non-numeric count
-	gp.handleMessage(conn, "SDOWN mymaster abc")
-	// MASTERS
+	gp.handleMessage(conn, "SDOWN mymaster") // incomplete — ignored
 	gp.handleMessage(conn, "MASTERS")
+	assert.Equal(t, 0, master.GetSdownCount())
+	assert.False(t, master.IsODown())
 
-	assert.True(t, true)
+	// SDOWN format: SDOWN <masterName> <sourceRunID>
+	gp.handleMessage(conn, "SDOWN mymaster sentinel-a")
+	assert.Equal(t, 1, master.GetSdownCount())
+	assert.False(t, master.IsODown())
+
+	gp.handleMessage(conn, "SDOWN mymaster sentinel-a") // duplicate reporter
+	assert.Equal(t, 1, master.GetSdownCount())
+
+	gp.handleMessage(conn, "SDOWN mymaster sentinel-b")
+	assert.Equal(t, 2, master.GetSdownCount())
+	assert.False(t, master.IsODown()) // quorum is 3
 }
 
 // TestGossipProtocol_sendHellos tests sendHellos method
@@ -327,12 +345,13 @@ func TestGossipProtocol_sendHellos(t *testing.T) {
 	assert.Nil(t, err)
 	defer gp.Stop()
 
-	// Add a peer
+	// Unreachable peer: sendHellos must not drop peer entries
 	gp.addOrUpdatePeer("127.0.0.1:26380", "test-run-id")
+	assert.Equal(t, 1, gp.GetPeersCount())
 
-	// Give time for sendHellos to run
-	time.Sleep(200 * time.Millisecond)
-	assert.True(t, true)
+	time.Sleep(250 * time.Millisecond)
+	assert.Equal(t, 1, gp.GetPeersCount())
+	assert.True(t, gp.GetPort() > 0)
 }
 
 // TestGossipProtocol_Stop_WaitsForHandleConnection verifies that Stop()

@@ -326,10 +326,14 @@ func TestExecuteCommand_SETEX_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "SETEX", [][]byte{[]byte("mykey"), []byte("60"), []byte("myvalue")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 
-	// Verify value was set
+	// Verify value was set and TTL applied (side effect, not just OK)
 	val, err := handler.Db.Get("mykey")
 	assert.NoError(t, err)
 	assert.Equal(t, "myvalue", val)
+	ttlResp := handler.executeCommand(state, "TTL", [][]byte{[]byte("mykey")}, "127.0.0.1:12345")
+	ttl, ok := ttlResp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.True(t, int64(*ttl) > 0 && int64(*ttl) <= 60)
 }
 
 // TestExecuteCommand_PSETEX tests PSETEX command
@@ -341,10 +345,14 @@ func TestExecuteCommand_PSETEX_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "PSETEX", [][]byte{[]byte("mykey"), []byte("60000"), []byte("myvalue")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 
-	// Verify value was set
+	// Verify value was set and PTTL applied
 	val, err := handler.Db.Get("mykey")
 	assert.NoError(t, err)
 	assert.Equal(t, "myvalue", val)
+	pttlResp := handler.executeCommand(state, "PTTL", [][]byte{[]byte("mykey")}, "127.0.0.1:12345")
+	pttl, ok := pttlResp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.True(t, int64(*pttl) > 0 && int64(*pttl) <= 60000)
 }
 
 // TestExecuteCommand_SETNX_Coverage tests SETNX command

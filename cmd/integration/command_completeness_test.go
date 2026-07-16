@@ -1349,40 +1349,56 @@ func TestCommandCompleteness_Stream(t *testing.T) {
 	})
 
 	// --- XCLAIM ---
+	// Full Redis entry shape [[id, [field, value...]], ...] for go-redis XClaim().
 	t.Run("XCLAIM", func(t *testing.T) {
-		sharedClient.XAdd(ctx, &redis.XAddArgs{Stream: p + "stm10", Values: map[string]interface{}{"f": "v"}})
-		sharedClient.XGroupCreateMkStream(ctx, p+"stm10", p+"grp10", "0")
-		// Read all messages first
-		msgs, _ := sharedClient.XReadGroup(ctx, &redis.XReadGroupArgs{
-			Group:    p + "grp10",
-			Consumer: "old",
-			Streams:  []string{p + "stm10", ">"},
-			Count:    1,
+		id, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
+			Stream: p + "stm10",
+			Values: map[string]interface{}{"f": "v"},
 		}).Result()
-		if len(msgs) > 0 && len(msgs[0].Messages) > 0 {
-			msgIDs := make([]string, len(msgs[0].Messages))
-			for i, m := range msgs[0].Messages {
-				msgIDs[i] = m.ID
-			}
-			// XClaim may return empty if MinIdle > actual idle time; that's OK
-			sharedClient.XClaim(ctx, &redis.XClaimArgs{
-				Stream:   p + "stm10",
-				Group:    p + "grp10",
-				Consumer: "new",
-				MinIdle:  0,
-				Messages: msgIDs,
-			})
-		}
-		// If we got here without panic, XCLAIM works
-		assert.True(t, true)
+		assert.NoError(t, err)
+		assert.NoError(t, sharedClient.XGroupCreateMkStream(ctx, p+"stm10", p+"grp10", "0").Err())
+		// Read so message enters PEL
+		_, err = sharedClient.Do(ctx, "XREADGROUP", "GROUP", p+"grp10", "old",
+			"COUNT", "1", "STREAMS", p+"stm10", ">").Result()
+		assert.NoError(t, err)
+
+		claimed, err := sharedClient.XClaim(ctx, &redis.XClaimArgs{
+			Stream:   p + "stm10",
+			Group:    p + "grp10",
+			Consumer: "new",
+			MinIdle:  0,
+			Messages: []string{id},
+		}).Result()
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(claimed))
+		assert.Equal(t, id, claimed[0].ID)
+		assert.Equal(t, "v", claimed[0].Values["f"])
 	})
 
 	// --- XAUTOCLAIM ---
 	t.Run("XAUTOCLAIM", func(t *testing.T) {
-		sharedClient.XAdd(ctx, &redis.XAddArgs{Stream: p + "stm11", Values: map[string]interface{}{"f": "v"}})
-		sharedClient.XGroupCreateMkStream(ctx, p+"stm11", p+"grp11", "0")
-		r, _ := doAny(t, ctx, "XAUTOCLAIM", p+"stm11", p+"grp11", "newclaim", "0", "0-0", "COUNT", "10")
-		assert.NotNil(t, r)
+		id, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
+			Stream: p + "stm11",
+			Values: map[string]interface{}{"f": "v"},
+		}).Result()
+		assert.NoError(t, err)
+		assert.NoError(t, sharedClient.XGroupCreateMkStream(ctx, p+"stm11", p+"grp11", "0").Err())
+		_, err = sharedClient.XReadGroup(ctx, &redis.XReadGroupArgs{
+			Group: p + "grp11", Consumer: "old", Streams: []string{p + "stm11", ">"}, Count: 1,
+		}).Result()
+		assert.NoError(t, err)
+		// [nextID, [[id, [fields...]], ...]]
+		r, err := sharedClient.Do(ctx, "XAUTOCLAIM", p+"stm11", p+"grp11", "newclaim", "0", "0-0", "COUNT", "10").Result()
+		assert.NoError(t, err)
+		arr, ok := r.([]interface{})
+		assert.True(t, ok)
+		assert.True(t, len(arr) >= 2)
+		entries, ok := arr[1].([]interface{})
+		assert.True(t, ok)
+		assert.True(t, len(entries) >= 1)
+		entry, ok := entries[0].([]interface{})
+		assert.True(t, ok)
+		assert.Equal(t, id, entry[0].(string))
 	})
 
 	// --- XPENDING ---
@@ -1390,14 +1406,21 @@ func TestCommandCompleteness_Stream(t *testing.T) {
 		sharedClient.XAdd(ctx, &redis.XAddArgs{Stream: p + "stm12", Values: map[string]interface{}{"f": "v"}})
 		sharedClient.XGroupCreateMkStream(ctx, p+"stm12", p+"grp12", "0")
 		// Read but don't ack
-		sharedClient.XReadGroup(ctx, &redis.XReadGroupArgs{
+		assert.NoError(t, sharedClient.XReadGroup(ctx, &redis.XReadGroupArgs{
 			Group:    p + "grp12",
 			Consumer: "c1",
 			Streams:  []string{p + "stm12", ">"},
 			Count:    1,
-		})
-		r, _ := doAny(t, ctx, "XPENDING", p+"stm12", p+"grp12")
-		assert.NotNil(t, r)
+		}).Err())
+		sum, err := sharedClient.XPending(ctx, p+"stm12", p+"grp12").Result()
+		assert.NoError(t, err)
+		assert.True(t, sum.Count >= 1)
+		ext, err := sharedClient.XPendingExt(ctx, &redis.XPendingExtArgs{
+			Stream: p + "stm12", Group: p + "grp12", Start: "-", End: "+", Count: 10,
+		}).Result()
+		assert.NoError(t, err)
+		assert.True(t, len(ext) >= 1)
+		assert.Equal(t, "c1", ext[0].Consumer)
 	})
 
 	// --- XINFO ---

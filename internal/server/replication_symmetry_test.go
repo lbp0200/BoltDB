@@ -73,3 +73,57 @@ func formatCmdList(cmds []string) string {
 	}
 	return s
 }
+
+// TestReplicationWriteCommandChecklist is the executable checklist for adding
+// a new write command. Failures mean the command will thrash FULLRESYNC or
+// silently diverge under replication.
+//
+// Human steps (must all pass before merge):
+//  1. isWriteCommand / getWriteCommandSet includes the command
+//  2. ReplicatedCommands has an executeReplicatedCommand case, OR
+//     ReplicatedCommandsExcluded documents why it must not propagate
+//  3. shouldPropagateCommand: not double-prop if handler rewrites (SPOP→SREM)
+//  4. Integration: attach slave first → write → assert slave state
+//  5. Error path: WRONGTYPE / failed write must not enter backlog as success
+func TestReplicationWriteCommandChecklist(t *testing.T) {
+	// Step 1–2: symmetry (same as Covered + NoOrphan)
+	writeCmds := getWriteCommandSet()
+	for cmd := range writeCmds {
+		mapped := replication.ValidateReplicationMapping(cmd)
+		_, excluded := replication.IsReplicationExcluded(cmd)
+		if !mapped && !excluded {
+			t.Errorf("checklist step1/2 FAIL: write cmd %q not in ReplicatedCommands and not excluded", cmd)
+		}
+	}
+	for cmd := range replication.ReplicatedCommands {
+		if !writeCmds[cmd] {
+			t.Errorf("checklist step1/2 FAIL: ReplicatedCommands orphan %q (not isWriteCommand)", cmd)
+		}
+	}
+
+	// Step 3: known canonical rewrites must not generic-propagate
+	if shouldPropagateCommand("SPOP") {
+		t.Error("checklist step3 FAIL: SPOP must not generic-propagate (handler sends SREM)")
+	}
+	if !shouldPropagateCommand("SREM") {
+		t.Error("checklist step3 FAIL: SREM must propagate")
+	}
+	if shouldPropagateCommand("MIGRATE") || shouldPropagateCommand("PUBLISH") {
+		t.Error("checklist step3 FAIL: excluded cmds must not propagate")
+	}
+
+	// Step 4–5 are integration/regression tests (not re-run here).
+	// Guard: high-risk non-idempotent / rewrite cmds stay registered.
+	mustWrite := []string{"INCR", "LPUSH", "SPOP", "ZPOPMIN", "XCLAIM", "XREADGROUP", "XAUTOCLAIM", "SORT"}
+	mustReplicated := []string{"INCR", "LPUSH", "ZPOPMIN", "XCLAIM", "XREADGROUP", "XAUTOCLAIM", "SREM"}
+	for _, cmd := range mustWrite {
+		if !writeCmds[cmd] {
+			t.Errorf("checklist step4 guard: expected isWriteCommand(%q)", cmd)
+		}
+	}
+	for _, cmd := range mustReplicated {
+		if !replication.ValidateReplicationMapping(cmd) {
+			t.Errorf("checklist step4 guard: expected ReplicatedCommands[%q]", cmd)
+		}
+	}
+}

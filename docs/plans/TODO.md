@@ -98,6 +98,83 @@ Active config:
 
 ## 待办项
 
+### 测试质量优化（P1 — 2026-07-16 评估）
+
+> 结论：**不是整体“空有高覆盖率”**，核心路径（mutation kill / 生产事故回归 / 客户端兼容 / RESP shape / soak 不变量）有真实抓 bug 能力；但 **coverage 专用测试、sentinel stub、复制场景搭错** 会制造假安全感。2026-07-16 审查曾在绿测下发现 SPOP 双传播、写命令传播但 slave 不可执行、L0 skip 静默丢写等真 bug。
+
+#### 质量分层（评估时看 oracle，不看行覆盖率）
+
+| 层 | 代表资产 | 侦测力 |
+|----|---------|--------|
+| 强 | `*mutation*_kill*`、`cmd/integration/regressions/`、redis-py/node/cli compat、RESP shape、soak degradation | 高 |
+| 中 | store 读写单元、handler depth、replication completeness | 中高 |
+| 弱/theater | `*_coverage*_test.go` 部分 NoError-only、`assert.True(t, true)` stub | 低 |
+
+**铁律：** 评估改动时问「被哪一层的 oracle 约束？」，不要问「覆盖率多少」。`coverage.out` 可能过期，且包间极不均匀，**禁止当质量门禁**。
+
+#### P0 — 消灭空断言 / 假绿
+
+- [x] **清除全部 `assert.True(t, true)`**（14 处 → 0；`internal/sentinel/*` + `command_completeness` XCLAIM）
+  - 改为：ODown 状态、offset 读回、Stop 退出 `StartMonitoring`、SDOWN 去重计数、XCLAIM 返回消息 ID
+- [x] **禁止新增 `assert.True(t, true)`** — `scripts/guard_test_quality.sh` 已挂入 `scripts/test-tier-a.sh`
+- [x] **`UpdateSlaveOffset` 测试用错 key**：API 按 **addr** 匹配；已改为按 addr 更新并断言 `GetOffset()`，ID 路径断言不变
+
+#### P1 — 复制路径测试铁律（防“场景搭错”）
+
+- [x] **Live 路径** = 先 attach slave → 再写 → 比主从状态（key/类型/集合）
+  - 已补：`TestRegressionLiveSortStore`、`TestRegressionLiveNonIdempotentWrites`（INCR/LPUSH/ZPOPMIN）
+  - 既有：`TestRegressionLiveSPOPNoDoubleProp`、`TestRegressionMultiExecSPOPCanonical`、`TestRegressionCanonicalXAdd`（live）
+- [x] **FULLRESYNC 路径**单独标注 — `TestRegressionCanonicalSPOP` 注释标明只测 RDB/后挂 slave，不顶替 live
+- [x] **`pollSlave` 超时必须失败** — 原实现静默返回，假绿；已改为 `t.Fatalf`
+- [x] **SORT STORE 完成性测试修错** — 曾在 `SORT` 前轮询 `sort_out`（永远等不到或空转 20s）；改为先等 source、再 STORE、再比主从有序 dest；并补 UNLINK 主从断言
+- [x] **新 write 命令 checklist** — `TestReplicationWriteCommandChecklist`（对称表 + SPOP 单路径 + 高风险命令守卫）
+- [x] **错误/背压路径 oracle** — `TestIsTransientReplicationError` 扩真实错误串 + `TestReplicationApplyErrorDisposition`（advance/skip/resync）
+- [x] 参考回归：Live SPOP / MultiExec SPOP / Live SORT STORE / Live 非幂等写 / **Live XCLAIM PEL**
+
+#### P1 — Coverage 测试质量门
+
+- [x] 守卫：禁止 `assert.True(t, true)`（`scripts/guard_test_quality.sh` + Tier A）
+- [x] 存量加固（首批）：`store_coverage2` Expire*/RenameNX/ClearAllData；`store_coverage3` GeoSearchStore/GeoDel/ZMPop*
+- [x] 新增 coverage 质量：`guard_test_quality.sh` 拦截 `err!=nil||err==nil` / `count>0||count==0` theater
+- [x] 继续分批加固（本轮：SendHello tautology、propagate gate oracle、ASKING one-shot）
+- [x] Mutation/oracle 关注 server/replication：**processRequest 传播门**（write∧propagate∧¬error）+ XREADGROUP/XCLAIM 必须 propagate
+- [x] **定向 mutation 门** — `scripts/targeted-mutation-check.sh`（4/4 killed，见 `mutation-baseline.md`）
+
+#### P2 — 包级覆盖与规模
+
+- [x] Sentinel `slave.go`：`slave_test.go` 全 API 状态机 + 并发 heartbeat（旧 coverage.out 0% 为过期快照）
+- [x] 弱断言加固续：SETEX/PSETEX TTL 副作用、KeyLock 互斥/共享语义、去掉 `err!=nil||err==nil` tautology
+- [x] Stream 客户端兼容续：XPENDING 摘要/明细集成断言、XAUTOCLAIM 形状 + PEL、live `TestRegressionLiveXAutoClaimPEL`
+- [x] **Cluster 迁移 oracle 补强**：
+  - ASKING **one-shot** 集成（NODE 重指 owner 后第二跳无 ASKING 必须 MOVED/ASK）
+  - MIGRATING **源写 fence** 集成（existing key SET 拒绝 + 值不变）
+  - IMPORTING fence / underload 既有测试保留
+  - **多类型 MIGRATESLOT** — string/hash/list/set/zset（`TestClusterMigrateSlotMultiType`）
+  - **no-REPLACE** — 目标已有更新值时不被 RESTORE 覆盖（`TestClusterMigrateNoReplacePreservesTarget`）
+- [ ] Cluster 长时 soak / 大规模数据：仍不靠行覆盖宣称生产就绪
+- [ ] 定期刷新 coverage 报告（若需要），但**不**把 total% 设为 CI 硬门槛
+- [x] 将 `targeted-mutation-check.sh` 挂入 Tier B；cluster multi-type / fence / no-REPLACE 纳入 Tier B 正则
+- [x] 定向 mutation **10 例全杀**（+ processRequest error gate、XREADGROUP isWrite）
+- [x] 轻量 multi-round migrate 稳定性（`TestClusterMigrateRoundTripStability`，3 轮 A↔B）
+
+#### 本轮实施进度
+
+- [x] 写入本评估与 checklist（本文）
+- [x] 消除 `assert.True(t, true)` + 修 offset 假绿
+- [x] 添加强制守卫脚本并挂 Tier A
+- [x] 远程测试验证 `internal/sentinel/...`（PASS）
+- [x] 远程验证 `TestCommandCompleteness_Stream/XCLAIM` + `TestXClaim`（PASS）
+- [x] P1 复制路径抽样审计 + live 回归 + pollSlave 假绿修复 + SORT STORE 修错
+- [x] 远程验证 store coverage 加固 + `TestReplicationCompleteness_Key` + Live Sort/NonIdempotent（PASS）
+- [x] **XCLAIM 完整 entry 形状**（NestedArray + JUSTID）+ go-redis `XClaim()` 可用
+- [x] **XREADGROUP 纳入 isWriteCommand + executeReplicatedCommand**（否则 live PEL 不复制）
+- [x] **XPENDING 摘要/明细双形态**（修 go-redis `XPendingExt`；去掉 completeness 恒真断言）
+- [x] `TestRegressionLiveXClaimPEL` + `TestExecuteReplicatedCommand_XREADGROUP_UpdatesPEL`（PASS）
+- [x] Sentinel slave 状态机测试 + KeyLock/SETEX coverage 加固 + Live XAUTOCLAIM（PASS）
+- [x] Cluster ASKING one-shot + MIGRATING source fence + propagate gate unit（PASS）
+- [x] guard 扩展 tautology 模式；修 `TestSentinel_SendHello`
+- [x] 定向 mutation 4 → 8 → **10/10 killed** + multi-type / no-REPLACE / round-trip migrate
+
 ### Cluster 部署问题（P2）
 
 **现状：** 部署 3 节点 cluster 时发现以下问题：
@@ -290,7 +367,7 @@ README 已改为“数十 GB 已验证 / 架构可扩展”；**勿再宣称未�
 
 **建议修复：**
 - [x] 添加 `TestSORTOrdering`：插入已知顺序的数据，验证 `SORT ASC` / `SORT DESC` / `SORT ALPHA` 的返回顺序（19 个测试，已提交）
-- [ ] 验证 `SORT STORE` + replication 后从节点的顺序一致
+- [x] 验证 `SORT STORE` + replication 后从节点的顺序一致 — `TestReplicationCompleteness_Key`（修错后）+ `TestRegressionLiveSortStore`
 
 ### 架构评估：不做修复的记录
 

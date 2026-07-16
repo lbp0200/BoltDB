@@ -258,10 +258,16 @@ func TestSentinel_SendHello(t *testing.T) {
 	s := NewSentinel(2, 30*time.Second)
 	defer s.Stop()
 
-	// SendHello to invalid address - should fail but get coverage
+	// Without Gossip layer: SendHello is a documented no-op (returns nil)
+	assert.NoError(t, s.SendHello("127.0.0.1:1"))
+
+	// With Gossip started: dialing an unbound port must fail
+	gp := NewGossipProtocol(s, nil)
+	assert.NoError(t, gp.Start())
+	defer gp.Stop()
+	s.Gossip = gp
 	err := s.SendHello("127.0.0.1:1")
-	// Error expected
-	assert.True(t, err != nil || err == nil) // Either is fine for coverage
+	assert.Error(t, err)
 }
 
 // TestSentinel_StartGossip tests StartGossip method

@@ -1079,6 +1079,87 @@ func TestClusterAskRedirect(t *testing.T) {
 		t.Fatalf("node2 with ASKING should not redirect, got: %s", getStr)
 	}
 	t.Logf("ASKING + GET on node2: %s (no redirect = ASKING+IMPORTING works)", getStr)
+
+	// --- ASKING one-shot ---
+	// Fresh topology where node2 does NOT own the slot (NODE→node1) but is IMPORTING.
+	// startClusterNode assigns all slots to each node by default; without NODE reassignment
+	// a second GET would still "own" the slot and never prove sticky-ASKING is fixed.
+	_, err = node2.client.Do(ctx, "CLUSTER", "SETSLOT", fmt.Sprintf("%d", targetSlot), "NODE", node1.nodeID).Result()
+	assert.NoError(t, err)
+	_, err = node2.client.Do(ctx, "CLUSTER", "SETSLOT", fmt.Sprintf("%d", targetSlot), "IMPORTING", node1.nodeID).Result()
+	assert.NoError(t, err)
+
+	conn4, err := net.DialTimeout("tcp", node2.client.Options().Addr, 5*time.Second)
+	assert.NoError(t, err)
+	defer conn4.Close()
+	reader4 := bufio.NewReaderSize(conn4, 4096)
+
+	sendRESP(conn4, "ASKING")
+	sendRESP(conn4, "GET", testKey)
+	_ = conn4.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, err = proto.ReadRESP(reader4) // ASKING OK
+	assert.NoError(t, err)
+	askGet, err := proto.ReadRESP(reader4)
+	assert.NoError(t, err)
+	askGetStr := askGet.String()
+	if strings.Contains(askGetStr, "MOVED") || strings.Contains(askGetStr, "ASK") {
+		t.Fatalf("ASKING+GET after NODE reassignment should not redirect, got: %s", askGetStr)
+	}
+
+	// Second GET without re-ASKING must MOVED/ASK (not sticky ASKING)
+	sendRESP(conn4, "GET", testKey)
+	get2, err := proto.ReadRESP(reader4)
+	_ = conn4.SetReadDeadline(time.Time{})
+	assert.NoError(t, err)
+	get2Str := get2.String()
+	if !strings.Contains(get2Str, "MOVED") && !strings.Contains(get2Str, "ASK") {
+		t.Fatalf("second GET without ASKING should MOVED/ASK (sticky ASKING bug), got: %s", get2Str)
+	}
+	t.Logf("one-shot ASKING: second GET redirected: %s", get2Str)
+}
+
+// TestClusterMigratingSourceWriteFence verifies SET on an existing key while
+// the owner marks the slot MIGRATING is rejected (source write fence).
+func TestClusterMigratingSourceWriteFence(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping MIGRATING source write fence test in short mode")
+	}
+
+	node1 := startClusterNode(t)
+	defer node1.stop()
+	node2 := startClusterNode(t)
+	defer node2.stop()
+
+	ctx := context.Background()
+	_, err := node1.client.Do(ctx, "CLUSTER", "MEET", "127.0.0.1", fmt.Sprintf("%d", node2.port)).Result()
+	assert.NoError(t, err)
+	time.Sleep(2 * time.Second)
+
+	key := fmt.Sprintf("srcfence:{mig}:%d", time.Now().UnixNano())
+	slot := cluster.Slot(key)
+	assert.NoError(t, node1.client.Set(ctx, key, "original", 0).Err())
+
+	_, err = node1.client.Do(ctx, "CLUSTER", "SETSLOT", fmt.Sprintf("%d", slot), "MIGRATING", node2.nodeID).Result()
+	assert.NoError(t, err)
+
+	// Existing key still readable
+	val, err := node1.client.Get(ctx, key).Result()
+	assert.NoError(t, err)
+	assert.Equal(t, "original", val)
+
+	// Write must be fenced
+	setErr := node1.client.Set(ctx, key, "overwrite", 0).Err()
+	if setErr == nil {
+		t.Fatal("expected MIGRATING write fence on SET of existing key")
+	}
+	if !strings.Contains(setErr.Error(), "MIGRATING") && !strings.Contains(setErr.Error(), "fenced") {
+		t.Fatalf("expected MIGRATING fence error, got: %v", setErr)
+	}
+	// Value unchanged
+	val, err = node1.client.Get(ctx, key).Result()
+	assert.NoError(t, err)
+	assert.Equal(t, "original", val)
+	t.Logf("MIGRATING source write fence: %v", setErr)
 }
 
 // TestClusterMigrateSlot verifies the CLUSTER MIGRATESLOT command.
@@ -1228,6 +1309,243 @@ func TestClusterMigrateSlot(t *testing.T) {
 		t.Fatal("IMPORTING state should be cleared after migration")
 	}
 	t.Log("migration state cleared on both nodes")
+}
+
+// TestClusterMigrateRoundTripStability migrates a slot A→B then B→A with
+// rewritten values. Lightweight multi-round consistency oracle (not full soak).
+func TestClusterMigrateRoundTripStability(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping migrate round-trip stability in short mode")
+	}
+
+	nodeA := startClusterNode(t)
+	defer nodeA.stop()
+	nodeB := startClusterNode(t)
+	defer nodeB.stop()
+
+	ctx := context.Background()
+	_, err := nodeA.client.Do(ctx, "CLUSTER", "MEET", "127.0.0.1", fmt.Sprintf("%d", nodeB.port)).Result()
+	assert.NoError(t, err)
+	time.Sleep(2 * time.Second)
+
+	const rounds = 3
+	tag := fmt.Sprintf("{rt:%d}", time.Now().UnixNano()%100000)
+	keys := []string{"k1:" + tag, "k2:" + tag, "k3:" + tag}
+	slot := cluster.Slot(keys[0])
+	for _, k := range keys {
+		if cluster.Slot(k) != slot {
+			t.Fatal("hash tag slot mismatch")
+		}
+	}
+
+	waitOwner := func(t *testing.T, n *clusterNode, wantID string, timeout time.Duration) {
+		t.Helper()
+		deadline := time.Now().Add(timeout)
+		for time.Now().Before(deadline) {
+			o := n.handler.Cluster.GetSlotOwner(slot)
+			if o != nil && o.ID == wantID {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		o := n.handler.Cluster.GetSlotOwner(slot)
+		got := "nil"
+		if o != nil {
+			got = o.ID
+		}
+		t.Fatalf("slot %d owner on %s: got %s want %s", slot, n.nodeID, got, wantID)
+	}
+
+	// Initially both own all slots; write on A then migrate A→B, B→A, ...
+	src, dst := nodeA, nodeB
+	for r := 0; r < rounds; r++ {
+		val := fmt.Sprintf("round-%d", r)
+		// Ensure src is the owner before writes (after reverse hops)
+		waitOwner(t, src, src.nodeID, 10*time.Second)
+
+		for _, k := range keys {
+			assert.NoError(t, src.client.Set(ctx, k, val, 0).Err())
+		}
+
+		_, err = src.client.Do(ctx, "CLUSTER", "SETSLOT", fmt.Sprintf("%d", slot), "MIGRATING", dst.nodeID).Result()
+		assert.NoError(t, err)
+		_, err = dst.client.Do(ctx, "CLUSTER", "SETSLOT", fmt.Sprintf("%d", slot), "IMPORTING", src.nodeID).Result()
+		assert.NoError(t, err)
+
+		_, err = src.client.Do(ctx, "CLUSTER", "MIGRATESLOT", fmt.Sprintf("%d", slot), dst.nodeID).Result()
+		if err != nil {
+			t.Fatalf("round %d MIGRATESLOT: %v", r, err)
+		}
+
+		// Pin ownership on both nodes before reads/reverse hop.
+		// Gossip lag can leave MOVED thrash even when data RESTORE succeeded;
+		// this test isolates multi-round *data* migrate correctness.
+		_, err = src.client.Do(ctx, "CLUSTER", "SETSLOT", fmt.Sprintf("%d", slot), "NODE", dst.nodeID).Result()
+		assert.NoError(t, err)
+		_, err = dst.client.Do(ctx, "CLUSTER", "SETSLOT", fmt.Sprintf("%d", slot), "NODE", dst.nodeID).Result()
+		assert.NoError(t, err)
+		waitOwner(t, src, dst.nodeID, 10*time.Second)
+		waitOwner(t, dst, dst.nodeID, 10*time.Second)
+
+		for _, k := range keys {
+			var got string
+			var gerr error
+			deadline := time.Now().Add(10 * time.Second)
+			for time.Now().Before(deadline) {
+				got, gerr = dst.client.Get(ctx, k).Result()
+				if gerr == nil && got == val {
+					break
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+			if gerr != nil || got != val {
+				t.Fatalf("round %d: key %s on dest got %q err=%v want %q", r, k, got, gerr, val)
+			}
+			n, _ := src.client.Exists(ctx, k).Result()
+			if n != 0 {
+				t.Fatalf("round %d: key %s still on source", r, k)
+			}
+		}
+		if src.handler.Cluster.IsMigratingSlot(slot) {
+			t.Fatalf("round %d: source still MIGRATING", r)
+		}
+		if dst.handler.Cluster.IsImportingSlot(slot) {
+			t.Fatalf("round %d: dest still IMPORTING", r)
+		}
+
+		// Swap for next hop
+		src, dst = dst, src
+		t.Logf("round %d: migrate OK val=%s", r, val)
+	}
+	t.Logf("round-trip stability: %d migrations OK", rounds)
+}
+
+// TestClusterMigrateNoReplacePreservesTarget ensures Phase-1 RESTORE does not
+// use REPLACE: a newer value already on the IMPORTING target survives migrate.
+func TestClusterMigrateNoReplacePreservesTarget(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping no-REPLACE migrate test in short mode")
+	}
+
+	node1 := startClusterNode(t)
+	defer node1.stop()
+	node2 := startClusterNode(t)
+	defer node2.stop()
+
+	ctx := context.Background()
+	_, err := node1.client.Do(ctx, "CLUSTER", "MEET", "127.0.0.1", fmt.Sprintf("%d", node2.port)).Result()
+	assert.NoError(t, err)
+	time.Sleep(2 * time.Second)
+
+	key := fmt.Sprintf("nr:{mig}:%d", time.Now().UnixNano())
+	slot := cluster.Slot(key)
+
+	// Source snapshot (stale relative to target)
+	assert.NoError(t, node1.client.Set(ctx, key, "source-stale", 0).Err())
+	// Target already has a newer value (simulates ASKING client write before fence,
+	// or a prior partial Phase-1). startClusterNode owns all slots so SET works.
+	assert.NoError(t, node2.client.Set(ctx, key, "target-newer", 0).Err())
+
+	_, err = node1.client.Do(ctx, "CLUSTER", "SETSLOT", fmt.Sprintf("%d", slot), "MIGRATING", node2.nodeID).Result()
+	assert.NoError(t, err)
+	_, err = node2.client.Do(ctx, "CLUSTER", "SETSLOT", fmt.Sprintf("%d", slot), "IMPORTING", node1.nodeID).Result()
+	assert.NoError(t, err)
+
+	_, err = node1.client.Do(ctx, "CLUSTER", "MIGRATESLOT", fmt.Sprintf("%d", slot), node2.nodeID).Result()
+	if err != nil {
+		t.Fatalf("MIGRATESLOT: %v", err)
+	}
+	time.Sleep(2 * time.Second)
+
+	val, err := node2.client.Get(ctx, key).Result()
+	assert.NoError(t, err)
+	if val != "target-newer" {
+		t.Fatalf("target value overwritten by RESTORE REPLACE? got %q want target-newer", val)
+	}
+	// Source key deleted after successful migrate
+	n, _ := node1.client.Exists(ctx, key).Result()
+	if n != 0 {
+		t.Fatalf("source still holds key after migrate")
+	}
+	t.Log("no-REPLACE: target-newer preserved through MIGRATESLOT")
+}
+
+// TestClusterMigrateSlotMultiType migrates string/hash/list/set/zset keys that
+// share one hash-tag slot and asserts type-correct values on the target.
+func TestClusterMigrateSlotMultiType(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping multi-type MIGRATESLOT test in short mode")
+	}
+
+	node1 := startClusterNode(t)
+	defer node1.stop()
+	node2 := startClusterNode(t)
+	defer node2.stop()
+
+	ctx := context.Background()
+	_, err := node1.client.Do(ctx, "CLUSTER", "MEET", "127.0.0.1", fmt.Sprintf("%d", node2.port)).Result()
+	assert.NoError(t, err)
+	time.Sleep(2 * time.Second)
+
+	tag := fmt.Sprintf("{mt:%d}", time.Now().UnixNano()%100000)
+	strKey := "s:" + tag
+	hashKey := "h:" + tag
+	listKey := "l:" + tag
+	setKey := "e:" + tag
+	zsetKey := "z:" + tag
+	slot := cluster.Slot(strKey)
+	for _, k := range []string{hashKey, listKey, setKey, zsetKey} {
+		if cluster.Slot(k) != slot {
+			t.Fatalf("keys must share slot via hash tag")
+		}
+	}
+
+	assert.NoError(t, node1.client.Set(ctx, strKey, "hello", 0).Err())
+	assert.NoError(t, node1.client.HSet(ctx, hashKey, "f1", "v1", "f2", "v2").Err())
+	assert.NoError(t, node1.client.RPush(ctx, listKey, "a", "b", "c").Err())
+	assert.NoError(t, node1.client.SAdd(ctx, setKey, "m1", "m2").Err())
+	assert.NoError(t, node1.client.ZAdd(ctx, zsetKey, redis.Z{Score: 1.5, Member: "zm"}).Err())
+
+	_, err = node1.client.Do(ctx, "CLUSTER", "SETSLOT", fmt.Sprintf("%d", slot), "MIGRATING", node2.nodeID).Result()
+	assert.NoError(t, err)
+	_, err = node2.client.Do(ctx, "CLUSTER", "SETSLOT", fmt.Sprintf("%d", slot), "IMPORTING", node1.nodeID).Result()
+	assert.NoError(t, err)
+
+	_, err = node1.client.Do(ctx, "CLUSTER", "MIGRATESLOT", fmt.Sprintf("%d", slot), node2.nodeID).Result()
+	if err != nil {
+		t.Fatalf("MIGRATESLOT multi-type: %v", err)
+	}
+	time.Sleep(2 * time.Second)
+
+	// String
+	val, err := node2.client.Get(ctx, strKey).Result()
+	assert.NoError(t, err)
+	assert.Equal(t, "hello", val)
+	// Hash
+	hv, err := node2.client.HGetAll(ctx, hashKey).Result()
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{"f1": "v1", "f2": "v2"}, hv)
+	// List order
+	list, err := node2.client.LRange(ctx, listKey, 0, -1).Result()
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"a", "b", "c"}, list)
+	// Set membership
+	sm, err := node2.client.SMembers(ctx, setKey).Result()
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(sm))
+	// ZSet score
+	score, err := node2.client.ZScore(ctx, zsetKey, "zm").Result()
+	assert.NoError(t, err)
+	assert.Equal(t, 1.5, score)
+
+	// Source cleaned
+	for _, k := range []string{strKey, hashKey, listKey, setKey, zsetKey} {
+		n, _ := node1.client.Exists(ctx, k).Result()
+		if n != 0 {
+			t.Fatalf("source still has key %s after multi-type migrate", k)
+		}
+	}
+	t.Log("multi-type MIGRATESLOT: string/hash/list/set/zset OK on target")
 }
 
 // TestClusterImportingWriteFence verifies ASKING writes (except RESTORE) are

@@ -119,9 +119,14 @@ func TestMasterInstance_UpdateSlaveOffset(t *testing.T) {
 	t.Parallel()
 	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
 
-	// Update slave offset - should not panic
+	// No slaves: no-op, does not panic
 	master.UpdateSlaveOffset("127.0.0.1:6380", 1000)
-	assert.True(t, true)
+	assert.Equal(t, 0, len(master.GetSlaves()))
+
+	slave := NewSlaveInstance("slave1", "127.0.0.1:6380")
+	master.AddSlave(slave)
+	master.UpdateSlaveOffset("127.0.0.1:6380", 1000)
+	assert.Equal(t, int64(1000), slave.GetOffset())
 }
 
 // TestMasterInstance_GetBestSlave tests GetBestSlave
@@ -137,11 +142,25 @@ func TestMasterInstance_GetBestSlave(t *testing.T) {
 // TestMasterInstance_Stop tests Stop
 func TestMasterInstance_Stop(t *testing.T) {
 	t.Parallel()
-	master := NewMasterInstance("test-master", "127.0.0.1:6379", 2)
+	sentinel := NewSentinel(1, 30000)
+	defer sentinel.Stop()
 
-	// Stop should not panic
+	master := NewMasterInstance("test-master", "127.0.0.1:1", 2)
+	done := make(chan struct{})
+	go func() {
+		master.StartMonitoring(sentinel)
+		close(done)
+	}()
+
 	master.Stop()
-	assert.True(t, true)
+	// Idempotent: second Stop must not panic (sync.Once)
+	master.Stop()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("StartMonitoring did not exit after Stop")
+	}
 }
 
 // TestSlaveInstance_New tests SlaveInstance creation

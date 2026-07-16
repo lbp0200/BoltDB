@@ -5,6 +5,31 @@ Initial mutation test baseline for BoltDB.
 | Date | Target | Score | Killed | Lived | Total | Notes |
 |------|--------|-------|--------|-------|-------|-------|
 | 2026-06-26 | internal/store/base.go:ttl>0→ttl>=0 | 0% | 0 | 2 | boundary test gap found |
+| 2026-07-16 | targeted server/replication (4 cases) | 100% | 4 | 0 | 4 | initial suite |
+| 2026-07-16 | targeted expanded (8 cases) | 100% | 8 | 0 | 8 | + MIGRATING fence / isErrorResponse / isTransient always / MIGRATE prop |
+| 2026-07-16 | targeted expanded (10 cases) | 100% | 10 | 0 | 10 | + processRequest error gate / XREADGROUP isWrite |
+
+## Targeted mutation suite (2026-07-16)
+
+```bash
+bash scripts/targeted-mutation-check.sh local   # unit packages, no -race
+bash scripts/targeted-mutation-check.sh remote  # via remote-test.sh
+```
+
+| Mutation | File | Expected killer tests |
+|----------|------|----------------------|
+| `write rejected` treated as skippable | `reconnect.go` | `TestIsTransient*` / disposition |
+| SPOP generic-propagate | `replication_helper.go` | `TestShouldPropagateCommand` / checklist |
+| ASKING sticky (never clear flag) | `handler_core.go` | ImportingWriteFence |
+| IMPORTING write fence disabled | `handler_core.go` | ImportingWriteFence |
+| MIGRATING write fence disabled | `handler_core.go` | MigratingWriteFence |
+| `isErrorResponse` always false | `replication_helper.go` | `TestIsErrorResponse` / propagate gate |
+| `isTransient` always true | `reconnect.go` | `TestIsTransient*` / disposition |
+| MIGRATE still propagates | `replication_helper.go` | ShouldPropagate / gate |
+| processRequest drops `!isErrorResponse` | `handler_core.go` | `TestProcessRequest_WrongTypeDoesNotAdvanceOffset` |
+| XREADGROUP removed from isWriteCommand | `replication_helper.go` | checklist / IsWriteCommand |
+
+**Result (local 2026-07-16):** killed=10 lived=0.
 
 ## Findings
 

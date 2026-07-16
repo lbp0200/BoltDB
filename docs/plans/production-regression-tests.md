@@ -25,3 +25,9 @@
 | PubSub Fan-Out | `TestRegressionPubSubFanOutStorm` | ✅ |
 | FULLRESYNC + Geo | `TestRegressionFullResyncGeo` | ✅ |
 | Slave Ownership | `TestRegressionSlaveConnectionOwnership` | ✅ |
+| Live SORT STORE | `TestRegressionLiveSortStore` | ✅ |
+| Live 非幂等写（INCR/LPUSH/ZPOPMIN） | `TestRegressionLiveNonIdempotentWrites` | ✅ |
+| Live SPOP 无双传播 | `TestRegressionLiveSPOPNoDoubleProp` | ✅ |
+| MULTI/EXEC SPOP 规范成 SREM | `TestRegressionMultiExecSPOPCanonical` | ✅ |
+| Live XCLAIM PEL 归属 | `TestRegressionLiveXClaimPEL` | ✅ |
+| Live XAUTOCLAIM PEL 归属 | `TestRegressionLiveXAutoClaimPEL` | ✅ |

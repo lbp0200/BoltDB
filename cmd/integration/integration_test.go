@@ -1279,22 +1279,32 @@ func TestXAutoClaim(t *testing.T) {
 	err = sharedClient.XGroupCreate(ctx, "mystream", "mygroup", "0").Err()
 	assert.NoError(t, err)
 
-	// 读取消息以创建pending条目 - 使用原始命令
-	_, err = sharedClient.Do(ctx, "XREADGROUP", "GROUP", "mygroup", "consumer1", "COUNT", "1", "STREAMS", "mystream", "0").Result()
+	// 读取消息以创建pending条目（> 投递新消息）
+	_, err = sharedClient.Do(ctx, "XREADGROUP", "GROUP", "mygroup", "consumer1", "COUNT", "1", "STREAMS", "mystream", ">").Result()
 	assert.NoError(t, err)
 
-	// 等待一段时间让消息idle
-	time.Sleep(100 * time.Millisecond)
-
-	// 使用XAUTOCLAIM认领pending消息
-	autoClaimResult, err := sharedClient.Do(ctx, "XAUTOCLAIM", "mystream", "mygroup", "consumer2", "0", id1, "COUNT", "1").Result()
+	// XAUTOCLAIM key group consumer min-idle start [COUNT n]
+	autoClaimResult, err := sharedClient.Do(ctx, "XAUTOCLAIM", "mystream", "mygroup", "consumer2", "0", "0-0", "COUNT", "10").Result()
 	assert.NoError(t, err)
 
-	// 解析结果
+	// Redis shape: [nextID, [[id, [field, value...]], ...]]
 	arr, ok := autoClaimResult.([]interface{})
 	assert.True(t, ok)
-	// 格式: [nextID, [claimedIDs...], [messages...]]
-	assert.True(t, len(arr) >= 1) // 至少返回nextID
+	assert.True(t, len(arr) >= 2)
+	entries, ok := arr[1].([]interface{})
+	assert.True(t, ok)
+	assert.True(t, len(entries) >= 1)
+	entry, ok := entries[0].([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, id1, entry[0].(string))
+
+	// PEL ownership transferred
+	ext, err := sharedClient.XPendingExt(ctx, &redis.XPendingExtArgs{
+		Stream: "mystream", Group: "mygroup", Start: "-", End: "+", Count: 10,
+	}).Result()
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(ext))
+	assert.Equal(t, "consumer2", ext[0].Consumer)
 }
 
 // TestXInfoHelp 测试XINFO HELP命令

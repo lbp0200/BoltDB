@@ -1,6 +1,7 @@
 package replication
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
@@ -1096,10 +1097,71 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			minIdleTime, _ := strconv.ParseInt(string(args[4]), 10, 64)
 			ids := make([]string, 0, len(args)-5)
 			for i := 5; i < len(args); i++ {
+				tok := strings.ToUpper(string(args[i]))
+				// Skip Redis options so JUSTID/FORCE do not look like message IDs
+				switch tok {
+				case "JUSTID", "FORCE":
+					continue
+				case "IDLE", "TIME", "RETRYCOUNT", "LASTID":
+					if i+1 < len(args) {
+						i++
+					}
+					continue
+				}
 				ids = append(ids, string(args[i]))
+			}
+			if len(ids) == 0 {
+				return nil
 			}
 			_, err := s.XClaim(key, group, consumer, minIdleTime, ids...)
 			return err
+		}
+
+	case "XREADGROUP":
+		// Replicate PEL / LastDeliveredID mutations from consumer reads.
+		// Format: XREADGROUP [COUNT n] [BLOCK ms] GROUP group consumer STREAMS key [key ...] id [id ...]
+		var count int64
+		var group, consumer string
+		i := 1
+		for i < len(args) {
+			tok := strings.ToUpper(string(args[i]))
+			switch tok {
+			case "COUNT":
+				if i+1 >= len(args) {
+					return nil
+				}
+				count, _ = strconv.ParseInt(string(args[i+1]), 10, 64)
+				i += 2
+			case "BLOCK":
+				// Non-blocking apply on replica
+				if i+1 >= len(args) {
+					return nil
+				}
+				i += 2
+			case "GROUP":
+				if i+2 >= len(args) {
+					return nil
+				}
+				group = string(args[i+1])
+				consumer = string(args[i+2])
+				i += 3
+			case "STREAMS":
+				i++
+				remaining := len(args) - i
+				if remaining < 2 || remaining%2 != 0 {
+					return nil
+				}
+				numStreams := remaining / 2
+				keys := make([]string, numStreams)
+				for j := 0; j < numStreams; j++ {
+					keys[j] = string(args[i+j])
+				}
+				// IDs (including ">") are ignored for delivery cursor — store uses LastDeliveredID
+				_, err := s.XReadGroup(context.Background(), group, consumer, count, -1, keys...)
+				return err
+			default:
+				i++
+			}
 		}
 
 	case "XGROUP":

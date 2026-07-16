@@ -9,9 +9,11 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// TestRegressionCanonicalSPOP verifies SPOP is canonicalized to SREM during
-// replication: the replica receives SREM key member... instead of SPOP,
-// preventing random selection divergence.
+// TestRegressionCanonicalSPOP verifies SPOP residual set after FULLRESYNC.
+//
+// Path class: FULLRESYNC/RDB only — slave attaches AFTER SPOP. Does NOT exercise
+// live incremental propagation. For live double-prop, see
+// TestRegressionLiveSPOPNoDoubleProp.
 //
 // Path: handleSPOP → PropagateCommand(SREM); processRequest excludes SPOP
 // via shouldPropagateCommand (no double-prop of raw SPOP).
@@ -645,5 +647,386 @@ func TestRegressionFullResyncGeo(t *testing.T) {
 	slaveArr := slaveSearch.([]interface{})
 	if len(masterArr) != len(slaveArr) {
 		t.Fatalf("geo search results mismatch: master=%d slave=%d", len(masterArr), len(slaveArr))
+	}
+}
+
+// TestRegressionLiveXClaimPEL transfers PEL ownership under live replication.
+// Master claims a pending entry; after visibility, XPENDING consumer name on
+// slave must match master (XCLAIM must be executable on replica).
+func TestRegressionLiveXClaimPEL(t *testing.T) {
+	master := StartRegression(t)
+	defer master.Close()
+	slave := StartRegression(t)
+	defer slave.Close()
+	ctx := context.Background()
+
+	if err := slave.MakeSlave(master.Addr); err != nil {
+		t.Fatalf("MakeSlave: %v", err)
+	}
+	defer slave.StopSlave()
+	if !slave.WaitForReplicaSync(ctx, master, slave, 30*time.Second) {
+		t.Fatal("initial sync timeout")
+	}
+
+	id, err := master.Client.XAdd(ctx, &redis.XAddArgs{
+		Stream: "xclaim:live",
+		Values: map[string]interface{}{"f": "v"},
+	}).Result()
+	if err != nil {
+		t.Fatalf("XADD: %v", err)
+	}
+	if err := master.Client.XGroupCreateMkStream(ctx, "xclaim:live", "g", "0").Err(); err != nil {
+		t.Fatalf("XGROUP: %v", err)
+	}
+	if _, err := master.Client.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group:    "g",
+		Consumer: "c-old",
+		Streams:  []string{"xclaim:live", ">"},
+		Count:    1,
+	}).Result(); err != nil {
+		t.Fatalf("XREADGROUP: %v", err)
+	}
+
+	// Wait for stream on slave, then for PEL (XREADGROUP must have replicated)
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		n, err := slave.Client.XLen(ctx, "xclaim:live").Result()
+		if err == nil && n >= 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("slave missing stream before XCLAIM (xlen=%v err=%v)", n, err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	deadline = time.Now().Add(20 * time.Second)
+	var preConsumer string
+	for time.Now().Before(deadline) {
+		ext, err := slave.Client.XPendingExt(ctx, &redis.XPendingExtArgs{
+			Stream: "xclaim:live",
+			Group:  "g",
+			Start:  "-",
+			End:    "+",
+			Count:  10,
+		}).Result()
+		if err == nil {
+			for _, e := range ext {
+				if e.ID == id {
+					preConsumer = e.Consumer
+					if e.Consumer == "c-old" {
+						goto claim
+					}
+				}
+			}
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	t.Fatalf("slave PEL missing c-old after XREADGROUP (consumer=%q) — XREADGROUP not replicated?", preConsumer)
+
+claim:
+	claimed, err := master.Client.XClaim(ctx, &redis.XClaimArgs{
+		Stream:   "xclaim:live",
+		Group:    "g",
+		Consumer: "c-new",
+		MinIdle:  0,
+		Messages: []string{id},
+	}).Result()
+	if err != nil {
+		t.Fatalf("XCLAIM: %v", err)
+	}
+	if len(claimed) != 1 || claimed[0].ID != id {
+		t.Fatalf("master XCLAIM unexpected: %+v", claimed)
+	}
+
+	// Poll slave XPENDING detail until consumer is c-new
+	deadline = time.Now().Add(20 * time.Second)
+	var lastConsumer string
+	for time.Now().Before(deadline) {
+		ext, err := slave.Client.XPendingExt(ctx, &redis.XPendingExtArgs{
+			Stream: "xclaim:live",
+			Group:  "g",
+			Start:  "-",
+			End:    "+",
+			Count:  10,
+		}).Result()
+		if err == nil {
+			for _, e := range ext {
+				if e.ID == id {
+					lastConsumer = e.Consumer
+					if e.Consumer == "c-new" {
+						return
+					}
+				}
+			}
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	t.Fatalf("slave PEL consumer for %s = %q want c-new (XCLAIM not applied on replica?)", id, lastConsumer)
+}
+
+// TestRegressionLiveXAutoClaimPEL transfers PEL via XAUTOCLAIM under live replication.
+func TestRegressionLiveXAutoClaimPEL(t *testing.T) {
+	master := StartRegression(t)
+	defer master.Close()
+	slave := StartRegression(t)
+	defer slave.Close()
+	ctx := context.Background()
+
+	if err := slave.MakeSlave(master.Addr); err != nil {
+		t.Fatalf("MakeSlave: %v", err)
+	}
+	defer slave.StopSlave()
+	if !slave.WaitForReplicaSync(ctx, master, slave, 30*time.Second) {
+		t.Fatal("initial sync timeout")
+	}
+
+	id, err := master.Client.XAdd(ctx, &redis.XAddArgs{
+		Stream: "xac:live",
+		Values: map[string]interface{}{"f": "v"},
+	}).Result()
+	if err != nil {
+		t.Fatalf("XADD: %v", err)
+	}
+	if err := master.Client.XGroupCreateMkStream(ctx, "xac:live", "g", "0").Err(); err != nil {
+		t.Fatalf("XGROUP: %v", err)
+	}
+	if _, err := master.Client.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group: "g", Consumer: "c-old", Streams: []string{"xac:live", ">"}, Count: 1,
+	}).Result(); err != nil {
+		t.Fatalf("XREADGROUP: %v", err)
+	}
+
+	// Wait for PEL on slave before autoclaim
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		ext, err := slave.Client.XPendingExt(ctx, &redis.XPendingExtArgs{
+			Stream: "xac:live", Group: "g", Start: "-", End: "+", Count: 10,
+		}).Result()
+		if err == nil {
+			for _, e := range ext {
+				if e.ID == id && e.Consumer == "c-old" {
+					goto autoclaim
+				}
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("slave missing c-old PEL before XAUTOCLAIM")
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+
+autoclaim:
+	if _, err := master.Client.Do(ctx, "XAUTOCLAIM", "xac:live", "g", "c-new", "0", "0-0", "COUNT", "10").Result(); err != nil {
+		t.Fatalf("XAUTOCLAIM: %v", err)
+	}
+
+	deadline = time.Now().Add(20 * time.Second)
+	var last string
+	for time.Now().Before(deadline) {
+		ext, err := slave.Client.XPendingExt(ctx, &redis.XPendingExtArgs{
+			Stream: "xac:live", Group: "g", Start: "-", End: "+", Count: 10,
+		}).Result()
+		if err == nil {
+			for _, e := range ext {
+				if e.ID == id {
+					last = e.Consumer
+					if e.Consumer == "c-new" {
+						return
+					}
+				}
+			}
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	t.Fatalf("slave PEL consumer for %s = %q want c-new", id, last)
+}
+
+// waitSlaveEqualString polls until slave GET matches want (visibility barrier).
+func waitSlaveEqualString(t *testing.T, slave *RegressionServer, key, want string, timeout time.Duration) {
+	t.Helper()
+	ctx := context.Background()
+	deadline := time.Now().Add(timeout)
+	var last string
+	var lastErr error
+	for time.Now().Before(deadline) {
+		last, lastErr = slave.Client.Get(ctx, key).Result()
+		if lastErr == nil && last == want {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("slave GET %q: got %q err=%v want %q within %v", key, last, lastErr, want, timeout)
+}
+
+// TestRegressionLiveSortStore attaches slave first, then SORT … STORE.
+// Guards double-prop of SORT STORE and ordering drift on the replica.
+func TestRegressionLiveSortStore(t *testing.T) {
+	master := StartRegression(t)
+	defer master.Close()
+	slave := StartRegression(t)
+	defer slave.Close()
+	ctx := context.Background()
+
+	if err := slave.MakeSlave(master.Addr); err != nil {
+		t.Fatalf("MakeSlave: %v", err)
+	}
+	defer slave.StopSlave()
+	if !slave.WaitForReplicaSync(ctx, master, slave, 30*time.Second) {
+		t.Fatal("initial sync timeout")
+	}
+
+	if err := master.Client.RPush(ctx, "sort:src", "3", "1", "2").Err(); err != nil {
+		t.Fatalf("RPUSH: %v", err)
+	}
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		n, err := slave.Client.LLen(ctx, "sort:src").Result()
+		if err == nil && n == 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("slave missing source list before SORT (llen=%v err=%v)", n, err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if err := master.Client.Do(ctx, "SORT", "sort:src", "STORE", "sort:dst").Err(); err != nil {
+		t.Fatalf("SORT STORE: %v", err)
+	}
+
+	want := []string{"1", "2", "3"}
+	deadline = time.Now().Add(15 * time.Second)
+	var slaveList []string
+	for time.Now().Before(deadline) {
+		slaveList, _ = slave.Client.LRange(ctx, "sort:dst", 0, -1).Result()
+		if len(slaveList) == 3 && slaveList[0] == "1" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	masterList, err := master.Client.LRange(ctx, "sort:dst", 0, -1).Result()
+	if err != nil {
+		t.Fatalf("master LRange: %v", err)
+	}
+	if len(masterList) != 3 || masterList[0] != "1" {
+		t.Fatalf("master sort dest unexpected: %v want %v", masterList, want)
+	}
+	if len(slaveList) != 3 {
+		t.Fatalf("slave sort dest len=%d list=%v", len(slaveList), slaveList)
+	}
+	for i := range want {
+		if masterList[i] != want[i] || slaveList[i] != want[i] {
+			t.Fatalf("SORT STORE mismatch master=%v slave=%v want=%v", masterList, slaveList, want)
+		}
+	}
+}
+
+// TestRegressionLiveNonIdempotentWrites attaches slave first, then applies
+// non-idempotent mutations (INCR, LPUSH). Master and slave must match exactly
+// after visibility — no double-apply from gap-fill/live push races.
+func TestRegressionLiveNonIdempotentWrites(t *testing.T) {
+	master := StartRegression(t)
+	defer master.Close()
+	slave := StartRegression(t)
+	defer slave.Close()
+	ctx := context.Background()
+
+	if err := slave.MakeSlave(master.Addr); err != nil {
+		t.Fatalf("MakeSlave: %v", err)
+	}
+	defer slave.StopSlave()
+	if !slave.WaitForReplicaSync(ctx, master, slave, 30*time.Second) {
+		t.Fatal("initial sync timeout")
+	}
+
+	const nIncr = 50
+	for i := 0; i < nIncr; i++ {
+		if err := master.Client.Incr(ctx, "live:counter").Err(); err != nil {
+			t.Fatalf("INCR: %v", err)
+		}
+	}
+	waitSlaveEqualString(t, slave, "live:counter", fmt.Sprintf("%d", nIncr), 20*time.Second)
+
+	const nPush = 30
+	for i := 0; i < nPush; i++ {
+		if err := master.Client.LPush(ctx, "live:list", fmt.Sprintf("v%d", i)).Err(); err != nil {
+			t.Fatalf("LPUSH: %v", err)
+		}
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	var masterLen, slaveLen int64
+	for time.Now().Before(deadline) {
+		masterLen, _ = master.Client.LLen(ctx, "live:list").Result()
+		slaveLen, _ = slave.Client.LLen(ctx, "live:list").Result()
+		if masterLen == nPush && slaveLen == nPush {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if masterLen != nPush || slaveLen != nPush {
+		t.Fatalf("LPUSH len master=%d slave=%d want=%d (possible double-apply)", masterLen, slaveLen, nPush)
+	}
+	masterList, err := master.Client.LRange(ctx, "live:list", 0, -1).Result()
+	if err != nil {
+		t.Fatalf("master LRange: %v", err)
+	}
+	slaveList, err := slave.Client.LRange(ctx, "live:list", 0, -1).Result()
+	if err != nil {
+		t.Fatalf("slave LRange: %v", err)
+	}
+	if len(masterList) != len(slaveList) {
+		t.Fatalf("list content len mismatch master=%d slave=%d", len(masterList), len(slaveList))
+	}
+	for i := range masterList {
+		if masterList[i] != slaveList[i] {
+			t.Fatalf("list[%d] master=%q slave=%q", i, masterList[i], slaveList[i])
+		}
+	}
+
+	// ZPOPMIN after seed under live replication
+	for i, m := range []string{"a", "b", "c"} {
+		if err := master.Client.ZAdd(ctx, "live:z", redis.Z{Score: float64(i + 1), Member: m}).Err(); err != nil {
+			t.Fatalf("ZADD: %v", err)
+		}
+	}
+	deadline = time.Now().Add(15 * time.Second)
+	for {
+		n, _ := slave.Client.ZCard(ctx, "live:z").Result()
+		if n == 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("slave missing zset before ZPOPMIN")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	popped, err := master.Client.ZPopMin(ctx, "live:z").Result()
+	if err != nil {
+		t.Fatalf("ZPopMin: %v", err)
+	}
+	if len(popped) != 1 || popped[0].Member != "a" {
+		t.Fatalf("unexpected pop: %v", popped)
+	}
+	deadline = time.Now().Add(15 * time.Second)
+	for {
+		mc, _ := master.Client.ZCard(ctx, "live:z").Result()
+		sc, _ := slave.Client.ZCard(ctx, "live:z").Result()
+		if mc == 2 && sc == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("after ZPOPMIN master=%d slave=%d", mc, sc)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	mRem, _ := master.Client.ZRange(ctx, "live:z", 0, -1).Result()
+	sRem, _ := slave.Client.ZRange(ctx, "live:z", 0, -1).Result()
+	if len(mRem) != len(sRem) {
+		t.Fatalf("zset rem master=%v slave=%v", mRem, sRem)
+	}
+	for i := range mRem {
+		if mRem[i] != sRem[i] {
+			t.Fatalf("zset[%d] master=%q slave=%q", i, mRem[i], sRem[i])
+		}
 	}
 }

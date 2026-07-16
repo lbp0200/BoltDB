@@ -99,6 +99,7 @@ var ReplicatedCommands = map[string]bool{
 	"XDEL":             true,
 	"XDELEX":           true,
 	"XGROUP":           true,
+	"XREADGROUP":       true, // mutates PEL; without this live XCLAIM/XACK diverge
 	"XNACK":            true,
 	"XSETID":           true,
 	"XTRIM":            true,

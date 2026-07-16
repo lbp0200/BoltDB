@@ -3,6 +3,12 @@
 # Lint, unit tests, fast integration tests.
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+echo "=== Tier A: Test quality guards ==="
+bash scripts/guard_test_quality.sh
+
 echo "=== Tier A: Lint ==="
 golangci-lint run --timeout 5m
 
