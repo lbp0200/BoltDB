@@ -1,5 +1,31 @@
 # Changelog
 
+## v8.37.0 (2026-07-16) — 复制/迁移正确性修复 + 测试有效性体系
+
+> **复制与槽位迁移路径的正确性加固；Stream 协议形状对齐客户端库；建立可回归的测试质量门禁（空断言守卫 + 10 例定向 mutation），避免“高覆盖测不出问题”。**
+
+### Bug 修复
+
+- **复制对称与传播门**：SPOP 仅走 SREM 规范化路径（防双传播）；失败写（WRONGTYPE 等）不进 backlog；L0 `write rejected` / max retries 不再当可跳过错误（防从库静默丢写）
+- **XREADGROUP 纳入可写复制**：PEL / LastDeliveredID 增量同步，修复 live XCLAIM 在从库无 PEL 的问题
+- **XCLAIM 返回 Redis 完整 entry 形状** `[[id,[field,value...]],...]` + `JUSTID`；go-redis 类型化 API 可用
+- **XPENDING 摘要/明细双形态**：修复 go-redis `XPendingExt` 解析失败
+- **Cluster 迁移安全**：IMPORTING/MIGRATING 写 fence；ASKING 一次性语义；Phase-1 RESTORE **不使用 REPLACE**（保留目标已有更新值）
+- **BZMPOP `timeout=0` 无限阻塞**；XACKDEL DELREF 编排修复（含入本版本区间历史提交）
+
+### 测试质量
+
+- **`scripts/guard_test_quality.sh`**（Tier A）：禁止 `assert.True(t, true)`、tautology 断言
+- **`scripts/targeted-mutation-check.sh`**（Tier B）：10 例高危变异全杀（背压 skip、SPOP 双传播、ASKING sticky、fence 关闭、错误传播门、XREADGROUP 写映射等）
+- **Live 回归**：SPOP / SORT STORE / 非幂等写 / XCLAIM·XAUTOCLAIM PEL / 多类型 MIGRATESLOT / no-REPLACE / 多轮迁移
+- **`pollSlave` 超时失败**；复制完成性测试去掉恒真断言
+
+### 文档
+
+- `docs/plans/TODO.md`：测试质量分层与进度
+- `docs/plans/mutation-baseline.md`：定向 mutation 基线
+- `docs/plans/production-regression-tests.md`：新增 live 回归表项
+
 ## v8.35.0 (2026-07-05) — 性能模型文档化 + GeoRadius 上界 + LCS 守卫 + QueryBudget
 
 > **P0：公开性能模型局限性。修复 GeoRadius 无界扫描退化问题。添加 LCS 输入守卫和通用 QueryBudget 框架。更新 README 和 TODO 文档以反映架构决策：接受 O(n) 模型，不加内存索引，让 O(n) 可预测、有上限、有文档。**
