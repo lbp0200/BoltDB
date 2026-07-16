@@ -796,9 +796,8 @@ func (h *Handler) handleSORT(state *connState, args [][]byte, remoteAddr string)
 				return wrapStoreError(err)
 			}
 		}
-		if h.Replication != nil && h.Replication.IsMaster() {
-			h.Replication.PropagateCommand(args)
-		}
+		// SORT STORE is propagated once via processRequest (full command args).
+		// Do not PropagateCommand here — that double-fired and grew offset twice.
 		return proto.NewInteger(int64(len(values)))
 	}
 

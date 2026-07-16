@@ -18,6 +18,19 @@ import (
 const (
 	RDBMagicString = "REDIS"
 	RDBVersion     = "0009" // Redis RDB version 9
+
+	// RDB type bytes (BoltDB subset; not full Redis type map)
+	rdbTypeString           byte = 0
+	rdbTypeList             byte = 1
+	rdbTypeSet              byte = 2
+	rdbTypeHash             byte = 3
+	rdbTypeZSet             byte = 4
+	rdbTypeStream           byte = 5 // entries only (legacy)
+	rdbTypeGeo              byte = 6
+	rdbTypeJSON             byte = 7
+	rdbTypeTimeSeries       byte = 8
+	rdbTypeHLL              byte = 9
+	rdbTypeStreamWithGroups byte = 15 // entries + consumer groups/PEL
 )
 
 // RDBEncoder RDB编码器
@@ -238,9 +251,10 @@ func (enc *RDBEncoder) WriteHLLKeyValue(key string, data []byte) error {
 	return nil
 }
 
-// WriteStreamKeyValue 写入 stream 键值对（仅包含条目，不含 consumer group）
-func (enc *RDBEncoder) WriteStreamKeyValue(key string, entries []store.StreamEntry) error {
-	enc.buf.WriteByte(5) // STREAM type
+// WriteStreamKeyValue 写入 stream 键值对（条目 + consumer groups/PEL）。
+// 使用 type 15 (rdbTypeStreamWithGroups)。旧 type 5 仅条目格式仍可由 loader 读取。
+func (enc *RDBEncoder) WriteStreamKeyValue(key string, entries []store.StreamEntry, groups []store.StreamGroup) error {
+	enc.buf.WriteByte(rdbTypeStreamWithGroups)
 	enc.writeString(key)
 
 	// Write metadata: length, firstID (ts-seq), lastID (ts-seq) 用于重建
@@ -261,6 +275,40 @@ func (enc *RDBEncoder) WriteStreamKeyValue(key string, entries []store.StreamEnt
 		for k, v := range entry.Fields {
 			enc.writeString(k)
 			enc.writeString(v)
+		}
+	}
+
+	// Consumer groups + PEL
+	enc.writeLength(uint64(len(groups)))
+	for i := range groups {
+		g := &groups[i]
+		enc.writeString(g.Name)
+		enc.writeString(g.LastDeliveredID)
+		// consumers
+		var consumers []*store.StreamConsumer
+		for _, c := range g.Consumers {
+			if c != nil {
+				consumers = append(consumers, c)
+			}
+		}
+		enc.writeLength(uint64(len(consumers)))
+		for _, c := range consumers {
+			enc.writeString(c.Name)
+			_ = binary.Write(enc.buf, binary.LittleEndian, c.LastSeen)
+		}
+		// pending
+		var pending []*store.StreamPendingEntry
+		for _, p := range g.Pending {
+			if p != nil {
+				pending = append(pending, p)
+			}
+		}
+		enc.writeLength(uint64(len(pending)))
+		for _, p := range pending {
+			enc.writeString(p.ID)
+			enc.writeString(p.Consumer)
+			_ = binary.Write(enc.buf, binary.LittleEndian, p.DeliveryCount)
+			_ = binary.Write(enc.buf, binary.LittleEndian, p.LastDelivery)
 		}
 	}
 	return nil
@@ -443,7 +491,12 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取stream值失败")
 					continue
 				}
-				if err := enc.WriteStreamKeyValue(key, entries); err != nil {
+				groups, gErr := readStreamGroupsInTxn(txn, key)
+				if gErr != nil {
+					logger.Logger.Warn().Str("key", key).Err(gErr).Msg("获取stream groups失败")
+					groups = nil
+				}
+				if err := enc.WriteStreamKeyValue(key, entries, groups); err != nil {
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入stream值到RDB失败")
 				}
 
@@ -814,4 +867,36 @@ func readStreamInTxn(txn *badger.Txn, key string) ([]store.StreamEntry, error) {
 		})
 	}
 	return entries, nil
+}
+
+// readStreamGroupsInTxn loads consumer groups (with consumers + PEL) for a stream key.
+func readStreamGroupsInTxn(txn *badger.Txn, key string) ([]store.StreamGroup, error) {
+	prefix := []byte("stream:" + key + ":groups:")
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = true
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	var groups []store.StreamGroup
+	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+		item := it.Item()
+		raw, err := item.ValueCopy(nil)
+		if err != nil {
+			return nil, err
+		}
+		var g store.StreamGroup
+		if err := json.Unmarshal(raw, &g); err != nil {
+			logger.Logger.Warn().Str("key", key).Err(err).Msg("解码stream group失败，跳过")
+			continue
+		}
+		if g.Name == "" {
+			// fallback: group name from key suffix stream:key:groups:NAME
+			full := string(item.Key())
+			if i := bytes.LastIndexByte(item.Key(), ':'); i >= 0 {
+				g.Name = full[i+1:]
+			}
+		}
+		groups = append(groups, g)
+	}
+	return groups, nil
 }

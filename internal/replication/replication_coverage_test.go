@@ -2047,13 +2047,15 @@ func TestHandlePSync_FullResyncDataIntegrity(t *testing.T) {
 	assert.Equal(t, rm.GetReplicationID(), result.ReplId)
 }
 
-// TestIsTransientReplicationError tests isTransientReplicationError function
+// TestIsTransientReplicationError tests isTransientReplicationError function.
+// Backpressure / retry exhaustion must NOT be treated as skippable (would
+// permanently drop replica mutations). Only idempotent "key not found" skips.
 func TestIsTransientReplicationError(t *testing.T) {
 	t.Parallel()
 
 	assert.False(t, isTransientReplicationError(nil))
-	assert.True(t, isTransientReplicationError(fmt.Errorf("max retries exhausted after 3 attempts")))
-	assert.True(t, isTransientReplicationError(fmt.Errorf("write rejected by backpressure")))
+	assert.False(t, isTransientReplicationError(fmt.Errorf("max retries exhausted after 3 attempts")))
+	assert.False(t, isTransientReplicationError(fmt.Errorf("write rejected by backpressure")))
 	assert.True(t, isTransientReplicationError(fmt.Errorf("key not found")))
 	assert.False(t, isTransientReplicationError(fmt.Errorf("connection refused")))
 	assert.False(t, isTransientReplicationError(fmt.Errorf("")))

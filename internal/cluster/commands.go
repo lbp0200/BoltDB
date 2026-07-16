@@ -83,6 +83,8 @@ func (cc *ClusterCommands) HandleCommand(args []string) (interface{}, error) {
 		return cc.handleLinks(subArgs)
 	case "MIGRATESLOT":
 		return cc.handleMigrateSlot(subArgs)
+	case "DELKEYSINSLOT":
+		return cc.handleDelKeysInSlot(subArgs)
 	default:
 		return nil, fmt.Errorf("ERR unknown subcommand '%s'", subcommand)
 	}
@@ -255,6 +257,28 @@ func (cc *ClusterCommands) handleMigrateSlot(args []string) (string, error) {
 	}
 
 	return "OK", nil
+}
+
+// handleDelKeysInSlot deletes all keys that hash to the given slot.
+// Used for Phase-1 abort cleanup on the IMPORTING target (orphan RESTORE keys).
+// Syntax: CLUSTER DELKEYSINSLOT <slot>
+// Returns the number of keys deleted as a RESP integer (via HandleCommand int path).
+func (cc *ClusterCommands) handleDelKeysInSlot(args []string) (interface{}, error) {
+	if len(args) < 1 {
+		return nil, fmt.Errorf("ERR wrong number of arguments for 'CLUSTER DELKEYSINSLOT' command")
+	}
+	slot, err := strconv.ParseUint(args[0], 10, 32)
+	if err != nil {
+		return nil, fmt.Errorf("ERR invalid slot number")
+	}
+	if slot >= SlotCount {
+		return nil, fmt.Errorf("ERR slot out of range")
+	}
+	n, err := cc.cluster.DelKeysInSlot(uint32(slot))
+	if err != nil {
+		return nil, fmt.Errorf("ERR %v", err)
+	}
+	return int64(n), nil
 }
 
 // handleMeet 处理CLUSTER MEET命令

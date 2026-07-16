@@ -153,3 +153,21 @@ func TestDefaultBackpressureConfig(t *testing.T) {
 	assert.Equal(t, 20.0, cfg.L0HardThreshold)
 	assert.Equal(t, time.Second, cfg.MaxPreDelay)
 }
+
+func TestQueryBudgetCheckAndTrips(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+
+	// Unlimited by default
+	assert.Equal(t, int64(0), s.GetQueryBudgetTrips())
+	assert.NoError(t, s.checkScanBudget(1_000_000_000))
+
+	s.SetQueryBudgetConfig(QueryBudgetConfig{MaxScanIterations: 10})
+	assert.NoError(t, s.checkScanBudget(10))
+	err := s.checkScanBudget(11)
+	assert.Error(t, err)
+	assert.Equal(t, ErrQueryBudgetExceeded, err)
+	assert.Equal(t, int64(1), s.GetQueryBudgetTrips())
+	_ = s.checkScanBudget(100)
+	assert.Equal(t, int64(2), s.GetQueryBudgetTrips())
+}

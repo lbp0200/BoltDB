@@ -226,3 +226,44 @@ func TestBacklog_GetAvailableLength(t *testing.T) {
 	}
 	assert.Equal(t, int64(100), backlog.GetAvailableLength())
 }
+
+func TestResizeBacklogPreservesWindow(t *testing.T) {
+	t.Parallel()
+	old := NewReplicationBacklog(64)
+	payload := []byte("hello-replication-backlog-data-0123456789")
+	old.Append(payload)
+	off := old.GetCurrentOffset()
+
+	grown := resizeBacklog(old, 256)
+	assert.Equal(t, int64(256), grown.GetSize())
+	assert.Equal(t, off, grown.GetCurrentOffset())
+	got, err := grown.GetRange(0, off)
+	assert.NoError(t, err)
+	assert.Equal(t, payload, got)
+
+	shrunk := resizeBacklog(grown, 48)
+	assert.Equal(t, int64(48), shrunk.GetSize())
+	assert.Equal(t, off, shrunk.GetCurrentOffset())
+	got2, err := shrunk.GetRange(0, off)
+	assert.NoError(t, err)
+	assert.Equal(t, payload, got2)
+}
+
+func TestSetBacklogSizeMigrates(t *testing.T) {
+	t.Parallel()
+	rm := &ReplicationManager{
+		role:    RoleMaster,
+		slaves:  make(map[string]*SlaveConnection),
+		backlog: NewReplicationBacklog(DefaultBacklogSize),
+	}
+	msg := []byte("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n")
+	rm.backlog.Append(msg)
+	off := rm.backlog.GetCurrentOffset()
+
+	rm.SetBacklogSize(2 * 1024 * 1024)
+	assert.Equal(t, int64(2*1024*1024), rm.backlog.GetSize())
+	assert.Equal(t, off, rm.backlog.GetCurrentOffset())
+	got, err := rm.backlog.GetRange(0, off)
+	assert.NoError(t, err)
+	assert.Equal(t, msg, got)
+}

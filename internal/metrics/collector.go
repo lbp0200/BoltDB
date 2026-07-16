@@ -11,6 +11,7 @@ type Collector struct {
 	mu sync.RWMutex
 
 	RetryMetricsFn     func() (activeRetries, totalRetries, writesBlocked, l0Rejected, l0Delayed int64, l0Score float64)
+	QueryBudgetTripsFn func() int64
 	L0ScoreFn          func() float64
 	MasterReplOffsetFn func() int64
 	SlaveReplOffsetFn  func() int64
@@ -121,17 +122,22 @@ func (c *Collector) refresh() Snapshot {
 	if c.TotalOutputBytesFn != nil {
 		outB = c.TotalOutputBytesFn()
 	}
+	qbTrips := int64(0)
+	if c.QueryBudgetTripsFn != nil {
+		qbTrips = c.QueryBudgetTripsFn()
+	}
 	c.mu.RUnlock()
 
 	s := Snapshot{
 		Time: time.Now(),
 
-		ActiveRetries: retryActive,
-		TotalRetries:  retryTotal,
-		WritesBlocked: writesBlocked,
-		L0Rejected:    l0Rejected,
-		L0Delayed:     l0Delayed,
-		L0Score:       l0Score,
+		ActiveRetries:    retryActive,
+		TotalRetries:     retryTotal,
+		WritesBlocked:    writesBlocked,
+		L0Rejected:       l0Rejected,
+		L0Delayed:        l0Delayed,
+		L0Score:          l0Score,
+		QueryBudgetTrips: qbTrips,
 
 		Goroutines:  goroutines,
 		AllocBytes:  mem.Alloc,

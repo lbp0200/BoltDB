@@ -178,7 +178,7 @@ redis-benchmark -h 127.0.0.1 -p 6337 -n 100000 -c 50 -r 1000000 -t set,get
 
 - BoltDB 基于 BadgerDB（LSM-Tree），数据持久化到磁盘
 - Redis 将所有数据存储在内存中
-- BoltDB 的优势在于可以存储远超内存容量的数据（可达 100TB）
+- BoltDB 的优势在于可把主数据集放在磁盘上（规模受磁盘/LSM 限制）。**已验证约 1GB 方法学**（见 `docs/scaling/scale-tier1-report.md`）；10GB+ 需跑 `scripts/scale-test-tier1.sh`。勿将“架构可达”表述为未测量的 100TB 生产保证
 - 对于写操作（SET），BoltDB 的性能接近 Redis 的 35-40%
 - 对于读操作（GET），接近 35-40%
 - 建议使用 SSD 以获得更好性能

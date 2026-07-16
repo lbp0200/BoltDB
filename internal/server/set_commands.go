@@ -123,6 +123,9 @@ func (h *Handler) handleSPOP(state *connState, args [][]byte, remoteAddr string)
 			return &proto.Array{Args: [][]byte{}}
 		}
 		h.markDirtyKeys(state, key)
+		// Single propagation path: SREM of actual members. processRequest
+		// excludes SPOP via shouldPropagateCommand to avoid double-prop
+		// (SREM + raw SPOP) which would drop extra members on the slave.
 		if h.Replication != nil && h.Replication.IsMaster() {
 			propArgs := make([][]byte, 2, 2+len(members))
 			propArgs[0] = []byte("SREM")
@@ -150,6 +153,7 @@ func (h *Handler) handleSPOP(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewBulkString(nil)
 	}
 	h.markDirtyKeys(state, key)
+	// See SPOP-N path: handler-only SREM propagation (not raw SPOP).
 	if h.Replication != nil && h.Replication.IsMaster() {
 		h.Replication.PropagateCommand([][]byte{[]byte("SREM"), args[0], []byte(member)})
 	}

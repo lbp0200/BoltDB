@@ -3,6 +3,7 @@ package server
 import (
 	"testing"
 
+	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/zeebo/assert"
 )
 
@@ -117,6 +118,33 @@ func TestIsWriteCommand(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestShouldPropagateCommand(t *testing.T) {
+	t.Parallel()
+	// Propagated via generic processRequest path
+	assert.True(t, shouldPropagateCommand("SET"))
+	assert.True(t, shouldPropagateCommand("SREM"))
+	assert.True(t, shouldPropagateCommand("SORT"))
+	// Stream/TS extensions now have slave handlers
+	assert.True(t, shouldPropagateCommand("XACKDEL"))
+	assert.True(t, shouldPropagateCommand("BZMPOP"))
+	assert.True(t, shouldPropagateCommand("TS.MADD"))
+	assert.True(t, shouldPropagateCommand("XNACK"))
+	// SPOP: handler-only SREM path
+	assert.False(t, shouldPropagateCommand("SPOP"))
+	// Still excluded (external side effects / no store path)
+	assert.False(t, shouldPropagateCommand("MIGRATE"))
+	assert.False(t, shouldPropagateCommand("PUBLISH"))
+}
+
+func TestIsErrorResponse(t *testing.T) {
+	t.Parallel()
+	assert.True(t, isErrorResponse(nil))
+	assert.True(t, isErrorResponse(proto.NewError("ERR boom")))
+	assert.False(t, isErrorResponse(proto.OK))
+	assert.False(t, isErrorResponse(proto.NewInteger(1)))
+	assert.False(t, isErrorResponse(proto.NewBulkString([]byte("x"))))
 }
 
 func TestIsWriteCommand_CaseSensitivity(t *testing.T) {

@@ -159,7 +159,7 @@ Active config:
 
 **投入：** 6 月+（分级验证）　**优先级：** P1（文档修正已完成）
 
-README 宣称 *"Memory Redis can only store 64GB? BoltDB can handle 100TB!"*，但当前最大测试数据量仅为 MB–GB 级。
+README 已改为“数十 GB 已验证 / 架构可扩展”；**勿再宣称未测量的 100TB 生产保证**。当前最大方法学验证为 ~1GB（`docs/scaling/scale-tier1-report.md`），10GB+ 用 `scripts/scale-test-tier1.sh --size`。
 
 #### 第 1 级（2 周）— 10GB → 100GB 验证
 

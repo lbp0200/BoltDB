@@ -104,6 +104,15 @@ RDB generation for FULLRESYNC follows these invariants:
 - List last node may lack `:next` key; `readListInTxn` handles `ErrKeyNotFound`
   gracefully (break iteration)
 
+### Stream RDB (consumer groups)
+
+`WriteStreamKeyValue` uses RDB type **15** and encodes stream **entries plus**
+consumer groups, consumers, and PEL. Legacy type **5** (entries only) is still
+loadable for older snapshots.
+
+After FULLRESYNC with type-15 RDB, `XGROUP` / PEL state is restored via
+`XGroupRestore`.
+
 ## Shutdown Lifecycle
 
 Shutdown contract involving replication (enforced by `Handler.Shutdown()` + `main.go`):

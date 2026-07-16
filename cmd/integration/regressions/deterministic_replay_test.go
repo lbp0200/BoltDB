@@ -13,9 +13,8 @@ import (
 // replication: the replica receives SREM key member... instead of SPOP,
 // preventing random selection divergence.
 //
-// Propagation path: handler.go:3391-3431 (canonicalization) → handler.go:528
-// (markDirtyKeys + PropagateCommand) → psync.go executeReplicatedCommand
-// (SREM case).
+// Path: handleSPOP → PropagateCommand(SREM); processRequest excludes SPOP
+// via shouldPropagateCommand (no double-prop of raw SPOP).
 func TestRegressionCanonicalSPOP(t *testing.T) {
 	master := StartRegression(t)
 	defer master.Close()
@@ -73,6 +72,175 @@ func TestRegressionCanonicalSPOP(t *testing.T) {
 	for _, m := range slaveRemaining {
 		if !masterSet[m] {
 			t.Fatalf("slave has member %q not on master", m)
+		}
+	}
+}
+
+// TestRegressionLiveSPOPNoDoubleProp attaches the slave first, then SPOPs
+// under live replication. Guards against processRequest also propagating raw
+// SPOP after the handler already sent SREM (extra members dropped on slave).
+func TestRegressionLiveSPOPNoDoubleProp(t *testing.T) {
+	master := StartRegression(t)
+	defer master.Close()
+
+	slave := StartRegression(t)
+	defer slave.Close()
+
+	ctx := context.Background()
+
+	if err := slave.MakeSlave(master.Addr); err != nil {
+		t.Fatalf("MakeSlave failed: %v", err)
+	}
+	defer slave.StopSlave()
+
+	if !slave.WaitForReplicaSync(ctx, master, slave, 30*time.Second) {
+		t.Fatal("slave did not initial-sync in time")
+	}
+
+	members := []string{"a", "b", "c", "d", "e", "f"}
+	for _, m := range members {
+		if err := master.Client.SAdd(ctx, "spop:live", m).Err(); err != nil {
+			t.Fatalf("SAdd failed: %v", err)
+		}
+	}
+
+	// Fence: wait for full set on slave before SPOP
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		n, err := slave.Client.SCard(ctx, "spop:live").Result()
+		if err == nil && n == int64(len(members)) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("slave did not receive full set before SPOP (scard=%v err=%v)", n, err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	spopped, err := master.Client.SPopN(ctx, "spop:live", 2).Result()
+	if err != nil {
+		t.Fatalf("SPOP failed: %v", err)
+	}
+	if len(spopped) != 2 {
+		t.Fatalf("expected 2 popped, got %d", len(spopped))
+	}
+
+	wantCard := int64(len(members) - 2)
+	deadline = time.Now().Add(15 * time.Second)
+	for {
+		masterCard, _ := master.Client.SCard(ctx, "spop:live").Result()
+		slaveCard, err := slave.Client.SCard(ctx, "spop:live").Result()
+		if err == nil && masterCard == wantCard && slaveCard == wantCard {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("set size after live SPOP: master=%d slave=%d want=%d", masterCard, slaveCard, wantCard)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	masterRemaining, err := master.Client.SMembers(ctx, "spop:live").Result()
+	if err != nil {
+		t.Fatalf("master SMembers: %v", err)
+	}
+	slaveRemaining, err := slave.Client.SMembers(ctx, "spop:live").Result()
+	if err != nil {
+		t.Fatalf("slave SMembers: %v", err)
+	}
+	if len(masterRemaining) != len(slaveRemaining) {
+		t.Fatalf("member count mismatch master=%d slave=%d (double SPOP?)", len(masterRemaining), len(slaveRemaining))
+	}
+	masterSet := make(map[string]bool, len(masterRemaining))
+	for _, m := range masterRemaining {
+		masterSet[m] = true
+	}
+	for _, m := range slaveRemaining {
+		if !masterSet[m] {
+			t.Fatalf("slave has member %q not on master", m)
+		}
+	}
+	// Popped members must be absent on both
+	for _, m := range spopped {
+		if masterSet[m] {
+			t.Fatalf("popped member %q still on master", m)
+		}
+	}
+}
+
+// TestRegressionMultiExecSPOPCanonical verifies MULTI/EXEC SPOP propagates
+// as SREM of actual members (not raw SPOP).
+func TestRegressionMultiExecSPOPCanonical(t *testing.T) {
+	master := StartRegression(t)
+	defer master.Close()
+
+	slave := StartRegression(t)
+	defer slave.Close()
+
+	ctx := context.Background()
+
+	if err := slave.MakeSlave(master.Addr); err != nil {
+		t.Fatalf("MakeSlave failed: %v", err)
+	}
+	defer slave.StopSlave()
+
+	if !slave.WaitForReplicaSync(ctx, master, slave, 30*time.Second) {
+		t.Fatal("slave did not initial-sync in time")
+	}
+
+	members := []string{"x", "y", "z", "w"}
+	for _, m := range members {
+		if err := master.Client.SAdd(ctx, "spop:tx", m).Err(); err != nil {
+			t.Fatalf("SAdd failed: %v", err)
+		}
+	}
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		n, _ := slave.Client.SCard(ctx, "spop:tx").Result()
+		if n == int64(len(members)) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("slave missing pre-tx set")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	pipe := master.Client.TxPipeline()
+	pipe.SPop(ctx, "spop:tx")
+	cmds, err := pipe.Exec(ctx)
+	if err != nil {
+		t.Fatalf("MULTI/EXEC SPOP failed: %v", err)
+	}
+	if len(cmds) != 1 {
+		t.Fatalf("expected 1 queued result, got %d", len(cmds))
+	}
+
+	wantCard := int64(len(members) - 1)
+	deadline = time.Now().Add(15 * time.Second)
+	for {
+		masterCard, _ := master.Client.SCard(ctx, "spop:tx").Result()
+		slaveCard, err := slave.Client.SCard(ctx, "spop:tx").Result()
+		if err == nil && masterCard == wantCard && slaveCard == wantCard {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("after MULTI/EXEC SPOP master=%d slave=%d want=%d", masterCard, slaveCard, wantCard)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	masterRem, _ := master.Client.SMembers(ctx, "spop:tx").Result()
+	slaveRem, _ := slave.Client.SMembers(ctx, "spop:tx").Result()
+	if len(masterRem) != len(slaveRem) {
+		t.Fatalf("set divergence master=%v slave=%v", masterRem, slaveRem)
+	}
+	ms := make(map[string]bool)
+	for _, m := range masterRem {
+		ms[m] = true
+	}
+	for _, m := range slaveRem {
+		if !ms[m] {
+			t.Fatalf("slave extra member %q", m)
 		}
 	}
 }

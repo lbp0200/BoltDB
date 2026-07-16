@@ -100,21 +100,17 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 		}
 
 		// 创建从节点连接并发送 backlog（snapshotOffset → currentOffset）
+		// Ready 保持 false，直到 CatchUpAndEnableSlave 完成 gap-fill，
+		// 避免 live SendCommand 与 gap-fill 对同一 offset 双发（非幂等命令翻倍）。
+		//
+		// 正确时序：
+		//   [1] currentOffset = GetMasterReplOffset()（AddSlave 前捕获）
+		//   [2] SendBacklogData(snapshotOffset → currentOffset)（AddSlave 前发送）
+		//   [3] AddSlave(slaveConn) — Ready=false，PropagateCommand 只写 backlog
+		//   [4] CatchUpAndEnableSlave：gap-fill 后原子 SetReady(true)
 		slaveConn := replication.NewSlaveConnection(conn)
 		backlog := h.Replication.GetBacklog()
 
-		slaveConn.SetReady(true)
-
-		// 捕获 currentOffset 必须在 AddSlave 之前，否则 PropagateCommand
-		// 在 AddSlave 之后 GetMasterReplOffset 之前写入的命令会被
-		// 同时通过 SendCommand（直接推）和 SendBacklogData（从 backlog 重放）
-		// 发送两次，导致从节点数据翻倍。
-		//
-		// 正确时序（与 CONTINUE 路径一致）：
-		//   [1] currentOffset = GetMasterReplOffset()（AddSlave 前捕获）
-		//   [2] SendBacklogData(snapshotOffset → currentOffset)（AddSlave 前发送）
-		//   [3] AddSlave(slaveConn) — 此后 PropagateCommand 推新命令
-		//   [4] 填充缺口：currentOffset 到 AddSlave 之间的写入
 		currentOffset := h.Replication.GetMasterReplOffset()
 
 		if currentOffset > snapshotOffset {
@@ -126,18 +122,9 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 			}
 		}
 
-		slaveConn.SetReady(true)
 		h.Replication.AddSlave(slaveConn)
-		slaveConn.SetReplOffset(currentOffset)
-
-		// 填充竞态缺口：currentOffset 到 AddSlave 之间可能有多条
-		// PropagateCommand 写入。这些写入的 offset >= currentOffset，
-		// 不在已发送的 backlog 中。缺口通常为空或极窄（1-2 条命令）。
-		afterOffset := h.Replication.GetMasterReplOffset()
-		if afterOffset > currentOffset {
-			if err := replication.SendBacklogData(slaveConn, backlog, currentOffset, afterOffset); err != nil {
-				logger.Logger.Debug().Err(err).Msg("发送FULLRESYNC缺口backlog数据失败")
-			}
+		if err := h.Replication.CatchUpAndEnableSlave(slaveConn, currentOffset); err != nil {
+			logger.Logger.Error().Err(err).Msg("FULLRESYNC slave catch-up failed")
 		}
 
 		logger.Logger.Info().
@@ -167,7 +154,7 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 			return proto.NewError("ERR failed to flush CONTINUE")
 		}
 
-		// 创建从节点连接
+		// 创建从节点连接（Ready=false 直到 catch-up 完成）
 		slaveConn := replication.NewSlaveConnection(conn)
 		slaveConn.SetReplOffset(result.Offset)
 
@@ -175,8 +162,7 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 
 		// 先发送 backlog（[result.Offset, currentOffset)）再注册 slave。
 		// 此时 slave 不在 ReplicationManager.slaves 中，PropagateCommand
-		// 不会向其写入，因此无锁竞争。SendBacklogData 内部持有 sc.mu
-		// 做 I/O，完成后立即释放。
+		// 不会向其 live-push。
 		currentOffset := h.Replication.GetMasterReplOffset()
 		if err := replication.SendBacklogData(slaveConn, backlog, result.Offset, currentOffset); err != nil {
 			logger.Logger.Error().Err(err).
@@ -186,17 +172,10 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 			return proto.NewError("ERR failed to send CONTINUE backlog")
 		}
 
-		slaveConn.SetReady(true)
 		h.Replication.AddSlave(slaveConn)
-
-		// 填充竞态缺口：currentOffset 捕获到 AddSlave 之间可能有多条
-		// PropagateCommand 写入。这些写入的 offset >= currentOffset，
-		// 不在已发送的 backlog 中。缺口通常为空或极窄（1-2 条命令）。
-		afterOffset := h.Replication.GetMasterReplOffset()
-		if afterOffset > currentOffset {
-			if err := replication.SendBacklogData(slaveConn, backlog, currentOffset, afterOffset); err != nil {
-				logger.Logger.Debug().Err(err).Msg("发送CONTINUE缺口backlog数据失败")
-			}
+		if err := h.Replication.CatchUpAndEnableSlave(slaveConn, currentOffset); err != nil {
+			logger.Logger.Error().Err(err).Msg("CONTINUE slave catch-up failed")
+			return proto.NewError("ERR failed to finish CONTINUE catch-up")
 		}
 
 		logger.Logger.Info().

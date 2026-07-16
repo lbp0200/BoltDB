@@ -128,3 +128,51 @@ func (s *BotreonStore) XGroupSetID(key, group, id string) error {
 		return txn.Set(groupKey, data)
 	}, 30)
 }
+
+// XGroupRestore restores a full consumer group (including consumers + PEL)
+// for RDB FULLRESYNC. Overwrites any existing group with the same name.
+func (s *BotreonStore) XGroupRestore(key string, group *StreamGroup) error {
+	if group == nil || group.Name == "" {
+		return nil
+	}
+	return s.retryUpdate(func(txn *badger.Txn) error {
+		metaKey := streamKey(key)
+		typeKey := TypeOfKeyGet(key)
+
+		typeItem, err := txn.Get(typeKey)
+		if err == nil {
+			typeVal, copyErr := typeItem.ValueCopy(nil)
+			if copyErr != nil {
+				return copyErr
+			}
+			if string(typeVal) != "" && string(typeVal) != KeyTypeStream {
+				return ErrWrongType
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
+
+		if _, err = txn.Get(metaKey); errors.Is(err, badger.ErrKeyNotFound) {
+			if err := txn.Set(typeKey, []byte(KeyTypeStream)); err != nil {
+				return err
+			}
+			if err := txn.Set(metaKey, encodeStreamMeta(&streamMetaData{})); err != nil {
+				return err
+			}
+		} else if err != nil {
+			return err
+		}
+
+		if group.Consumers == nil {
+			group.Consumers = make(map[string]*StreamConsumer)
+		}
+		if group.Pending == nil {
+			group.Pending = make(map[string]*StreamPendingEntry)
+		}
+		data, err := json.Marshal(group)
+		if err != nil {
+			return err
+		}
+		return txn.Set(streamGroupDataKey(key, group.Name), data)
+	}, 30)
+}

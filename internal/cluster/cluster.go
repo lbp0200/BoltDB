@@ -437,16 +437,12 @@ type MigratingSlotInfo struct {
 	TargetNode string
 }
 
-// IsImportingSlot 检查槽位是否正在导入到当前节点
+// IsImportingSlot 检查槽位是否正在导入到当前节点。
+// 不要求本节点已是 slot owner：Redis 语义下 IMPORTING 目标在 AssignSlot 前并不拥有 slot。
 func (c *Cluster) IsImportingSlot(slot uint32) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-
-	if node := c.Slots[slot]; node != nil && node.ID == c.Myself.ID {
-		// 检查当前节点是否标记为从其他节点导入此槽
-		return c.Myself.IsImportingSlot(slot)
-	}
-	return false
+	return c.Myself.IsImportingSlot(slot)
 }
 
 // IsMigratingSlot 检查槽位是否正在从当前节点迁移出去

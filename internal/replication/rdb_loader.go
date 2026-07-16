@@ -365,7 +365,7 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 				}
 			}
 
-		case 5: // STREAM
+		case 5, 15: // STREAM (5=entries only; 15=entries+groups/PEL)
 			_, err := dec.readLength() // total length (skip, use numEntries below)
 			if err != nil {
 				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream长度失败，跳过")
@@ -413,6 +413,79 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 				}
 				if _, err := s.XAdd(key, store.StreamXAddOptions{}, entryID, fields); err != nil {
 					logger.Logger.Warn().Str("key", key).Str("id", entryID).Err(err).Msg("RDB加载stream条目失败")
+				}
+			}
+			// type 15: consumer groups + PEL
+			if typeByte == 15 {
+				numGroups, gErr := dec.readLength()
+				if gErr != nil {
+					logger.Logger.Warn().Str("key", key).Err(gErr).Msg("读取stream groups数失败")
+					continue
+				}
+				for gi := uint64(0); gi < numGroups; gi++ {
+					gName, err := dec.readString()
+					if err != nil {
+						logger.Logger.Warn().Str("key", key).Err(err).Msg("读取group name失败")
+						break
+					}
+					lastID, err := dec.readString()
+					if err != nil {
+						logger.Logger.Warn().Str("key", key).Err(err).Msg("读取group lastDeliveredID失败")
+						break
+					}
+					group := &store.StreamGroup{
+						Name:            gName,
+						LastDeliveredID: lastID,
+						Consumers:       make(map[string]*store.StreamConsumer),
+						Pending:         make(map[string]*store.StreamPendingEntry),
+					}
+					nCons, err := dec.readLength()
+					if err != nil {
+						logger.Logger.Warn().Str("key", key).Err(err).Msg("读取group consumers失败")
+						break
+					}
+					for ci := uint64(0); ci < nCons; ci++ {
+						cName, err := dec.readString()
+						if err != nil {
+							break
+						}
+						var lastSeen int64
+						if err := binary.Read(dec.buf, binary.LittleEndian, &lastSeen); err != nil {
+							break
+						}
+						group.Consumers[cName] = &store.StreamConsumer{Name: cName, LastSeen: lastSeen}
+					}
+					nPend, err := dec.readLength()
+					if err != nil {
+						logger.Logger.Warn().Str("key", key).Err(err).Msg("读取group pending失败")
+						break
+					}
+					for pi := uint64(0); pi < nPend; pi++ {
+						pID, err := dec.readString()
+						if err != nil {
+							break
+						}
+						pCons, err := dec.readString()
+						if err != nil {
+							break
+						}
+						var dCount, lastDel int64
+						if err := binary.Read(dec.buf, binary.LittleEndian, &dCount); err != nil {
+							break
+						}
+						if err := binary.Read(dec.buf, binary.LittleEndian, &lastDel); err != nil {
+							break
+						}
+						group.Pending[pID] = &store.StreamPendingEntry{
+							ID:            pID,
+							Consumer:      pCons,
+							DeliveryCount: dCount,
+							LastDelivery:  lastDel,
+						}
+					}
+					if err := s.XGroupRestore(key, group); err != nil {
+						logger.Logger.Warn().Str("key", key).Str("group", gName).Err(err).Msg("RDB恢复stream group失败")
+					}
 				}
 			}
 

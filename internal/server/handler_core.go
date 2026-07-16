@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"net"
 	"runtime/debug"
 	"strconv"
@@ -38,6 +39,9 @@ type connState struct {
 	monitorCh     chan []byte
 	respVersion   int // 2 for RESP2 (default), 3 for RESP3; set by HELLO
 	blocking      atomic.Bool
+	// currentCmd is set for the duration of executeCommand so redirect/fence
+	// helpers know whether the access is a write (IMPORTING write fence).
+	currentCmd string
 }
 
 type Handler struct {
@@ -149,22 +153,57 @@ func (h *Handler) checkAndHandleRedirect(state *connState, key string) proto.RES
 		return nil
 	}
 
-	if state.clusterAsking {
+	// Redis ASKING is one-shot: it applies only to the next key-routed command.
+	asking := state.clusterAsking
+	if asking {
+		state.clusterAsking = false
+	}
+
+	if asking {
 		slot := cluster.Slot(key)
 		if h.Cluster.IsImportingSlot(slot) {
+			// IMPORTING write fence: ASKING clients may read, but writes other
+			// than RESTORE are blocked so Phase-1 DUMP→RESTORE cannot be
+			// clobbered by concurrent client updates on the target.
+			cmd := ""
+			if state != nil {
+				cmd = state.currentCmd
+			}
+			if cmd != "" && isWriteCommand(cmd) && cmd != "RESTORE" {
+				return proto.NewError(fmt.Sprintf(
+					"ERR slot %d is IMPORTING: client writes fenced during migration (RESTORE allowed)",
+					slot))
+			}
 			return nil
 		}
-		state.clusterAsking = false
 	}
 
 	redirect := h.Cluster.CheckSlotRedirect(key)
 	if redirect != nil {
-		// 如果是 MOVED 重定向，返回错误
 		if redirect.Type == "MOVED" {
 			return proto.NewError(redirect.Error())
 		}
-		// 如果是 ASK 重定向，返回错误
+		// Redis MIGRATING semantics: serve locally if the key still exists;
+		// only ASK when the key is missing (already migrated or never present).
 		if redirect.Type == "ASK" {
+			if exists, err := h.Db.Exists(key); err == nil && exists {
+				// Source write fence: while MIGRATING, block client writes so
+				// Phase-1 DUMP→RESTORE cannot be invalidated by concurrent SETs
+				// that Phase-2 would then delete without re-copying (data loss).
+				// Reads remain allowed. RESTORE is reserved for migration tooling.
+				cmd := ""
+				if state != nil {
+					cmd = state.currentCmd
+				}
+				slot := cluster.Slot(key)
+				if cmd != "" && isWriteCommand(cmd) && cmd != "RESTORE" &&
+					h.Cluster.IsMigratingSlot(slot) {
+					return proto.NewError(fmt.Sprintf(
+						"ERR slot %d is MIGRATING: client writes fenced during migration",
+						slot))
+				}
+				return nil
+			}
 			return proto.NewError(redirect.Error())
 		}
 	}
@@ -583,6 +622,8 @@ func (h *Handler) processRequest(req *proto.Array, reader *bufio.Reader, remoteA
 
 	// 如果是主节点且是写命令，传播到从节点
 	// 非确定性命令在传播前规范化
+	// 失败回复不进入 backlog（避免 slave 上触发 apply 错误 / FULLRESYNC thrash）
+	// SPOP 等已由 handler 内单路径规范化传播，见 shouldPropagateCommand
 	propagateArgs := req.Args
 	switch cmd {
 	case "EXPIRE":
@@ -600,12 +641,9 @@ func (h *Handler) processRequest(req *proto.Array, reader *bufio.Reader, remoteA
 			}
 		}
 	}
-	if h.Replication != nil && h.Replication.IsMaster() && isWriteCommand(cmd) {
-		// MIGRATE has external side effects (RESTORE on target node) and
-		// must NOT be propagated. Each replica's Del is independent.
-		if cmd != "REPLICAOF" && cmd != "PSYNC" && cmd != "REPLCONF" && cmd != "MIGRATE" {
-			h.Replication.PropagateCommand(propagateArgs)
-		}
+	if h.Replication != nil && h.Replication.IsMaster() && isWriteCommand(cmd) &&
+		shouldPropagateCommand(cmd) && !isErrorResponse(resp) {
+		h.Replication.PropagateCommand(propagateArgs)
 	}
 
 	// 广播到 MONITOR 客户端（不广播 MONITOR 自身的请求）

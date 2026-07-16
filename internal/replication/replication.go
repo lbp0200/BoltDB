@@ -19,6 +19,7 @@ const (
 // ReplicationManager 管理主从复制
 type ReplicationManager struct {
 	mu               sync.RWMutex
+	propMu           sync.RWMutex                // serializes live SendCommand vs slave install Ready flip
 	role             string                      // RoleMaster | RoleSlave
 	masterAddr       string                      // 主节点地址(当role=slave时)
 	masterConn       *MasterConnection           // 到主节点的连接(当role=slave时)
@@ -73,10 +74,15 @@ func NewReplicationManager(store *store.BotreonStore) *ReplicationManager {
 		rm.backlog.mu.Lock()
 		rm.backlog.offset = bOff
 		rm.backlog.size = bSize
+		// Allocate buffer to persisted size (may differ from DefaultBacklogSize).
+		if int64(len(rm.backlog.buffer)) != bSize {
+			rm.backlog.buffer = make([]byte, bSize)
+		}
 		copy(rm.backlog.buffer, bBuf)
 		rm.backlog.mu.Unlock()
 		logger.Logger.Debug().
 			Int64("offset", bOff).
+			Int64("size", bSize).
 			Int("bytes", len(bBuf)).
 			Msg("Persisted backlog loaded on startup")
 	}
@@ -84,7 +90,9 @@ func NewReplicationManager(store *store.BotreonStore) *ReplicationManager {
 	return rm
 }
 
-// SetBacklogSize 设置复制积压缓冲区大小（必须在新连接建立前调用）
+// SetBacklogSize 设置复制积压缓冲区大小。
+// 若已有 backlog（含从 Badger 恢复的），迁移有效窗口而非丢弃历史，
+// 避免 -repl-backlog-size 在 load 之后调用时抹掉 CONTINUE 资格。
 func (rm *ReplicationManager) SetBacklogSize(size int64) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
@@ -94,7 +102,10 @@ func (rm *ReplicationManager) SetBacklogSize(size int64) {
 	if size > MaxBacklogSize {
 		size = MaxBacklogSize
 	}
-	rm.backlog = NewReplicationBacklog(size)
+	if rm.backlog != nil && rm.backlog.GetSize() == size {
+		return
+	}
+	rm.backlog = resizeBacklog(rm.backlog, size)
 }
 
 // SetTLSConfig 设置 TLS 配置（nil = 不使用 TLS）
@@ -322,7 +333,11 @@ func (rm *ReplicationManager) PropagateCommand(cmd [][]byte) {
 		}
 	}
 
-	// 传播到所有从节点
+	// Live push under propMu so slave install (CatchUpAndEnableSlave) can
+	// flip Ready without overlapping gap-fill and SendCommand for the same
+	// offset range (non-idempotent double apply).
+	rm.propMu.RLock()
+	defer rm.propMu.RUnlock()
 	for _, slave := range slaves {
 		if slave.IsReady() {
 			if err := slave.SendCommand(cmdBytes, cmdOffset); err != nil {
@@ -334,6 +349,78 @@ func (rm *ReplicationManager) PropagateCommand(cmd [][]byte) {
 			}
 		}
 	}
+}
+
+// CatchUpAndEnableSlave drains backlog [startOffset, masterOffset) while
+// Ready=false, then sets Ready under propMu so gap-fill never races with
+// live PropagateCommand for the same offsets.
+// Slave must already be in rm.slaves (AddSlave) with Ready=false.
+func (rm *ReplicationManager) CatchUpAndEnableSlave(slave *SlaveConnection, startOffset int64) error {
+	backlog := rm.GetBacklog()
+	for {
+		endOffset := rm.GetMasterReplOffset()
+		if endOffset > startOffset {
+			if err := SendBacklogData(slave, backlog, startOffset, endOffset); err != nil {
+				return err
+			}
+			startOffset = endOffset
+			continue
+		}
+		// Appears caught up. Hold propMu so no live SendCommand runs while
+		// we re-check offset and flip Ready.
+		rm.propMu.Lock()
+		end2 := rm.GetMasterReplOffset()
+		if end2 > startOffset {
+			rm.propMu.Unlock()
+			continue
+		}
+		slave.SetReplOffset(startOffset)
+		slave.SetReady(true)
+		rm.propMu.Unlock()
+		return nil
+	}
+}
+
+// resizeBacklog builds a new ring of size newSize, copying the overlapping
+// valid window from old (if any). Logical offset is preserved for PSYNC.
+func resizeBacklog(old *ReplicationBacklog, newSize int64) *ReplicationBacklog {
+	nb := NewReplicationBacklog(newSize)
+	if old == nil {
+		return nb
+	}
+	old.mu.RLock()
+	oldOff := old.offset
+	oldSize := old.size
+	availStart := oldOff - oldSize
+	if availStart < 0 {
+		availStart = 0
+	}
+	copyStart := oldOff - newSize
+	if copyStart < availStart {
+		copyStart = availStart
+	}
+	if copyStart < 0 {
+		copyStart = 0
+	}
+	length := oldOff - copyStart
+	var data []byte
+	if length > 0 {
+		data = make([]byte, length)
+		for i := int64(0); i < length; i++ {
+			data[i] = old.buffer[(copyStart+i)%oldSize]
+		}
+	}
+	old.mu.RUnlock()
+
+	nb.mu.Lock()
+	nb.offset = oldOff
+	if length > 0 {
+		for i := int64(0); i < length; i++ {
+			nb.buffer[(copyStart+i)%newSize] = data[i]
+		}
+	}
+	nb.mu.Unlock()
+	return nb
 }
 
 // serializeCommand 序列化命令为RESP格式

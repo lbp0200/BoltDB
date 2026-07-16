@@ -215,10 +215,7 @@ func TestCluster_ImportingSlots(t *testing.T) {
 	sourceNode := NewNode("source-node", "127.0.0.1:6380")
 	cluster.AddNode(sourceNode)
 
-	// Ensure slot 100 is owned by myself (IsImportingSlot checks this first)
-	cluster.AssignSlot(100, cluster.Myself.ID)
-
-	// Set importing slot
+	// IMPORTING does not require local ownership (target is not owner until AssignSlot).
 	cluster.SetSlotImporting(100, "source-node")
 	assert.True(t, cluster.IsImportingSlot(100))
 	importing := cluster.GetImportingSlots()
@@ -230,6 +227,27 @@ func TestCluster_ImportingSlots(t *testing.T) {
 		}
 	}
 	assert.True(t, found)
+}
+
+// TestDelKeysInSlot deletes keys that hash to a given slot.
+func TestDelKeysInSlot(t *testing.T) {
+	t.Parallel()
+	c, cleanup := setupTestCluster(t)
+	defer cleanup()
+
+	// Find keys that land in different slots; delete only one slot.
+	keyA := "dki:a"
+	keyB := "dki:b"
+	// Force known slots via hash tags if needed — just insert and collect.
+	assert.NoError(t, c.Store.Set(keyA, "1"))
+	assert.NoError(t, c.Store.Set(keyB, "2"))
+	slotA := Slot(keyA)
+	n, err := c.DelKeysInSlot(slotA)
+	assert.NoError(t, err)
+	assert.True(t, n >= 1)
+	exists, err := c.Store.Exists(keyA)
+	assert.NoError(t, err)
+	assert.False(t, exists)
 }
 
 // TestCluster_MigratingSlots tests IsMigratingSlot

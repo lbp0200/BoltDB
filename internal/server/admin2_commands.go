@@ -200,18 +200,54 @@ func (h *Handler) handleMOVE(state *connState, args [][]byte, remoteAddr string)
 	return proto.NewInteger(0)
 }
 
-// handleWAIT 实现 WAIT 命令
+// handleWAIT 实现 WAIT 命令：阻塞直到至少 numreplicas 个从节点的
+// ReplAckOffset >= 当前 master offset，或超时。返回已确认的从节点数。
 func (h *Handler) handleWAIT(state *connState, args [][]byte, remoteAddr string) proto.RESP {
-	// Return number of connected slaves (simplified WAIT — does not
-	// block for acknowledgement, reports current count immediately).
 	if len(args) < 2 {
 		return proto.NewError("ERR wrong number of arguments for 'WAIT' command")
 	}
-	count := 0
-	if h.Replication != nil {
-		count = h.Replication.GetSlaveCount()
+	numReplicas, err := strconv.Atoi(string(args[0]))
+	if err != nil {
+		return proto.NewError("ERR numreplicas is not an integer or out of range")
 	}
-	return proto.NewInteger(int64(count))
+	timeoutMs, err := strconv.ParseInt(string(args[1]), 10, 64)
+	if err != nil {
+		return proto.NewError("ERR timeout is not an integer or out of range")
+	}
+	if numReplicas < 0 {
+		numReplicas = 0
+	}
+	if timeoutMs < 0 {
+		timeoutMs = 0
+	}
+
+	if h.Replication == nil || !h.Replication.IsMaster() {
+		return proto.NewInteger(0)
+	}
+
+	targetOffset := h.Replication.GetMasterReplOffset()
+	deadline := time.Now().Add(time.Duration(timeoutMs) * time.Millisecond)
+
+	for {
+		acked := 0
+		for _, slave := range h.Replication.GetSlaves() {
+			if slave.GetReplAckOffset() >= targetOffset {
+				acked++
+			}
+		}
+		if numReplicas == 0 || acked >= numReplicas {
+			return proto.NewInteger(int64(acked))
+		}
+		if timeoutMs == 0 || time.Now().After(deadline) {
+			return proto.NewInteger(int64(acked))
+		}
+		// Short poll; Redis blocks on slave ACKs — this is a bounded approximation.
+		sleep := 10 * time.Millisecond
+		if remaining := time.Until(deadline); remaining > 0 && remaining < sleep {
+			sleep = remaining
+		}
+		time.Sleep(sleep)
+	}
 }
 
 // handleSLOWLOG 实现 SLOWLOG 命令

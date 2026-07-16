@@ -442,6 +442,8 @@ func (h *Handler) handleTS_MADD(state *connState, args [][]byte, remoteAddr stri
 		var timestamp int64
 		if string(args[i+1]) == "*" {
 			timestamp = time.Now().UnixNano() / int64(time.Millisecond)
+			// Canonicalize * for replication (same pattern as XADD).
+			args[i+1] = []byte(strconv.FormatInt(timestamp, 10))
 		} else {
 			var err error
 			timestamp, err = strconv.ParseInt(string(args[i+1]), 10, 64)

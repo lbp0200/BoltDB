@@ -17,6 +17,27 @@
 | 5 | **全量扫描** | `cluster.go:553-558` | `IterateRawKeys` 全 DB 扫描，千万级 key 时阻塞所有读取 |
 | 6 | **无并发保护** | 全程 | 迁移期间客户端读写冲突（MOVED vs ASKING 语义不协调） |
 
+### 附加：Phase-1 RESTORE 与 ASKING 写竞态（2026-07-16 / 续）
+
+**已落地缓解**：
+
+1. Phase 1 `RESTORE` **不带 REPLACE**；目标 key 已存在则跳过覆盖。
+2. **IMPORTING write fence**：`ASKING` + 写命令（除 `RESTORE`）在 IMPORTING
+   slot 上返回错误，防止客户端与迁移 RESTORE 竞态。
+3. **MIGRATING source write fence**：源端 MIGRATING 时对**已存在 key 的写**也拒绝，
+   避免 Phase-1 已拷贝后客户端再改源端、Phase-2 删除却未再拷贝导致丢数。
+4. **Phase-1 abort 清理**：迁移失败或 crash 恢复（INIT/COPYING）时，源端向目标
+   发送 `CLUSTER DELKEYSINSLOT` + `SETSLOT STABLE`，清理部分 RESTORE 孤儿。
+5. 迁移开始时源端主动对目标 `SETSLOT IMPORTING`。
+
+**仍开放 / 预览限制**：
+
+- 无完整 slot 级 write fence 覆盖所有边角（如 MULTI 队列内写、非 ASKING 路径）
+- 最终 catch-up 扫描与 commit 原子性仍弱于 Redis
+- `CLUSTER MIGRATESLOT` 仍建议仅用于实验/预览，生产前再做 soak
+
+**生产建议**：优先静态 ADDSLOTS / 离线迁移，直至 MIGRATESLOT 通过多节点 soak。
+
 ---
 
 ## 当前实现（`Cluster.MigrateSlot`）

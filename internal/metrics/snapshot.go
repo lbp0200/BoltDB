@@ -11,12 +11,13 @@ import (
 type Snapshot struct {
 	Time time.Time `json:"time"`
 
-	ActiveRetries int64   `json:"active_retries"`
-	TotalRetries  int64   `json:"total_retries"`
-	WritesBlocked int64   `json:"writes_blocked"`
-	L0Rejected    int64   `json:"l0_rejected"`
-	L0Delayed     int64   `json:"l0_delayed"`
-	L0Score       float64 `json:"l0_score"`
+	ActiveRetries    int64   `json:"active_retries"`
+	TotalRetries     int64   `json:"total_retries"`
+	WritesBlocked    int64   `json:"writes_blocked"`
+	L0Rejected       int64   `json:"l0_rejected"`
+	L0Delayed        int64   `json:"l0_delayed"`
+	L0Score          float64 `json:"l0_score"`
+	QueryBudgetTrips int64   `json:"query_budget_trips,omitempty"`
 
 	Goroutines  int    `json:"goroutines"`
 	AllocBytes  uint64 `json:"alloc_bytes"`
@@ -53,6 +54,9 @@ func (s Snapshot) String() string {
 	fmt.Fprintf(&b, "=== BoltDB Metrics %s ===\n", s.Time.Format("15:04:05"))
 	fmt.Fprintf(&b, "  L0:        score=%.1f retries(active=%d total=%d blocked=%d rejected=%d delayed=%d)\n",
 		s.L0Score, s.ActiveRetries, s.TotalRetries, s.WritesBlocked, s.L0Rejected, s.L0Delayed)
+	if s.QueryBudgetTrips > 0 {
+		fmt.Fprintf(&b, "  Query:     budget_trips=%d\n", s.QueryBudgetTrips)
+	}
 	fmt.Fprintf(&b, "  Go:        goroutines=%d alloc=%s heap=%s stack=%s gc=%d\n",
 		s.Goroutines, bytesStr(s.AllocBytes), bytesStr(s.HeapInuse), bytesStr(s.StackInuse), s.NumGC)
 	fmt.Fprintf(&b, "  Repl:      role=%s master_offset=%d slave_offset=%d lag=%d reconnects=%d slaves=%d\n",

@@ -176,7 +176,9 @@ func (s *BotreonStore) GetRetryMetrics() RetryMetrics {
 
 const (
 	// DefaultMaxScanIterations 是每个 scan 迭代器的默认最大迭代次数。
-	// 0 表示不限制（默认兼容现有行为）。
+	// 0 表示不限制（默认兼容现有行为与回归测试）。
+	// 大规模部署应通过 SetQueryBudgetConfig 设置非零上限，防止
+	// 病态 O(n) ZRANK/ZRANGE/GEO/HGETALL 拖垮节点（见 TODO.md）。
 	defaultMaxScanIterations int64 = 0
 )
 
@@ -215,14 +217,21 @@ func (s *BotreonStore) SetQueryBudgetConfig(cfg QueryBudgetConfig) {
 
 // checkScanBudget 检查 scan 迭代次数是否超出预算。
 // iterations 当前已扫描的元素数。
-// 超出预算时返回 ErrQueryBudgetExceeded。
+// 超出预算时返回 ErrQueryBudgetExceeded 并递增 queryBudgetTrips 指标。
 func (s *BotreonStore) checkScanBudget(iterations int64) error {
 	cfg := s.queryBudgetConfig.Load()
 	if cfg == nil {
 		return nil
 	}
 	if cfg.MaxScanIterations > 0 && iterations > cfg.MaxScanIterations {
+		s.queryBudgetTrips.Add(1)
 		return ErrQueryBudgetExceeded
 	}
 	return nil
+}
+
+// GetQueryBudgetTrips returns how many times scan budget was exceeded.
+// Used by metrics / soak dashboards for large deployments that set MaxScanIterations.
+func (s *BotreonStore) GetQueryBudgetTrips() int64 {
+	return s.queryBudgetTrips.Load()
 }

@@ -1570,6 +1570,226 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 			return tsErr
 		}
 
+	case "TS.MADD":
+		// TS.MADD key ts val [key ts val ...]
+		if len(args) >= 4 && (len(args)-1)%3 == 0 {
+			for i := 1; i+2 < len(args); i += 3 {
+				key := string(args[i])
+				var timestamp int64
+				if string(args[i+1]) == "*" {
+					timestamp = time.Now().UnixNano() / int64(time.Millisecond)
+				} else {
+					var parseErr error
+					timestamp, parseErr = strconv.ParseInt(string(args[i+1]), 10, 64)
+					if parseErr != nil {
+						return fmt.Errorf("invalid TS.MADD timestamp %q: %w", args[i+1], parseErr)
+					}
+				}
+				value, valueErr := strconv.ParseFloat(string(args[i+2]), 64)
+				if valueErr != nil {
+					return fmt.Errorf("invalid TS.MADD value %q: %w", args[i+2], valueErr)
+				}
+				if _, err := s.TSAdd(key, timestamp, value, store.TSAddOptions{}); err != nil {
+					return fmt.Errorf("TS.MADD %s: %w", key, err)
+				}
+			}
+			return nil
+		}
+
+	case "TS.INCRBY":
+		if len(args) >= 3 {
+			key := string(args[1])
+			value, valueErr := strconv.ParseFloat(string(args[2]), 64)
+			if valueErr != nil {
+				return fmt.Errorf("invalid TS.INCRBY value %q: %w", args[2], valueErr)
+			}
+			var timestamp int64
+			if len(args) >= 5 && strings.ToUpper(string(args[3])) == "TIMESTAMP" {
+				var parseErr error
+				timestamp, parseErr = strconv.ParseInt(string(args[4]), 10, 64)
+				if parseErr != nil {
+					return fmt.Errorf("invalid TS.INCRBY timestamp %q: %w", args[4], parseErr)
+				}
+			}
+			_, err := s.TSIncrBy(key, timestamp, value)
+			return err
+		}
+
+	case "TS.CREATERULE":
+		// TS.CREATERULE source dest AGGREGATION aggregator bucketDuration
+		if len(args) >= 6 && strings.ToUpper(string(args[3])) == "AGGREGATION" {
+			sourceKey := string(args[1])
+			destKey := string(args[2])
+			aggregator := string(args[4])
+			bucketDuration, parseErr := strconv.ParseInt(string(args[5]), 10, 64)
+			if parseErr != nil {
+				return fmt.Errorf("invalid TS.CREATERULE bucket: %w", parseErr)
+			}
+			return s.TSAddRule(sourceKey, destKey, aggregator, bucketDuration)
+		}
+
+	case "TS.DELETERULE":
+		if len(args) >= 6 && strings.ToUpper(string(args[3])) == "AGGREGATION" {
+			sourceKey := string(args[1])
+			destKey := string(args[2])
+			aggregator := string(args[4])
+			bucketDuration, parseErr := strconv.ParseInt(string(args[5]), 10, 64)
+			if parseErr != nil {
+				return fmt.Errorf("invalid TS.DELETERULE bucket: %w", parseErr)
+			}
+			return s.TSDelRule(sourceKey, destKey, aggregator, bucketDuration)
+		}
+
+	case "XACKDEL":
+		// XACKDEL key group [KEEPREF|DELREF|ACKED] IDS n id [id ...]
+		if len(args) >= 5 {
+			key := string(args[1])
+			group := string(args[2])
+			mode := "KEEPREF"
+			idsStart := 3
+			next := strings.ToUpper(string(args[3]))
+			if next == "KEEPREF" || next == "DELREF" || next == "ACKED" {
+				mode = next
+				idsStart = 4
+			}
+			if idsStart >= len(args) || strings.ToUpper(string(args[idsStart])) != "IDS" {
+				return nil
+			}
+			if idsStart+1 >= len(args) {
+				return nil
+			}
+			numIDs, nErr := strconv.Atoi(string(args[idsStart+1]))
+			if nErr != nil || numIDs < 1 || idsStart+2+numIDs > len(args) {
+				return nil
+			}
+			ids := make([]string, numIDs)
+			for i := 0; i < numIDs; i++ {
+				ids[i] = string(args[idsStart+2+i])
+			}
+			if _, err := s.XAck(key, group, ids...); err != nil {
+				return fmt.Errorf("XACKDEL XAck: %w", err)
+			}
+			switch mode {
+			case "KEEPREF":
+				if _, err := s.XDel(key, ids...); err != nil {
+					return fmt.Errorf("XACKDEL XDel: %w", err)
+				}
+			case "DELREF":
+				for _, id := range ids {
+					if _, err := s.XDel(key, id); err != nil {
+						return fmt.Errorf("XACKDEL XDel: %w", err)
+					}
+					if err := s.XAckDelRemoveRefs(key, id); err != nil {
+						return fmt.Errorf("XACKDEL remove refs: %w", err)
+					}
+				}
+			case "ACKED":
+				for _, id := range ids {
+					allAcked, aErr := s.XIsAckedByAllGroups(key, id)
+					if aErr != nil {
+						return fmt.Errorf("XACKDEL IsAcked: %w", aErr)
+					}
+					if allAcked {
+						if _, err := s.XDel(key, id); err != nil {
+							return fmt.Errorf("XACKDEL XDel: %w", err)
+						}
+					}
+				}
+			}
+			return nil
+		}
+
+	case "XDELEX":
+		// XDELEX key id [id ...] — same as XDEL
+		if len(args) >= 3 {
+			key := string(args[1])
+			ids := make([]string, 0, len(args)-2)
+			for i := 2; i < len(args); i++ {
+				ids = append(ids, string(args[i]))
+			}
+			_, err := s.XDel(key, ids...)
+			return err
+		}
+
+	case "XNACK":
+		// XNACK key group consumer id [id ...]
+		if len(args) >= 5 {
+			key := string(args[1])
+			group := string(args[2])
+			consumer := string(args[3])
+			ids := make([]string, 0, len(args)-4)
+			for i := 4; i < len(args); i++ {
+				ids = append(ids, string(args[i]))
+			}
+			_, err := s.XNack(key, group, consumer, ids...)
+			return err
+		}
+
+	case "XSETID":
+		// XSETID key last-id [ENTRIESADDED n] [MAXDELETEDID id]
+		if len(args) >= 3 {
+			key := string(args[1])
+			lastID := string(args[2])
+			var entriesAdded int64 = -1
+			var maxDeletedID string
+			for i := 3; i < len(args); i++ {
+				opt := strings.ToUpper(string(args[i]))
+				switch opt {
+				case "ENTRIESADDED":
+					if i+1 >= len(args) {
+						return nil
+					}
+					n, pErr := strconv.ParseInt(string(args[i+1]), 10, 64)
+					if pErr != nil {
+						return fmt.Errorf("invalid ENTRIESADDED: %w", pErr)
+					}
+					entriesAdded = n
+					i++
+				case "MAXDELETEDID":
+					if i+1 >= len(args) {
+						return nil
+					}
+					maxDeletedID = string(args[i+1])
+					i++
+				}
+			}
+			return s.XSetID(key, lastID, entriesAdded, maxDeletedID)
+		}
+
+	case "XCFGSET":
+		// Internal no-op config command — accept for wire compatibility.
+		return nil
+
+	case "BZMPOP":
+		// Non-blocking equivalent: BZMPOP timeout numkeys key... MIN|MAX [COUNT n]
+		// Same approach as BZPOPMAX/BZPOPMIN — do not block on replica.
+		if len(args) >= 5 {
+			numKeys, kErr := strconv.Atoi(string(args[2]))
+			if kErr != nil || numKeys < 1 || 3+numKeys > len(args) {
+				return nil
+			}
+			keys := make([]string, numKeys)
+			for i := 0; i < numKeys; i++ {
+				keys[i] = string(args[3+i])
+			}
+			modifier := strings.ToUpper(string(args[3+numKeys]))
+			if modifier != "MIN" && modifier != "MAX" {
+				return nil
+			}
+			count := 1
+			if len(args) >= 5+numKeys && strings.ToUpper(string(args[4+numKeys])) == "COUNT" {
+				if c, cErr := strconv.Atoi(string(args[5+numKeys])); cErr == nil && c > 0 {
+					count = c
+				}
+			}
+			_, _, err := s.ZMPop(keys, modifier, count)
+			return err
+		}
+
+	case "MOVE", "SWAPDB":
+		// Single-DB server: no-ops that still advance offset on master.
+		return nil
+
 	// ========== P1.5: 修复复制数据丢失 ==========
 
 	case "RESTORE":

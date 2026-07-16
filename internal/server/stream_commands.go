@@ -1029,10 +1029,12 @@ func (h *Handler) executeXACKDEL(state *connState, key, group, mode string, ids 
 				logger.Logger.Warn().Err(refErr).Str("key", key).Str("id", id).
 					Msg("XACKDEL: failed to remove PEL refs")
 			}
+			// Align with KEEPREF / Redis-style codes: 1 if stream entry
+			// deleted, -1 if the ID was already missing.
 			if deleted > 0 {
 				results[i] = proto.NewInteger(1)
 			} else {
-				results[i] = proto.NewInteger(1)
+				results[i] = proto.NewInteger(-1)
 			}
 		}
 	case "ACKED":

@@ -493,6 +493,101 @@ func TestCheckAndHandleRedirect_NoRedirect(t *testing.T) {
 	assert.True(t, resp == nil)
 }
 
+// TestCheckAndHandleRedirect_ImportingWriteFence blocks ASKING writes (not RESTORE)
+// on IMPORTING slots to prevent racing with Phase-1 migration RESTORE.
+func TestCheckAndHandleRedirect_ImportingWriteFence(t *testing.T) {
+	dbPath := t.TempDir()
+	db, err := store.NewBotreonStore(dbPath)
+	assert.NoError(t, err)
+	defer db.Close()
+
+	c, err := cluster.NewCluster(db, "", "127.0.0.1:6337")
+	assert.NoError(t, err)
+	source := cluster.NewNode("source-node", "127.0.0.1:6338")
+	c.AddNode(source)
+	c.SetSlotImporting(42, "source-node")
+	// Force key into slot 42 via hash tag is hard; use any key and mark that slot.
+	key := "fencekey"
+	slot := cluster.Slot(key)
+	c.SetSlotImporting(slot, "source-node")
+
+	handler := &Handler{
+		Db:      db,
+		Cluster: c,
+		conns:   make(map[*connState]*connMeta),
+		Port:    6337,
+	}
+
+	// ASKING + SET → fenced
+	state := &connState{clusterAsking: true, currentCmd: "SET"}
+	resp := handler.checkAndHandleRedirect(state, key)
+	assert.NotNil(t, resp)
+	errStr := resp.String()
+	if !strings.Contains(errStr, "IMPORTING") && !strings.Contains(errStr, "fenced") {
+		t.Fatalf("expected fence error, got %s", errStr)
+	}
+	assert.False(t, state.clusterAsking) // one-shot cleared
+
+	// ASKING + GET → allowed
+	state = &connState{clusterAsking: true, currentCmd: "GET"}
+	resp = handler.checkAndHandleRedirect(state, key)
+	assert.True(t, resp == nil)
+
+	// ASKING + RESTORE → allowed (migration path)
+	state = &connState{clusterAsking: true, currentCmd: "RESTORE"}
+	resp = handler.checkAndHandleRedirect(state, key)
+	assert.True(t, resp == nil)
+}
+
+// TestCheckAndHandleRedirect_MigratingWriteFence blocks writes to existing keys
+// on a MIGRATING owner while still serving reads (and ASKing when key missing).
+func TestCheckAndHandleRedirect_MigratingWriteFence(t *testing.T) {
+	dbPath := t.TempDir()
+	db, err := store.NewBotreonStore(dbPath)
+	assert.NoError(t, err)
+	defer db.Close()
+
+	c, err := cluster.NewCluster(db, "", "127.0.0.1:6337")
+	assert.NoError(t, err)
+	target := cluster.NewNode("target-node", "127.0.0.1:6338")
+	c.AddNode(target)
+
+	key := "migfence"
+	slot := cluster.Slot(key)
+	assert.NoError(t, c.AssignSlot(slot, c.Myself.ID))
+	c.SetSlotMigrating(slot, "target-node")
+	assert.NoError(t, db.Set(key, "v"))
+
+	handler := &Handler{
+		Db:      db,
+		Cluster: c,
+		conns:   make(map[*connState]*connMeta),
+		Port:    6337,
+	}
+
+	// Write fenced
+	state := &connState{currentCmd: "SET"}
+	resp := handler.checkAndHandleRedirect(state, key)
+	assert.NotNil(t, resp)
+	if !strings.Contains(resp.String(), "MIGRATING") {
+		t.Fatalf("expected MIGRATING fence, got %s", resp.String())
+	}
+
+	// Read allowed
+	state = &connState{currentCmd: "GET"}
+	resp = handler.checkAndHandleRedirect(state, key)
+	assert.True(t, resp == nil)
+
+	// Missing key → ASK
+	state = &connState{currentCmd: "GET"}
+	resp = handler.checkAndHandleRedirect(state, "other-key-not-present-xyz")
+	// may or may not be same slot; only assert if same slot
+	if cluster.Slot("other-key-not-present-xyz") == slot {
+		assert.NotNil(t, resp)
+		assert.True(t, strings.Contains(resp.String(), "ASK"))
+	}
+}
+
 // TestCheckAndHandleMultiKeyRedirect_NilCluster 验证非集群模式返回 nil
 // Kills CONDITIONALS_NEGATION on `h.Cluster == nil` in multi-key
 func TestCheckAndHandleMultiKeyRedirect_NilCluster(t *testing.T) {

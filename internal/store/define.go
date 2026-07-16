@@ -93,6 +93,8 @@ type BotreonStore struct {
 
 	// 查询预算 — O(n) scan 防退化
 	queryBudgetConfig atomic.Pointer[QueryBudgetConfig]
+	// queryBudgetTrips counts how many times checkScanBudget returned ErrQueryBudgetExceeded.
+	queryBudgetTrips atomic.Int64
 
 	// 重试指标
 	retryMu      sync.Mutex

@@ -1,6 +1,11 @@
 package server
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/lbp0200/BoltDB/internal/proto"
+	"github.com/lbp0200/BoltDB/internal/replication"
+)
 
 // allDispatchCommands 包含 handler_dispatch.go switch 中所有已注册的命令。
 // 用于启动时校验 isWriteCommand 一致性。
@@ -98,6 +103,39 @@ func ValidateWriteCommandConsistency() error {
 // isWriteCommand 检查是否是写命令
 func isWriteCommand(cmd string) bool {
 	return getWriteCommandSet()[cmd]
+}
+
+// shouldPropagateCommand reports whether a successful write should enter the
+// replication stream via processRequest/EXEC.
+//
+// Excluded:
+//   - control/admin commands that are never stream-replicated
+//   - SPOP: handler canonicalizes to SREM of the actual members (single path)
+//   - commands in replication.ReplicatedCommandsExcluded (no slave handler yet,
+//     or external side effects) — propagating them causes FULLRESYNC thrash
+func shouldPropagateCommand(cmd string) bool {
+	switch cmd {
+	case "REPLICAOF", "PSYNC", "REPLCONF", "SPOP":
+		return false
+	}
+	if _, excluded := replication.IsReplicationExcluded(cmd); excluded {
+		return false
+	}
+	return true
+}
+
+// isErrorResponse reports whether resp is a Redis error reply.
+// Failed master writes must not enter the backlog (see processRequest).
+func isErrorResponse(resp proto.RESP) bool {
+	if resp == nil {
+		return true
+	}
+	switch resp.(type) {
+	case *proto.Error, proto.Error:
+		return true
+	default:
+		return false
+	}
 }
 
 // getWriteCommandSet 返回写命令集合（与 isWriteCommand 相同）

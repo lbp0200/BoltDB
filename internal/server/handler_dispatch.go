@@ -41,7 +41,14 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			return proto.NewSimpleString("QUEUED")
 		}
 	}
+	// Expose current command to redirect/fence helpers for the duration of dispatch.
+	state.currentCmd = cmd
 	state.mu.Unlock()
+	defer func() {
+		state.mu.Lock()
+		state.currentCmd = ""
+		state.mu.Unlock()
+	}()
 
 	switch cmd {
 	// 连接命令

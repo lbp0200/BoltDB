@@ -628,6 +628,51 @@ func TestLoadRDB_WithStreamData(t *testing.T) {
 	assert.Equal(t, "1000000000000-0", entries[0].ID)
 }
 
+// TestLoadRDB_StreamWithConsumerGroups verifies type-15 RDB restores XGROUP + PEL.
+func TestLoadRDB_StreamWithConsumerGroups(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	_, err := testStore.XAdd("sgstream", store.StreamXAddOptions{}, "2000000000000-0", map[string]string{"f": "v"})
+	assert.NoError(t, err)
+	assert.NoError(t, testStore.XGroupCreate("sgstream", "g1", "0"))
+
+	// Deliver to create PEL
+	_, err = testStore.XReadGroup(nil, "g1", "c1", 10, 0, "sgstream", ">")
+	assert.NoError(t, err)
+
+	groups, err := testStore.XInfoGroups("sgstream")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(groups))
+	assert.Equal(t, "g1", groups[0].Name)
+
+	pending, err := testStore.XPending("sgstream", "g1")
+	assert.NoError(t, err)
+	assert.True(t, len(pending) >= 1)
+
+	rdbData, err := GenerateRDB(testStore)
+	assert.NoError(t, err)
+
+	testStore2 := setupTestStore(t)
+	defer testStore2.Close()
+	assert.NoError(t, LoadRDBWithStore(rdbData, testStore2))
+
+	groups2, err := testStore2.XInfoGroups("sgstream")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(groups2))
+	assert.Equal(t, "g1", groups2[0].Name)
+	assert.Equal(t, groups[0].LastDeliveredID, groups2[0].LastDeliveredID)
+
+	pending2, err := testStore2.XPending("sgstream", "g1")
+	assert.NoError(t, err)
+	assert.Equal(t, len(pending), len(pending2))
+
+	entries, err := testStore2.XRange("sgstream", "-", "+", 0)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(entries))
+}
+
 // TestDecodeLatLonBits tests decodeLatLonBits function directly
 func TestDecodeLatLonBits(t *testing.T) {
 	t.Parallel()

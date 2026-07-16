@@ -113,13 +113,16 @@ func (mc *migrateConn) sendRestore(key string, data []byte) error {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 
+	// Do NOT use REPLACE. During MIGRATING, ASKING clients may write newer
+	// values on the IMPORTING target; REPLACE would clobber them with a stale
+	// source snapshot (data loss). If the key already exists on the target,
+	// keep the target value and continue Phase 1.
 	restoreCmd := &proto.Array{
 		Args: [][]byte{
 			[]byte("RESTORE"),
 			[]byte(key),
 			[]byte("0"),
 			data,
-			[]byte("REPLACE"),
 		},
 	}
 	if err := proto.WriteRESP(mc.conn, restoreCmd); err != nil {
@@ -131,11 +134,29 @@ func (mc *migrateConn) sendRestore(key string, data []byte) error {
 		return fmt.Errorf("read RESTORE response: %w", err)
 	}
 
-	// 检查错误响应
-	if isErrorResponse(resp) {
-		return fmt.Errorf("target error: %s", string(resp.Args[0]))
+	msg := restoreResponseMsg(resp)
+	if msg == "" || msg == "OK" {
+		return nil
 	}
-	return nil
+	// Key already present on target (ASKING write or prior partial copy) —
+	// leave target value intact.
+	if strings.Contains(msg, "already exists") || strings.Contains(msg, "BUSYKEY") {
+		logger.Logger.Debug().
+			Str("key", key).
+			Str("msg", msg).
+			Msg("migrate RESTORE skipped: target key exists (no REPLACE)")
+		return nil
+	}
+	return fmt.Errorf("target error: %s", msg)
+}
+
+// restoreResponseMsg extracts a response message from ReadRESP's Array form.
+// Success is "OK"; errors look like "ERR ..." (leading '-' already stripped).
+func restoreResponseMsg(resp *proto.Array) string {
+	if resp == nil || len(resp.Args) == 0 {
+		return "empty response"
+	}
+	return string(resp.Args[0])
 }
 
 func (mc *migrateConn) sendStable(slot uint32) {
@@ -151,20 +172,76 @@ func (mc *migrateConn) sendStable(slot uint32) {
 		},
 	}
 	_ = proto.WriteRESP(mc.conn, stableCmd)
+	// Drain optional reply so the connection stays aligned for further commands.
+	_, _ = proto.ReadRESP(mc.reader)
+}
+
+// sendSetSlotImporting marks the target slot as IMPORTING from sourceNodeID.
+func (mc *migrateConn) sendSetSlotImporting(slot uint32, sourceNodeID string) error {
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+
+	cmd := &proto.Array{
+		Args: [][]byte{
+			[]byte("CLUSTER"),
+			[]byte("SETSLOT"),
+			[]byte(strconv.FormatUint(uint64(slot), 10)),
+			[]byte("IMPORTING"),
+			[]byte(sourceNodeID),
+		},
+	}
+	if err := proto.WriteRESP(mc.conn, cmd); err != nil {
+		return fmt.Errorf("write SETSLOT IMPORTING: %w", err)
+	}
+	resp, err := proto.ReadRESP(mc.reader)
+	if err != nil {
+		return fmt.Errorf("read SETSLOT IMPORTING: %w", err)
+	}
+	msg := restoreResponseMsg(resp)
+	if msg != "" && msg != "OK" && strings.HasPrefix(msg, "ERR") {
+		return fmt.Errorf("SETSLOT IMPORTING: %s", msg)
+	}
+	return nil
+}
+
+// sendDelKeysInSlot asks the target to drop all keys in slot (Phase-1 abort cleanup).
+func (mc *migrateConn) sendDelKeysInSlot(slot uint32) error {
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+
+	cmd := &proto.Array{
+		Args: [][]byte{
+			[]byte("CLUSTER"),
+			[]byte("DELKEYSINSLOT"),
+			[]byte(strconv.FormatUint(uint64(slot), 10)),
+		},
+	}
+	if err := proto.WriteRESP(mc.conn, cmd); err != nil {
+		return fmt.Errorf("write DELKEYSINSLOT: %w", err)
+	}
+	resp, err := proto.ReadRESP(mc.reader)
+	if err != nil {
+		return fmt.Errorf("read DELKEYSINSLOT: %w", err)
+	}
+	msg := restoreResponseMsg(resp)
+	if strings.HasPrefix(msg, "ERR") {
+		return fmt.Errorf("DELKEYSINSLOT: %s", msg)
+	}
+	return nil
+}
+
+// abortTargetImport best-effort: delete partial RESTORE keys and clear IMPORTING.
+func (mc *migrateConn) abortTargetImport(slot uint32) {
+	if err := mc.sendDelKeysInSlot(slot); err != nil {
+		logger.Logger.Warn().Err(err).Uint32("slot", slot).Msg("abortTargetImport: DELKEYSINSLOT failed")
+	}
+	mc.sendStable(slot)
 }
 
 func (mc *migrateConn) close() {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 	mc.conn.Close() //nolint:errcheck
-}
-
-// isErrorResponse 检查 RESP Array 响应是否为错误。
-func isErrorResponse(resp *proto.Array) bool {
-	if resp == nil || len(resp.Args) == 0 || len(resp.Args[0]) == 0 {
-		return false
-	}
-	return resp.Args[0][0] == '-'
 }
 
 // collectSlotKeys 收集指定 slot 的所有 key。
@@ -177,6 +254,26 @@ func (c *Cluster) collectSlotKeys(slot uint32) ([]string, error) {
 		return true
 	})
 	return keys, err
+}
+
+// DelKeysInSlot deletes every key that hashes to slot. Used for migration
+// abort cleanup on the IMPORTING target (partial RESTORE orphans).
+func (c *Cluster) DelKeysInSlot(slot uint32) (int, error) {
+	keys, err := c.collectSlotKeys(slot)
+	if err != nil {
+		return 0, err
+	}
+	deleted := 0
+	for _, key := range keys {
+		n, dErr := c.Store.Del(key)
+		if dErr != nil {
+			return deleted, fmt.Errorf("del key %s in slot %d: %w", key, slot, dErr)
+		}
+		if n > 0 {
+			deleted++
+		}
+	}
+	return deleted, nil
 }
 
 // MigrateSlotCrashSafe 是 MigrateSlot 的 crash-safe 版本（两阶段提交）。
@@ -269,6 +366,11 @@ func (c *Cluster) MigrateSlotCrashSafe(slot uint32, targetNodeID string, copyKey
 	}
 	defer mc.close()
 
+	// Ensure target marks slot IMPORTING so ASKING + write fence apply.
+	if err := mc.sendSetSlotImporting(slot, c.Myself.ID); err != nil {
+		logger.Logger.Warn().Err(err).Uint32("slot", slot).Msg("MigrateSlotCrashSafe: SETSLOT IMPORTING on target failed (continuing)")
+	}
+
 	// 逐 key DUMP → RESTORE（不持久化逐 key 状态；若 crash，recovery 对 Phase 1 做回滚而非恢复）
 	for _, key := range keys {
 		// DUMP key
@@ -278,11 +380,14 @@ func (c *Cluster) MigrateSlotCrashSafe(slot uint32, targetNodeID string, copyKey
 				// key 在收集中存在但在 DUMP 时已被删除，跳过
 				continue
 			}
+			// Phase-1 failure: clean partial RESTOREs on target
+			mc.abortTargetImport(slot)
 			return fmt.Errorf("dump key %s: %w", key, err)
 		}
 
 		// 发送 RESTORE 到目标
 		if err := mc.sendRestore(key, data); err != nil {
+			mc.abortTargetImport(slot)
 			return fmt.Errorf("restore key %s on target: %w", key, err)
 		}
 	}
@@ -411,10 +516,20 @@ func (c *Cluster) RecoverSlotMigrations() error {
 
 		switch journal.Phase {
 		case PhaseInit, PhaseCopying:
-			// Phase 1 未完成 → 回滚（清除迁移状态，key 未被删除）
+			// Phase 1 未完成 → 回滚源端 MIGRATING；并尽力清理目标上的部分 RESTORE
 			logger.Logger.Warn().
 				Uint32("slot", slot).
-				Msg("RecoverSlotMigrations: Phase 1 incomplete, rolling back (keys are intact)")
+				Str("target_addr", journal.TargetAddr).
+				Msg("RecoverSlotMigrations: Phase 1 incomplete, rolling back + cleaning target orphans")
+			if journal.TargetAddr != "" {
+				if tmc, dialErr := newMigrateConn(journal.TargetAddr); dialErr != nil {
+					logger.Logger.Warn().Err(dialErr).Uint32("slot", slot).
+						Msg("RecoverSlotMigrations: cannot reach target for abort cleanup")
+				} else {
+					tmc.abortTargetImport(slot)
+					tmc.close()
+				}
+			}
 			c.ClearSlotMigration(slot)
 			_ = c.deleteJournal(slot)
 

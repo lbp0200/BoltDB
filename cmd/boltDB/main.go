@@ -47,6 +47,8 @@ var (
 	tlsRequireFlag          = flag.Bool("tls-require", false, "reject non-TLS connections when TLS is enabled")
 	configFileFlag          = flag.String("config", "", "path to TOML config file")
 	dumpConfigFlag          = flag.Bool("dump-config", false, "print default config template and exit")
+	// queryBudgetMaxScan=0 means unlimited (compat default). Large deployments should set e.g. 1_000_000.
+	queryBudgetMaxScanFlag = flag.Int64("query-budget-max-scan", 0, "max iterations per scan (GEO/Z* etc); 0 = unlimited")
 )
 
 // getEnv returns the value of the environment variable named by key, or
@@ -260,6 +262,16 @@ func main() {
 		logger.Logger.Info().Msg("Skipping startup cleanup")
 	}
 
+	// Optional query budget for pathological O(n) scans (default unlimited).
+	if *queryBudgetMaxScanFlag > 0 {
+		db.SetQueryBudgetConfig(store.QueryBudgetConfig{
+			MaxScanIterations: *queryBudgetMaxScanFlag,
+		})
+		logger.Logger.Info().
+			Int64("max_scan_iterations", *queryBudgetMaxScanFlag).
+			Msg("Query budget enabled")
+	}
+
 	// 初始化复制管理器
 	replMgr := replication.NewReplicationManager(db)
 
@@ -340,6 +352,7 @@ func main() {
 
 	// 初始化 metrics 采集
 	collector := metrics.NewCollector()
+	collector.QueryBudgetTripsFn = db.GetQueryBudgetTrips
 	collector.RetryMetricsFn = func() (int64, int64, int64, int64, int64, float64) {
 		m := db.GetRetryMetrics()
 		return m.ActiveRetries, m.TotalRetries, m.WritesBlocked, m.L0Rejected, m.L0Delayed, m.LastL0Score

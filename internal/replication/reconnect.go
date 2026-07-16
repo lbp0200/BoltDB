@@ -411,22 +411,19 @@ func errorsIsStop(err error, stopCh <-chan struct{}) bool {
 	}
 }
 
-// isTransientReplicationError 判断复制命令的错误是否属于临时性错误
-// 临时性错误只记录日志并跳过，不触发全量重同步
+// isTransientReplicationError 判断复制命令的错误是否可安全跳过。
+//
+// 重要：L0 背压（write rejected）和 retry 耗尽（max retries exhausted）
+// 绝不能跳过——跳过会永久丢失该条 mutation，导致主从静默发散。
+// 这些错误应触发重连 / FULLRESYNC（readCommandLoop 返回 error）。
+//
+// 仅保留真正幂等/无害的情况：key not found（主已删而从本无此键）。
 func isTransientReplicationError(err error) bool {
 	if err == nil {
 		return false
 	}
 	errStr := err.Error()
-	// retryUpdate 重试耗尽（L0 压力大时发生，不触发全量同步）
-	if strings.Contains(errStr, "max retries exhausted") {
-		return true
-	}
-	// 主动拒绝（P1-B 背压限制）
-	if strings.Contains(errStr, "write rejected") {
-		return true
-	}
-	// 键不存在（主从切换时的正常现象）
+	// 键不存在（主从短暂不一致时的正常现象，对 DEL/SREM 等幂等）
 	if strings.Contains(errStr, "key not found") {
 		return true
 	}
