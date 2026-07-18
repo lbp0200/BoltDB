@@ -72,7 +72,7 @@ jobs:
         # 修改跳过列表时请在对应项后注明原因。
         run: |
           # ----- 多节点集群测试 (需要启动多个进程, 放 Tier B) -----
-          SKIP='TestCluster(MultiNode|Gossip|SlotSync|SetSlotNodePropagation|MovedRedirect|AskRedirect|Failover|MigrateKey|Soak|BlockingFuzz)'
+          SKIP='TestCluster(MultiNode|Gossip|SlotSync|SetSlotNodePropagation|MovedRedirect|AskRedirect|Failover|MigrateKey|MigrateSlot|Soak|BlockingFuzz)'
           # ----- 长时间运行 / 资源密集型 -----
           SKIP="$SKIP|TestGoroutineLeak"                                          # 需要完整的 goroutine 跟踪
           SKIP="$SKIP|TestSoak|TestSoakReplication|TestSoakReplicationShortStrict" # 耗时 > 5min
