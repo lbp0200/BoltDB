@@ -114,30 +114,21 @@ jobs:
       - name: Install redis-server for mixed-cluster tests
         run: sudo apt-get update && sudo apt-get install -y redis-server
 
-      - name: Multi-node cluster tests
+      - name: Integration tests (merged — single TestMain shared server)
+        # 合并所有 ./cmd/integration/ 测试为单个 go test 命令。
+        # 每个独立的 go test 会启动各自的 TestMain 共享服务器，导致端口/DB 资源冲突。
+        # 单个命令确保共享服务器只启动一次，所有测试复用。
         run: |
-          CLUSTER='TestCluster(MultiNode|GossipPropagation|SlotSync|SetSlotNodePropagation|MovedRedirect|AskRedirect|Failover|MigrateKey|BlockingFuzz)'
-          go test -race -timeout 300s -run "$CLUSTER" -count=1 ./cmd/integration/
-
-      - name: Goroutine leak tests
-        run: |
-          go test -race -timeout 120s -run 'TestGoroutineLeak' -count=1 ./cmd/integration/
-
-      - name: Chaos / Fuzz tests
-        # 已知 GHA 上 Chaos 测试超时（资源竞争），放独立步骤用更长超时
-        run: |
-          go test -race -timeout 300s -run 'Test(FuzzServer|Chaos)' -count=1 ./cmd/integration/
-
-      - name: Replication tests
-        # 合并所有复制测试（含已知 flaky），共用同一个 TestMain 共享服务器。
-        # 独立步骤会导致 TestMain 重复启动，端口冲突。
-        run: |
-          go test -race -timeout 900s -run 'TestReplication' \
+          ALL_TESTS='TestCluster(MultiNode|GossipPropagation|SlotSync|SetSlotNodePropagation|MovedRedirect|AskRedirect|Failover|MigrateKey|BlockingFuzz)'
+          ALL_TESTS="$ALL_TESTS|TestGoroutineLeak"
+          ALL_TESTS="$ALL_TESTS|Test(FuzzServer|Chaos)"
+          ALL_TESTS="$ALL_TESTS|TestReplication"
+          ALL_TESTS="$ALL_TESTS|TestSentinel"
+          ALL_TESTS="$ALL_TESTS|TestMixedCluster"
+          ALL_TESTS="$ALL_TESTS|TestSplitBrain|TestRegressionFailoverOscillation"
+          ALL_TESTS="$ALL_TESTS|Test(ShutdownWithReplication|GracefulShutdown)"
+          go test -race -timeout 900s -run "$ALL_TESTS" \
             -skip 'TestReplication(Stress|Chaos)' -count=1 ./cmd/integration/
-
-      - name: Sentinel tests
-        run: |
-          go test -race -timeout 120s -run 'TestSentinel' -count=1 ./cmd/integration/
 
       - name: Regression tests (fast)
         # FailoverOscillation 跳过说明: 已知 flaky（GHA 上 33s+ 超时），
