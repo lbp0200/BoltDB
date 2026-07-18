@@ -128,9 +128,18 @@ jobs:
           go test -race -timeout 120s -run 'Test(FuzzServer|Chaos)' -count=1 ./cmd/integration/
 
       - name: Replication tests
+        # 已知 flaky: NewCommands / StreamXDelex / SortedSetCommands / Completeness_Key
+        # 在 GHA 上 FULLRESYNC 需 20-30s，放独立步骤（超时 900s）
         run: |
           go test -race -timeout 600s -run 'TestReplication' \
-            -skip 'TestReplication(Stress|Chaos)' -count=1 ./cmd/integration/
+            -skip 'TestReplication(Stress|Chaos|NewCommands|StreamXDelex|SortedSetCommands|Completeness_Key)' \
+            -count=1 ./cmd/integration/
+
+      - name: Replication tests (flaky — extended timeout)
+        if: always()
+        run: |
+          go test -race -timeout 900s -run 'TestReplication(NewCommands|StreamXDelex|SortedSetCommands|Completeness_Key)' \
+            -count=1 ./cmd/integration/
 
       - name: Sentinel tests
         run: |
