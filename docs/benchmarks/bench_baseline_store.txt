@@ -1,47 +1,46 @@
-goos: darwin
-goarch: amd64
+goos: linux
+goarch: arm64
 pkg: github.com/lbp0200/BoltDB/internal/store
-cpu: Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz
-BenchmarkStringMGet_5-8	118306	10658 ns/op 3584 B/op 120 allocs/op
-BenchmarkStringMGet_5-8	119934	10752 ns/op 3585 B/op 120 allocs/op
-BenchmarkStringMGet_5-8	96294	13007 ns/op 3586 B/op 120 allocs/op
-BenchmarkStringMGet_10-8	42519	27200 ns/op 7110 B/op 240 allocs/op
-BenchmarkStringMGet_10-8	42385	28327 ns/op 7111 B/op 240 allocs/op
-BenchmarkStringMGet_10-8	43870	26808 ns/op 7112 B/op 240 allocs/op
-BenchmarkStringMGet_100-8	4094	261815 ns/op 70749 B/op 2401 allocs/op
-BenchmarkStringMGet_100-8	4561	248131 ns/op 70753 B/op 2401 allocs/op
-BenchmarkStringMGet_100-8	4519	255419 ns/op 70766 B/op 2402 allocs/op
-BenchmarkStringSet-8	61903	23031 ns/op 2132 B/op 67 allocs/op
-BenchmarkStringSet-8	52617	22630 ns/op 2132 B/op 67 allocs/op
-BenchmarkStringSet-8	52113	24131 ns/op 2135 B/op 67 allocs/op
-BenchmarkStringGet-8	462739	2738 ns/op 761 B/op 25 allocs/op
-BenchmarkStringGet-8	400053	2805 ns/op 761 B/op 25 allocs/op
-BenchmarkStringGet-8	407218	2618 ns/op 761 B/op 25 allocs/op
-BenchmarkZAdd_100-8	31586	35930 ns/op 4219 B/op 131 allocs/op
-BenchmarkZAdd_100-8	34056	38013 ns/op 4223 B/op 131 allocs/op
-BenchmarkZAdd_100-8	34654	34943 ns/op 4222 B/op 131 allocs/op
-BenchmarkZAdd_1K-8	34658	38563 ns/op 4227 B/op 131 allocs/op
-BenchmarkZAdd_1K-8	34983	36165 ns/op 4227 B/op 131 allocs/op
-BenchmarkZAdd_1K-8	33858	35461 ns/op 4228 B/op 131 allocs/op
-BenchmarkZAdd_10K-8	33820	34807 ns/op 4228 B/op 131 allocs/op
-BenchmarkZAdd_10K-8	34096	37677 ns/op 4234 B/op 131 allocs/op
-BenchmarkZAdd_10K-8	34682	34091 ns/op 4231 B/op 131 allocs/op
-BenchmarkZRange_100-8	29524	37955 ns/op 13942 B/op 245 allocs/op
-BenchmarkZRange_100-8	34323	34874 ns/op 13940 B/op 245 allocs/op
-BenchmarkZRange_100-8	34354	34354 ns/op 13941 B/op 245 allocs/op
-BenchmarkZRange_1K-8	4240	289690 ns/op 109422 B/op 2055 allocs/op
-BenchmarkZRange_1K-8	4513	277691 ns/op 109414 B/op 2055 allocs/op
-BenchmarkZRange_1K-8	3972	264466 ns/op 109405 B/op 2055 allocs/op
-BenchmarkZRange_10K-8	438	2864844 ns/op 1464532 B/op 20137 allocs/op
-BenchmarkZRange_10K-8	435	2716045 ns/op 1464414 B/op 20135 allocs/op
-BenchmarkZRange_10K-8	412	2712595 ns/op 1464543 B/op 20138 allocs/op
-BenchmarkZRank_100-8	75984	18750 ns/op 3149 B/op 101 allocs/op
-BenchmarkZRank_100-8	63048	19301 ns/op 3151 B/op 101 allocs/op
-BenchmarkZRank_100-8	62032	19290 ns/op 3152 B/op 101 allocs/op
-BenchmarkZRank_1K-8	9219	127367 ns/op 10563 B/op 555 allocs/op
-BenchmarkZRank_1K-8	9286	121559 ns/op 10558 B/op 555 allocs/op
-BenchmarkZRank_1K-8	10000	115438 ns/op 10551 B/op 555 allocs/op
-BenchmarkZRank_10K-8	1004	1144935 ns/op 84544 B/op 5093 allocs/op
-BenchmarkZRank_10K-8	1088	1148480 ns/op 84595 B/op 5094 allocs/op
-BenchmarkZRank_10K-8	1040	1169774 ns/op 84678 B/op 5095 allocs/op
-ok  	github.com/lbp0200/BoltDB/internal/store	202.875s
+BenchmarkStringMGet_5-8	40725	28663 ns/op 3585 B/op 120 allocs/op
+BenchmarkStringMGet_5-8	45523	27368 ns/op 3586 B/op 120 allocs/op
+BenchmarkStringMGet_5-8	44695	27340 ns/op 3587 B/op 120 allocs/op
+BenchmarkStringMGet_10-8	21606	55160 ns/op 7114 B/op 240 allocs/op
+BenchmarkStringMGet_10-8	21513	56430 ns/op 7117 B/op 240 allocs/op
+BenchmarkStringMGet_10-8	21093	57752 ns/op 7120 B/op 240 allocs/op
+BenchmarkStringMGet_100-8	2098	599009 ns/op 70853 B/op 2403 allocs/op
+BenchmarkStringMGet_100-8	2125	594049 ns/op 70871 B/op 2404 allocs/op
+BenchmarkStringMGet_100-8	2103	597517 ns/op 70890 B/op 2404 allocs/op
+BenchmarkStringSet-8	27270	42422 ns/op 2143 B/op 67 allocs/op
+BenchmarkStringSet-8	28320	42656 ns/op 2145 B/op 67 allocs/op
+BenchmarkStringSet-8	28432	42793 ns/op 2147 B/op 67 allocs/op
+BenchmarkStringGet-8	242956	5185 ns/op 763 B/op 25 allocs/op
+BenchmarkStringGet-8	235034	4704 ns/op 763 B/op 25 allocs/op
+BenchmarkStringGet-8	226623	5657 ns/op 763 B/op 25 allocs/op
+BenchmarkZAdd_100-8	18158	66856 ns/op 4237 B/op 131 allocs/op
+BenchmarkZAdd_100-8	18150	66602 ns/op 4240 B/op 131 allocs/op
+BenchmarkZAdd_100-8	17802	66698 ns/op 4243 B/op 132 allocs/op
+BenchmarkZAdd_1K-8	18055	67183 ns/op 4247 B/op 132 allocs/op
+BenchmarkZAdd_1K-8	18079	68365 ns/op 4252 B/op 132 allocs/op
+BenchmarkZAdd_1K-8	18136	66979 ns/op 4254 B/op 132 allocs/op
+BenchmarkZAdd_10K-8	17781	69417 ns/op 4259 B/op 132 allocs/op
+BenchmarkZAdd_10K-8	17856	68409 ns/op 4262 B/op 132 allocs/op
+BenchmarkZAdd_10K-8	17372	68533 ns/op 4265 B/op 132 allocs/op
+BenchmarkZRange_100-8	16878	71045 ns/op 13979 B/op 246 allocs/op
+BenchmarkZRange_100-8	18550	66696 ns/op 13978 B/op 246 allocs/op
+BenchmarkZRange_100-8	18556	65328 ns/op 13979 B/op 246 allocs/op
+BenchmarkZRange_1K-8	2308	534851 ns/op 109732 B/op 2061 allocs/op
+BenchmarkZRange_1K-8	2296	537254 ns/op 109755 B/op 2062 allocs/op
+BenchmarkZRange_1K-8	2282	536826 ns/op 109775 B/op 2062 allocs/op
+BenchmarkZRange_10K-8	171	7201128 ns/op 1470608 B/op 20257 allocs/op
+BenchmarkZRange_10K-8	174	7040494 ns/op 1470654 B/op 20258 allocs/op
+BenchmarkZRange_10K-8	172	7082508 ns/op 1470972 B/op 20264 allocs/op
+BenchmarkZRank_100-8	35295	35888 ns/op 3175 B/op 102 allocs/op
+BenchmarkZRank_100-8	34862	33703 ns/op 3173 B/op 102 allocs/op
+BenchmarkZRank_100-8	35770	34467 ns/op 3176 B/op 102 allocs/op
+BenchmarkZRank_1K-8	5443	220940 ns/op 10715 B/op 558 allocs/op
+BenchmarkZRank_1K-8	5407	222458 ns/op 10724 B/op 558 allocs/op
+BenchmarkZRank_1K-8	5377	223246 ns/op 10734 B/op 558 allocs/op
+BenchmarkZRank_10K-8	549	2206044 ns/op 86397 B/op 5129 allocs/op
+BenchmarkZRank_10K-8	560	2188852 ns/op 86443 B/op 5130 allocs/op
+BenchmarkZRank_10K-8	547	2298386 ns/op 86722 B/op 5136 allocs/op
+ok  	github.com/lbp0200/BoltDB/internal/store	80.631s

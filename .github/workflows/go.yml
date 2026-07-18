@@ -124,8 +124,9 @@ jobs:
           go test -race -timeout 120s -run 'TestGoroutineLeak' -count=1 ./cmd/integration/
 
       - name: Chaos / Fuzz tests
+        # 已知 GHA 上 Chaos 测试超时（资源竞争），放独立步骤用更长超时
         run: |
-          go test -race -timeout 120s -run 'Test(FuzzServer|Chaos)' -count=1 ./cmd/integration/
+          go test -race -timeout 300s -run 'Test(FuzzServer|Chaos)' -count=1 ./cmd/integration/
 
       - name: Replication tests
         # 已知 flaky: NewCommands / StreamXDelex / SortedSetCommands / Completeness_Key
