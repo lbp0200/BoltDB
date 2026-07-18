@@ -180,7 +180,7 @@ func waitForFullresync(t *testing.T, masterClient, slaveClient *redis.Client, ti
 	}
 	masterClient.Del(ctx, replSyncKey)
 	if !synced {
-		t.Logf("WARNING: slave FULLRESYNC not confirmed within %v (GHA runner may be slow)", timeout)
+		t.Fatalf("slave FULLRESYNC not confirmed within %v (GHA runner may be slow, try increasing timeout)", timeout)
 	}
 }
 
