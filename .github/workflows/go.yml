@@ -402,3 +402,33 @@ jobs:
             gofmt -l .
             exit 1
           fi
+
+  # Benchmark regression guard (Tier A)
+  # Compares proto/store benchmarks against cached baseline.
+  # Fails if any benchmark regresses >10% (configurable via GUARD_THRESHOLD).
+  # Update baseline with: ./scripts/guard_bench.sh --update
+  bench-regression:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.7"
+          cache: true
+
+      - name: Install benchstat
+        run: go install golang.org/x/perf/cmd/benchstat@latest
+
+      - name: Proto benchmark regression check
+        run: ./scripts/guard_bench.sh proto
+
+      - name: Store benchmark regression check
+        run: ./scripts/guard_bench.sh --store
+
+      - name: Server benchmark regression check
+        run: ./scripts/guard_bench.sh --server

@@ -3,7 +3,10 @@
 # Usage:
 #   ./scripts/guard_bench.sh              # compare proto benchmarks against baseline
 #   ./scripts/guard_bench.sh --store      # compare store benchmarks
+#   ./scripts/guard_bench.sh --server     # compare server benchmarks
 #   ./scripts/guard_bench.sh --update     # update proto baseline
+#   ./scripts/guard_bench.sh --store --update  # update store baseline
+#   ./scripts/guard_bench.sh --server --update  # update server baseline
 #
 # Exits non-zero if any benchmark regresses >10% (configurable via GUARD_THRESHOLD).
 # Dependencies: go, benchstat (go install golang.org/x/perf/cmd/benchstat@latest)
@@ -19,6 +22,7 @@ TARGET="${1:-proto}"
 [[ "${2:-}" == "--update" ]] && UPDATE=true
 [[ "${1:-}" == "--update" ]] && UPDATE=true && TARGET=proto
 [[ "${1:-}" == "--store" ]] && TARGET=store
+[[ "${1:-}" == "--server" ]] && TARGET=server
 
 case "$TARGET" in
   proto)
@@ -28,9 +32,16 @@ case "$TARGET" in
     CLEAN=false ;;
   store)
     PKG="$REPO_ROOT/internal/store"
-    PATTERN="BenchmarkStringSet|BenchmarkStringGet|BenchmarkStringMGet"
+    PATTERN="BenchmarkStringSet|BenchmarkStringGet|BenchmarkStringMGet|BenchmarkZAdd_|BenchmarkZRange_|BenchmarkZRank_"
     BASELINE="$TESTDATA/bench_baseline_store.txt"
     CLEAN=true ;;
+  server)
+    PKG="$REPO_ROOT/internal/server"
+    PATTERN="BenchmarkExecuteCommand_|BenchmarkResponseTypes|BenchmarkPubSub|BenchmarkParseScore"
+    BASELINE="$TESTDATA/bench_baseline_server.txt"
+    CLEAN=false
+    CLEAN_CMD='grep -E "^(Benchmark.*ns/op|ok |PASS|FAIL|---)"'
+    TIMEOUT=600s ;;
 esac
 
 if ! command -v benchstat &>/dev/null; then
@@ -43,8 +54,10 @@ RAW=$(mktemp)
 CLEANED=$(mktemp)
 trap "rm -f $RAW $CLEANED" EXIT
 
+TIMEOUT="${TIMEOUT:-300s}"
+
 echo "Running $TARGET benchmarks..."
-go test -bench="$PATTERN" -benchmem -count=5 -timeout=300s "$PKG" 2>/dev/null > "$RAW"
+go test -bench="$PATTERN" -benchmem -count=5 -timeout="$TIMEOUT" "$PKG" 2>/dev/null > "$RAW"
 
 if $CLEAN; then
   # Strip badger log noise and reassemble benchmark name + result
@@ -70,6 +83,8 @@ if $CLEAN; then
       }
     }
   ' "$RAW" > "$CLEANED"
+elif [ -n "${CLEAN_CMD:-}" ]; then
+  eval "$CLEAN_CMD" "$RAW" > "$CLEANED"
 else
   cp "$RAW" "$CLEANED"
 fi

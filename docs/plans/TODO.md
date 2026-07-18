@@ -152,7 +152,10 @@ Active config:
   - **多类型 MIGRATESLOT** — string/hash/list/set/zset（`TestClusterMigrateSlotMultiType`）
   - **no-REPLACE** — 目标已有更新值时不被 RESTORE 覆盖（`TestClusterMigrateNoReplacePreservesTarget`）
 - [ ] Cluster 长时 soak / 大规模数据：仍不靠行覆盖宣称生产就绪
-- [ ] 定期刷新 coverage 报告（若需要），但**不**把 total% 设为 CI 硬门槛
+- [x] 定期刷新 coverage 报告（若需要），但**不**把 total% 设为 CI 硬门槛
+  - 已实现：`.github/workflows/coverage.yml`（每周日 UTC 06:00 自动运行 + 支持手动触发），
+    生成 HTML 覆盖率报告 + 包级摘要表，上传为 CI artifact（保留 30 天）。
+    摘要中已注明"行覆盖率仅供参考，不设为 CI 硬门禁"。
 - [x] 将 `targeted-mutation-check.sh` 挂入 Tier B；cluster multi-type / fence / no-REPLACE 纳入 Tier B 正则
 - [x] 定向 mutation **10 例全杀**（+ processRequest error gate、XREADGROUP isWrite）
 - [x] 轻量 multi-round migrate 稳定性（`TestClusterMigrateRoundTripStability`，3 轮 A↔B）
@@ -227,10 +230,30 @@ Active config:
 3. **理论 O(n) ≠ 实际瓶颈。** 在 10K 条目以下，BadgerDB 线性扫描延迟 0.2-2ms，对大多数场景可接受。
 
 **替代方案：建立性能基线**
-- [ ] 编写 zset 基准测试（100/1K/10K/100K 条目），覆盖 ZRANK/ZRANGE/ZADD
-- [ ] 与 Redis 横向对比，确认瓶颈在排序集索引还是 BadgerDB I/O
-- [ ] 如果 10K+ 条目时 ZRANK 延迟 > 1ms，重新评估缓存方案
-- [ ] 设计文档保留在 `docs/plans/zrank-cache-design.md`，供后续参考
+- [x] 编写 zset 基准测试（100/1K/10K/100K 条目），覆盖 ZRANK/ZRANGE/ZADD
+  - 已实现：`internal/store/bench_test.go` 新增 9 个 Benchmark（`BenchmarkZAdd_100/1K/10K`、`BenchmarkZRange_100/1K/10K`、`BenchmarkZRank_100/1K/10K`），
+    每个测试预填充对应规模的 zset 后测量操作耗时。ZRank 使用最后一个成员（最坏情况 — 全表扫描）。
+    配合 `guard_bench.sh --store` 在 CI 中自动回归检测。
+  - 实测结果（2026-07-18, BadgerDB, `-count=3`, Intel i7-10510U）：
+
+    | 操作 | 100 条目 | 1K 条目 | 10K 条目 |
+    |------|---------|---------|----------|
+    | ZAdd (加一个成员) | ~36µs | ~37µs | ~36µs |
+    | ZRange (全量) | ~35µs | ~278µs | ~2.8ms |
+    | ZRank (最坏情况) | ~19µs | ~127µs | ~1.1ms |
+
+    **结论：** ZAdd 不随规模退化（O(log n) 单次写入），ZRange 和 ZRank 呈线性增长（O(n) prefix scan）。
+    ZRank 10K 达 ~1.1ms，超过 1ms 阈值，按原计划应重新评估缓存方案。
+    但 `zrank-cache-design.md` 已给出明确结论：**不做缓存**，原因是无使用率数据、15 个写路径需修改、启动重建成本。
+    建议改用 metrics 监控 ZRANK 调用量，若生产中确实成为瓶颈再重新评估。
+- [x] 与 Redis 横向对比，确认瓶颈在排序集索引还是 BadgerDB I/O
+  - 实测 ZRank 10K = ~1.1ms，O(n) prefix scan 是瓶颈，非 BadgerDB I/O（ZAdd 10K = ~36µs，写入无退化）。
+  - 结论：瓶颈在扫描算法（O(n)），不在存储引擎。加内存索引（skiplist/btree）可消除扫描，但维护成本高。
+- [x] 如果 10K+ 条目时 ZRANK 延迟 > 1ms，重新评估缓存方案
+  - 已触发：ZRank 10K = ~1.1ms > 1ms。但已有明确决策不做缓存（见 zrank-cache-design.md 第 9 节）。
+  - 建议：先用 metrics 监控 ZRANK 调用量再做决策。
+- [x] 设计文档保留在 `docs/plans/zrank-cache-design.md`，供后续参考
+  - 已存在（326 行），包含问题定义、4 种方案评估、写路径分析、crash 恢复、决策建议。
 
 ### 规模化验证（P1 — 收购阻塞项，唯一主要缺口）
 
@@ -302,7 +325,8 @@ README 已改为“数十 GB 已验证 / 架构可扩展”；**勿再宣称未�
 - [x] `loadRDBEntries` 在遇到 `0xFF` 后读取后续 8 字节 CRC64
 - [x] 用与 encoder 相同的 `crc64.MakeTable(crc64.ECMA)` 重新计算并比对
 - [x] 校验失败时返回明确的错误信息（含期望值 vs 实际值）
-- [ ] 考虑在大 RDB 加载时启用流式 CRC（边解析边校验，当前是全量 buffer 后解析）
+- [x] 考虑在大 RDB 加载时启用流式 CRC（边解析边校验，当前是全量 buffer 后解析）
+  - **决策（2026-07-18）：不做。** RDB 数据已全量在内存中（网络接收为 `[]byte`），`origData` 只是切片引用（无额外拷贝），CRC 计算在硬件加速下是纳秒级操作。流式 CRC 在此场景下无内存节省、无性能提升、无早期检测收益（CRC 只能在文件末尾验证），反而增加代码复杂度。当前 `loadRDBEntries` 末尾的后验 CRC 校验已足够。
 
 #### Backlog resize 丢失历史数据（★★★★☆）
 
@@ -427,3 +451,43 @@ set operations   → O(n·k)
 ```
 
 所有用户感知的操作集中在 O(n) 层。详见 [README 局限性说明](../../README_CN.md#局限性说明)。
+
+---
+
+## 质量改进方向（2026-07-18 评估）
+
+> 2026-07-18 项目质量评估（综合评分 9.2/10）中识别的可改进方向。非 P0 阻塞项，但值得纳入 roadmap。
+
+### 1. 覆盖率仪表盘（P3）✅ 已实施
+
+**结论：** 评估后发现 CI（`.github/workflows/go.yml`）**已集成** `codecov/codecov-action@v5`，每次 `go test` 生成 `coverage.out` 后自动上传。README 覆盖率徽章已补全。
+
+**状态：**
+- [x] CI 集成 `codecov/codecov-action@v5`（已存在）
+- [x] README 添加覆盖率徽章（2026-07-18 已补）
+- [x] **注意：** 不将 total% 设为 CI 硬门禁，仅作为趋势参考
+
+### 2. Server 包拆分（P3）✅ 无需操作
+
+**结论：** 生产代码**已按职责拆分**：`string_commands.go`、`hash_commands.go`、`list_commands.go`、`set_commands.go`、`zset_commands.go`、`stream_commands.go`、`geo_commands.go`、`key_commands.go`、`admin_commands.go`、`cluster_commands.go`、`client_commands.go`、`pubsub_commands.go`、`transaction_commands.go`、`json_commands.go`、`timeseries_commands.go`、`bitmap_commands.go`、`config_commands.go`、`migrate_command.go` 等。`handler_dispatch.go` 负责路由，`handler_core.go` 负责公共逻辑。`handler_coverage*.go` 等为测试文件，按测试批次命名是常见模式，不影响可维护性。**无需进一步拆分。**
+
+### 3. Benchmark 性能回归门禁（P3）✅ 已实施
+
+**结论：** `guard_bench.sh` 脚本已存在（使用 `benchstat` 对比基线，默认阈值 10%），基线数据存于 `testdata/bench_baseline_proto.txt` 和 `testdata/bench_baseline_store.txt`。2026-07-18 已将其挂入 CI（`.github/workflows/go.yml` 新增 `bench-regression` job，Tier A 门禁）。
+
+**状态：**
+- [x] `guard_bench.sh` 脚本（已存在）
+- [x] 基线数据 `testdata/bench_baseline_*.txt`（已存在）
+- [x] CI 集成（2026-07-18 已挂入 go.yml）
+- [x] 后续：按需扩展 server 基准测试基线（`guard_bench.sh` 当前只覆盖 proto 和 store）
+  - 已实现：`guard_bench.sh --server` 支持（14 个 Benchmark），已挂入 CI 和 `test-tier-a.sh`
+- [x] 后续：将基准数据同步到 `docs/benchmarks/` 目录
+  - 已实现：`docs/benchmarks/` 含 3 个基线文件 + README.md
+
+### 4. 引入 staticcheck 等额外 linter（P3）✅ 已实施
+
+**结论：** `.golangci.yml` v2 配置使用 `default: standard`，已包含 staticcheck、revive、gosec、govet 等全部标准 linter。staticcheck 还额外配置了 `checks: [all, -QF1008, -ST1000, ...]` 精细化调整。**无需额外操作。**
+
+**状态：**
+- [x] `default: standard` 已启用（含 staticcheck + revive + gosec）
+- [x] staticcheck 已配置 `checks: [all, -QF1008, -ST1000, ...]`

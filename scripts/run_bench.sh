@@ -9,7 +9,7 @@ go test -bench="." -benchmem -count=5 -timeout=300s ./internal/proto/ 2>/dev/nul
 echo "Saved to $OUT_DIR/bench_proto.txt"
 
 echo "=== Running store benchmarks ==="
-go test -bench="BenchmarkStringSet|BenchmarkStringGet|BenchmarkStringMGet" -benchmem -count=5 -timeout=300s ./internal/store/ 2>/dev/null | grep -E "^(Benchmark|ok|FAIL|---)" > "$OUT_DIR/bench_store.txt"
+go test -bench="BenchmarkStringSet|BenchmarkStringGet|BenchmarkStringMGet|BenchmarkZAdd_|BenchmarkZRange_|BenchmarkZRank_" -benchmem -count=5 -timeout=300s ./internal/store/ 2>/dev/null | grep -E "^(Benchmark|ok|FAIL|---)" > "$OUT_DIR/bench_store.txt"
 echo "Saved to $OUT_DIR/bench_store.txt"
 
 echo "=== Running server benchmarks ==="

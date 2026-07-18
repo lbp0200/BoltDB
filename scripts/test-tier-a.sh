@@ -12,6 +12,11 @@ bash scripts/guard_test_quality.sh
 echo "=== Tier A: Lint ==="
 golangci-lint run --timeout 5m
 
+echo "=== Tier A: Benchmark regression guards ==="
+bash scripts/guard_bench.sh proto
+bash scripts/guard_bench.sh --store
+bash scripts/guard_bench.sh --server
+
 echo "=== Tier A: Unit tests ==="
 go test -race -timeout 120s -short -count=1 ./internal/... ./cmd/boltDB/...
 

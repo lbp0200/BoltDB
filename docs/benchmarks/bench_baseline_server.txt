@@ -1,0 +1,12 @@
+BenchmarkParseScore-8                      	 7047306	       149.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseScore-8                      	 8876787	       136.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseScore-8                      	 8592638	       137.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseScore-8                      	 8838517	       131.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseScore-8                      	 9382639	       127.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkResponseTypes-8                   	1000000000	         0.2793 ns/op	       0 B/op	       0 allocs/op
+BenchmarkResponseTypes-8                   	1000000000	         0.2743 ns/op	       0 B/op	       0 allocs/op
+BenchmarkResponseTypes-8                   	1000000000	         0.2691 ns/op	       0 B/op	       0 allocs/op
+BenchmarkResponseTypes-8                   	1000000000	         0.2704 ns/op	       0 B/op	       0 allocs/op
+BenchmarkResponseTypes-8                   	1000000000	         0.2631 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/lbp0200/BoltDB/internal/server	247.950s

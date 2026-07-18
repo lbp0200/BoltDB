@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -51,20 +52,96 @@ func BenchmarkZAdd(b *testing.B) {
 	}
 }
 
-// BenchmarkZRange benchmarks sorted set ZRange operations
-func BenchmarkZRange(b *testing.B) {
-	store := setupTestStoreBenchmark(b)
-
-	// Pre-populate
-	members := make([]ZSetMember, 100)
-	for i := 0; i < 100; i++ {
-		members[i] = ZSetMember{Member: string(rune('a' + i)), Score: float64(i)}
+// preloadZSet populates a zset with n members for benchmark setup.
+func preloadZSet(b *testing.B, store *BotreonStore, key string, n int) {
+	b.Helper()
+	members := make([]ZSetMember, n)
+	for i := 0; i < n; i++ {
+		members[i] = ZSetMember{
+			Member: fmt.Sprintf("member-%d", i),
+			Score:  float64(i),
+		}
 	}
-	_ = store.ZAdd("zset", members)
+	if err := store.ZAdd(key, members); err != nil {
+		b.Fatalf("failed to preload zset: %v", err)
+	}
+}
+
+// BenchmarkZAdd_100 benchmarks ZAdd on a 100-entry sorted set.
+func BenchmarkZAdd_100(b *testing.B) {
+	benchmarkZAddSized(b, 100)
+}
+
+// BenchmarkZAdd_1K benchmarks ZAdd on a 1K-entry sorted set.
+func BenchmarkZAdd_1K(b *testing.B) {
+	benchmarkZAddSized(b, 1000)
+}
+
+// BenchmarkZAdd_10K benchmarks ZAdd on a 10K-entry sorted set.
+func BenchmarkZAdd_10K(b *testing.B) {
+	benchmarkZAddSized(b, 10000)
+}
+
+func benchmarkZAddSized(b *testing.B, size int) {
+	store := setupTestStoreBenchmark(b)
+	preloadZSet(b, store, "zset", size)
+	member := ZSetMember{Member: "new-member", Score: float64(size) + 1}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = store.ZAdd("zset", []ZSetMember{member})
+	}
+}
+
+// BenchmarkZRange_100 benchmarks ZRange on a 100-entry sorted set.
+func BenchmarkZRange_100(b *testing.B) {
+	benchmarkZRangeSized(b, 100)
+}
+
+// BenchmarkZRange_1K benchmarks ZRange on a 1K-entry sorted set.
+func BenchmarkZRange_1K(b *testing.B) {
+	benchmarkZRangeSized(b, 1000)
+}
+
+// BenchmarkZRange_10K benchmarks ZRange on a 10K-entry sorted set.
+func BenchmarkZRange_10K(b *testing.B) {
+	benchmarkZRangeSized(b, 10000)
+}
+
+func benchmarkZRangeSized(b *testing.B, size int) {
+	store := setupTestStoreBenchmark(b)
+	preloadZSet(b, store, "zset", size)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = store.ZRange("zset", 0, -1)
+	}
+}
+
+// BenchmarkZRank_100 benchmarks ZRank on a 100-entry sorted set.
+func BenchmarkZRank_100(b *testing.B) {
+	benchmarkZRankSized(b, 100)
+}
+
+// BenchmarkZRank_1K benchmarks ZRank on a 1K-entry sorted set.
+func BenchmarkZRank_1K(b *testing.B) {
+	benchmarkZRankSized(b, 1000)
+}
+
+// BenchmarkZRank_10K benchmarks ZRank on a 10K-entry sorted set.
+func BenchmarkZRank_10K(b *testing.B) {
+	benchmarkZRankSized(b, 10000)
+}
+
+func benchmarkZRankSized(b *testing.B, size int) {
+	store := setupTestStoreBenchmark(b)
+	preloadZSet(b, store, "zset", size)
+	// Rank the last member (worst case — full scan)
+	target := fmt.Sprintf("member-%d", size-1)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = store.ZRank("zset", target)
 	}
 }
 

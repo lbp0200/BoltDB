@@ -5,6 +5,7 @@
   <img src="https://img.shields.io/github/license/lbp0200/BoltDB" alt="License">
   <img src="https://img.shields.io/github/actions/workflow/status/lbp0200/BoltDB/go.yml?branch=main" alt="Build">
   <img src="https://goreportcard.com/badge/github.com/lbp0200/BoltDB" alt="Go Report">
+  <img src="https://codecov.io/gh/lbp0200/BoltDB/branch/main/graph/badge.svg" alt="Coverage">
 </p>
 
 <p align="center">

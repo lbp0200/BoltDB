@@ -1,5 +1,37 @@
 # Changelog
 
+## v8.38.0 (2026-07-18) — 基准回归门禁 + ZSet 性能基线 + 质量基础设施
+
+> **建立 Benchmark 性能回归门禁体系（Tier A），阻止性能退化无声合入。新增 ZSet 操作在 100/1K/10K 规模下的性能基线。补全覆盖率仪表盘。引入每周覆盖率报告 CI。**
+>
+> 2026-07-18 项目质量评估（综合评分 9.2/10）后实施的改进项。
+
+### 新功能
+
+- **Benchmark 回归门禁（Tier A）**：新增 `bench-regression` CI job，使用 `benchstat` 对比 proto/store/server 基准测试与缓存基线，退化 >10% 即失败。已挂入 `test-tier-a.sh` 和 `go.yml` PR 门禁。
+- **Server 基准测试基线**：新增 14 个 Benchmark（PING/SET/GET/INCR/DEL/MGET/Pipeline/ParseScore/ResponseTypes），基线数据 `testdata/bench_baseline_server.txt`。
+- **ZSet 性能基线**：`internal/store/bench_test.go` 新增 9 个 Benchmark（`ZAdd_100/1K/10K`、`ZRange_100/1K/10K`、`ZRank_100/1K/10K`），覆盖不同规模下的操作耗时。
+- **每周覆盖率报告**：新增 `.github/workflows/coverage.yml`（周日 UTC 06:00 自动运行），生成 HTML 覆盖率报告 + 包级摘要表，上传为 CI artifact。
+- **Codecov 覆盖率徽章**：README 和 README_CN 新增 codecov badge。
+
+### 增强
+
+- **`scripts/guard_bench.sh`**：扩展 `--server` 子命令，新增 `CLEAN_CMD` 机制支持 badger 日志清洗，store 模式扩展包含 zset 基准。
+- **`scripts/run_bench.sh`**：store 模式包含 zset 基准。
+- **`docs/benchmarks/`**：新建目录，含 3 个基线文件 + README 文档。
+- **`go.mod`**：`BurntSushi/toml` 从 indirect 提升为 direct 依赖（`go mod tidy`）。
+
+### 文档
+
+- `docs/plans/TODO.md`：更新 10+ 项状态，新增 zset 实测数据表（ZRank 10K = ~1.1ms，ZRange 10K = ~2.8ms，ZAdd 10K = ~36µs）。
+
+### 评估确认
+
+- 覆盖率仪表盘：CI 已集成 codecov，仅补了 README 徽章
+- Server 包拆分：生产代码已按职责分 18 个文件
+- 额外 linter：`.golangci.yml` v2 `default: standard` 已包含全部标准 linter
+- 流式 CRC：RDB 数据全量在内存，后验 CRC 已足够，不做流式
+
 ## v8.37.0 (2026-07-16) — 复制/迁移正确性修复 + 测试有效性体系
 
 > **复制与槽位迁移路径的正确性加固；Stream 协议形状对齐客户端库；建立可回归的测试质量门禁（空断言守卫 + 10 例定向 mutation），避免“高覆盖测不出问题”。**
