@@ -138,8 +138,8 @@ func setupMasterSlaveServer(t *testing.T) (masterClient, slaveClient *redis.Clie
 		t.Fatalf("Failed to start slave replication: %v", err)
 	}
 
-	// 等待 FULLRESYNC 完成（GHA runner 上可能需 20-30s）
-	waitForFullresync(t, masterClient, slaveClient, 60*time.Second)
+	// 等待 FULLRESYNC 完成（GHA runner 上可能需 20-60s）
+	waitForFullresync(t, masterClient, slaveClient, 120*time.Second)
 
 	cleanup = func() {
 		slaveClient.Close()
