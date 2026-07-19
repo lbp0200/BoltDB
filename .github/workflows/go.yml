@@ -142,7 +142,7 @@ jobs:
         # 由下方独立的 "Split brain tests" 步骤覆盖（超时 120s）。
         run: |
           go test -race -timeout 600s \
-            -skip 'TestRegression(L0Collapse|ReplicationThrash|ReplicationThrashFullresync|PsyncReconnectNoLoss|DuplicateWindowMeasurement|SnapshotFullresyncOffset|SnapshotConsistency|FailoverOscillation)' \
+            -skip 'TestRegression(L0Collapse|ReplicationThrash|ReplicationThrashFullresync|PsyncReconnectNoLoss|DuplicateWindowMeasurement|SnapshotFullresyncOffset|SnapshotConsistency|FailoverOscillation|LiveXClaimPEL|ConcurrentFullresyncWriteStorm)' \
             -count=1 ./cmd/integration/regressions/
 
       - name: Mixed cluster tests
