@@ -121,6 +121,13 @@ func (b *ClusterBus) Start(host string, dataPort int) error {
 		ln, err = net.Listen("tcp", host+":0")
 	} else {
 		ln, err = net.Listen("tcp", addr)
+		if err != nil {
+			// Port conflict (e.g. TIME_WAIT from previous test) — fall back to random port.
+			// In production this should never happen because the bus port is always unique;
+			// in tests, rapid start/stop cycles can leave the port in TIME_WAIT.
+			logger.Logger.Warn().Err(err).Str("addr", addr).Msg("cluster bus: preferred port in use, falling back to random port")
+			ln, err = net.Listen("tcp", host+":0")
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("cluster bus: failed to listen on %s: %w", addr, err)

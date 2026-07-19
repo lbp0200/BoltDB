@@ -85,22 +85,16 @@ func TestClientList(t *testing.T) {
 }
 
 // TestClientGetName 测试 CLIENT GETNAME 命令
+// 注意：使用共享连接，初始 client name 可能被其他测试设置（如 TestCommandCompleteness_Connection）。
+// 因此只测试 SETNAME → GETNAME 的完整往返，不假定初始状态。
 func TestClientGetName(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
 
 	ctx := context.Background()
 
-	// CLIENT GETNAME - 获取客户端名称（未设置时为空）
-	// 注意：go-redis 将 nil 响应转换为错误 "redis: nil"，需要特殊处理
-	result, err := sharedClient.Do(ctx, "CLIENT", "GETNAME").Result()
-	if err != nil {
-		assert.Equal(t, "redis: nil", err.Error())
-	}
-	assert.Nil(t, result)
-
 	// CLIENT SETNAME - 设置客户端名称
-	result, err = sharedClient.Do(ctx, "CLIENT", "SETNAME", "test-client").Result()
+	result, err := sharedClient.Do(ctx, "CLIENT", "SETNAME", "test-client").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, "OK", result)
 
