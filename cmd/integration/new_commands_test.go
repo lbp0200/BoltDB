@@ -820,11 +820,11 @@ func TestReplicationNewCommands(t *testing.T) {
 	}).Result()
 	assert.NoError(t, err)
 	if len(msgs) > 0 && len(msgs[0].Messages) > 0 {
-	   // XNACK on slave (PEL was created on slave by XREADGROUP)
-	   nackResult, err := slaveClient.Do(ctx, "XNACK", "repl_xstream", "repl_group", "c1", msgs[0].Messages[0].ID).Result()
-	   assert.NoError(t, err)
-	   assert.Equal(t, int64(1), nackResult)
-	  }
+		// XNACK on slave (PEL was created on slave by XREADGROUP)
+		nackResult, err := slaveClient.Do(ctx, "XNACK", "repl_xstream", "repl_group", "c1", msgs[0].Messages[0].ID).Result()
+		assert.NoError(t, err)
+		assert.Equal(t, int64(1), nackResult)
+	}
 
 	// XSETID on master
 	xsetidResult, err := masterClient.Do(ctx, "XSETID", "repl_xstream", "9999999999999-0").Result()
