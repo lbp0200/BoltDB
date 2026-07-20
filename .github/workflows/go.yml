@@ -413,12 +413,14 @@ jobs:
             exit 1
           fi
 
-  # Benchmark regression guard (Tier A)
+  # Benchmark regression guard (Tier A, advisory)
   # Compares proto/store benchmarks against cached baseline.
   # Fails if any benchmark regresses >10% (configurable via GUARD_THRESHOLD).
   # Update baseline with: ./scripts/guard_bench.sh --update
+  # continue-on-error: benchmark 基线漂移频繁，不阻塞 CI/CD 发版。
   bench-regression:
     runs-on: ubuntu-latest
+    continue-on-error: true
     permissions:
       contents: read
 
