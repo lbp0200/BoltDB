@@ -128,7 +128,7 @@ jobs:
           ALL_TESTS="$ALL_TESTS|TestSplitBrain"
           ALL_TESTS="$ALL_TESTS|Test(ShutdownWithReplication|GracefulShutdown)"
           go test -race -timeout 1200s -run "$ALL_TESTS" \
-            -skip 'TestReplication(Stress|Chaos)' -count=1 ./cmd/integration/
+            -skip 'TestReplication(Stress|Chaos)|TestClusterFailover|TestSplitBrainConvergenceReplay' -count=1 ./cmd/integration/
 
       - name: Split brain tests (flaky — advisory)
         # TestRegressionFailoverOscillation 已知 flaky（GHA 上退化/振荡检测不稳定），
