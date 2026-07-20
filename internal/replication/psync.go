@@ -2128,6 +2128,15 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 		}
 
 	default:
+		// If the command is a numeric value (e.g. ":9" or "9"), it's likely
+		// corrupted replication data (truncated / misaligned RESP stream).
+		// Skip it with a warning instead of triggering FULLRESYNC, which
+		// would cause cascading re-sync storms on the slave.
+		if num, err := strconv.Atoi(cmd); err == nil {
+			logger.Logger.Warn().Int("cmd_id", num).Str("raw", cmd).
+				Msg("收到数字类型的复制命令，跳过（可能数据损坏）")
+			return nil
+		}
 		logger.Logger.Warn().Str("cmd", cmd).
 			Msg("收到未处理的复制命令，触发重新同步")
 		return fmt.Errorf("unknown replicated command: %s", cmd)

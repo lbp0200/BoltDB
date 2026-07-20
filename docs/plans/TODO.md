@@ -210,6 +210,12 @@ Active config:
 - [x] **TestRegressionFailoverOscillation 超时** — 在 GHA 上耗时 33s+，regression 测试包超时。
   - 已从 300s 提到 600s，观察是否稳定。
 
+- [ ] **Nightly Soak 复制命令损坏 + runner 超时** — 两个问题：
+  - `unknown replicated command: 9`：复制协议中收到 RESP 整数 `:9` 而非字符串命令名，说明 backlog 数据被截断/损坏。
+    - 修复方向：`executeReplicatedCommand` 的 default 分支尝试解析为整数命令 ID，匹配则执行，否则再触发 FULLRESYNC。
+  - GHA runner 被 SIGTERM 杀死（exit code 143）：Nightly Soak 工作流 `timeout-minutes` 不足。
+    - 修复方向：检查 `nightly-soak.yml` 的 `timeout-minutes`，适当延长。
+
 ### 配置文件支持（已完成 ✅）
 
 - [x] **定义 Config struct + TOML tag**：`cmd/boltDB/config.go`
