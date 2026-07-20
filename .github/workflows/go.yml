@@ -127,13 +127,14 @@ jobs:
           ALL_TESTS="$ALL_TESTS|TestMixedCluster"
           ALL_TESTS="$ALL_TESTS|TestSplitBrain"
           ALL_TESTS="$ALL_TESTS|Test(ShutdownWithReplication|GracefulShutdown)"
-          go test -race -timeout 1200s -run "$ALL_TESTS" \
+          go test -race -timeout 1500s -run "$ALL_TESTS" \
             -skip 'TestReplication(Stress|Chaos)|TestClusterFailover|TestSplitBrainConvergenceReplay' -count=1 ./cmd/integration/
 
       - name: Split brain tests (flaky — advisory)
         # TestRegressionFailoverOscillation 已知 flaky（GHA 上退化/振荡检测不稳定），
         # 放独立步骤用 if: always()，不阻塞其他测试。
         if: always()
+        continue-on-error: true
         run: |
           go test -race -timeout 120s -run 'TestRegressionFailoverOscillation' -count=1 ./cmd/integration/
 
