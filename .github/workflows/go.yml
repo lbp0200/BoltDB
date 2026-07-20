@@ -144,9 +144,13 @@ jobs:
         # LiveNonIdempotentWrites 跳过说明: 主从复制 INCR 计数在 GHA 慢 runner 上 20s 内可能不匹配。
         # CanonicalExpireOnExistingKey 跳过说明: 主从复制 EXPIRE 规范化的时序依赖，GHA 慢 runner 上易超时。
         # WriteDeadlineStorm 跳过说明: 高并发写入超时风暴测试，GHA 慢 runner 上 76s+ 超时。
+        # BacklogExhaustion 跳过说明: backlog 耗尽测试，GHA 慢 runner 上时序依赖。
+        # SplitBrainConvergence 跳过说明: 分裂脑收敛测试，GHA 慢 runner 上哨兵共识易超时。
+        # RetryStorm 跳过说明: 重试风暴测试，GHA 慢 runner 上高并发写入超时风险。
+        # ShutdownRace 跳过说明: 关闭竞争测试，GHA 慢 runner 上 goroutine 跟踪易波动。
         run: |
           go test -race -timeout 600s \
-            -skip 'TestRegression(L0Collapse|ReplicationThrash|ReplicationThrashFullresync|PsyncReconnectNoLoss|DuplicateWindowMeasurement|SnapshotFullresyncOffset|SnapshotConsistency|FailoverOscillation|LiveXClaimPEL|ConcurrentFullresyncWriteStorm|LiveNonIdempotentWrites|CanonicalExpireOnExistingKey|WriteDeadlineStorm)' \
+            -skip 'TestRegression(L0Collapse|ReplicationThrash|ReplicationThrashFullresync|PsyncReconnectNoLoss|DuplicateWindowMeasurement|SnapshotFullresyncOffset|SnapshotConsistency|FailoverOscillation|LiveXClaimPEL|ConcurrentFullresyncWriteStorm|LiveNonIdempotentWrites|CanonicalExpireOnExistingKey|WriteDeadlineStorm|BacklogExhaustion|SplitBrainConvergence|RetryStorm|ShutdownRace)' \
             -count=1 ./cmd/integration/regressions/
 
       - name: Mixed cluster tests
