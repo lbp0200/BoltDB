@@ -31,7 +31,13 @@ jobs:
   standalone:
     name: Standalone Soak
     runs-on: ubuntu-latest
-    timeout-minutes: 210
+    # GitHub-hosted job ceiling is 360m. The soak test runs for SOAK_DURATION
+    # (default 1h) plus -race overhead; the test -timeout below is bounded to
+    # 300m so a manual long-duration dispatch is truncated cleanly (go test exit
+    # 124) and the job still reaches the artifact-upload step instead of being
+    # SIGTERM'd (exit 143) at the job limit. 60m gap covers build + evolution
+    # gate + upload.
+    timeout-minutes: 360
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -58,7 +64,10 @@ jobs:
       - name: Run standalone soak
         run: |
           mkdir -p /tmp/soak-artifacts/jsonl /tmp/soak-artifacts/report
-          go test -race -timeout 150m \
+          # Bounded to 300m (job ceiling is 360m) so the test self-terminates
+          # with exit 124 on overrun instead of the runner killing the job
+          # with SIGTERM (exit 143). Tracks SOAK_DURATION within the envelope.
+          go test -race -timeout 300m \
             ./cmd/integration/ -run TestSoak -v 2>&1 | tee /tmp/soak-artifacts/test-output.txt
 
       - name: Evolution gate check
@@ -100,7 +109,8 @@ jobs:
     name: Replication Soak
     if: ${{ github.event.inputs.run-replication != 'false' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 210
+    # Same envelope as the standalone job: 360m job ceiling, 300m test timeout.
+    timeout-minutes: 360
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -127,7 +137,8 @@ jobs:
       - name: Run replication soak
         run: |
           mkdir -p /tmp/soak-artifacts/jsonl /tmp/soak-artifacts/report
-          go test -race -timeout 150m \
+          # Bounded to 300m (job ceiling is 360m) — see standalone job note.
+          go test -race -timeout 300m \
             ./cmd/integration/ -run TestSoakReplication -v 2>&1 | tee /tmp/soak-artifacts/test-output.txt
 
       - name: Evolution gate check
@@ -210,7 +221,10 @@ jobs:
   regressions:
     name: Regression Replay
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Cluster soak (-timeout 15m) + regression suite (-timeout 600s) = 25m of
+    # tests, plus build + artifact upload. 60m gives headroom so the job is not
+    # SIGTERM'd (exit 143) under -race overhead.
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v5
