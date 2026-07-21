@@ -2,15 +2,22 @@
 set -euo pipefail
 
 usage() {
-    echo "Usage: $0 [test-args]"
+    echo "Usage: $0 [--full] [test-args]"
     echo "Sync code to remote Linux machine and run tests there."
     echo ""
+    echo "Modes:"
+    echo "  (default)        Lightweight: go test -race -short ./internal/..."
+    echo "  --full            Full suite, NO -short, covers ./cmd/integration/... + ./internal/..."
+    echo "                    Restores the 58 heavy tests gated behind testing.Short()."
+    echo ""
     echo "Examples:"
-    echo "  $0 -race -short ./internal/..."
-    echo "  $0 -race -timeout 600s ./cmd/integration/..."
+    echo "  $0                                              # lightweight (daily single-package checks)"
+    echo "  $0 --full                                       # full suite on remote, restores skipped tests"
+    echo "  $0 -race -timeout 600s ./cmd/integration/...   # explicit full-form (no -short)"
     echo "  $0 -race -timeout 30s -run TestRESPShape ./internal/server/..."
     echo ""
-    echo "Default: go test -race -short ./internal/..."
+    echo "Note: GitHub CI uses scripts/test-tier-a.sh (lightweight). Run this with --full"
+    echo "      for the full suite before releases."
 }
 
 # Host-specific configurations
@@ -49,7 +56,33 @@ fi
 echo "=== Remote host: $REMOTE_HOST ($REMOTE_USER)"
 
 ARGS=("$@")
-if [ ${#ARGS[@]} -eq 0 ]; then
+FULL_MODE=0
+# Extract --full flag (full suite, no -short)
+NEW_ARGS=()
+for arg in "${ARGS[@]}"; do
+    if [ "$arg" = "--full" ]; then
+        FULL_MODE=1
+    else
+        NEW_ARGS+=("$arg")
+    fi
+done
+ARGS=("${NEW_ARGS[@]}")
+
+if [ "$FULL_MODE" -eq 1 ]; then
+    # Full mode: no -short; default to the complete suite if no packages given.
+    if [ ${#ARGS[@]} -eq 0 ]; then
+        ARGS=(-race -timeout 1800s ./internal/... ./cmd/integration/...)
+    else
+        # User supplied args: ensure -race is present (no -short added).
+        has_race=0
+        for a in "${ARGS[@]}"; do
+            [ "$a" = "-race" ] && has_race=1
+        done
+        if [ "$has_race" -eq 0 ]; then
+            ARGS=(-race "${ARGS[@]}")
+        fi
+    fi
+elif [ ${#ARGS[@]} -eq 0 ]; then
     ARGS=(-race -short ./internal/...)
 fi
 

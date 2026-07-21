@@ -124,7 +124,7 @@ func TestKeyLockManager_DifferentKeysNoContention(t *testing.T) {
 		}
 	}
 	if keyA == "" {
-		t.Skip("could not find non-colliding keys in sample")
+		t.Fatalf("could not find non-colliding keys in sample")
 	}
 
 	var wg sync.WaitGroup
@@ -184,7 +184,7 @@ func TestKeyLockManager_SameShardContention(t *testing.T) {
 		}
 	}
 	if keyA == "" {
-		t.Skip("could not find colliding keys for shard contention test")
+		t.Fatalf("could not find colliding keys for shard contention test")
 	}
 
 	// Acquire lock on keyA and hold it

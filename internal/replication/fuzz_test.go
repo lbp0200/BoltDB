@@ -16,7 +16,7 @@ func FuzzExecuteReplicatedCommand(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data string) {
 		testStore, err := store.NewBadgerStore(t.TempDir())
 		if err != nil {
-			t.Skip("skipping")
+			t.Fatalf("failed to create store: %v", err)
 		}
 		defer testStore.Close()
 
@@ -34,7 +34,7 @@ func FuzzHandlePSync(f *testing.F) {
 	f.Fuzz(func(t *testing.T, replId string, offset int64) {
 		testStore, err := store.NewBadgerStore(t.TempDir())
 		if err != nil {
-			t.Skip("skipping")
+			t.Fatalf("failed to create store: %v", err)
 		}
 		defer testStore.Close()
 
@@ -56,7 +56,7 @@ func FuzzLoadRDBWithStore(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte) {
 		testStore, err := store.NewBadgerStore(t.TempDir())
 		if err != nil {
-			t.Skip("skipping")
+			t.Fatalf("failed to create store: %v", err)
 		}
 		defer testStore.Close()
 
