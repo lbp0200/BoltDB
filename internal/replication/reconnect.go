@@ -349,12 +349,14 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 		cmdBytes := serializeCommand(req.Args)
 
 		if err := executeReplicatedCommand(sr.store, req.Args); err != nil {
-			if isTransientReplicationError(err) {
+			currentOffset := sr.lastOffset.Load()
+			if isTransientReplicationError(err, cmd, currentOffset) {
 				// 命令字节已从主节点流中消费，必须推进 offset 与主节点保持锁步：
 				// 否则从节点 lastOffset 落后，重连时 PSYNC CONTINUE 取到错位字节流，
 				// ReadRESP 误把 key 名当命令名（如 K:HASH:47）→ 无限重同步循环。
 				logger.Logger.Warn().Err(err).
 					Str("cmd", cmd).
+					Int64("offset", currentOffset).
 					Msg("复制命令暂时失败，跳过（已推进 offset 保持字节级对齐）")
 				sr.lastOffset.Add(int64(len(cmdBytes)))
 				continue
@@ -423,13 +425,21 @@ func errorsIsStop(err error, stopCh <-chan struct{}) bool {
 // 这些错误应触发重连 / FULLRESYNC（readCommandLoop 返回 error）。
 //
 // 仅保留真正幂等/无害的情况：key not found（主已删而从本无此键）。
-func isTransientReplicationError(err error) bool {
+//
+// cmd 和 offset 用于结构化日志，帮助收集 soak 下触发发散的实际错误类型。
+func isTransientReplicationError(err error, cmd string, offset int64) bool {
 	if err == nil {
 		return false
 	}
 	errStr := err.Error()
 	// 键不存在（主从短暂不一致时的正常现象，对 DEL/SREM 等幂等）
 	if strings.Contains(errStr, "key not found") {
+		logger.Logger.Warn().
+			Err(err).
+			Str("cmd", cmd).
+			Int64("offset", offset).
+			Str("err_str", errStr).
+			Msg("复制命令跳过（key not found）— 需收集 soak 实证确认此路径是否真的触发")
 		return true
 	}
 	return false

@@ -194,19 +194,42 @@ func TestCheckDegradation_GoroutineFail(t *testing.T) {
 	pm.mu.Lock()
 	pm.samples = []PressureSample{
 		{Timestamp: now, LastL0Score: 3.0, ActiveRetries: 0, Goroutines: 100},
-		{Timestamp: now.Add(time.Second), LastL0Score: 4.0, ActiveRetries: 1, Goroutines: 200},
-		{Timestamp: now.Add(2 * time.Second), LastL0Score: 5.0, ActiveRetries: 0, Goroutines: 210},
-		{Timestamp: now.Add(3 * time.Second), LastL0Score: 6.0, ActiveRetries: 0, Goroutines: 220},
+		{Timestamp: now.Add(time.Second), LastL0Score: 4.0, ActiveRetries: 1, Goroutines: 110},
+		{Timestamp: now.Add(2 * time.Second), LastL0Score: 5.0, ActiveRetries: 0, Goroutines: 110},
+		{Timestamp: now.Add(3 * time.Second), LastL0Score: 6.0, ActiveRetries: 0, Goroutines: 120},
+		{Timestamp: now.Add(4 * time.Second), LastL0Score: 6.0, ActiveRetries: 0, Goroutines: 130},
+		{Timestamp: now.Add(5 * time.Second), LastL0Score: 6.0, ActiveRetries: 0, Goroutines: 140},
+		{Timestamp: now.Add(6 * time.Second), LastL0Score: 6.0, ActiveRetries: 0, Goroutines: 150},
 	}
 	pm.mu.Unlock()
 
 	mockT := &mockTestingT{T: t}
 	a := DefaultDegradationAssertion()
-	a.MaxGoroutineDelta = 50
-	a.GoroutineDeltaFailWindows = 3
-	a.GoroutineDeltaWarnWindows = 2
 	level := pm.CheckDegradation(mockT, a, 100)
+	// 后半段 4 个采样点（120, 130, 140, 150）delta 持续上升：3/4 = 0.75 > 0.7 → FAIL
 	assert.Equal(t, LevelFail, level)
+}
+
+func TestCheckDegradation_GoroutineStableElevationOK(t *testing.T) {
+	pm := NewPressureMonitor(nil, nil)
+	now := time.Now()
+	pm.mu.Lock()
+	pm.samples = []PressureSample{
+		{Timestamp: now, LastL0Score: 3.0, ActiveRetries: 0, Goroutines: 100},
+		{Timestamp: now.Add(time.Second), LastL0Score: 4.0, ActiveRetries: 1, Goroutines: 160},
+		{Timestamp: now.Add(2 * time.Second), LastL0Score: 5.0, ActiveRetries: 0, Goroutines: 160},
+		{Timestamp: now.Add(3 * time.Second), LastL0Score: 6.0, ActiveRetries: 0, Goroutines: 162},
+		{Timestamp: now.Add(4 * time.Second), LastL0Score: 6.0, ActiveRetries: 0, Goroutines: 160},
+		{Timestamp: now.Add(5 * time.Second), LastL0Score: 6.0, ActiveRetries: 0, Goroutines: 161},
+		{Timestamp: now.Add(6 * time.Second), LastL0Score: 6.0, ActiveRetries: 0, Goroutines: 160},
+	}
+	pm.mu.Unlock()
+
+	mockT := &mockTestingT{T: t}
+	a := DefaultDegradationAssertion()
+	level := pm.CheckDegradation(mockT, a, 100)
+	// 后半段 goroutine 升高但稳定（delta ~60, 不持续增长），不应触发 FAIL
+	assert.Equal(t, LevelOK, level)
 }
 
 func TestCheckDegradation_ActiveRetriesFail(t *testing.T) {

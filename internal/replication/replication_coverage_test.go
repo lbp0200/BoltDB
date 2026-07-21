@@ -2148,16 +2148,16 @@ func TestExecuteReplicatedCommand_XAUTOCLAIM_TransfersPEL(t *testing.T) {
 func TestIsTransientReplicationError(t *testing.T) {
 	t.Parallel()
 
-	assert.False(t, isTransientReplicationError(nil))
-	assert.False(t, isTransientReplicationError(fmt.Errorf("max retries exhausted after 3 attempts")))
-	assert.False(t, isTransientReplicationError(fmt.Errorf("write rejected by backpressure")))
+	assert.False(t, isTransientReplicationError(nil, "", 0))
+	assert.False(t, isTransientReplicationError(fmt.Errorf("max retries exhausted after 3 attempts"), "", 0))
+	assert.False(t, isTransientReplicationError(fmt.Errorf("write rejected by backpressure"), "", 0))
 	// Exact phrases produced by store/retry_update.go and set.go backpressure paths
-	assert.False(t, isTransientReplicationError(fmt.Errorf("write rejected: L0 score 21.0 exceeds hard threshold 20")))
-	assert.False(t, isTransientReplicationError(fmt.Errorf("max retries exhausted (30): %w", fmt.Errorf("txn conflict"))))
-	assert.True(t, isTransientReplicationError(fmt.Errorf("key not found")))
-	assert.True(t, isTransientReplicationError(fmt.Errorf("ERR key not found")))
-	assert.False(t, isTransientReplicationError(fmt.Errorf("connection refused")))
-	assert.False(t, isTransientReplicationError(fmt.Errorf("")))
+	assert.False(t, isTransientReplicationError(fmt.Errorf("write rejected: L0 score 21.0 exceeds hard threshold 20"), "", 0))
+	assert.False(t, isTransientReplicationError(fmt.Errorf("max retries exhausted (30): %w", fmt.Errorf("txn conflict")), "", 0))
+	assert.True(t, isTransientReplicationError(fmt.Errorf("key not found"), "HDEL", 100))
+	assert.True(t, isTransientReplicationError(fmt.Errorf("ERR key not found"), "SREM", 200))
+	assert.False(t, isTransientReplicationError(fmt.Errorf("connection refused"), "", 0))
+	assert.False(t, isTransientReplicationError(fmt.Errorf(""), "", 0))
 }
 
 // TestReplicationApplyErrorDisposition encodes the oracle for slave apply:
@@ -2171,7 +2171,7 @@ func TestReplicationApplyErrorDisposition(t *testing.T) {
 		if err == nil {
 			return "advance"
 		}
-		if isTransientReplicationError(err) {
+		if isTransientReplicationError(err, "", 0) {
 			return "skip"
 		}
 		return "resync"

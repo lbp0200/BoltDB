@@ -485,7 +485,11 @@ func runSoakNormal(ctx context.Context, addr string, rng *rand.Rand, errCh chan<
 	op := rng.Intn(5)
 	switch op {
 	case 0: // SET + verify read-back
-		key := fmt.Sprintf("soak:set:%d", rng.Intn(100))
+		// 使用唯一 key 避免并发 client 间覆盖导致误报：
+		// 共享 100-key 池下 50 并发时，另一 client 可能在 SET 和 GET 之间 SET 同 key →
+		// GET 返回另一 client 的值，触发 SET/GET mismatch 误报。
+		// rng 是 per-client 的，rng.Int63() 在 2^63 空间内无碰撞风险。
+		key := fmt.Sprintf("soak:set:%d", rng.Int63())
 		val := fmt.Sprintf("v:%d", rng.Intn(10000))
 		_ = sendRESPLine(conn, fmt.Sprintf("*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(key), key, len(val), val))
 		if _, err := proto.ReadRESP(reader); err != nil {
