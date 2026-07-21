@@ -210,11 +210,16 @@ Active config:
 - [x] **TestRegressionFailoverOscillation 超时** — 在 GHA 上耗时 33s+，regression 测试包超时。
   - 已从 300s 提到 600s，观察是否稳定。
 
-- [ ] **Nightly Soak 复制命令损坏 + runner 超时** — 两个问题：
-  - `unknown replicated command: 9`：复制协议中收到 RESP 整数 `:9` 而非字符串命令名，说明 backlog 数据被截断/损坏。
-    - 修复方向：`executeReplicatedCommand` 的 default 分支尝试解析为整数命令 ID，匹配则执行，否则再触发 FULLRESYNC。
+- [x] **Nightly Soak 复制命令损坏 + runner 超时** — 两个问题均修复：
+  - `unknown replicated command: 9` / `unknown replicated command: K:HASH:47`：均为 **backlog 字节流错位** 症状（非数据截断）。
+    根因已定位为 **复制 offset 锁步断裂**，统一在下方 `K:HASH:47 复制错位 bug（P0）` 段排期修复（主修复 A + 纵深防御 B，见该段 `[x]` 标记）；
+    旧"default 分支解析整数命令 ID"为治标，已被根因修复取代，**不再采用**。
   - GHA runner 被 SIGTERM 杀死（exit code 143）：Nightly Soak 工作流 `timeout-minutes` 不足。
-    - 修复方向：检查 `nightly-soak.yml` 的 `timeout-minutes`，适当延长。
+    - **已修复（2026-07-21）**：`.github/workflows/nightly-soak.yml` 调整超时封套——
+      standalone / replication 两个 soak job 的 `timeout-minutes` 由 `210` 提到 GitHub 上限 `360`；
+      测试 `-timeout` 由硬编码 `150m` 改为 `300m`（< job 上限，保证越界时 `go test` 自身以 exit 124 干净结束、job 仍能跑到 artifact 上传，而非被 runner 以 SIGTERM 杀成 143）；
+      regressions job `timeout-minutes` 由 `30` 提到 `60`（cluster soak 15m + 回归 10m + build/upload 已临界 30m）。
+      注：GitHub-hosted runner job 硬上限 360m，超长 soak（如手动 12h）应在自有 Linux 远程机跑 `scripts/remote-test.sh` 而非 GitHub CI（与"CI 轻量"分层一致）。
 
 ---
 
@@ -243,12 +248,56 @@ Active config:
 
 - [x] **(a) 更新 AGENTS.md 测试章节**：写明“CI 轻量（short）+ 远程全量（不带 short）自动恢复 A 类 58 处”的分层，避免后人误判测试质量。
 - [x] **(b) `remote-test.sh` 加 `--full` 模式**：无参即全量（不带 `-short`、覆盖 `./cmd/integration/...`），让“本地运行 = 全量”自然成立；保留带 `-short` 的轻量默认供日常单包验证（或拆为默认全量 + `--fast`）。
-- [ ] **Soak goroutine 阈值观察**：`cmd/integration/soak_test.go:94` 的 `CI_NIGHTLY_SOAK` 门控在远程 Linux 机跑时设 `CI_NIGHTLY_SOAK=1` 观察 goroutine 阈值（`leak > 10`）是否稳定，再决定是否放宽，避免掩盖真实泄漏。
+- [x] **Soak goroutine 阈值观察（2026-07-21，结论：保留 `leak > 10`，不放宽）**：远程 `10.1.2.16` 跑 `CI_NIGHTLY_SOAK=1 SOAK_DURATION=15m SOAK_CLIENTS=50 go test -race -run TestSoak`。
+  - **`leak > 10` 门控稳定**：`soak goroutine delta: -20 (baseline=42, final=22)` → 测试结束后 goroutine 数低于基线，**无泄漏**，`> 10` 阈值正确不触发 → **保留，不放宽**。
+  - **但 `TestSoak` 整体 FAIL**，根因是另外两个**既有测试质量问题**（与 A+B 复制修复无关，TestSoak 为单节点）：
+    1. `soak SET/GET mismatch`（5 次，`soak_test.go:505`）：`runSoakNormal` case 0 在共享 100-key 池（`soak:set:0..99`）上 SET 后立刻 GET 比对，50 并发下另一 client 可能在两次操作间覆盖同 key → **误报（test oracle 竞态），非数据损坏**。属 pre-existing 测试缺陷，使 soak 在正确服务器下也过不了。
+    2. `DEGRADATION FAIL: goroutine sustained elevation`（29/3 windows，`degradation.go:94`）：压力监控见 goroutine 较基线 +64 持续整个 soak；但这是 50 并发下的**稳态负载抬升**（非泄漏，结束后回到基线 -20），比 `leak>10` 门控更严，故触发。L0 peak 1.0 / reconnect 0 等其余维度正常。
+  - **无 race / 无 panic**。
+  - **后续可选（独立任务，非 #251 范围）**：修正 racy SET/GET oracle（用 per-client 隔离 key 或去掉 write-then-read 校验）、或把 pm goroutine 退化门从"绝对抬升 >50"改为"相对稳态增长"以免误杀正常负载。
 
 **已处理（2026-07-21）：**
 
 - [x] `internal/replication/fuzz_test.go` 3 处：存储初始化失败 `t.Skip` → `t.Fatalf`（暴露真错，不再静默跳过）。
 - [x] `internal/store/keylock_test.go` 2 处：数据构造守卫 `t.Skip` → `t.Fatalf`（26 字母→8 分片必能找到碰撞/非碰撞 key，原 skip 会静默失去覆盖）。
+
+### K:HASH:47 复制错位 bug（P0 — 2026-07-21 排查确认）
+
+> Nightly Soak 日志出现 `unknown replicated command: K:HASH:47`（key 名被 `ReadRESP` 误解析为命令名），
+> 触发从节点无限重同步循环。已端到端定位根因，详见下方机制。同类症状还有 `unknown replicated command: 9`
+> （整数/截断字节），本质都是 **backlog 字节流错位** → 与 CI稳定性 段 `Nightly Soak` 项是同一根因族。
+
+**根因：复制 offset 锁步断裂（已从代码确认）**
+
+- 主节点 **无条件** 推进 offset：`internal/replication/replication.go:320-326`（`PropagateCommand` 中 `IncrementReplOffset`，无论命令是否"成功"）。
+- 从节点 **仅成功 apply 时** 推进 offset：`internal/replication/reconnect.go:349-363`（成功路径 `sr.lastOffset.Add`，失败路径 `isTransientReplicationError` → `continue` 跳过推进）。
+- 触发点：`HDEL/SREM/ZREM/DEL/XACK` 命中**不存在**的 key 时，主节点返回 `0`（Integer，非 Error）→
+  主节点照常入 backlog 并推进 offset（`handler_core.go:644-645` 的 `!isErrorResponse` 放行）；
+  从节点 apply 同一条命令若 state 已缺该 key → 走 `isTransientReplicationError` → `continue` → **不推进 offset**。
+- 错位机制：被跳过的命令**夹在成功命令之间**时，从节点 `lastOffset` = 已 apply 长度之和，落在 backlog **非命令边界** 字节位；
+  重连 `PSYNC CONTINUE <lastOffset>` → 主节点 `backlog.GetRange`（`backlog.go:65-102`）**纯字节拷贝、不校验命令边界**，返回中段错位字节流 →
+  `ReadRESP` 把首个 token（key 名 `K:HASH:47`）当命令名 → `unknown replicated command` → `readCommandLoop` 返回 error → 重连 → FULLRESYNC → offset 复位 → 跳过仍复发 → **无限重同步循环**。
+- `SELECT` 分支（`reconnect.go:345-347` `continue` 不推进 offset）已确认是死分支：`SELECT` 为 read-only，`isWriteCommand("SELECT")=false`，主节点从不传播（`handler_core.go:644`），无常量漂移。
+
+**排期（修复计划）：**
+
+- [x] **(A) 主修复 — 瞬时错误 `continue` 前推进 offset**：`internal/replication/reconnect.go:350-354` 在 `continue` 前补
+  `cmdBytes := serializeCommand(req.Args); sr.lastOffset.Add(int64(len(cmdBytes)))`（已将 `cmdBytes` 计算上提到条件前，成功/瞬时两路径共用）。
+  理由：从节点已把该命令字节从流中消费，offset 应跟踪"已消费字节位置"而非"已生效 mutation"，才能与主节点锁步。
+  `serializeCommand(req.Args)` 与成功路径一致，主节点传播的是规范化 `propagateArgs`，从节点 `req.Args` 即规范化形式，长度严格对齐，无风险。
+  —— 此项落地可打破重同步循环（从节点 `lastOffset` 永不失步）。**已实现并验证（2026-07-21）。**
+- [x] **(A) 远程验证复制回归（2026-07-21，全部 PASS）**：
+  - `internal/replication/...` 单元包（`-race -short`，含 `TestIsTransientReplicationError` + `TestReplicationApplyErrorDisposition`）：**PASS 15.3s**
+  - `TestRegressionPsyncReconnectNoLoss`（`-race`，收敛 `lag=0`、`missing=0/extra=0`、goroutine delta ok）：**PASS 20.9s**
+  - 三巨头合并跑（`-race -timeout 1800s`：`TestRegressionDuplicateWindowMeasurement` + `TestRegressionSnapshotFullresyncOffset` + `TestRegressionPsyncReconnectNoLoss`）：**PASS 95.1s**
+  - 注：早期一次 `./cmd/integration/... -run 'TestReplication|TestRegression'`（`-timeout 600s`）超时 FAIL 为预算不足（正则过宽，单进程 600s 装不下），非本改动引入——日志无 panic/race/unknown replicated command/K:HASH。
+- [x] **(B) 纵深防御 — backlog 命令边界校验**：`internal/replication/backlog.go` 新增 `StartsAtCommandBoundary(offset)`（检查 `buffer[offset%size] == '*'`，RESP 命令以 `*` 开头）；`psync.go` 的 CONTINUE 分支（`offset < currentOffset` 时）先校验边界，错位则降级 FULLRESYNC。这样即使出现任何未知/未来来源的错位 offset，也绝不会把错位字节流发给从节点触发 `ReadRESP` 误帧（K:HASH:47 类）。**已实现并验证（2026-07-21）。**
+  - 修复连带单测：`TestHandlePSync_ValidPartialSync` 原断言"任意 in-range offset（含 `currentOffset-1` 命令末字节）都 CONTINUE"——该断言编码了不安全契约，改为请求有效边界 offset `0`。
+  - 新增 `TestHandlePSync_MidCommandOffsetFallsBackToFullResync` 锁定 (B) 不变式（错位 offset → FULLRESYNC）。
+  - 验证：`internal/replication/...` 单元（`-race -short`）PASS 15.3s；三巨头回归（`-race -timeout 1800s`）PASS 95.2s。无 `unknown replicated command` / 重同步循环。
+- [ ] **(C) 深层根因 — 从节点为何缺失主存在 key（独立任务）**：瞬时跳过只是"掩盖"真发散点。需查 FULLRESYNC 的 RDB 加载完整性 / gap-fill 在重连竞态下是否漏命令（参考 `docs/replication/failure-modes.md#toctou`）。此项不随 A 自动解决，需单列排查。
+
+**依赖/风险：** (A) 为单行级改动、零语义风险；(C) 为后续深层调查，不阻塞发版。建议 A 随下一个版本走，C 排期单独立项。
 
 ### 配置文件支持（已完成 ✅）
 
