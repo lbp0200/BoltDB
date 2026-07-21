@@ -33,13 +33,13 @@ fi
 if ! nc -z $SERVER_ADDR $SERVER_PORT 2>/dev/null; then
     echo -e "${YELLOW}警告: 服务器未运行在 $SERVER_ADDR:$SERVER_PORT${NC}"
     echo "请先启动 BoltDB 服务器:"
-    echo "  go run cmd/boltDB/main.go -addr :$SERVER_PORT -dir $DATA_DIR"
+    echo "  go run ./cmd/boltDB/ -addr :$SERVER_PORT -dir $DATA_DIR"
     echo ""
     read -p "是否现在启动服务器? (y/n) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         echo "启动服务器..."
-        go run cmd/boltDB/main.go -addr :$SERVER_PORT -dir $DATA_DIR &
+        go run ./cmd/boltDB/ -addr :$SERVER_PORT -dir $DATA_DIR &
         SERVER_PID=$!
         sleep 2
         echo -e "${GREEN}服务器已启动 (PID: $SERVER_PID)${NC}"

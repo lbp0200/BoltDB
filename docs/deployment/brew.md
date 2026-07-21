@@ -25,7 +25,7 @@ git clone https://github.com/lbp0200/BoltDB.git
 cd BoltDB
 
 # Build
-go build -o ./build/boltDB cmd/boltDB/main.go
+go build -o ./build/boltDB ./cmd/boltDB/
 
 # Or install directly
 go install ./cmd/boltDB

@@ -194,7 +194,7 @@ git clone https://github.com/lbp0200/BoltDB.git
 cd BoltDB
 
 # 编译
-go build -o ./build/boltDB cmd/boltDB/main.go
+go build -o ./build/boltDB ./cmd/boltDB/
 
 # 运行
 ./build/boltDB --dir=./data --addr=:6337

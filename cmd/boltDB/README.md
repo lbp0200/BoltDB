@@ -6,23 +6,23 @@
 
 ```bash
 # 使用默认配置（监听 :6337，数据库存储在临时目录）
-go run cmd/boltDB/main.go
+go run ./cmd/boltDB/
 
 # 指定监听地址
-go run cmd/boltDB/main.go -addr :6380
+go run ./cmd/boltDB/ -addr :6380
 
 # 指定数据库目录
-go run cmd/boltDB/main.go -dir /path/to/data
+go run ./cmd/boltDB/ -dir /path/to/data
 
 # 同时指定地址和目录
-go run cmd/boltDB/main.go -addr :6380 -dir /path/to/data
+go run ./cmd/boltDB/ -addr :6380 -dir /path/to/data
 ```
 
 ### 方式2：构建后运行（生产模式）
 
 ```bash
 # 构建可执行文件
-go build -o ./build/boltDB cmd/boltDB/main.go
+go build -o ./build/boltDB ./cmd/boltDB/
 
 # 运行
 ./build/boltDB
@@ -69,7 +69,7 @@ boltDB -addr :6380 -dir /path/to/data
 ### 1. 启动服务器（默认配置）
 
 ```bash
-go run cmd/boltDB/main.go
+go run ./cmd/boltDB/
 ```
 
 输出：
@@ -80,7 +80,7 @@ BoltDB 服务器启动，监听地址: :6337
 ### 2. 使用自定义端口和目录
 
 ```bash
-go run cmd/boltDB/main.go -addr :6380 -dir ./boltDB-data
+go run ./cmd/boltDB/ -addr :6380 -dir ./boltDB-data
 ```
 
 ### 3. 使用 redis-cli 连接测试
@@ -169,7 +169,7 @@ lsof -i :6337
 netstat -an | grep 6337
 
 # 使用其他端口
-go run cmd/boltDB/main.go -addr :6380
+go run ./cmd/boltDB/ -addr :6380
 ```
 
 ### 2. 权限问题

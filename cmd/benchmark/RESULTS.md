@@ -61,7 +61,7 @@ redis-benchmark -h 127.0.0.1 -p 6388 -t <command> -n <requests> -c <clients>
 
 ```bash
 # 1. 编译 BoltDB
-go build -o ./build/boltDB ./cmd/boltDB/main.go
+go build -o ./build/boltDB ./cmd/boltDB/
 
 # 2. 启动 BoltDB
 ./build/boltDB -addr=:6388 -dir=/tmp/bolt_test

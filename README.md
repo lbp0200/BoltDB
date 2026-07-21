@@ -197,7 +197,7 @@ git clone https://github.com/lbp0200/BoltDB.git
 cd BoltDB
 
 # Build
-go build -o ./build/boltDB cmd/boltDB/main.go
+go build -o ./build/boltDB ./cmd/boltDB/
 
 # Run
 ./build/boltDB --dir=./data --addr=:6337
@@ -218,11 +218,11 @@ go build -o boltDB.exe .\cmd\boltDB\
 
 ```bash
 # Build for all platforms
-GOOS=linux GOARCH=amd64 go build -o ./build/boltDB-linux-amd64 cmd/boltDB/main.go
-GOOS=linux GOARCH=arm64 go build -o ./build/boltDB-linux-arm64 cmd/boltDB/main.go
-GOOS=darwin GOARCH=amd64 go build -o ./build/boltDB-darwin-amd64 cmd/boltDB/main.go
-GOOS=darwin GOARCH=arm64 go build -o ./build/boltDB-darwin-arm64 cmd/boltDB/main.go
-GOOS=windows GOARCH=amd64 go build -o ./build/boltDB-windows-amd64.exe cmd/boltDB/main.go
+GOOS=linux GOARCH=amd64 go build -o ./build/boltDB-linux-amd64 ./cmd/boltDB/
+GOOS=linux GOARCH=arm64 go build -o ./build/boltDB-linux-arm64 ./cmd/boltDB/
+GOOS=darwin GOARCH=amd64 go build -o ./build/boltDB-darwin-amd64 ./cmd/boltDB/
+GOOS=darwin GOARCH=arm64 go build -o ./build/boltDB-darwin-arm64 ./cmd/boltDB/
+GOOS=windows GOARCH=amd64 go build -o ./build/boltDB-windows-amd64.exe ./cmd/boltDB/
 ```
 
 ### Use with redis-cli | 使用 redis-cli

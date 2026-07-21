@@ -216,6 +216,40 @@ Active config:
   - GHA runner 被 SIGTERM 杀死（exit code 143）：Nightly Soak 工作流 `timeout-minutes` 不足。
     - 修复方向：检查 `nightly-soak.yml` 的 `timeout-minutes`，适当延长。
 
+---
+
+### 测试跳过根因与恢复计划（2026-07-21 评估）
+
+**根因澄清：** 仓库中 69 处 `t.Skip` / `testing.Short()` 跳过，**并非测试自身 flaky**，而是 GitHub Actions 公共 runner 资源不足、全量测试（含 `-race` + 并发/复制/集群/soak）经常超时导致发版失败，故靠 skip / 增加 timeout 保发版。
+
+**分类（69 处 `t.Skip`）：**
+
+| 类 | 数量 | 性质 | 处置 |
+|----|------|------|------|
+| A — CI/资源超时型 | 58 | 全部 `if testing.Short()` 门控的重测试（集群/复制/soak/回归/大边界/压测） | 远程全量（不带 `-short`）自动恢复，**无需改代码** |
+| B — 合理条件跳过 | 11 | 外部依赖 redis-server×4、flag 未定义、连接/数据构造守卫、fuzz 存储初始化 | 保留 |
+| C — 真 flaky/需修复 | 0 | 无确凿测试自身竞态 bug | — |
+
+**分层策略（已与现有 Tier 体系一致）：**
+
+- **GitHub CI**：继续用 `scripts/test-tier-a.sh`（带 `-short` + `-skip` 正则），轻量保发版不超时。
+- **本地/远程全量**：通过 `scripts/remote-test.sh` 把代码 rsync 到自有 Linux 远程机跑全量。**该脚本默认带 `-short`（仅 `./internal/...`），恢复 A 类必须显式传不带 `-short` 的全量参数：**
+  ```bash
+  bash scripts/remote-test.sh -race -timeout 1800s ./internal/... ./cmd/integration/...
+  ```
+  （`remote-test.sh` 无 `SKIP_PATTERN`；跑 `./internal/...` 时自动 `-p=2` 内存保护。A 类 58 处因非 `testing.Short()` 而自动执行。）
+
+**待办（计划中）：**
+
+- [x] **(a) 更新 AGENTS.md 测试章节**：写明“CI 轻量（short）+ 远程全量（不带 short）自动恢复 A 类 58 处”的分层，避免后人误判测试质量。
+- [x] **(b) `remote-test.sh` 加 `--full` 模式**：无参即全量（不带 `-short`、覆盖 `./cmd/integration/...`），让“本地运行 = 全量”自然成立；保留带 `-short` 的轻量默认供日常单包验证（或拆为默认全量 + `--fast`）。
+- [ ] **Soak goroutine 阈值观察**：`cmd/integration/soak_test.go:94` 的 `CI_NIGHTLY_SOAK` 门控在远程 Linux 机跑时设 `CI_NIGHTLY_SOAK=1` 观察 goroutine 阈值（`leak > 10`）是否稳定，再决定是否放宽，避免掩盖真实泄漏。
+
+**已处理（2026-07-21）：**
+
+- [x] `internal/replication/fuzz_test.go` 3 处：存储初始化失败 `t.Skip` → `t.Fatalf`（暴露真错，不再静默跳过）。
+- [x] `internal/store/keylock_test.go` 2 处：数据构造守卫 `t.Skip` → `t.Fatalf`（26 字母→8 分片必能找到碰撞/非碰撞 key，原 skip 会静默失去覆盖）。
+
 ### 配置文件支持（已完成 ✅）
 
 - [x] **定义 Config struct + TOML tag**：`cmd/boltDB/config.go`

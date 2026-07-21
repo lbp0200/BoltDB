@@ -109,7 +109,7 @@ section() {
 rm -rf "$BOLTDB_DIR"
 mkdir -p "$BOLTDB_DIR"
 
-go build -o "$BOLTDB" cmd/boltDB/main.go
+go build -o "$BOLTDB" ./cmd/boltDB/
 
 $BOLTDB -addr=":$BOLTDB_PORT" -dir="$BOLTDB_DIR" -log-level=ERROR &
 BOLTDB_PID=$!

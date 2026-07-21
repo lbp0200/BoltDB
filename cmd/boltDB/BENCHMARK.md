@@ -21,8 +21,8 @@
 
 2. **启动 BoltDB 服务器**
    ```bash
-   go run cmd/boltDB/main.go -addr=:6337 -dir=./data
-   go run cmd/boltDB/main.go -addr :6337 -log-level DEBUG
+   go run ./cmd/boltDB/ -addr=:6337 -dir=./data
+   go run ./cmd/boltDB/ -addr :6337 -log-level DEBUG
    ```
 
 3. **测试连接**（可选）
@@ -226,7 +226,7 @@ Could not connect to Redis at 127.0.0.1:6337: Connection refused
 **解决方法**：
 ```bash
 # 确保 BoltDB 服务器正在运行
-go run cmd/boltDB/main.go -addr :6337 -dir ./data &
+go run ./cmd/boltDB/ -addr :6337 -dir ./data &
 
 # 检查端口
 lsof -i :6337

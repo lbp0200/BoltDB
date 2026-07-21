@@ -1092,7 +1092,7 @@ def start_boltdb():
 
     try:
         result = subprocess.run(
-            ["go", "build", "-o", binary, "cmd/boltDB/main.go"],
+            ["go", "build", "-o", binary, "./cmd/boltDB/"],
             capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         )
         if result.returncode != 0:

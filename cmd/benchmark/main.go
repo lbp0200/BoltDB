@@ -30,7 +30,7 @@ func main() {
 	boltBinary := "./build/boltDB"
 	if _, err := os.Stat(boltBinary); err != nil {
 		fmt.Println("Building BoltDB server...")
-		cmd := exec.Command("go", "build", "-o", boltBinary, "./cmd/boltDB/main.go")
+		cmd := exec.Command("go", "build", "-o", boltBinary, "./cmd/boltDB/")
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
 			fmt.Printf("Failed to build BoltDB: %v\n", err)

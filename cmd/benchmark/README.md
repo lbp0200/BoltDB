@@ -6,7 +6,7 @@ BoltDB 性能测试工具，使用 redis-benchmark 进行压力测试。
 
 ### 1. 先编译 BoltDB
 ```bash
-go build -o ./build/boltDB ./cmd/boltDB/main.go
+go build -o ./build/boltDB ./cmd/boltDB/
 ```
 
 ### 2. 运行基准测试

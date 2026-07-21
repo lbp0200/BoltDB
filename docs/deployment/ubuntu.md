@@ -72,7 +72,7 @@ git clone https://github.com/lbp0200/BoltDB.git
 cd BoltDB
 
 # Build
-go build -o ./build/boltDB cmd/boltDB/main.go
+go build -o ./build/boltDB ./cmd/boltDB/
 
 # Install
 sudo mv ./build/boltDB /usr/local/bin/boltDB

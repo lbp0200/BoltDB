@@ -12,10 +12,10 @@
 
 ```bash
 # 构建二进制文件 (输出到 ./build/)
-go build -o ./build/boltDB cmd/boltDB/main.go
+go build -o ./build/boltDB ./cmd/boltDB/
 
 # 启动开发服务器
-go run cmd/boltDB/main.go -dir=/tmp/bolt_db_data
+go run ./cmd/boltDB/ -dir=/tmp/bolt_db_data
 ```
 
 ## 测试

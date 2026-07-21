@@ -29,13 +29,13 @@ BoltDB 实现了完整的 Redis Cluster 核心功能：槽位分片、真实 TCP
 ### 启动集群模式
 
 ```bash
-go run cmd/boltDB/main.go -cluster -addr=:6337 -dir=/tmp/bolt_node1
+go run ./cmd/boltDB/ -cluster -addr=:6337 -dir=/tmp/bolt_node1
 ```
 
 在第二个终端启动另一个节点并加入集群：
 
 ```bash
-go run cmd/boltDB/main.go -cluster -addr=:6338 -dir=/tmp/bolt_node2
+go run ./cmd/boltDB/ -cluster -addr=:6338 -dir=/tmp/bolt_node2
 redis-cli -p 6338 CLUSTER MEET 127.0.0.1 6337
 ```
 
