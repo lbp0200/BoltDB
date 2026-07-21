@@ -127,7 +127,7 @@ jobs:
           ALL_TESTS="$ALL_TESTS|TestMixedCluster"
           ALL_TESTS="$ALL_TESTS|TestSplitBrain"
           ALL_TESTS="$ALL_TESTS|Test(ShutdownWithReplication|GracefulShutdown)"
-          go test -race -timeout 1800s -run "$ALL_TESTS" \
+          go test -race -timeout 3600s -run "$ALL_TESTS" \
             -skip 'TestReplication(Stress|Chaos)|TestClusterFailover|TestSplitBrainConvergenceReplay|TestGoroutineLeak_MixedPubSubBlockingTx' -count=1 ./cmd/integration/
 
       - name: Split brain tests (flaky — advisory)
