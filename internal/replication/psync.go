@@ -48,16 +48,28 @@ func HandlePSync(rm *ReplicationManager, replId string, offset int64) (*PSyncRes
 				Int64("requested_offset", offset).
 				Msg("backlog 为空（重启后），请求的 offset 不可用，降级为全量同步")
 		} else if offset >= backlogStart && offset <= currentOffset {
-			// 可以增量同步
-			logger.Logger.Info().
-				Str("repl_id", replId).
-				Int64("offset", offset).
-				Msg("执行增量同步")
-			return &PSyncResult{
-				FullResync: false,
-				ReplId:     currentReplId,
-				Offset:     offset,
-			}, nil
+			// 可以增量同步，但先做命令边界校验（纵深防御，见 backlog.StartsAtCommandBoundary）。
+			// 若 offset 落在一个命令字节中间（从节点 offset 失步/错位续传），
+			// 取到的字节流首字节不会是 '*'，此时降级 FULLRESYNC，
+			// 避免从节点 ReadRESP 误帧（K:HASH:47 类 mis-frame → 无限重同步）。
+			if offset < currentOffset && !backlog.StartsAtCommandBoundary(offset) {
+				logger.Logger.Warn().
+					Str("repl_id", replId).
+					Int64("offset", offset).
+					Int64("current_offset", currentOffset).
+					Msg("PSYNC CONTINUE offset 非命令边界，降级为全量同步")
+			} else {
+				// 可以增量同步
+				logger.Logger.Info().
+					Str("repl_id", replId).
+					Int64("offset", offset).
+					Msg("执行增量同步")
+				return &PSyncResult{
+					FullResync: false,
+					ReplId:     currentReplId,
+					Offset:     offset,
+				}, nil
+			}
 		}
 	}
 

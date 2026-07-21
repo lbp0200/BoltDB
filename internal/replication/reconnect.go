@@ -346,11 +346,17 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 			continue
 		}
 
+		cmdBytes := serializeCommand(req.Args)
+
 		if err := executeReplicatedCommand(sr.store, req.Args); err != nil {
 			if isTransientReplicationError(err) {
+				// 命令字节已从主节点流中消费，必须推进 offset 与主节点保持锁步：
+				// 否则从节点 lastOffset 落后，重连时 PSYNC CONTINUE 取到错位字节流，
+				// ReadRESP 误把 key 名当命令名（如 K:HASH:47）→ 无限重同步循环。
 				logger.Logger.Warn().Err(err).
 					Str("cmd", cmd).
-					Msg("复制命令暂时失败，跳过")
+					Msg("复制命令暂时失败，跳过（已推进 offset 保持字节级对齐）")
+				sr.lastOffset.Add(int64(len(cmdBytes)))
 				continue
 			}
 			logger.Logger.Error().Err(err).
@@ -359,7 +365,6 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 			return fmt.Errorf("execute replicated command failed: %w", err)
 		}
 
-		cmdBytes := serializeCommand(req.Args)
 		sr.lastOffset.Add(int64(len(cmdBytes)))
 	}
 }

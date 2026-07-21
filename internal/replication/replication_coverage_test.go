@@ -539,14 +539,44 @@ func TestHandlePSync_ValidPartialSync(t *testing.T) {
 	// Get the current offset
 	currentOffset := rm.GetMasterReplOffset()
 
-	// Try partial sync with offset that should be within backlog range
-	result, err := HandlePSync(rm, rm.GetReplicationID(), currentOffset-1)
+	// Try partial sync with a valid command-boundary offset (offset 0 = start
+	// of the single propagated command). PSYNC CONTINUE requires the requested
+	// offset to land on a command boundary — a misaligned offset (e.g. a byte
+	// in the middle of a command) is rejected and降级为 FULLRESYNC, 避免从节点
+	// 收到错位字节流后 ReadRESP 误帧（K:HASH:47 类）。
+	result, err := HandlePSync(rm, rm.GetReplicationID(), 0)
 	assert.NoError(t, err)
 	assert.True(t, result != nil)
-	// Should return partial sync if within valid range
+	// Should return partial sync for a valid in-range boundary offset
 	if currentOffset > 0 {
 		assert.True(t, !result.FullResync)
 	}
+}
+
+// TestHandlePSync_MidCommandOffsetFallsBackToFullResync 验证防御性边界校验：
+// 当从节点请求的 offset 落在一个命令字节中间（非命令边界）时，PSYNC 必须
+// 降级为 FULLRESYNC，而不是返回 CONTINUE 把错位字节流发给从节点
+// （否则从节点 ReadRESP 会把 key 名误当命令名，触发 K:HASH:47 类 mis-frame
+// 与无限重同步）。
+func TestHandlePSync_MidCommandOffsetFallsBackToFullResync(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	rm.SetRole(RoleMaster)
+
+	// 写入一条命令，使 backlog 含至少一个命令（以 '*' 开头）。
+	rm.PropagateCommand([][]byte{[]byte("SET"), []byte("key"), []byte("value")})
+
+	currentOffset := rm.GetMasterReplOffset()
+	assert.True(t, currentOffset > 1)
+
+	// 请求命令中间的字节（currentOffset-1 是命令最后一字节，非边界）。
+	result, err := HandlePSync(rm, rm.GetReplicationID(), currentOffset-1)
+	assert.NoError(t, err)
+	assert.True(t, result != nil)
+	assert.True(t, result.FullResync)
 }
 
 // TestHandlePSync_DifferentReplId tests HandlePSync with different repl ID

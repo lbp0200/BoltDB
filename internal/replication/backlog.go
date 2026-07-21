@@ -126,6 +126,34 @@ func (rb *ReplicationBacklog) GetAvailableLength() int64 {
 	return rb.offset - availableStart
 }
 
+// StartsAtCommandBoundary 报告给定 offset 是否落在命令边界上。
+//
+// 每条被传播/入 backlog 的命令都由 serializeCommand 生成，以 RESP 数组头
+// '*' 开头。若传入的 offset 落在一个命令的字节中间（如从节点 offset 失步、
+// 错位续传），该位置的字节几乎不可能是 '*'。此检查用于在 PSYNC CONTINUE
+// 前拦截错位 offset，避免主节点把错位字节流发给从节点 → ReadRESP 误把 key
+// 名当命令名（K:HASH:47 类 mis-frame）→ 无限重同步。
+//
+// offset 超出可服务窗口（已截断或超出当前）时返回 false，调用方应据此
+// 降级为 FULLRESYNC。
+func (rb *ReplicationBacklog) StartsAtCommandBoundary(offset int64) bool {
+	rb.mu.RLock()
+	defer rb.mu.RUnlock()
+
+	if rb.offset == 0 || offset < 0 {
+		return false
+	}
+	availableStart := rb.offset - rb.size
+	if availableStart < 0 {
+		availableStart = 0
+	}
+	// 仅当 offset 在 [availableStart, currentOffset) 内才可定位字节。
+	if offset < availableStart || offset >= rb.offset {
+		return false
+	}
+	return rb.buffer[offset%rb.size] == '*'
+}
+
 func (rb *ReplicationBacklog) AvailableStartOffset() int64 {
 	rb.mu.RLock()
 	defer rb.mu.RUnlock()
