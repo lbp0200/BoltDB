@@ -238,3 +238,29 @@ boltDB -dir=/data/boltdb -addr=:6379 -cluster
 - [x] `internal/replication/reconnect.go:352-361` — goroutine 泄漏：循环内每轮迭代创建 goroutine，`defer replCancel()` 仅在函数返回时执行，不释放之前的 goroutine
 - [x] `internal/server/handler_core.go:385-386` — 恢复 nil guard：去掉后 `h.Ctx` 为 nil 时 `context.WithCancel(nil)` 会 panic
 - [x] `internal/server/admin2_commands.go:124` — 恢复 nil guard：去掉后 `h.Ctx` 为 nil 时 BGSave 收到 nil context
+
+## 预存测试失败（待修复）
+
+> `scripts/remote-test.sh --full` 在 32GB Linux 远程服务器上确认的预存失败，与当前代码变更无关。
+
+### `internal/logger` — Data race in SetLevel (3 tests)
+
+- `TestSetLevelFromString`
+- `TestDebug_Info_Warning_Error_Coverage`
+- `TestGetLevelString`
+
+**根因：** `SetLevel()` 写全局变量 `currentLevel` 和 `currentLevelStr` 无锁，`withSilentLogger` 在 cleanup 中调用 `SetLevel()` 与其他测试并发。
+
+### `internal/server` — Mutation kill tests (4 tests)
+
+- `TestKeyMutationKill_UNLINKNoArgs`
+- `TestReplicationError_ReplconfInvalidSubcommand`
+- `TestGeoMutationKill_GeoSearchFromMemberNonExistent`
+- `TestHashError_WrongTypeForHset`
+
+**模式：** 全部在 `mutation_kill_*_test.go` 中，是边界/错误场景的变异体击杀测试。可能原因：测试依赖的有序写入因并行测试被打断。
+
+### `cmd/integration/regressions` — 复制回归测试 (1 子步骤)
+
+- 测试耗时 949s，期间出现 `PSYNC CONTINUE offset 非命令边界，降级为全量同步` 日志
+- 整体 fail（exit 1），属于复制重连时序的已知边缘情况
