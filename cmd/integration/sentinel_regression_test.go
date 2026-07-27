@@ -201,6 +201,7 @@ func (p *partitionProxy) handleConn(client net.Conn) {
 // ---------------------------------------------------------------------------
 
 func TestSentinelFailoverConvergence(t *testing.T) {
+	t.Parallel()
 	skipHeavyIntegrationInShort(t)
 	master := startBoltNode(t)
 	defer master.Close()
@@ -304,6 +305,7 @@ func waitForSlaveSync(ctx context.Context, t *testing.T, slave, master *testBolt
 // ---------------------------------------------------------------------------
 
 func TestSentinelGossipStability(t *testing.T) {
+	t.Parallel()
 	skipHeavyIntegrationInShort(t)
 
 	downAfter := 30 * time.Second
@@ -420,6 +422,7 @@ func waitForSdownIncrement(t *testing.T, s *sentinel.Sentinel, masterName string
 // ---------------------------------------------------------------------------
 
 func TestSentinelSplitBrainRegression(t *testing.T) {
+	t.Parallel()
 	skipHeavyIntegrationInShort(t)
 	master := startBoltNode(t)
 	defer master.Close()
@@ -511,6 +514,7 @@ func TestSentinelSplitBrainRegression(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSentinelFalsePositiveDetection(t *testing.T) {
+	t.Parallel()
 	skipHeavyIntegrationInShort(t)
 	master := startBoltNode(t)
 	defer master.Close()

@@ -18,7 +18,7 @@ import (
 // ---------- XADD ----------
 
 func TestXADD_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -29,7 +29,7 @@ func TestXADD_NoArgs(t *testing.T) {
 }
 
 func TestXADD_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -39,7 +39,7 @@ func TestXADD_Success(t *testing.T) {
 }
 
 func TestXADD_WithMaxlen(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -50,7 +50,7 @@ func TestXADD_WithMaxlen(t *testing.T) {
 }
 
 func TestXADD_WithMinid(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -61,7 +61,7 @@ func TestXADD_WithMinid(t *testing.T) {
 }
 
 func TestXADD_MaxlenInvalid(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -73,7 +73,7 @@ func TestXADD_MaxlenInvalid(t *testing.T) {
 }
 
 func TestXADD_UnknownOption(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -84,7 +84,7 @@ func TestXADD_UnknownOption(t *testing.T) {
 }
 
 func TestXADD_OddFields(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -97,7 +97,7 @@ func TestXADD_OddFields(t *testing.T) {
 // ---------- XLEN ----------
 
 func TestXLEN_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -108,7 +108,7 @@ func TestXLEN_NoArgs(t *testing.T) {
 }
 
 func TestXLEN_EmptyStream(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -119,7 +119,7 @@ func TestXLEN_EmptyStream(t *testing.T) {
 }
 
 func TestXLEN_WrongType(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -131,7 +131,7 @@ func TestXLEN_WrongType(t *testing.T) {
 }
 
 func TestXLEN_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -145,7 +145,7 @@ func TestXLEN_Success(t *testing.T) {
 // ---------- XREAD ----------
 
 func TestXREAD_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -156,7 +156,7 @@ func TestXREAD_NoArgs(t *testing.T) {
 }
 
 func TestXREAD_InvalidCount(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -167,7 +167,7 @@ func TestXREAD_InvalidCount(t *testing.T) {
 }
 
 func TestXREAD_InvalidBlock(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -178,7 +178,7 @@ func TestXREAD_InvalidBlock(t *testing.T) {
 }
 
 func TestXREAD_MissingStreamsKeyword(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -189,7 +189,7 @@ func TestXREAD_MissingStreamsKeyword(t *testing.T) {
 }
 
 func TestXREAD_EmptyStream(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -203,7 +203,7 @@ func TestXREAD_EmptyStream(t *testing.T) {
 // ---------- XDEL ----------
 
 func TestXDEL_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -214,7 +214,7 @@ func TestXDEL_NoArgs(t *testing.T) {
 }
 
 func TestXDEL_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -231,7 +231,7 @@ func TestXDEL_Success(t *testing.T) {
 // ---------- XACK ----------
 
 func TestXACK_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -244,7 +244,7 @@ func TestXACK_NoArgs(t *testing.T) {
 // ---------- XGROUP ----------
 
 func TestXGROUP_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -255,7 +255,7 @@ func TestXGROUP_NoArgs(t *testing.T) {
 }
 
 func TestXGROUP_InvalidSubcommand(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -266,7 +266,7 @@ func TestXGROUP_InvalidSubcommand(t *testing.T) {
 }
 
 func TestXGROUP_CREATE_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -279,7 +279,7 @@ func TestXGROUP_CREATE_Success(t *testing.T) {
 }
 
 func TestXGROUP_DESTROY_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -295,7 +295,7 @@ func TestXGROUP_DESTROY_Success(t *testing.T) {
 // ---------- XREADGROUP ----------
 
 func TestXREADGROUP_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -306,7 +306,7 @@ func TestXREADGROUP_NoArgs(t *testing.T) {
 }
 
 func TestXREADGROUP_InvalidCount(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -317,7 +317,7 @@ func TestXREADGROUP_InvalidCount(t *testing.T) {
 }
 
 func TestXREADGROUP_InvalidBlock(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -328,7 +328,7 @@ func TestXREADGROUP_InvalidBlock(t *testing.T) {
 }
 
 func TestXREADGROUP_InvalidNoAck(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -342,7 +342,7 @@ func TestXREADGROUP_InvalidNoAck(t *testing.T) {
 // ---------- XPENDING ----------
 
 func TestXPENDING_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -353,7 +353,7 @@ func TestXPENDING_NoArgs(t *testing.T) {
 }
 
 func TestXPENDING_Summary(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -368,7 +368,7 @@ func TestXPENDING_Summary(t *testing.T) {
 // ---------- XINFO ----------
 
 func TestXINFO_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -379,7 +379,7 @@ func TestXINFO_NoArgs(t *testing.T) {
 }
 
 func TestXINFO_InvalidSubcommand(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -390,7 +390,7 @@ func TestXINFO_InvalidSubcommand(t *testing.T) {
 }
 
 func TestXINFO_STREAM_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -402,7 +402,7 @@ func TestXINFO_STREAM_Success(t *testing.T) {
 }
 
 func TestXINFO_GROUPS_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -416,7 +416,7 @@ func TestXINFO_GROUPS_Success(t *testing.T) {
 }
 
 func TestXINFO_CONSUMERS_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -431,7 +431,7 @@ func TestXINFO_CONSUMERS_Success(t *testing.T) {
 // ---------- XTRIM ----------
 
 func TestXTRIM_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -442,7 +442,7 @@ func TestXTRIM_NoArgs(t *testing.T) {
 }
 
 func TestXTRIM_Maxlen(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -457,7 +457,7 @@ func TestXTRIM_Maxlen(t *testing.T) {
 }
 
 func TestXTRIM_Minid(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -470,7 +470,7 @@ func TestXTRIM_Minid(t *testing.T) {
 }
 
 func TestXTRIM_InvalidStrategy(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -483,7 +483,7 @@ func TestXTRIM_InvalidStrategy(t *testing.T) {
 // ---------- XSETID ----------
 
 func TestXSETID_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -494,7 +494,7 @@ func TestXSETID_NoArgs(t *testing.T) {
 }
 
 func TestXSETID_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -508,7 +508,7 @@ func TestXSETID_Success(t *testing.T) {
 // ---------- XCLAIM ----------
 
 func TestXCLAIM_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -521,7 +521,7 @@ func TestXCLAIM_NoArgs(t *testing.T) {
 // ---------- XAUTOCLAIM ----------
 
 func TestXAUTOCLAIM_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -536,7 +536,7 @@ func TestXAUTOCLAIM_NoArgs(t *testing.T) {
 // =============================================================================
 
 func TestTS_CREATE_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -547,7 +547,7 @@ func TestTS_CREATE_NoArgs(t *testing.T) {
 }
 
 func TestTS_CREATE_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -557,7 +557,7 @@ func TestTS_CREATE_Success(t *testing.T) {
 }
 
 func TestTS_ADD_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -568,7 +568,7 @@ func TestTS_ADD_NoArgs(t *testing.T) {
 }
 
 func TestTS_ADD_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -579,7 +579,7 @@ func TestTS_ADD_Success(t *testing.T) {
 }
 
 func TestTS_GET_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -590,7 +590,7 @@ func TestTS_GET_NoArgs(t *testing.T) {
 }
 
 func TestTS_GET_NonExistent(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -606,7 +606,7 @@ func TestTS_GET_NonExistent(t *testing.T) {
 }
 
 func TestTS_GET_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -619,7 +619,7 @@ func TestTS_GET_Success(t *testing.T) {
 }
 
 func TestTS_RANGE_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -630,7 +630,7 @@ func TestTS_RANGE_NoArgs(t *testing.T) {
 }
 
 func TestTS_RANGE_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -644,7 +644,7 @@ func TestTS_RANGE_Success(t *testing.T) {
 }
 
 func TestTS_DEL_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -655,7 +655,7 @@ func TestTS_DEL_NoArgs(t *testing.T) {
 }
 
 func TestTS_INFO_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -666,7 +666,7 @@ func TestTS_INFO_NoArgs(t *testing.T) {
 }
 
 func TestTS_INFO_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -678,7 +678,7 @@ func TestTS_INFO_Success(t *testing.T) {
 }
 
 func TestTS_LEN_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -689,7 +689,7 @@ func TestTS_LEN_NoArgs(t *testing.T) {
 }
 
 func TestTS_LEN_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -702,7 +702,7 @@ func TestTS_LEN_Success(t *testing.T) {
 }
 
 func TestTS_MGET_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -713,7 +713,7 @@ func TestTS_MGET_NoArgs(t *testing.T) {
 }
 
 func TestTS_MGET_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -727,7 +727,7 @@ func TestTS_MGET_Success(t *testing.T) {
 }
 
 func TestTS_MRANGE_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -738,7 +738,7 @@ func TestTS_MRANGE_NoArgs(t *testing.T) {
 }
 
 func TestTS_MREVRANGE_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -749,7 +749,7 @@ func TestTS_MREVRANGE_NoArgs(t *testing.T) {
 }
 
 func TestTS_QUERYINDEX_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -760,7 +760,7 @@ func TestTS_QUERYINDEX_NoArgs(t *testing.T) {
 }
 
 func TestTS_MADD_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -771,7 +771,7 @@ func TestTS_MADD_NoArgs(t *testing.T) {
 }
 
 func TestTS_MADD_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -786,7 +786,7 @@ func TestTS_MADD_Success(t *testing.T) {
 }
 
 func TestTS_INCRBY_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -797,7 +797,7 @@ func TestTS_INCRBY_NoArgs(t *testing.T) {
 }
 
 func TestTS_INCRBY_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -816,7 +816,7 @@ func TestTS_INCRBY_Success(t *testing.T) {
 }
 
 func TestTS_CREATERULE_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -827,7 +827,7 @@ func TestTS_CREATERULE_NoArgs(t *testing.T) {
 }
 
 func TestTS_DELETERULE_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -840,6 +840,7 @@ func TestTS_DELETERULE_NoArgs(t *testing.T) {
 // ---------- XACKDEL ----------
 
 func TestXACKDEL_NoArgs(t *testing.T) {
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -850,6 +851,7 @@ func TestXACKDEL_NoArgs(t *testing.T) {
 }
 
 func TestXACKDEL_InvalidMode(t *testing.T) {
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -862,6 +864,7 @@ func TestXACKDEL_InvalidMode(t *testing.T) {
 }
 
 func TestXACKDEL_DELREF_ClearsPEL(t *testing.T) {
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -945,6 +948,7 @@ func TestXACKDEL_DELREF_ClearsPEL(t *testing.T) {
 }
 
 func TestXACKDEL_DELREF_DanglingPEL(t *testing.T) {
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1006,6 +1010,7 @@ func TestXACKDEL_DELREF_DanglingPEL(t *testing.T) {
 }
 
 func TestXACKDEL_ACKED_RequiresAllGroups(t *testing.T) {
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 

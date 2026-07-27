@@ -10,6 +10,7 @@ import (
 
 // TestServerInfoCommand tests INFO command
 func TestServerInfoCommand(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -90,6 +91,7 @@ func TestServerInfoCommand(t *testing.T) {
 
 // TestServerManagementCommands tests server management commands
 func TestServerManagementCommands(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -151,6 +153,7 @@ func TestServerManagementCommands(t *testing.T) {
 
 // TestServerConnectionCommands tests connection-related commands
 func TestServerConnectionCommands(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -198,6 +201,7 @@ func TestServerConnectionCommands(t *testing.T) {
 
 // TestServerSlowLogCommands tests slowlog commands
 func TestServerSlowLogCommands(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()

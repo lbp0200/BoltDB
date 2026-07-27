@@ -17,7 +17,7 @@ import (
 // ---------- parseTimestamp special characters ----------
 
 func TestParseTimestampStar(t *testing.T) {
-
+	t.Parallel()
 	ts, err := parseTimestamp("*")
 	assert.NoError(t, err)
 	now := timeNowMillis()
@@ -26,28 +26,28 @@ func TestParseTimestampStar(t *testing.T) {
 }
 
 func TestParseTimestampMinus(t *testing.T) {
-
+	t.Parallel()
 	ts, err := parseTimestamp("-")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), ts)
 }
 
 func TestParseTimestampPlus(t *testing.T) {
-
+	t.Parallel()
 	ts, err := parseTimestamp("+")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(math.MaxInt64), ts)
 }
 
 func TestParseTimestampNumeric(t *testing.T) {
-
+	t.Parallel()
 	ts, err := parseTimestamp("12345")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(12345), ts)
 }
 
 func TestParseTimestampInvalid(t *testing.T) {
-
+	t.Parallel()
 	_, err := parseTimestamp("abc")
 	assert.Error(t, err)
 }
@@ -55,7 +55,7 @@ func TestParseTimestampInvalid(t *testing.T) {
 // ---------- encodeTSMeta / decodeTSMeta ----------
 
 func TestEncodeDecodeTSMetaRoundtrip(t *testing.T) {
-
+	t.Parallel()
 	meta := &tsMetaData{
 		TotalSamples:   42,
 		FirstTimestamp: 1000,
@@ -74,14 +74,14 @@ func TestEncodeDecodeTSMetaRoundtrip(t *testing.T) {
 }
 
 func TestDecodeTSMetaTooShort(t *testing.T) {
-
+	t.Parallel()
 	_, err := decodeTSMeta([]byte("short"))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid time series metadata size")
 }
 
 func TestEncodeTSMetaZeroValues(t *testing.T) {
-
+	t.Parallel()
 	meta := &tsMetaData{
 		TotalSamples:   0,
 		FirstTimestamp: 0,
@@ -102,7 +102,7 @@ func TestEncodeTSMetaZeroValues(t *testing.T) {
 // ---------- TSAdd duplicate policies ----------
 
 func TestTSAddBlockDuplicate(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("ts_blk", TSCreateOptions{Encoding: "compressed"})
@@ -115,7 +115,7 @@ func TestTSAddBlockDuplicate(t *testing.T) {
 }
 
 func TestTSAddSkipDuplicate(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("ts_ski", TSCreateOptions{Encoding: "compressed"})
@@ -131,7 +131,7 @@ func TestTSAddSkipDuplicate(t *testing.T) {
 }
 
 func TestTSAddUpdateDuplicate(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("ts_upd", TSCreateOptions{Encoding: "compressed"})
@@ -147,7 +147,7 @@ func TestTSAddUpdateDuplicate(t *testing.T) {
 }
 
 func TestTSAddDefaultDuplicate(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("ts_def", TSCreateOptions{Encoding: "compressed"})
@@ -166,7 +166,7 @@ func TestTSAddDefaultDuplicate(t *testing.T) {
 // ---------- TSRange count limit ----------
 
 func TestTSRangeCountLimit(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("tsr_cnt", TSCreateOptions{})
@@ -183,7 +183,7 @@ func TestTSRangeCountLimit(t *testing.T) {
 }
 
 func TestTSRangeCountZero(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("tsr_cz", TSCreateOptions{})
@@ -197,7 +197,7 @@ func TestTSRangeCountZero(t *testing.T) {
 }
 
 func TestTSRangeStartGreaterThanStop(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("tsr_gs", TSCreateOptions{})
@@ -210,7 +210,7 @@ func TestTSRangeStartGreaterThanStop(t *testing.T) {
 }
 
 func TestTSRangePartialOverlap(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("tsr_po", TSCreateOptions{})
@@ -227,7 +227,7 @@ func TestTSRangePartialOverlap(t *testing.T) {
 // ---------- TSRevRange count limit ----------
 
 func TestTSRevRangeCountLimit(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("tsrr_cnt", TSCreateOptions{})
@@ -245,7 +245,7 @@ func TestTSRevRangeCountLimit(t *testing.T) {
 }
 
 func TestTSRevRangeFull(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("tsrr_full", TSCreateOptions{})
@@ -264,7 +264,7 @@ func TestTSRevRangeFull(t *testing.T) {
 // ---------- TSDel metadata reset ----------
 
 func TestTSDelAllPoints(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("tsd_all", TSCreateOptions{})
@@ -282,7 +282,7 @@ func TestTSDelAllPoints(t *testing.T) {
 }
 
 func TestTSDelSomePoints(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("tsd_some", TSCreateOptions{})
@@ -302,7 +302,7 @@ func TestTSDelSomePoints(t *testing.T) {
 }
 
 func TestTSDelNoMatch(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("tsd_nom", TSCreateOptions{})
@@ -314,7 +314,7 @@ func TestTSDelNoMatch(t *testing.T) {
 }
 
 func TestTSDelAllPointsMetadataZero(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("tsd_zm", TSCreateOptions{})
@@ -332,7 +332,7 @@ func TestTSDelAllPointsMetadataZero(t *testing.T) {
 // ---------- TSIncrBy ----------
 
 func TestTSIncrByNewTimestamp(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("tsi_nt", TSCreateOptions{})
@@ -350,7 +350,7 @@ func TestTSIncrByNewTimestamp(t *testing.T) {
 }
 
 func TestTSIncrByExistingTimestamp(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("tsi_et", TSCreateOptions{})
@@ -368,7 +368,7 @@ func TestTSIncrByExistingTimestamp(t *testing.T) {
 }
 
 func TestTSIncrByZeroTimestamp(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("tsi_zt", TSCreateOptions{})
@@ -381,7 +381,7 @@ func TestTSIncrByZeroTimestamp(t *testing.T) {
 }
 
 func TestTSIncrByMinusOneTimestamp(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("tsi_mt", TSCreateOptions{})
@@ -394,7 +394,7 @@ func TestTSIncrByMinusOneTimestamp(t *testing.T) {
 }
 
 func TestTSIncrByNoExistingValAtTimestamp(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("tsi_ne", TSCreateOptions{})
@@ -409,7 +409,7 @@ func TestTSIncrByNoExistingValAtTimestamp(t *testing.T) {
 // ---------- TSGet on empty / nonexistent ----------
 
 func TestTSGetNonexistent(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	dp, err := s.TSGet("ts_never")
@@ -418,7 +418,7 @@ func TestTSGetNonexistent(t *testing.T) {
 }
 
 func TestTSGetEmptyTS(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("ts_empty", TSCreateOptions{})
@@ -430,7 +430,7 @@ func TestTSGetEmptyTS(t *testing.T) {
 // ---------- TSCreate existing key ----------
 
 func TestTSCreateDuplicate(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	err := s.TSCreate("ts_dup", TSCreateOptions{})
@@ -444,7 +444,7 @@ func TestTSCreateDuplicate(t *testing.T) {
 // ---------- TSCreate default encoding ----------
 
 func TestTSCreateDefaultEncoding(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	err := s.TSCreate("ts_defenc", TSCreateOptions{})
@@ -462,7 +462,7 @@ func TestTSCreateDefaultEncoding(t *testing.T) {
 // ---------- TSRange with "-" and "+" timestamps ----------
 
 func TestTSRangeMinusPlus(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("ts_mp", TSCreateOptions{})
@@ -479,7 +479,7 @@ func TestTSRangeMinusPlus(t *testing.T) {
 // ---------- TSAdd retention policy ----------
 
 func TestTSAddWithRetention(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("ts_ret", TSCreateOptions{Retention: 5000})
@@ -499,7 +499,7 @@ func TestTSAddWithRetention(t *testing.T) {
 // ---------- TSAdd wrong type ----------
 
 func TestTSAddWrongTypeP5(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.Set("ts_wt", "string_value")
@@ -510,7 +510,7 @@ func TestTSAddWrongTypeP5(t *testing.T) {
 // ---------- TSRange wrong type ----------
 
 func TestTSRangeWrongType(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.Set("tsr_wt", "string_value")
@@ -521,7 +521,7 @@ func TestTSRangeWrongType(t *testing.T) {
 // ---------- TSAdd invalid timestamp ----------
 
 func TestTSRangeInvalidTimestamp(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.TSCreate("ts_inv", TSCreateOptions{})
@@ -533,14 +533,14 @@ func TestTSRangeInvalidTimestamp(t *testing.T) {
 // ---------- TSAddRule / TSDelRule stubs ----------
 
 func TestTSAddRuleStub(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 	err := s.TSAddRule("src", "dst", "avg", 60000)
 	assert.NoError(t, err)
 }
 
 func TestTSDelRuleStub(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 	err := s.TSDelRule("src", "dst", "avg", 60000)
 	assert.NoError(t, err)

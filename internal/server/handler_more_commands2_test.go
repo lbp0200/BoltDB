@@ -10,6 +10,7 @@ import (
 
 // TestServerGeoCommands2 tests GEO commands
 func TestServerGeoCommands2(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -87,6 +88,7 @@ func TestServerGeoCommands2(t *testing.T) {
 
 // TestServerHyperLogLogCommands tests HyperLogLog commands
 func TestServerHyperLogLogCommands(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -142,6 +144,7 @@ func TestServerHyperLogLogCommands(t *testing.T) {
 
 // TestServerStreamCommands2 tests Stream commands
 func TestServerStreamCommands2(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -230,6 +233,7 @@ func TestServerStreamCommands2(t *testing.T) {
 
 // TestServerSetCommands3 tests more Set commands
 func TestServerSetCommands3(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -332,6 +336,7 @@ func TestServerSetCommands3(t *testing.T) {
 
 // TestServerSortedSetCommands3 tests more Sorted Set commands
 func TestServerSortedSetCommands3(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()

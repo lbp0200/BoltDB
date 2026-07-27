@@ -82,12 +82,12 @@ type ClusterBus struct {
 	lastSave time.Time
 }
 
-func NewClusterBus(cluster *Cluster) *ClusterBus {
-	ctx, cancel := context.WithCancel(context.Background())
+func NewClusterBus(cluster *Cluster, ctx context.Context) *ClusterBus {
+	busCtx, cancel := context.WithCancel(ctx)
 	return &ClusterBus{
 		cluster: cluster,
 		peers:   make(map[string]*busPeer),
-		ctx:     ctx,
+		ctx:     busCtx,
 		cancel:  cancel,
 	}
 }

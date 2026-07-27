@@ -183,7 +183,7 @@ func StopSlaveReplication(rm *ReplicationManager) {
 	}
 }
 
-func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
+func executeReplicatedCommand(s *store.BotreonStore, args [][]byte, ctx context.Context) error {
 	if len(args) == 0 {
 		return nil
 	}
@@ -1169,7 +1169,7 @@ func executeReplicatedCommand(s *store.BotreonStore, args [][]byte) error {
 					keys[j] = string(args[i+j])
 				}
 				// IDs (including ">") are ignored for delivery cursor — store uses LastDeliveredID
-				_, err := s.XReadGroup(context.Background(), group, consumer, count, -1, keys...)
+				_, err := s.XReadGroup(ctx, group, consumer, count, -1, keys...)
 				return err
 			default:
 				i++

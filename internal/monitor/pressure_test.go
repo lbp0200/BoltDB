@@ -32,6 +32,7 @@ func TestPressureMonitor_Stopped_Initially(t *testing.T) {
 }
 
 func TestPressureMonitor_Start_Stop(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	pm := NewPressureMonitor(nil, nil)
 	pm.Start(ctx, 20*time.Millisecond)
@@ -45,6 +46,7 @@ func TestPressureMonitor_Start_Stop(t *testing.T) {
 }
 
 func TestPressureMonitor_Start_AlreadyStopped(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -56,6 +58,7 @@ func TestPressureMonitor_Start_AlreadyStopped(t *testing.T) {
 }
 
 func TestPressureMonitor_Samples_Snapshot(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	pm := NewPressureMonitor(nil, nil)
 	pm.Start(ctx, 20*time.Millisecond)
@@ -76,6 +79,7 @@ func TestPressureMonitor_SetClusterHealth_Empty(t *testing.T) {
 }
 
 func TestPressureMonitor_SetClusterHealth(t *testing.T) {
+	t.Parallel()
 	pm := NewPressureMonitor(nil, nil)
 
 	pm.mu.Lock()
@@ -214,6 +218,7 @@ func TestPressureMonitor_LogSummary_Empty(t *testing.T) {
 }
 
 func TestPressureMonitor_LogSummary_WithSamples(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	pm := NewPressureMonitor(nil, nil)
 	pm.interval = 20 * time.Millisecond
@@ -227,6 +232,7 @@ func TestPressureMonitor_LogSummary_WithSamples(t *testing.T) {
 }
 
 func TestPressureMonitor_HealthScore(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	pm := NewPressureMonitor(nil, nil)
 	pm.Start(ctx, 20*time.Millisecond)
@@ -247,6 +253,7 @@ func TestPressureMonitor_HealthScore_Empty(t *testing.T) {
 }
 
 func TestPressureMonitor_SetJSONLPath(t *testing.T) {
+	t.Parallel()
 	tmpFile := t.TempDir() + "/test.jsonl"
 	pm := NewPressureMonitor(nil, nil)
 	err := pm.SetJSONLPath(tmpFile)
@@ -259,12 +266,14 @@ func TestPressureMonitor_SetJSONLPath(t *testing.T) {
 }
 
 func TestPressureMonitor_SetJSONLPath_InvalidPath(t *testing.T) {
+	t.Parallel()
 	pm := NewPressureMonitor(nil, nil)
 	err := pm.SetJSONLPath("/nonexistent/dir/test.jsonl")
 	assert.Error(t, err)
 }
 
 func TestPressureMonitor_Wait(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	pm := NewPressureMonitor(nil, nil)
 	pm.Start(ctx, 20*time.Millisecond)
@@ -288,6 +297,7 @@ func TestPressureMonitor_Wait(t *testing.T) {
 }
 
 func TestPressureMonitor_Start_WithJSONL(t *testing.T) {
+	t.Parallel()
 	tmpFile := t.TempDir() + "/test.jsonl"
 	ctx, cancel := context.WithCancel(context.Background())
 	pm := NewPressureMonitor(nil, nil)

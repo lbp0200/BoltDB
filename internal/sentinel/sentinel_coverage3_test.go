@@ -174,11 +174,13 @@ func TestConfigManager_Load_InvalidData_Coverage(t *testing.T) {
 }
 
 func TestSentinelHandler_Stop_Coverage(t *testing.T) {
+	t.Parallel()
 	sh := NewSentinelHandler(NewSentinel(1, 0))
 	sh.Stop()
 }
 
 func TestSentinelHandler_Stop_WithConnections_Coverage(t *testing.T) {
+	t.Parallel()
 	server, client := net.Pipe()
 	defer server.Close()
 	defer client.Close()

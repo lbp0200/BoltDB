@@ -19,7 +19,7 @@ import (
 // ---------- ZINTERCARD ----------
 
 func TestZINTERCARD_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -30,7 +30,7 @@ func TestZINTERCARD_NoArgs(t *testing.T) {
 }
 
 func TestZINTERCARD_InvalidNumKeys(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -42,7 +42,7 @@ func TestZINTERCARD_InvalidNumKeys(t *testing.T) {
 }
 
 func TestZINTERCARD_NumKeysZero(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -54,7 +54,7 @@ func TestZINTERCARD_NumKeysZero(t *testing.T) {
 }
 
 func TestZINTERCARD_TooFewKeys(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -65,7 +65,7 @@ func TestZINTERCARD_TooFewKeys(t *testing.T) {
 }
 
 func TestZINTERCARD_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -79,7 +79,7 @@ func TestZINTERCARD_Success(t *testing.T) {
 }
 
 func TestZINTERCARD_WithLimit(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -93,7 +93,7 @@ func TestZINTERCARD_WithLimit(t *testing.T) {
 }
 
 func TestZINTERCARD_LimitMissingValue(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -105,7 +105,7 @@ func TestZINTERCARD_LimitMissingValue(t *testing.T) {
 }
 
 func TestZINTERCARD_UnknownOption(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -117,7 +117,7 @@ func TestZINTERCARD_UnknownOption(t *testing.T) {
 }
 
 func TestZINTERCARD_NegativeLimit(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -129,7 +129,7 @@ func TestZINTERCARD_NegativeLimit(t *testing.T) {
 }
 
 func TestZINTERCARD_WRONGTYPE(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -143,7 +143,7 @@ func TestZINTERCARD_WRONGTYPE(t *testing.T) {
 // ---------- ZUNION ----------
 
 func TestZUNION_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -154,7 +154,7 @@ func TestZUNION_NoArgs(t *testing.T) {
 }
 
 func TestZUNION_InvalidNumKeys(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -166,7 +166,7 @@ func TestZUNION_InvalidNumKeys(t *testing.T) {
 }
 
 func TestZUNION_TooFewKeys(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -179,7 +179,7 @@ func TestZUNION_TooFewKeys(t *testing.T) {
 }
 
 func TestZUNION_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -194,7 +194,7 @@ func TestZUNION_Success(t *testing.T) {
 }
 
 func TestZUNION_WithWeights(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -208,7 +208,7 @@ func TestZUNION_WithWeights(t *testing.T) {
 }
 
 func TestZUNION_WithAggregate(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -222,7 +222,7 @@ func TestZUNION_WithAggregate(t *testing.T) {
 }
 
 func TestZUNION_UnknownOption(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -233,7 +233,7 @@ func TestZUNION_UnknownOption(t *testing.T) {
 }
 
 func TestZUNION_InvalidWeightsCount(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -244,7 +244,7 @@ func TestZUNION_InvalidWeightsCount(t *testing.T) {
 }
 
 func TestZUNION_InvalidAggregate(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -257,7 +257,7 @@ func TestZUNION_InvalidAggregate(t *testing.T) {
 // ---------- ZMPOP ----------
 
 func TestZMPOP_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -268,7 +268,7 @@ func TestZMPOP_NoArgs(t *testing.T) {
 }
 
 func TestZMPOP_InvalidNumKeys(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -279,7 +279,7 @@ func TestZMPOP_InvalidNumKeys(t *testing.T) {
 }
 
 func TestZMPOP_InvalidModifier(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -290,7 +290,7 @@ func TestZMPOP_InvalidModifier(t *testing.T) {
 }
 
 func TestZMPOP_WithCount(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -303,7 +303,7 @@ func TestZMPOP_WithCount(t *testing.T) {
 }
 
 func TestZMPOP_CountMissingValue(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -316,7 +316,7 @@ func TestZMPOP_CountMissingValue(t *testing.T) {
 }
 
 func TestZMPOP_InvalidCount(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -329,7 +329,7 @@ func TestZMPOP_InvalidCount(t *testing.T) {
 }
 
 func TestZMPOP_EmptyKey(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -347,7 +347,7 @@ func TestZMPOP_EmptyKey(t *testing.T) {
 }
 
 func TestZMPOP_WRONGTYPE(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -361,7 +361,7 @@ func TestZMPOP_WRONGTYPE(t *testing.T) {
 // ---------- BZMPOP ----------
 
 func TestBZMPOP_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -372,7 +372,7 @@ func TestBZMPOP_NoArgs(t *testing.T) {
 }
 
 func TestBZMPOP_InvalidTimeout(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -383,7 +383,7 @@ func TestBZMPOP_InvalidTimeout(t *testing.T) {
 }
 
 func TestBZMPOP_NegativeTimeout(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -394,7 +394,7 @@ func TestBZMPOP_NegativeTimeout(t *testing.T) {
 }
 
 func TestBZMPOP_InvalidNumKeys(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -405,7 +405,7 @@ func TestBZMPOP_InvalidNumKeys(t *testing.T) {
 }
 
 func TestBZMPOP_InvalidModifier(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -416,7 +416,7 @@ func TestBZMPOP_InvalidModifier(t *testing.T) {
 }
 
 func TestBZMPOP_CountMissingValue(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -429,7 +429,7 @@ func TestBZMPOP_CountMissingValue(t *testing.T) {
 }
 
 func TestBZMPOP_InvalidCount(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -442,7 +442,7 @@ func TestBZMPOP_InvalidCount(t *testing.T) {
 }
 
 func TestBZMPOP_ZeroTimeoutEmptyKey(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -456,7 +456,7 @@ func TestBZMPOP_ZeroTimeoutEmptyKey(t *testing.T) {
 // ---------- ZRANGESTORE ----------
 
 func TestZRANGESTORE_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -467,7 +467,7 @@ func TestZRANGESTORE_NoArgs(t *testing.T) {
 }
 
 func TestZRANGESTORE_WithByScore(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -480,7 +480,7 @@ func TestZRANGESTORE_WithByScore(t *testing.T) {
 }
 
 func TestZRANGESTORE_WithByLex(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -493,7 +493,7 @@ func TestZRANGESTORE_WithByLex(t *testing.T) {
 }
 
 func TestZRANGESTORE_WithRev(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -508,7 +508,7 @@ func TestZRANGESTORE_WithRev(t *testing.T) {
 }
 
 func TestZRANGESTORE_WithLimit(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -521,7 +521,7 @@ func TestZRANGESTORE_WithLimit(t *testing.T) {
 }
 
 func TestZRANGESTORE_LimitMissingArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -532,7 +532,7 @@ func TestZRANGESTORE_LimitMissingArgs(t *testing.T) {
 }
 
 func TestZRANGESTORE_InvalidLimitOffset(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -543,7 +543,7 @@ func TestZRANGESTORE_InvalidLimitOffset(t *testing.T) {
 }
 
 func TestZRANGESTORE_InvalidLimitCount(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -554,7 +554,7 @@ func TestZRANGESTORE_InvalidLimitCount(t *testing.T) {
 }
 
 func TestZRANGESTORE_WithScores(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -577,7 +577,7 @@ func TestZRANGESTORE_WithScores(t *testing.T) {
 // ---------- ZRANGEBYSCORE ----------
 
 func TestZRANGEBYSCORE_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -588,7 +588,7 @@ func TestZRANGEBYSCORE_NoArgs(t *testing.T) {
 }
 
 func TestZRANGEBYSCORE_InvalidMin(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -599,7 +599,7 @@ func TestZRANGEBYSCORE_InvalidMin(t *testing.T) {
 }
 
 func TestZRANGEBYSCORE_InvalidMax(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -610,7 +610,7 @@ func TestZRANGEBYSCORE_InvalidMax(t *testing.T) {
 }
 
 func TestZRANGEBYSCORE_WithLimitInvalidOffset(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -621,7 +621,7 @@ func TestZRANGEBYSCORE_WithLimitInvalidOffset(t *testing.T) {
 }
 
 func TestZRANGEBYSCORE_WithLimitInvalidCount(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -632,7 +632,7 @@ func TestZRANGEBYSCORE_WithLimitInvalidCount(t *testing.T) {
 }
 
 func TestZRANGEBYSCORE_EmptyKey(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -643,7 +643,7 @@ func TestZRANGEBYSCORE_EmptyKey(t *testing.T) {
 }
 
 func TestZRANGEBYSCORE_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -658,7 +658,7 @@ func TestZRANGEBYSCORE_Success(t *testing.T) {
 // ---------- ZREVRANGEBYSCORE ----------
 
 func TestZREVRANGEBYSCORE_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -669,7 +669,7 @@ func TestZREVRANGEBYSCORE_NoArgs(t *testing.T) {
 }
 
 func TestZREVRANGEBYSCORE_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -684,7 +684,7 @@ func TestZREVRANGEBYSCORE_Success(t *testing.T) {
 // ---------- ZMSCORE ----------
 
 func TestZMSCORE_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -695,7 +695,7 @@ func TestZMSCORE_NoArgs(t *testing.T) {
 }
 
 func TestZMSCORE_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -712,7 +712,7 @@ func TestZMSCORE_Success(t *testing.T) {
 // ---------- ZSCAN ----------
 
 func TestZSCAN_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -723,7 +723,7 @@ func TestZSCAN_NoArgs(t *testing.T) {
 }
 
 func TestZSCAN_InvalidCursor(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -734,7 +734,7 @@ func TestZSCAN_InvalidCursor(t *testing.T) {
 }
 
 func TestZSCAN_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -747,7 +747,7 @@ func TestZSCAN_Success(t *testing.T) {
 }
 
 func TestZSCAN_WithMatch(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -759,7 +759,7 @@ func TestZSCAN_WithMatch(t *testing.T) {
 }
 
 func TestZSCAN_WithCount(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -771,7 +771,7 @@ func TestZSCAN_WithCount(t *testing.T) {
 }
 
 func TestZSCAN_InvalidCount(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -784,7 +784,7 @@ func TestZSCAN_InvalidCount(t *testing.T) {
 // ---------- ZRANGE ----------
 
 func TestZRANGE_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -795,7 +795,7 @@ func TestZRANGE_NoArgs(t *testing.T) {
 }
 
 func TestZRANGE_InvalidStart(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -806,7 +806,7 @@ func TestZRANGE_InvalidStart(t *testing.T) {
 }
 
 func TestZRANGE_InvalidStop(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -817,7 +817,7 @@ func TestZRANGE_InvalidStop(t *testing.T) {
 }
 
 func TestZRANGE_EmptyKey(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -828,7 +828,7 @@ func TestZRANGE_EmptyKey(t *testing.T) {
 }
 
 func TestZRANGE_WithScores(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -843,7 +843,7 @@ func TestZRANGE_WithScores(t *testing.T) {
 // ---------- ZREVRANGE ----------
 
 func TestZREVRANGE_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -854,7 +854,7 @@ func TestZREVRANGE_NoArgs(t *testing.T) {
 }
 
 func TestZREVRANGE_EmptyKey(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -865,7 +865,7 @@ func TestZREVRANGE_EmptyKey(t *testing.T) {
 }
 
 func TestZREVRANGE_WithScores(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -880,7 +880,7 @@ func TestZREVRANGE_WithScores(t *testing.T) {
 // ---------- ZPOPMAX / ZPOPMIN ----------
 
 func TestZPOPMAX_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -891,7 +891,7 @@ func TestZPOPMAX_NoArgs(t *testing.T) {
 }
 
 func TestZPOPMIN_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -902,7 +902,7 @@ func TestZPOPMIN_NoArgs(t *testing.T) {
 }
 
 func TestZPOPMAX_EmptyKey(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -912,7 +912,7 @@ func TestZPOPMAX_EmptyKey(t *testing.T) {
 }
 
 func TestZPOPMIN_EmptyKey(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -922,7 +922,7 @@ func TestZPOPMIN_EmptyKey(t *testing.T) {
 }
 
 func TestZPOPMAX_WithCount(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -935,7 +935,7 @@ func TestZPOPMAX_WithCount(t *testing.T) {
 }
 
 func TestZPOPMIN_WithCount(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -950,7 +950,7 @@ func TestZPOPMIN_WithCount(t *testing.T) {
 // ---------- ZDIFF ----------
 
 func TestZDIFF_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -961,7 +961,7 @@ func TestZDIFF_NoArgs(t *testing.T) {
 }
 
 func TestZDIFF_InvalidNumKeys(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -973,7 +973,7 @@ func TestZDIFF_InvalidNumKeys(t *testing.T) {
 }
 
 func TestZDIFF_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -989,7 +989,7 @@ func TestZDIFF_Success(t *testing.T) {
 // ---------- ZDIFFSTORE ----------
 
 func TestZDIFFSTORE_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1002,7 +1002,7 @@ func TestZDIFFSTORE_NoArgs(t *testing.T) {
 // ---------- ZLEXCOUNT ----------
 
 func TestZLEXCOUNT_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1013,7 +1013,7 @@ func TestZLEXCOUNT_NoArgs(t *testing.T) {
 }
 
 func TestZLEXCOUNT_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1028,7 +1028,7 @@ func TestZLEXCOUNT_Success(t *testing.T) {
 // ---------- ZRANGEBYLEX ----------
 
 func TestZRANGEBYLEX_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1039,7 +1039,7 @@ func TestZRANGEBYLEX_NoArgs(t *testing.T) {
 }
 
 func TestZRANGEBYLEX_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1054,7 +1054,7 @@ func TestZRANGEBYLEX_Success(t *testing.T) {
 // ---------- ZREVRANGEBYLEX ----------
 
 func TestZREVRANGEBYLEX_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1065,7 +1065,7 @@ func TestZREVRANGEBYLEX_NoArgs(t *testing.T) {
 }
 
 func TestZREVRANGEBYLEX_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1080,7 +1080,7 @@ func TestZREVRANGEBYLEX_Success(t *testing.T) {
 // ---------- ZREMRANGEBYLEX ----------
 
 func TestZREMRANGEBYLEX_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1091,7 +1091,7 @@ func TestZREMRANGEBYLEX_NoArgs(t *testing.T) {
 }
 
 func TestZREMRANGEBYLEX_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1106,7 +1106,7 @@ func TestZREMRANGEBYLEX_Success(t *testing.T) {
 // ---------- ZREMRANGEBYRANK ----------
 
 func TestZREMRANGEBYRANK_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1117,7 +1117,7 @@ func TestZREMRANGEBYRANK_NoArgs(t *testing.T) {
 }
 
 func TestZREMRANGEBYRANK_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1132,7 +1132,7 @@ func TestZREMRANGEBYRANK_Success(t *testing.T) {
 // ---------- ZREMRANGEBYSCORE ----------
 
 func TestZREMRANGEBYSCORE_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1143,7 +1143,7 @@ func TestZREMRANGEBYSCORE_NoArgs(t *testing.T) {
 }
 
 func TestZREMRANGEBYSCORE_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1158,7 +1158,7 @@ func TestZREMRANGEBYSCORE_Success(t *testing.T) {
 // ---------- ZINCRBY ----------
 
 func TestZINCRBY_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1169,7 +1169,7 @@ func TestZINCRBY_NoArgs(t *testing.T) {
 }
 
 func TestZINCRBY_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1182,7 +1182,7 @@ func TestZINCRBY_Success(t *testing.T) {
 }
 
 func TestZINCRBY_NewMember(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1195,7 +1195,7 @@ func TestZINCRBY_NewMember(t *testing.T) {
 // ---------- ZCOUNT ----------
 
 func TestZCOUNT_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1206,7 +1206,7 @@ func TestZCOUNT_NoArgs(t *testing.T) {
 }
 
 func TestZCOUNT_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1221,7 +1221,7 @@ func TestZCOUNT_Success(t *testing.T) {
 // ---------- ZRANK / ZREVRANK ----------
 
 func TestZRANK_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1232,7 +1232,7 @@ func TestZRANK_NoArgs(t *testing.T) {
 }
 
 func TestZRANK_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1245,7 +1245,7 @@ func TestZRANK_Success(t *testing.T) {
 }
 
 func TestZRANK_NotFound(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1258,7 +1258,7 @@ func TestZRANK_NotFound(t *testing.T) {
 }
 
 func TestZREVRANK_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1269,7 +1269,7 @@ func TestZREVRANK_NoArgs(t *testing.T) {
 }
 
 func TestZREVRANK_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1284,7 +1284,7 @@ func TestZREVRANK_Success(t *testing.T) {
 // ---------- ZCARD / ZSCORE ----------
 
 func TestZCARD_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1295,7 +1295,7 @@ func TestZCARD_NoArgs(t *testing.T) {
 }
 
 func TestZSCORE_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1306,7 +1306,7 @@ func TestZSCORE_NoArgs(t *testing.T) {
 }
 
 func TestZSCORE_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1319,7 +1319,7 @@ func TestZSCORE_Success(t *testing.T) {
 }
 
 func TestZSCORE_NotFound(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1334,7 +1334,7 @@ func TestZSCORE_NotFound(t *testing.T) {
 // ---------- ZADD / ZREM ----------
 
 func TestZADD_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1345,7 +1345,7 @@ func TestZADD_NoArgs(t *testing.T) {
 }
 
 func TestZADD_InvalidScore(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1356,7 +1356,7 @@ func TestZADD_InvalidScore(t *testing.T) {
 }
 
 func TestZREM_NoArgs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1367,7 +1367,7 @@ func TestZREM_NoArgs(t *testing.T) {
 }
 
 func TestZREM_Success(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 

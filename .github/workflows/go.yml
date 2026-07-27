@@ -18,7 +18,8 @@ permissions:
   id-token: write
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # 所有 action 均已升级到原生支持 Node 24 的版本
+  # (actions/cache@v6, golangci-lint-action@v9, codecov-action@v6)
 
 jobs:
   test:
@@ -43,7 +44,7 @@ jobs:
 
       - name: Upload coverage
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.out
@@ -181,7 +182,7 @@ jobs:
           go test -race -timeout 60s -run 'Test(ShutdownWithReplication|GracefulShutdown)' -count=1 ./cmd/integration/
 
       - name: Restore evolution history
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /tmp/soak-artifacts/report/history
           key: soak-history-evolution-${{ github.ref_name }}
@@ -223,7 +224,7 @@ jobs:
 
       - name: Save evolution history
         if: always()
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /tmp/soak-artifacts/report/history
           key: soak-history-evolution-${{ github.ref_name }}-${{ github.run_id }}
@@ -248,19 +249,6 @@ jobs:
         with:
           go-version: "1.25.7"
           cache: true
-
-      - name: Advisory — full test suite on remote Linux
-        # 在发版前通过 rsync 推送代码到远程 Linux 服务器，跑完整测试套件
-        # (包括 GHA 上因资源不足跳过的 58 个重测试)。
-        # continue-on-error: 不阻塞发版，失败只发通知。
-        # 需要 GHA runner 有 SSH key 访问远程服务器才能生效。
-        # 参见: scripts/remote-test.sh --full, AGENTS.md → "Skipped tests & local full run"
-        if: always()
-        continue-on-error: true
-        run: |
-          echo "::notice::Running full test suite on remote Linux (advisory)..."
-          bash scripts/remote-test.sh --full 2>&1 || echo "::warning::Full test suite on remote failed or unreachable — check scripts/remote-test.sh for SSH config"
-          echo "::notice::Full test suite on remote completed (advisory)."
 
       - name: Create version variable
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
@@ -427,7 +415,7 @@ jobs:
           cache: true
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.8.0
           args: --timeout 5m

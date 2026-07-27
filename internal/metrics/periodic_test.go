@@ -19,6 +19,7 @@ func TestWriteGoroutineStack(t *testing.T) {
 }
 
 func TestStartPeriodicSnapshot_CancelledContext(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -30,6 +31,7 @@ func TestStartPeriodicSnapshot_CancelledContext(t *testing.T) {
 }
 
 func TestStartPeriodicSnapshot_NormalOperation(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 
 	var wg sync.WaitGroup
@@ -47,6 +49,7 @@ func TestStartPeriodicSnapshot_NormalOperation(t *testing.T) {
 }
 
 func TestStartPeriodicSnapshot_MultipleTicks(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 
 	var wg sync.WaitGroup

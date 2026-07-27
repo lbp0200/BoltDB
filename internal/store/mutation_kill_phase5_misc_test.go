@@ -16,7 +16,7 @@ import (
 // ================== geospatial.go (11 mutants) ==================
 
 func TestExpandBoundingBoxClampMinLat(t *testing.T) {
-
+	t.Parallel()
 	// Near south pole with large radius → minLat should clamp to -90
 	minLat, maxLat, minLon, maxLon := expandBoundingBox(-89, -89, 0, 0, 200000)
 	assert.Equal(t, float64(-90), minLat)
@@ -26,26 +26,26 @@ func TestExpandBoundingBoxClampMinLat(t *testing.T) {
 }
 
 func TestExpandBoundingBoxClampMaxLat(t *testing.T) {
-
+	t.Parallel()
 	minLat, maxLat, _, _ := expandBoundingBox(89, 89, 0, 0, 200000)
 	_ = minLat
 	assert.Equal(t, float64(90), maxLat)
 }
 
 func TestExpandBoundingBoxClampMinLon(t *testing.T) {
-
+	t.Parallel()
 	_, _, minLon, _ := expandBoundingBox(0, 0, -179, -179, 200000)
 	assert.Equal(t, float64(-180), minLon)
 }
 
 func TestExpandBoundingBoxClampMaxLon(t *testing.T) {
-
+	t.Parallel()
 	_, _, _, maxLon := expandBoundingBox(0, 0, 179, 179, 200000)
 	assert.Equal(t, float64(180), maxLon)
 }
 
 func TestExpandBoundingBoxNoClamp(t *testing.T) {
-
+	t.Parallel()
 	minLat, maxLat, minLon, maxLon := expandBoundingBox(0, 0, 0, 0, 1000)
 	assert.True(t, minLat < 0)
 	assert.True(t, maxLat > 0)
@@ -54,49 +54,49 @@ func TestExpandBoundingBoxNoClamp(t *testing.T) {
 }
 
 func TestConvertGeoRadiusToMetersKM(t *testing.T) {
-
+	t.Parallel()
 	m := convertGeoRadiusToMeters(1, "KM")
 	assert.Equal(t, 1000.0, m)
 }
 
 func TestConvertGeoRadiusToMetersMI(t *testing.T) {
-
+	t.Parallel()
 	m := convertGeoRadiusToMeters(1, "MI")
 	assert.InDelta(t, 1609.344, m, 0.01)
 }
 
 func TestConvertGeoRadiusToMetersFT(t *testing.T) {
-
+	t.Parallel()
 	m := convertGeoRadiusToMeters(10, "FT")
 	assert.InDelta(t, 3.048, m, 0.01)
 }
 
 func TestConvertGeoRadiusToMetersUnknown(t *testing.T) {
-
+	t.Parallel()
 	m := convertGeoRadiusToMeters(5, "ZZ")
 	assert.Equal(t, 5.0, m) // unknown unit returns unchanged
 }
 
 func TestFormatGeoDistanceKM(t *testing.T) {
-
+	t.Parallel()
 	d := formatGeoDistance(2000, "KM")
 	assert.Equal(t, 2.0, d)
 }
 
 func TestFormatGeoDistanceMI(t *testing.T) {
-
+	t.Parallel()
 	d := formatGeoDistance(1609.344, "MI")
 	assert.InDelta(t, 1.0, d, 0.01)
 }
 
 func TestFormatGeoDistanceFT(t *testing.T) {
-
+	t.Parallel()
 	d := formatGeoDistance(1, "FT")
 	assert.InDelta(t, 3.28084, d, 0.01)
 }
 
 func TestFormatGeoDistanceDefault(t *testing.T) {
-
+	t.Parallel()
 	d := formatGeoDistance(100, "ZZ")
 	assert.Equal(t, 100.0, d)
 }
@@ -104,7 +104,7 @@ func TestFormatGeoDistanceDefault(t *testing.T) {
 // ================== json.go (7 mutants) ==================
 
 func TestGetValueByPathDollar(t *testing.T) {
-
+	t.Parallel()
 	root := map[string]interface{}{"a": float64(1)}
 	val, err := getValueByPath(root, "$")
 	assert.NoError(t, err)
@@ -112,7 +112,7 @@ func TestGetValueByPathDollar(t *testing.T) {
 }
 
 func TestGetValueByPathDollarDot(t *testing.T) {
-
+	t.Parallel()
 	root := map[string]interface{}{"a": float64(1)}
 	val, err := getValueByPath(root, "$.a")
 	assert.NoError(t, err)
@@ -120,7 +120,7 @@ func TestGetValueByPathDollarDot(t *testing.T) {
 }
 
 func TestGetValueByPathNested(t *testing.T) {
-
+	t.Parallel()
 	root := map[string]interface{}{
 		"a": map[string]interface{}{
 			"b": "found",
@@ -132,7 +132,7 @@ func TestGetValueByPathNested(t *testing.T) {
 }
 
 func TestGetValueByPathNotFound(t *testing.T) {
-
+	t.Parallel()
 	root := map[string]interface{}{"a": float64(1)}
 	_, err := getValueByPath(root, "$.missing")
 	assert.Error(t, err)
@@ -140,7 +140,7 @@ func TestGetValueByPathNotFound(t *testing.T) {
 }
 
 func TestGetValueByPathNotTraversable(t *testing.T) {
-
+	t.Parallel()
 	root := map[string]interface{}{"a": "string_value"}
 	_, err := getValueByPath(root, "$.a.b")
 	assert.Error(t, err)
@@ -148,7 +148,7 @@ func TestGetValueByPathNotTraversable(t *testing.T) {
 }
 
 func TestGetJSONTypeAll(t *testing.T) {
-
+	t.Parallel()
 	assert.Equal(t, "null", getJSONType(nil))
 	assert.Equal(t, "boolean", getJSONType(true))
 	assert.Equal(t, "string", getJSONType("hello"))
@@ -159,7 +159,7 @@ func TestGetJSONTypeAll(t *testing.T) {
 }
 
 func TestGetValueByPathEmptyString(t *testing.T) {
-
+	t.Parallel()
 	root := "root"
 	val, err := getValueByPath(root, "")
 	assert.NoError(t, err)
@@ -169,53 +169,53 @@ func TestGetValueByPathEmptyString(t *testing.T) {
 // ================== lcs.go (6 mutants) ==================
 
 func TestComputeLCSNoCommon(t *testing.T) {
-
+	t.Parallel()
 	lcs, length := computeLCS("abc", "xyz")
 	assert.Equal(t, "", lcs)
 	assert.Equal(t, 0, length)
 }
 
 func TestComputeLCSIdentical(t *testing.T) {
-
+	t.Parallel()
 	lcs, length := computeLCS("hello", "hello")
 	assert.Equal(t, "hello", lcs)
 	assert.Equal(t, 5, length)
 }
 
 func TestComputeLCSPartial(t *testing.T) {
-
+	t.Parallel()
 	lcs, _ := computeLCS("abcde", "ace")
 	assert.Equal(t, "ace", lcs)
 }
 
 func TestComputeLCSLengthP5(t *testing.T) {
-
+	t.Parallel()
 	l := computeLCSLength("abcde", "ace")
 	assert.Equal(t, 3, l)
 }
 
 func TestComputeLCSLengthEmpty(t *testing.T) {
-
+	t.Parallel()
 	l := computeLCSLength("", "abc")
 	assert.Equal(t, 0, l)
 }
 
 func TestComputeLCSMatchesBasic(t *testing.T) {
-
+	t.Parallel()
 	matches := ComputeLCSMatches("hello world", "world hello", 3)
 	assert.True(t, len(matches) >= 1)
 	// Should find "hello" and "world" as contiguous matches
 }
 
 func TestComputeLCSMatchesMinLenFilter(t *testing.T) {
-
+	t.Parallel()
 	matches := ComputeLCSMatches("abc", "axc", 2)
 	// LCS is "ac" but not contiguous, so no segments of length >= 2
 	assert.Equal(t, 0, len(matches))
 }
 
 func TestComputeLCSMatchesEmpty(t *testing.T) {
-
+	t.Parallel()
 	matches := ComputeLCSMatches("", "abc", 1)
 	assert.Nil(t, matches)
 
@@ -224,7 +224,7 @@ func TestComputeLCSMatchesEmpty(t *testing.T) {
 }
 
 func TestComputeLCSMatchesZeroLength(t *testing.T) {
-
+	t.Parallel()
 	matches := ComputeLCSMatches("abc", "xyz", 1)
 	assert.Equal(t, 0, len(matches))
 }
@@ -232,7 +232,7 @@ func TestComputeLCSMatchesZeroLength(t *testing.T) {
 // ================== compression.go (7 mutants) ==================
 
 func TestCompressDataNone(t *testing.T) {
-
+	t.Parallel()
 	data := []byte("hello world")
 	result, err := compressData(data, CompressionNone)
 	assert.NoError(t, err)
@@ -240,27 +240,27 @@ func TestCompressDataNone(t *testing.T) {
 }
 
 func TestCompressDataEmpty(t *testing.T) {
-
+	t.Parallel()
 	result, err := compressData([]byte{}, CompressionSnappy)
 	assert.NoError(t, err)
 	assert.Equal(t, []byte{}, result)
 }
 
 func TestCompressDataUnsupported(t *testing.T) {
-
+	t.Parallel()
 	_, err := compressData([]byte("data"), CompressionType("unknown"))
 	assert.Error(t, err)
 }
 
 func TestDecompressDataEmpty(t *testing.T) {
-
+	t.Parallel()
 	result, err := decompressData([]byte{})
 	assert.NoError(t, err)
 	assert.Equal(t, []byte{}, result)
 }
 
 func TestDecompressDataNoMagic(t *testing.T) {
-
+	t.Parallel()
 	data := []byte("raw uncompressed data")
 	result, err := decompressData(data)
 	assert.NoError(t, err)
@@ -268,7 +268,7 @@ func TestDecompressDataNoMagic(t *testing.T) {
 }
 
 func TestDecompressDataTooShort(t *testing.T) {
-
+	t.Parallel()
 	data := []byte("ab")
 	result, err := decompressData(data)
 	assert.NoError(t, err)
@@ -276,7 +276,7 @@ func TestDecompressDataTooShort(t *testing.T) {
 }
 
 func TestShouldCompressThreshold(t *testing.T) {
-
+	t.Parallel()
 	// Less than 64 bytes → should not compress
 	assert.False(t, shouldCompress([]byte("short"), CompressionSnappy))
 	// Exactly 64 bytes → should compress
@@ -286,7 +286,7 @@ func TestShouldCompressThreshold(t *testing.T) {
 }
 
 func TestCompressSnappyRoundtrip(t *testing.T) {
-
+	t.Parallel()
 	data := []byte("This is a test string that should compress and decompress correctly.")
 	compressed, err := compressData(data, CompressionSnappy)
 	assert.NoError(t, err)
@@ -298,7 +298,7 @@ func TestCompressSnappyRoundtrip(t *testing.T) {
 }
 
 func TestCompressLZ4Roundtrip(t *testing.T) {
-
+	t.Parallel()
 	data := make([]byte, 128)
 	for i := range data {
 		data[i] = byte(i%26 + 'a')
@@ -311,7 +311,7 @@ func TestCompressLZ4Roundtrip(t *testing.T) {
 }
 
 func TestCompressZSTRoundtrip(t *testing.T) {
-
+	t.Parallel()
 	data := make([]byte, 128)
 	for i := range data {
 		data[i] = byte(i%26 + 'a')
@@ -326,7 +326,7 @@ func TestCompressZSTRoundtrip(t *testing.T) {
 // ================== backpressure.go (8 mutants) ==================
 
 func TestGetRetryMetricsDefaults(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 	metrics := s.GetRetryMetrics()
 	assert.Equal(t, int64(0), metrics.ActiveRetries)
@@ -336,7 +336,7 @@ func TestGetRetryMetricsDefaults(t *testing.T) {
 }
 
 func TestPreWriteCheckDisabled(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 	// backpressure is nil by default in test store
 	delay, reject := s.preWriteCheck()
@@ -345,7 +345,7 @@ func TestPreWriteCheckDisabled(t *testing.T) {
 }
 
 func TestSetBackpressureConfig(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 	cfg := BackpressureConfig{
 		Enabled:         true,
@@ -361,7 +361,7 @@ func TestSetBackpressureConfig(t *testing.T) {
 }
 
 func TestGetBackpressureConfigDefaults(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 	cfg := s.GetBackpressureConfig()
 	assert.NotNil(t, cfg)
@@ -370,7 +370,7 @@ func TestGetBackpressureConfigDefaults(t *testing.T) {
 // ================== hyperloglog.go (4 mutants) ==================
 
 func TestPFAddAndGetBasic(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	added, err := s.PFAdd("hll_basic", "a", "b", "c")
@@ -383,7 +383,7 @@ func TestPFAddAndGetBasic(t *testing.T) {
 }
 
 func TestPFMergeBasic(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.PFAdd("hll_m1", "a", "b")
@@ -397,7 +397,7 @@ func TestPFMergeBasic(t *testing.T) {
 }
 
 func TestPFCountNonexistent(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	count, err := s.PFCount("hll_none")
@@ -406,7 +406,7 @@ func TestPFCountNonexistent(t *testing.T) {
 }
 
 func TestPFAddOverwrite(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.PFAdd("hll_ow", "a", "b")
@@ -419,7 +419,7 @@ func TestPFAddOverwrite(t *testing.T) {
 // ================== set.go (4 mutants) ==================
 
 func TestSPopZeroCount(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.SAdd("spop_z", "a", "b", "c")
@@ -429,7 +429,7 @@ func TestSPopZeroCount(t *testing.T) {
 }
 
 func TestSPopNegativeCount(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.SAdd("spop_n", "a", "b", "c")
@@ -439,7 +439,7 @@ func TestSPopNegativeCount(t *testing.T) {
 }
 
 func TestSPopMoreThanAvailable(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.SAdd("spop_m", "a")
@@ -449,7 +449,7 @@ func TestSPopMoreThanAvailable(t *testing.T) {
 }
 
 func TestSInterCardBasic(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.SAdd("sic_a", "a", "b")
@@ -463,7 +463,7 @@ func TestSInterCardBasic(t *testing.T) {
 // ================== list.go (25 mutants) ==================
 
 func TestLPosWithRankAndCount(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.LPush("lpos_rc", "a", "b", "a", "c", "a")
@@ -476,7 +476,7 @@ func TestLPosWithRankAndCount(t *testing.T) {
 }
 
 func TestLPosNotFound(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.LPush("lpos_nx", "a", "b")
@@ -486,7 +486,7 @@ func TestLPosNotFound(t *testing.T) {
 }
 
 func TestLMoveLeftRight(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.LPush("lmv_a", "b", "a")
@@ -504,7 +504,7 @@ func TestLMoveLeftRight(t *testing.T) {
 }
 
 func TestLMoveRightLeft(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.LPush("lmvrl_a", "b", "a")
@@ -516,7 +516,7 @@ func TestLMoveRightLeft(t *testing.T) {
 }
 
 func TestLRemRemoveFirst(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.LPush("lrem_f", "c", "b", "a", "b")
@@ -526,7 +526,7 @@ func TestLRemRemoveFirst(t *testing.T) {
 }
 
 func TestLRemRemoveAll(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.LPush("lrem_a", "b", "a", "b", "a")
@@ -553,7 +553,7 @@ func TestLRemRemoveNegativeCount(t *testing.T) {
 }
 
 func TestLSetValidIndex(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.LPush("lset_v", "c", "b", "a")
@@ -565,7 +565,7 @@ func TestLSetValidIndex(t *testing.T) {
 }
 
 func TestLTrimKeepMiddle(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.LPush("ltrm_m", "e", "d", "c", "b", "a")
@@ -577,7 +577,7 @@ func TestLTrimKeepMiddle(t *testing.T) {
 }
 
 func TestLInsertBefore(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.LPush("lins_b", "c", "a")
@@ -597,7 +597,7 @@ func TestLInsertBefore(t *testing.T) {
 }
 
 func TestLInsertAfter(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.LPush("lins_a", "c", "a")
@@ -607,7 +607,7 @@ func TestLInsertAfter(t *testing.T) {
 }
 
 func TestLInsertPivotNotFound(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.LPush("lins_nf", "c", "a")
@@ -619,7 +619,7 @@ func TestLInsertPivotNotFound(t *testing.T) {
 // ================== hash.go (25 mutants) ==================
 
 func TestHGetAllEmpty(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	fields, err := s.HGetAll("hga_empty")
@@ -628,7 +628,7 @@ func TestHGetAllEmpty(t *testing.T) {
 }
 
 func TestHIncrByNewField(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	newVal, err := s.HIncrBy("hib_new", "f1", 10)
@@ -637,7 +637,7 @@ func TestHIncrByNewField(t *testing.T) {
 }
 
 func TestHIncrByNegative(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.HSet("hib_neg", "f1", "10")
@@ -647,7 +647,7 @@ func TestHIncrByNegative(t *testing.T) {
 }
 
 func TestHIncrByFloatNegative(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.HSet("hibf_neg", "f1", "10.5")
@@ -657,7 +657,7 @@ func TestHIncrByFloatNegative(t *testing.T) {
 }
 
 func TestHRandFieldZero(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.HSet("hrf_z", "f1", "v1")
@@ -670,7 +670,7 @@ func TestHRandFieldZero(t *testing.T) {
 }
 
 func TestHRandFieldNegative(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.HSet("hrf_n", "f1", "v1")
@@ -682,7 +682,7 @@ func TestHRandFieldNegative(t *testing.T) {
 }
 
 func TestHRandFieldWithValues(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.HSet("hrf_wv", "f1", "v1")
@@ -695,7 +695,7 @@ func TestHRandFieldWithValues(t *testing.T) {
 }
 
 func TestHScanBasic(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.HSet("hs_b", "f1", "v1")
@@ -708,7 +708,7 @@ func TestHScanBasic(t *testing.T) {
 }
 
 func TestHScanEmpty(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	result, err := s.HScan("hs_e", 0, "*", 10)
@@ -717,7 +717,7 @@ func TestHScanEmpty(t *testing.T) {
 }
 
 func TestHScanNoMatch(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.HSet("hs_nm", "f1", "v1")
@@ -727,7 +727,7 @@ func TestHScanNoMatch(t *testing.T) {
 }
 
 func TestHScanWithCursor(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	for i := 0; i < 20; i++ {
@@ -744,7 +744,7 @@ func TestHScanWithCursor(t *testing.T) {
 }
 
 func TestHScanCountDefault(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.HSet("hs_cd", "f1", "v1")
@@ -756,31 +756,31 @@ func TestHScanCountDefault(t *testing.T) {
 // ================== define.go (38 mutants) ==================
 
 func TestTypeOfKeyGetString(t *testing.T) {
-
+	t.Parallel()
 	key := TypeOfKeyGet("mykey")
 	assert.Contains(t, string(key), "mykey")
 }
 
 func TestTypeOfKeyGetEmpty(t *testing.T) {
-
+	t.Parallel()
 	key := TypeOfKeyGet("")
 	assert.NotNil(t, key)
 }
 
 func TestIsUUIDFormatValid(t *testing.T) {
-
+	t.Parallel()
 	assert.True(t, isUUIDFormat("550e8400-e29b-41d4-a716-446655440000"))
 }
 
 func TestIsUUIDFormatInvalid(t *testing.T) {
-
+	t.Parallel()
 	assert.False(t, isUUIDFormat("not-a-uuid"))
 	assert.False(t, isUUIDFormat(""))
 	assert.False(t, isUUIDFormat("550e8400-e29b-41d4-a716"))
 }
 
 func TestSetGetBackpressureConfig(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	cfg := BackpressureConfig{
@@ -798,7 +798,7 @@ func TestSetGetBackpressureConfig(t *testing.T) {
 }
 
 func TestIterateRawKeysP5(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 
 	s.Set("irk_a", "val1")
@@ -814,14 +814,14 @@ func TestIterateRawKeysP5(t *testing.T) {
 }
 
 func TestGetDB(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 	db := s.GetDB()
 	assert.NotNil(t, db)
 }
 
 func TestClearCaches(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 	s.Set("cc_a", "val")
 	s.ClearCaches()
@@ -829,7 +829,7 @@ func TestClearCaches(t *testing.T) {
 }
 
 func TestCheck(t *testing.T) {
-
+	t.Parallel()
 	s := setupTestStore(t)
 	err := s.Check()
 	assert.NoError(t, err)

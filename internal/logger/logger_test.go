@@ -8,6 +8,7 @@ import (
 )
 
 func TestParseLevel(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    string
 		expected zerolog.Level
@@ -63,6 +64,7 @@ func TestParseLevel(t *testing.T) {
 }
 
 func TestParseLevel_WithSpaces(t *testing.T) {
+	t.Parallel()
 	// Test with leading/trailing spaces
 	assert.Equal(t, zerolog.InfoLevel, parseLevel(" info "))
 	assert.Equal(t, zerolog.DebugLevel, parseLevel("  debug  "))
@@ -70,6 +72,7 @@ func TestParseLevel_WithSpaces(t *testing.T) {
 }
 
 func TestSetLevel(t *testing.T) {
+	t.Parallel()
 	// Save original level
 	originalLevel := GetLevel()
 	defer SetLevel(originalLevel)
@@ -84,6 +87,7 @@ func TestSetLevel(t *testing.T) {
 }
 
 func TestSetLevelFromString(t *testing.T) {
+	t.Parallel()
 	// Save original level
 	originalLevel := GetLevel()
 	defer SetLevel(originalLevel)
@@ -101,6 +105,7 @@ func TestSetLevelFromString(t *testing.T) {
 }
 
 func TestGetLevelString(t *testing.T) {
+	t.Parallel()
 	// Save original level
 	originalLevel := GetLevel()
 	defer SetLevel(originalLevel)

@@ -32,7 +32,7 @@ type Cluster struct {
 }
 
 // NewCluster 创建新集群
-func NewCluster(store *store.BotreonStore, nodeID, addr string) (*Cluster, error) {
+func NewCluster(store *store.BotreonStore, nodeID, addr string, ctx context.Context) (*Cluster, error) {
 	if nodeID == "" {
 		// 尝试从持久化配置恢复节点 ID，确保重启后 ID 不变
 		persistedID := loadPersistedNodeID(store.GetDB())
@@ -84,11 +84,11 @@ func NewCluster(store *store.BotreonStore, nodeID, addr string) (*Cluster, error
 		}
 	}
 
-	// 初始化 gossip（使用 background context；生产环境由 main.go 替换）
-	cluster.Gossip = NewGossiper(context.Background(), cluster)
+	// 初始化 gossip（使用传入的 context，由 main.go 提供可取消 ctx → shutdown 时干净退出）
+	cluster.Gossip = NewGossiper(ctx, cluster)
 
 	// 初始化 cluster bus
-	cluster.Bus = NewClusterBus(cluster)
+	cluster.Bus = NewClusterBus(cluster, ctx)
 
 	return cluster, nil
 }

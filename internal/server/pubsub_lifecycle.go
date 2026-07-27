@@ -20,7 +20,7 @@ func (h *Handler) runPubSubLoop(ctx context.Context, conn net.Conn, reader *bufi
 		return
 	}
 	if ctx == nil {
-		ctx = context.Background()
+		ctx = h.Ctx
 	}
 
 	logger.Logger.Debug().Str("remote_addr", remoteAddr).Msg("进入 PubSub 模式")

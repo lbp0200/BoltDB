@@ -10,6 +10,7 @@ import (
 // TestProperty_SetGetRoundtrip 验证 SET(k,v); GET(k) == v
 // 使用独立前缀保证每次 rapid 迭代的 key 不重叠。
 func TestProperty_SetGetRoundtrip(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	var iter int
 
@@ -35,6 +36,7 @@ func TestProperty_SetGetRoundtrip(t *testing.T) {
 
 // TestProperty_DelRemovesKey 验证 Del(k); Get(k) 返回错误
 func TestProperty_DelRemovesKey(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	var iter int
 
@@ -58,6 +60,7 @@ func TestProperty_DelRemovesKey(t *testing.T) {
 
 // TestProperty_DelIdempotent 验证 Del 已删除的 key 返回 0
 func TestProperty_DelIdempotent(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	var iter int
 
@@ -89,6 +92,7 @@ func TestProperty_DelIdempotent(t *testing.T) {
 
 // TestProperty_LPushLPop 验证 LPush(k,v); LPop(k) == v
 func TestProperty_LPushLPop(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	var iter int
 
@@ -128,6 +132,7 @@ func TestProperty_LPushLPop(t *testing.T) {
 
 // TestProperty_SAddSIsMember 验证 SAdd(k,m); SIsMember(k,m) == true
 func TestProperty_SAddSIsMember(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	var iter int
 
@@ -169,6 +174,7 @@ func TestProperty_SAddSIsMember(t *testing.T) {
 
 // TestProperty_INCR_Monotonic 验证 INCR(k) 结果严格递增
 func TestProperty_INCR_Monotonic(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 	var iter int
 

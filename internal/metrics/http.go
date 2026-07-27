@@ -10,6 +10,7 @@ import (
 	"github.com/lbp0200/BoltDB/internal/logger"
 )
 
+// AttachHTTP registers debug and Prometheus metric endpoints on the given mux.
 func AttachHTTP(mux *http.ServeMux, c *Collector) {
 	mux.HandleFunc("/debug/vars", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -27,6 +28,13 @@ func AttachHTTP(mux *http.ServeMux, c *Collector) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		s := c.Snapshot()
 		_, _ = w.Write([]byte(s.String()))
+	})
+
+	// /metrics — Prometheus exposition format, standard scrape endpoint
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		s := c.Snapshot()
+		_, _ = w.Write([]byte(prometheusText(s)))
 	})
 }
 

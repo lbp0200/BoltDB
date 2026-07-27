@@ -12,6 +12,7 @@ import (
 )
 
 func TestDetectAnomalies_Empty(t *testing.T) {
+	t.Parallel()
 	r := DetectAnomalies(nil, "standalone", "")
 	if r.Stable != true {
 		t.Errorf("expected stable=true for empty runs, got stable=%v", r.Stable)
@@ -22,6 +23,7 @@ func TestDetectAnomalies_Empty(t *testing.T) {
 }
 
 func TestDetectAnomalies_Stable(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	runs := []EvolutionRun{
 		{Timestamp: now.Add(-48 * time.Hour), HealthOverall: 0.95, Basin: "healthy", BasinDepth: 0.85, L0Peak: 5.0, GoroutineDelta: 0, Converging: true, ConvergenceProb: 0.9},
@@ -38,6 +40,7 @@ func TestDetectAnomalies_Stable(t *testing.T) {
 }
 
 func TestDetectAnomalies_BasinDrift(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	runs := []EvolutionRun{
 		{Timestamp: now.Add(-48 * time.Hour), BasinDepth: 0.85},
@@ -63,6 +66,7 @@ func TestDetectAnomalies_BasinDrift(t *testing.T) {
 }
 
 func TestDetectAnomalies_BasinShift(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	runs := []EvolutionRun{
 		{Timestamp: now.Add(-48 * time.Hour), Basin: "healthy"},
@@ -85,6 +89,7 @@ func TestDetectAnomalies_BasinShift(t *testing.T) {
 }
 
 func TestDetectAnomalies_OscillationGrowth(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	runs := []EvolutionRun{
 		{Timestamp: now.Add(-48 * time.Hour), OscillationDetected: false, LimitCycle: false},
@@ -104,6 +109,7 @@ func TestDetectAnomalies_OscillationGrowth(t *testing.T) {
 }
 
 func TestDetectAnomalies_HealthDecline(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	runs := []EvolutionRun{
 		{Timestamp: now.Add(-48 * time.Hour), HealthOverall: 0.95},
@@ -123,6 +129,7 @@ func TestDetectAnomalies_HealthDecline(t *testing.T) {
 }
 
 func TestDetectAnomalies_ConvergenceLoss(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	runs := []EvolutionRun{
 		{Timestamp: now.Add(-48 * time.Hour), Converging: true, ConvergenceProb: 0.85},
@@ -151,6 +158,7 @@ func TestDetectAnomalies_ConvergenceLoss(t *testing.T) {
 }
 
 func TestDetectAnomalies_L0Escalation(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	runs := []EvolutionRun{
 		{Timestamp: now.Add(-48 * time.Hour), L0Peak: 5.0},
@@ -170,6 +178,7 @@ func TestDetectAnomalies_L0Escalation(t *testing.T) {
 }
 
 func TestDetectAnomalies_DegradationOnset(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	runs := []EvolutionRun{
 		{Timestamp: now.Add(-48 * time.Hour), InDegradation: false, DegradationLevel: "OK"},
@@ -192,6 +201,7 @@ func TestDetectAnomalies_DegradationOnset(t *testing.T) {
 }
 
 func TestDetectAnomalies_RecoveryGrowth(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	runs := []EvolutionRun{
 		{Timestamp: now.Add(-48 * time.Hour), RecoveryDurationSec: 0},
@@ -211,6 +221,7 @@ func TestDetectAnomalies_RecoveryGrowth(t *testing.T) {
 }
 
 func TestDetectAnomalies_PersistenceGrowth(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	runs := []EvolutionRun{
 		{Timestamp: now.Add(-48 * time.Hour), PersistenceDurationSec: 0},
@@ -230,6 +241,7 @@ func TestDetectAnomalies_PersistenceGrowth(t *testing.T) {
 }
 
 func TestDetectAnomalies_GoroutineLeak(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	runs := []EvolutionRun{
 		{Timestamp: now.Add(-48 * time.Hour), GoroutineDelta: 5},
@@ -249,6 +261,7 @@ func TestDetectAnomalies_GoroutineLeak(t *testing.T) {
 }
 
 func TestFormatAnomalyReport(t *testing.T) {
+	t.Parallel()
 	r := AnomalyReport{
 		Version:    1,
 		Timestamp:  time.Now(),
@@ -278,6 +291,7 @@ func TestFormatAnomalyReport(t *testing.T) {
 }
 
 func TestAnomalyReport_Empty(t *testing.T) {
+	t.Parallel()
 	r := AnomalyReport{
 		Version:    1,
 		Timestamp:  time.Now(),
@@ -293,6 +307,7 @@ func TestAnomalyReport_Empty(t *testing.T) {
 }
 
 func TestSaveAnomalyReport(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	r := AnomalyReport{
 		Version:    1,
@@ -316,6 +331,7 @@ func TestSaveAnomalyReport(t *testing.T) {
 }
 
 func TestSaveAnomalyReport_WithAnomalies(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	r := AnomalyReport{
 		Version:    1,
@@ -343,22 +359,26 @@ func TestSaveAnomalyReport_WithAnomalies(t *testing.T) {
 }
 
 func TestSaveAnomalyReport_InvalidDir(t *testing.T) {
+	t.Parallel()
 	r := AnomalyReport{Version: 1, Timestamp: time.Now(), Prefix: "test"}
 	SaveAnomalyReport("/nonexistent-parent-dir-12345", "test-run", r)
 }
 
 func TestCorrelateCommits_NoRuns(t *testing.T) {
+	t.Parallel()
 	r := &AnomalyReport{Anomalies: []Anomaly{{Type: "basin_drift"}}}
 	correlateCommits(r, nil, "")
 }
 
 func TestCorrelateCommits_OneRun(t *testing.T) {
+	t.Parallel()
 	r := &AnomalyReport{Anomalies: []Anomaly{{Type: "basin_drift"}}}
 	runs := []EvolutionRun{{Timestamp: time.Now()}}
 	correlateCommits(r, runs, "")
 }
 
 func TestCorrelateCommits_WithCommits(t *testing.T) {
+	t.Parallel()
 	repoDir := t.TempDir()
 
 	cmd := exec.Command("git", "init")
@@ -417,6 +437,7 @@ func TestCorrelateCommits_WithCommits(t *testing.T) {
 }
 
 func TestCorrelateCommits_EmptyRange(t *testing.T) {
+	t.Parallel()
 	repoDir := t.TempDir()
 
 	cmd := exec.Command("git", "init")
@@ -448,6 +469,7 @@ func TestCorrelateCommits_EmptyRange(t *testing.T) {
 }
 
 func TestGetCommitsInWindow_NoRepo(t *testing.T) {
+	t.Parallel()
 	commits := getCommitsInWindow("/nonexistent", time.Now(), time.Now())
 	assert.Nil(t, commits)
 }

@@ -15,6 +15,7 @@ import (
 // ---------- Del: Stream key cleanup ----------
 
 func TestDelStreamKey(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -39,6 +40,7 @@ func TestDelStreamKey(t *testing.T) {
 }
 
 func TestDelStreamKeyNonExistent(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -48,6 +50,7 @@ func TestDelStreamKeyNonExistent(t *testing.T) {
 }
 
 func TestDelStreamWithConsumerGroup(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -77,6 +80,7 @@ func TestDelStreamWithConsumerGroup(t *testing.T) {
 // ---------- Del: HLL key cleanup ----------
 
 func TestDelHyperLogLogKey(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -101,6 +105,7 @@ func TestDelHyperLogLogKey(t *testing.T) {
 }
 
 func TestDelHyperLogLogKeyNonExistent(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -112,6 +117,7 @@ func TestDelHyperLogLogKeyNonExistent(t *testing.T) {
 // ---------- Del: Geo key cleanup ----------
 
 func TestDelGeoKey(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -139,6 +145,7 @@ func TestDelGeoKey(t *testing.T) {
 }
 
 func TestDelGeoKeyNonExistent(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -150,6 +157,7 @@ func TestDelGeoKeyNonExistent(t *testing.T) {
 // ---------- NextStartup: orphan cleanup ----------
 
 func TestNextStartupCleanupOrphanedStreamData(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -177,6 +185,7 @@ func TestNextStartupCleanupOrphanedStreamData(t *testing.T) {
 }
 
 func TestNextStartupCleanupOrphanedHLLData(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -195,6 +204,7 @@ func TestNextStartupCleanupOrphanedHLLData(t *testing.T) {
 }
 
 func TestNextStartupCleanupOrphanedGeoData(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -215,6 +225,7 @@ func TestNextStartupCleanupOrphanedGeoData(t *testing.T) {
 }
 
 func TestNextStartupEmptyStore(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -225,6 +236,7 @@ func TestNextStartupEmptyStore(t *testing.T) {
 // ---------- Del: multiple key types in sequence ----------
 
 func TestDelMultipleKeyTypes(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -257,6 +269,7 @@ func TestDelMultipleKeyTypes(t *testing.T) {
 // ---------- Del: stream with entries and groups ----------
 
 func TestDelStreamWithMultipleGroupsAndEntries(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -290,6 +303,7 @@ func TestDelStreamWithMultipleGroupsAndEntries(t *testing.T) {
 // ---------- FlushDB: full cleanup including stream/hll/geo ----------
 
 func TestFlushDBWithAllKeyTypes(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 

@@ -20,6 +20,7 @@ import (
 // TestGracefulShutdown 优雅关闭验证:
 // 高并发写入 + 阻塞操作 + pubsub → shutdown → no leak
 func TestGracefulShutdown(t *testing.T) {
+	t.Parallel()
 	skipHeavyIntegrationInShort(t)
 	db, err := store.NewBotreonStore(t.TempDir())
 	assert.NoError(t, err)
@@ -128,6 +129,7 @@ func TestGracefulShutdown(t *testing.T) {
 
 // TestShutdownWithReplication 验证有 slave 连接时的关闭
 func TestShutdownWithReplication(t *testing.T) {
+	t.Parallel()
 	skipHeavyIntegrationInShort(t)
 	db, err := store.NewBotreonStore(t.TempDir())
 	assert.NoError(t, err)

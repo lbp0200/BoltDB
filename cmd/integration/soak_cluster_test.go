@@ -102,7 +102,7 @@ func setupClusterSoak(t *testing.T, nodeCount int) *clusterSoakEnv {
 
 		tcpAddr := ln.Addr().(*net.TCPAddr)
 
-		cl, err := cluster.NewCluster(db, "", tcpAddr.String())
+		cl, err := cluster.NewCluster(db, "", tcpAddr.String(), context.Background())
 		assert.NoError(t, err)
 
 		h := &server.Handler{
@@ -229,6 +229,7 @@ func nodeForSlot(slot uint32, nodeCount int) int {
 //	SOAK_CLUSTER_DURATION=3h go test -race -timeout 4h ./cmd/integration/ -run TestClusterSoak
 //	SOAK_CLUSTER_NODES=5 SOAK_CLUSTER_WRITERS=20 go test -race -timeout 30m ./cmd/integration/ -run TestClusterSoak
 func TestClusterSoak(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping cluster soak test in short mode")
 	}

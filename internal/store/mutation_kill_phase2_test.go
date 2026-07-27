@@ -19,6 +19,7 @@ import (
 // ---------- TTL/PTTL: expired key paths (base.go 444, 504-507, 551) ----------
 
 func TestTTLExpiredSecondsFormat(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -37,6 +38,7 @@ func TestTTLExpiredSecondsFormat(t *testing.T) {
 }
 
 func TestPTTLExpiredSecondsFormat(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -52,6 +54,7 @@ func TestPTTLExpiredSecondsFormat(t *testing.T) {
 }
 
 func TestTTLExpiredNanoFormat(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -70,6 +73,7 @@ func TestTTLExpiredNanoFormat(t *testing.T) {
 }
 
 func TestPTTLExpiredNanoFormat(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -87,6 +91,7 @@ func TestPTTLExpiredNanoFormat(t *testing.T) {
 // ---------- BitCount: negative byte offsets (string.go 724-739) ----------
 
 func TestBitCountNegativeOffsets(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -122,6 +127,7 @@ func TestBitCountNegativeOffsets(t *testing.T) {
 // ---------- BitPos: negative byte offsets + not-found (string.go 862-899) ----------
 
 func TestBitPosNegativeOffsets(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -145,6 +151,7 @@ func TestBitPosNegativeOffsets(t *testing.T) {
 }
 
 func TestBitPosNotFound(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -158,6 +165,7 @@ func TestBitPosNotFound(t *testing.T) {
 }
 
 func TestBitPosNegativeEndClamp(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -172,6 +180,7 @@ func TestBitPosNegativeEndClamp(t *testing.T) {
 // ---------- BitOp: all empty sources (string.go 781-788) ----------
 
 func TestBitOpAllEmptySources(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -187,6 +196,7 @@ func TestBitOpAllEmptySources(t *testing.T) {
 // ---------- ZRANGEBYLEX: exclusive/inclusive bounds (sorted_set.go 358-366) ----------
 
 func TestZRangByLexExclusiveUpperBound(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -206,6 +216,7 @@ func TestZRangByLexExclusiveUpperBound(t *testing.T) {
 }
 
 func TestZRangByLexInclusiveUpperBound(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -222,6 +233,7 @@ func TestZRangByLexInclusiveUpperBound(t *testing.T) {
 }
 
 func TestZRangByLexPlainUpperBound(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -240,6 +252,7 @@ func TestZRangByLexPlainUpperBound(t *testing.T) {
 // ---------- ZRANGE: negative rank normalization (sorted_set.go 370-387) ----------
 
 func TestZRangeNegativeRanks(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -260,6 +273,7 @@ func TestZRangeNegativeRanks(t *testing.T) {
 }
 
 func TestZRangeNegativeStartClamp(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -276,6 +290,7 @@ func TestZRangeNegativeStartClamp(t *testing.T) {
 }
 
 func TestZRangeStopClamp(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -291,6 +306,7 @@ func TestZRangeStopClamp(t *testing.T) {
 }
 
 func TestZRangeStartGreaterThanStop(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -308,6 +324,7 @@ func TestZRangeStartGreaterThanStop(t *testing.T) {
 // ---------- XADD: MAXLEN trimming (stream.go 317-354) ----------
 
 func TestXAddMaxLenTrimming(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -324,6 +341,7 @@ func TestXAddMaxLenTrimming(t *testing.T) {
 }
 
 func TestXAddMaxLenExact(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -340,6 +358,7 @@ func TestXAddMaxLenExact(t *testing.T) {
 }
 
 func TestXAddMaxLenTrimMultiple(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -361,6 +380,7 @@ func TestXAddMaxLenTrimMultiple(t *testing.T) {
 // ---------- XREAD: $ startID (stream.go 462-465, 652-673) ----------
 
 func TestXReadDollarID(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -375,6 +395,7 @@ func TestXReadDollarID(t *testing.T) {
 }
 
 func TestXReadDollarIDAfterNewEntry(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -402,6 +423,7 @@ func TestXReadDollarIDAfterNewEntry(t *testing.T) {
 // ---------- XREAD: COUNT limit (stream.go 494, 684) ----------
 
 func TestXReadCountLimit(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -427,6 +449,7 @@ func TestXReadCountLimit(t *testing.T) {
 // ---------- Rename: TTL preservation with SetWithTTL (base.go 915-927) ----------
 
 func TestRenameWithSetWithTTL(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -444,6 +467,7 @@ func TestRenameWithSetWithTTL(t *testing.T) {
 // ---------- ZRANGEBYSCORE: exclusive max boundary (sorted_set.go 196, 623) ----------
 
 func TestZRangeByScoreExclusiveMax(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -482,6 +506,7 @@ func TestZRangeByScoreExclusiveMax(t *testing.T) {
 // ---------- ZRANK/ZREVRANK: not found (sorted_set.go 472, 518-520, 550-552) ----------
 
 func TestZRankNonExistentMember(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -496,6 +521,7 @@ func TestZRankNonExistentMember(t *testing.T) {
 }
 
 func TestZRankNonExistentSet(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -505,6 +531,7 @@ func TestZRankNonExistentSet(t *testing.T) {
 }
 
 func TestZRevRankNonExistentMember(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -521,6 +548,7 @@ func TestZRevRankNonExistentMember(t *testing.T) {
 // ---------- BITCOUNT: start > end after normalization ----------
 
 func TestBitCountStartGreaterThanEnd(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -535,6 +563,7 @@ func TestBitCountStartGreaterThanEnd(t *testing.T) {
 // ---------- BITOP: NOT with single key ----------
 
 func TestBitOpNot(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -551,6 +580,7 @@ func TestBitOpNot(t *testing.T) {
 // ---------- BITOP: XOR ----------
 
 func TestBitOpXor(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -568,6 +598,7 @@ func TestBitOpXor(t *testing.T) {
 // ---------- ZSCORE: existing member ----------
 
 func TestZScoreExisting(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -584,6 +615,7 @@ func TestZScoreExisting(t *testing.T) {
 // ---------- ZCARD: existing set ----------
 
 func TestZCardExisting(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -601,6 +633,7 @@ func TestZCardExisting(t *testing.T) {
 // ---------- ZREMRANGEBYSCORE: with exclusive bounds ----------
 
 func TestZRemRangeByScoreExclusive(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -623,6 +656,7 @@ func TestZRemRangeByScoreExclusive(t *testing.T) {
 // ---------- ZREMRANGEBYRANK: negative ranks ----------
 
 func TestZRemRangeByRankNegative(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -646,6 +680,7 @@ func TestZRemRangeByRankNegative(t *testing.T) {
 // ---------- ZINCRBY ----------
 
 func TestZIncrByStore(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -659,6 +694,7 @@ func TestZIncrByStore(t *testing.T) {
 }
 
 func TestZIncrByNewMember(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -670,6 +706,7 @@ func TestZIncrByNewMember(t *testing.T) {
 // ---------- ZCOUNT: with scores ----------
 
 func TestZCountRange(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -688,6 +725,7 @@ func TestZCountRange(t *testing.T) {
 // ---------- ZLEXCOUNT ----------
 
 func TestZLexCountMutation(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -706,6 +744,7 @@ func TestZLexCountMutation(t *testing.T) {
 // ---------- ZDIFF ----------
 
 func TestZDiff(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 
@@ -726,6 +765,7 @@ func TestZDiff(t *testing.T) {
 // ---------- ZDIFFSTORE ----------
 
 func TestZDiffStoreMutation(t *testing.T) {
+	t.Parallel()
 
 	s := setupTestStore(t)
 

@@ -75,6 +75,7 @@ func waitForServer(t *testing.T, addr string, timeout time.Duration) {
 // TestConnectionInterrupt_DuringCommand verifies the server handles a client
 // that disconnects immediately after sending a command (before reading response).
 func TestConnectionInterrupt_DuringCommand(t *testing.T) {
+	t.Parallel()
 	srv := StartIsolatedServer(t)
 	baseline := baselineGoroutines(t)
 
@@ -102,6 +103,7 @@ func TestConnectionInterrupt_DuringCommand(t *testing.T) {
 // TestConnectionInterrupt_DuringBigResponse disconnects while the server is
 // sending a large response (1000-element LRANGE), testing write-side resilience.
 func TestConnectionInterrupt_DuringBigResponse(t *testing.T) {
+	t.Parallel()
 	srv := StartIsolatedServer(t)
 	ctx := context.Background()
 
@@ -153,6 +155,7 @@ func TestConnectionInterrupt_DuringBigResponse(t *testing.T) {
 // TestConnectionInterrupt_GarbageData sends random binary data that doesn't
 // conform to RESP protocol, verifying the server rejects and closes gracefully.
 func TestConnectionInterrupt_GarbageData(t *testing.T) {
+	t.Parallel()
 	srv := StartIsolatedServer(t)
 	baseline := baselineGoroutines(t)
 
@@ -184,6 +187,7 @@ func TestConnectionInterrupt_GarbageData(t *testing.T) {
 // TestConnectionInterrupt_PartialRESP sends an incomplete RESP command
 // (header says 3 args but only sends 1), then closes the connection.
 func TestConnectionInterrupt_PartialRESP(t *testing.T) {
+	t.Parallel()
 	srv := StartIsolatedServer(t)
 	baseline := baselineGoroutines(t)
 
@@ -212,6 +216,7 @@ func TestConnectionInterrupt_PartialRESP(t *testing.T) {
 // TestConnectionInterrupt_PipelinedCommands sends multiple commands in one
 // write (pipelining) then disconnects before reading any response.
 func TestConnectionInterrupt_PipelinedCommands(t *testing.T) {
+	t.Parallel()
 	srv := StartIsolatedServer(t)
 	baseline := baselineGoroutines(t)
 
@@ -241,6 +246,7 @@ func TestConnectionInterrupt_PipelinedCommands(t *testing.T) {
 // TestConnectionInterrupt_RapidConnectDisconnect performs rapid connect/close
 // cycles to stress the connection registration/unregistration path.
 func TestConnectionInterrupt_RapidConnectDisconnect(t *testing.T) {
+	t.Parallel()
 	srv := StartIsolatedServer(t)
 	baseline := baselineGoroutines(t)
 
@@ -268,6 +274,7 @@ func TestConnectionInterrupt_RapidConnectDisconnect(t *testing.T) {
 // TestConnectionInterrupt_ServerSurvivesAndServesNewClients verifies that after
 // many interrupted connections, the server still correctly serves new requests.
 func TestConnectionInterrupt_ServerSurvivesAndServesNewClients(t *testing.T) {
+	t.Parallel()
 	srv := StartIsolatedServer(t)
 	ctx := context.Background()
 
@@ -295,6 +302,7 @@ func TestConnectionInterrupt_ServerSurvivesAndServesNewClients(t *testing.T) {
 // TestConnectionInterrupt_ServerSurvivesAfterGarbageAndInterruption mix
 // combines garbage data, partial RESP, and premature disconnects.
 func TestConnectionInterrupt_ServerSurvivesAfterGarbageAndInterruption(t *testing.T) {
+	t.Parallel()
 	srv := StartIsolatedServer(t)
 	ctx := context.Background()
 
@@ -338,6 +346,7 @@ func TestConnectionInterrupt_ServerSurvivesAfterGarbageAndInterruption(t *testin
 // TestConnectionInterrupt_ConcurrentInterrupts sends commands from many
 // goroutines simultaneously, each closing immediately after sending.
 func TestConnectionInterrupt_ConcurrentInterrupts(t *testing.T) {
+	t.Parallel()
 	srv := StartIsolatedServer(t)
 	baseline := baselineGoroutines(t)
 
@@ -375,6 +384,7 @@ func TestConnectionInterrupt_ConcurrentInterrupts(t *testing.T) {
 // TestConnectionInterrupt_EmptyConnection opens a connection and immediately
 // closes it without sending anything.
 func TestConnectionInterrupt_EmptyConnection(t *testing.T) {
+	t.Parallel()
 	srv := StartIsolatedServer(t)
 	baseline := baselineGoroutines(t)
 
@@ -402,6 +412,7 @@ func TestConnectionInterrupt_EmptyConnection(t *testing.T) {
 // TestConnectionInterrupt_BlankLineThenClose sends just \r\n (empty RESP line)
 // which the parser should reject.
 func TestConnectionInterrupt_BlankLineThenClose(t *testing.T) {
+	t.Parallel()
 	srv := StartIsolatedServer(t)
 	baseline := baselineGoroutines(t)
 
@@ -428,6 +439,7 @@ func TestConnectionInterrupt_BlankLineThenClose(t *testing.T) {
 // TestConnectionInterrupt_MultipleCmdThenClose sends multiple valid commands
 // (SET + GET + DEL), reads only the first response, then closes.
 func TestConnectionInterrupt_MultipleCmdThenClose(t *testing.T) {
+	t.Parallel()
 	srv := StartIsolatedServer(t)
 	ctx := context.Background()
 	baseline := baselineGoroutines(t)
@@ -463,6 +475,7 @@ func TestConnectionInterrupt_MultipleCmdThenClose(t *testing.T) {
 // TestConnectionInterrupt_SlowReadDuringResponse sends a command that returns
 // a large response, starts reading slowly (byte-by-byte), then gives up.
 func TestConnectionInterrupt_SlowReadDuringResponse(t *testing.T) {
+	t.Parallel()
 	srv := StartIsolatedServer(t)
 	ctx := context.Background()
 
@@ -515,6 +528,7 @@ func TestConnectionInterrupt_SlowReadDuringResponse(t *testing.T) {
 // TestConnectionInterrupt_MassiveConcurrentStress combines many goroutines
 // doing connect → SET → close in parallel to stress the server.
 func TestConnectionInterrupt_MassiveConcurrentStress(t *testing.T) {
+	t.Parallel()
 	srv := StartIsolatedServer(t)
 	ctx := context.Background()
 	baseline := baselineGoroutines(t)

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -11,11 +12,13 @@ import (
 )
 
 func TestCommandRegistryCount(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, 250, len(commandRegistry))
 	assert.Equal(t, 250, len(commandMap))
 }
 
 func TestCommandMapKeysMatchRegistry(t *testing.T) {
+	t.Parallel()
 	for _, c := range commandRegistry {
 		m, ok := commandMap[c.name]
 		if !ok {
@@ -26,6 +29,7 @@ func TestCommandMapKeysMatchRegistry(t *testing.T) {
 }
 
 func TestCommandRegistrySorted(t *testing.T) {
+	t.Parallel()
 	for i := 1; i < len(commandRegistry); i++ {
 		if commandRegistry[i-1].name > commandRegistry[i].name {
 			t.Fatalf("commandRegistry not sorted at index %d: %s > %s",
@@ -35,6 +39,7 @@ func TestCommandRegistrySorted(t *testing.T) {
 }
 
 func TestHandleCommandNoArgs(t *testing.T) {
+	t.Parallel()
 	resp := handleCommand(nil)
 	na, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
@@ -54,6 +59,7 @@ func TestHandleCommandNoArgs(t *testing.T) {
 }
 
 func TestHandleCommandCount(t *testing.T) {
+	t.Parallel()
 	resp := handleCommand([][]byte{[]byte("COUNT")})
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
@@ -61,6 +67,7 @@ func TestHandleCommandCount(t *testing.T) {
 }
 
 func TestHandleCommandInfoExisting(t *testing.T) {
+	t.Parallel()
 	resp := handleCommand([][]byte{[]byte("INFO"), []byte("GET"), []byte("SET")})
 	na, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
@@ -76,6 +83,7 @@ func TestHandleCommandInfoExisting(t *testing.T) {
 }
 
 func TestHandleCommandInfoUnknown(t *testing.T) {
+	t.Parallel()
 	resp := handleCommand([][]byte{[]byte("INFO"), []byte("UNKNOWNCMD")})
 	na, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
@@ -85,6 +93,7 @@ func TestHandleCommandInfoUnknown(t *testing.T) {
 }
 
 func TestHandleCommandInfoMixed(t *testing.T) {
+	t.Parallel()
 	resp := handleCommand([][]byte{[]byte("INFO"), []byte("GET"), []byte("NONEXISTENT")})
 	na, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
@@ -97,12 +106,14 @@ func TestHandleCommandInfoMixed(t *testing.T) {
 }
 
 func TestHandleCommandInfoNoArgsReturnsNilArray(t *testing.T) {
+	t.Parallel()
 	resp := handleCommand([][]byte{[]byte("INFO")})
 	_, ok := resp.(proto.NilArray)
 	assert.True(t, ok)
 }
 
 func TestHandleCommandUnknownSubcommand(t *testing.T) {
+	t.Parallel()
 	resp := handleCommand([][]byte{[]byte("GETKEYS")})
 	err, ok := resp.(*proto.Error)
 	assert.True(t, ok)
@@ -110,6 +121,7 @@ func TestHandleCommandUnknownSubcommand(t *testing.T) {
 }
 
 func TestBuildCommandInfoStructure(t *testing.T) {
+	t.Parallel()
 	c := cmdInfo{
 		name:     "TESTCMD",
 		arity:    3,
@@ -143,6 +155,7 @@ func TestBuildCommandInfoStructure(t *testing.T) {
 }
 
 func TestBuildCommandInfoNoKeyPositions(t *testing.T) {
+	t.Parallel()
 	c := cmdInfo{
 		name:  "PING",
 		arity: 1,
@@ -158,6 +171,7 @@ func TestBuildCommandInfoNoKeyPositions(t *testing.T) {
 }
 
 func TestBuildCommandInfoNoFlags(t *testing.T) {
+	t.Parallel()
 	c := cmdInfo{
 		name:  "TESTCMD",
 		arity: 1,
@@ -171,6 +185,7 @@ func TestBuildCommandInfoNoFlags(t *testing.T) {
 }
 
 func TestHandleCommandCaseInsensitive(t *testing.T) {
+	t.Parallel()
 	resp := handleCommand([][]byte{[]byte("count")})
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
@@ -183,6 +198,7 @@ func TestHandleCommandCaseInsensitive(t *testing.T) {
 }
 
 func TestHandleCommandInfoCaseInsensitive(t *testing.T) {
+	t.Parallel()
 	resp := handleCommand([][]byte{[]byte("info"), []byte("get")})
 	na, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
@@ -194,6 +210,7 @@ func TestHandleCommandInfoCaseInsensitive(t *testing.T) {
 }
 
 func TestHandleCommandInfoReadonlyFlagExists(t *testing.T) {
+	t.Parallel()
 	get, ok := commandMap["GET"]
 	assert.True(t, ok)
 	assert.Equal(t, 1, len(get.flags))
@@ -201,6 +218,7 @@ func TestHandleCommandInfoReadonlyFlagExists(t *testing.T) {
 }
 
 func TestHandleCommandInfoWriteFlagExists(t *testing.T) {
+	t.Parallel()
 	set, ok := commandMap["SET"]
 	assert.True(t, ok)
 	hasWrite := false
@@ -218,6 +236,7 @@ func TestHandleCommandInfoWriteFlagExists(t *testing.T) {
 }
 
 func TestHandleCommandKeyPositions(t *testing.T) {
+	t.Parallel()
 	mset, ok := commandMap["MSET"]
 	assert.True(t, ok)
 	assert.Equal(t, 1, mset.firstKey)
@@ -232,6 +251,7 @@ func TestHandleCommandKeyPositions(t *testing.T) {
 }
 
 func TestHandleCommandAllInfosHaveSixElements(t *testing.T) {
+	t.Parallel()
 	resp := handleCommand(nil)
 	na := resp.(*proto.NestedArray)
 	for i, elem := range na.Elems {
@@ -243,6 +263,7 @@ func TestHandleCommandAllInfosHaveSixElements(t *testing.T) {
 }
 
 func TestHandleCommandAllNamesNonEmpty(t *testing.T) {
+	t.Parallel()
 	resp := handleCommand(nil)
 	na := resp.(*proto.NestedArray)
 	for _, elem := range na.Elems {
@@ -255,6 +276,7 @@ func TestHandleCommandAllNamesNonEmpty(t *testing.T) {
 }
 
 func TestHandleCommandAllFlagsValid(t *testing.T) {
+	t.Parallel()
 	validFlags := map[commandFlag]bool{
 		flagWrite:    true,
 		flagReadonly: true,
@@ -273,6 +295,7 @@ func TestHandleCommandAllFlagsValid(t *testing.T) {
 }
 
 func TestHandleCommandFlagConsistency(t *testing.T) {
+	t.Parallel()
 	writeCommands := make(map[string]bool)
 	for _, c := range commandRegistry {
 		for _, f := range c.flags {
@@ -293,6 +316,7 @@ func TestHandleCommandFlagConsistency(t *testing.T) {
 }
 
 func TestCommandInfoNegativeArity(t *testing.T) {
+	t.Parallel()
 	ping, ok := commandMap["PING"]
 	assert.True(t, ok)
 	assert.Equal(t, -1, ping.arity)
@@ -303,12 +327,13 @@ func TestCommandInfoNegativeArity(t *testing.T) {
 }
 
 func TestClusterSubcommandArity(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
 	defer db.Close()
 
-	c, err := cluster.NewCluster(db, "", "127.0.0.1:6379")
+	c, err := cluster.NewCluster(db, "", "127.0.0.1:6379", context.Background())
 	assert.NoError(t, err)
 
 	cc := cluster.NewClusterCommands(c)
@@ -367,6 +392,7 @@ func TestClusterSubcommandArity(t *testing.T) {
 }
 
 func TestCommandInfoFlagCheck(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		flag commandFlag
@@ -400,6 +426,7 @@ func TestCommandInfoFlagCheck(t *testing.T) {
 }
 
 func TestCommandInfoAdminCommands(t *testing.T) {
+	t.Parallel()
 	adminCmds := []string{"BGSAVE", "CLIENT", "CONFIG", "FLUSHALL", "FLUSHDB",
 		"LATENCY", "MODULE", "MONITOR", "REPLCONF", "REPLICAOF", "SAVE",
 		"SHUTDOWN", "SLAVEOF", "SLOWLOG"}
@@ -422,6 +449,7 @@ func TestCommandInfoAdminCommands(t *testing.T) {
 }
 
 func TestCommandInfoPubSubCommands(t *testing.T) {
+	t.Parallel()
 	pubsubCmds := []string{"PSUBSCRIBE", "PUBLISH", "PUBSUB", "PUNSUBSCRIBE", "SUBSCRIBE", "UNSUBSCRIBE"}
 	for _, name := range pubsubCmds {
 		c, ok := commandMap[name]
@@ -442,6 +470,7 @@ func TestCommandInfoPubSubCommands(t *testing.T) {
 }
 
 func TestCommandInfoArityBounds(t *testing.T) {
+	t.Parallel()
 	for _, c := range commandRegistry {
 		if c.arity == 0 {
 			t.Fatalf("command %s has arity 0 which is invalid", c.name)
@@ -450,6 +479,7 @@ func TestCommandInfoArityBounds(t *testing.T) {
 }
 
 func TestCommandInfoKeyPositionsConsistency(t *testing.T) {
+	t.Parallel()
 	for _, c := range commandRegistry {
 		if c.firstKey == 0 && c.lastKey == 0 && c.step == 0 {
 			continue

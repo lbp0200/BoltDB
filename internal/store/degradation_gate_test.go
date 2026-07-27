@@ -9,6 +9,7 @@ import (
 
 // TestDegradationGate_RetryMetrics 验证操作后 retry metrics 归零
 func TestDegradationGate_RetryMetrics(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 
 	for i := 0; i < 100; i++ {
@@ -23,6 +24,7 @@ func TestDegradationGate_RetryMetrics(t *testing.T) {
 
 // TestDegradationGate_L0Score 验证大量写入后 L0 可管理
 func TestDegradationGate_L0Score(t *testing.T) {
+	t.Parallel()
 	s := setupTestStore(t)
 
 	for i := 0; i < 5000; i++ {
@@ -39,6 +41,7 @@ func TestDegradationGate_L0Score(t *testing.T) {
 
 // TestDegradationGate_BackpressureRecovery 验证背压后恢复
 func TestDegradationGate_BackpressureRecovery(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping backpressure recovery test in short mode")
 	}

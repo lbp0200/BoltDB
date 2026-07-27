@@ -6,6 +6,7 @@ import (
 )
 
 func TestClassifyBasin_Healthy(t *testing.T) {
+	t.Parallel()
 	s := PressureSample{LastL0Score: 3.0, ActiveRetries: 0}
 	if b := classifyBasin(s); b != BasinHealthy {
 		t.Errorf("expected healthy for L0=3, got %s", b)
@@ -23,6 +24,7 @@ func TestClassifyBasin_Healthy(t *testing.T) {
 }
 
 func TestClassifyBasin_Stressed(t *testing.T) {
+	t.Parallel()
 	s := PressureSample{LastL0Score: 8.0, ActiveRetries: 0}
 	if b := classifyBasin(s); b != BasinStressed {
 		t.Errorf("expected stressed for L0=8, got %s", b)
@@ -45,6 +47,7 @@ func TestClassifyBasin_Stressed(t *testing.T) {
 }
 
 func TestClassifyBasin_Degraded(t *testing.T) {
+	t.Parallel()
 	s := PressureSample{LastL0Score: 20.0, ActiveRetries: 0}
 	if b := classifyBasin(s); b != BasinDegraded {
 		t.Errorf("expected degraded for L0=20, got %s", b)
@@ -62,6 +65,7 @@ func TestClassifyBasin_Degraded(t *testing.T) {
 }
 
 func TestClassifyBasin_Collapsed(t *testing.T) {
+	t.Parallel()
 	s := PressureSample{LastL0Score: 25.0, ActiveRetries: 0}
 	if b := classifyBasin(s); b != BasinCollapsed {
 		t.Errorf("expected collapsed for L0=25, got %s", b)
@@ -79,6 +83,7 @@ func TestClassifyBasin_Collapsed(t *testing.T) {
 }
 
 func TestClassifyBasin_Unknown(t *testing.T) {
+	t.Parallel()
 	// Empty sample (zero values) should be BasinHealthy (L0=0, retries=0)
 	s := PressureSample{}
 	if b := classifyBasin(s); b != BasinHealthy {
@@ -87,6 +92,7 @@ func TestClassifyBasin_Unknown(t *testing.T) {
 }
 
 func TestBasinDepth_Healthy(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		l0      float64
 		retries int64
@@ -107,6 +113,7 @@ func TestBasinDepth_Healthy(t *testing.T) {
 }
 
 func TestBasinDepth_Stressed(t *testing.T) {
+	t.Parallel()
 	s := PressureSample{LastL0Score: 14.0, ActiveRetries: 0}
 	d := computeBasinDepth(BasinStressed, s)
 	if d < 0.45 || d > 0.55 {
@@ -122,6 +129,7 @@ func TestBasinDepth_Stressed(t *testing.T) {
 }
 
 func TestBasinDepth_Degraded(t *testing.T) {
+	t.Parallel()
 	s := PressureSample{LastL0Score: 22.5, ActiveRetries: 40}
 	d := computeBasinDepth(BasinDegraded, s)
 	if d < 0.45 || d > 0.55 {
@@ -136,6 +144,7 @@ func TestBasinDepth_Degraded(t *testing.T) {
 }
 
 func TestDetectTransitions_None(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamples([]float64{2, 3, 4, 3, 2}, []int64{0, 0, 0, 0, 0})
 	trans := detectTransitions(samples)
 	if len(trans) != 0 {
@@ -144,6 +153,7 @@ func TestDetectTransitions_None(t *testing.T) {
 }
 
 func TestDetectTransitions_HealthyToStressed(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamples([]float64{3, 4, 5, 8, 10}, []int64{0, 0, 0, 0, 2})
 	trans := detectTransitions(samples)
 	if len(trans) < 1 {
@@ -155,6 +165,7 @@ func TestDetectTransitions_HealthyToStressed(t *testing.T) {
 }
 
 func TestDetectTransitions_StressedToDegraded(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamples([]float64{8, 12, 15, 20, 22}, []int64{2, 5, 10, 15, 20})
 	trans := detectTransitions(samples)
 	if len(trans) < 1 {
@@ -166,6 +177,7 @@ func TestDetectTransitions_StressedToDegraded(t *testing.T) {
 }
 
 func TestDetectTransitions_FullCycle(t *testing.T) {
+	t.Parallel()
 	// healthy -> stressed -> degraded -> stressed -> healthy
 	l0s := []float64{2, 4, 8, 12, 18, 22, 20, 15, 10, 8, 4, 2}
 	samples := makePressureSamples(l0s, []int64{0, 0, 0, 2, 5, 20, 15, 10, 5, 2, 0, 0})
@@ -176,6 +188,7 @@ func TestDetectTransitions_FullCycle(t *testing.T) {
 }
 
 func TestComputeL0Velocity_Flat(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamples([]float64{10, 10, 10, 10, 10}, []int64{0, 0, 0, 0, 0})
 	vel := computeL0Velocity(samples)
 	if vel > 0.01 || vel < -0.01 {
@@ -184,6 +197,7 @@ func TestComputeL0Velocity_Flat(t *testing.T) {
 }
 
 func TestComputeL0Velocity_Rising(t *testing.T) {
+	t.Parallel()
 	// L0 rising from 5 to 15 over ~4 intervals at 100ms each = 0.4s
 	samples := makePressureSamplesTime(time.Second, []float64{5, 7, 10, 13, 15}, []int64{0, 0, 0, 0, 0})
 	vel := computeL0Velocity(samples)
@@ -193,6 +207,7 @@ func TestComputeL0Velocity_Rising(t *testing.T) {
 }
 
 func TestComputeL0Velocity_Falling(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamplesTime(time.Second, []float64{20, 18, 15, 12, 8}, []int64{0, 0, 0, 0, 0})
 	vel := computeL0Velocity(samples)
 	if vel >= 0 {
@@ -201,6 +216,7 @@ func TestComputeL0Velocity_Falling(t *testing.T) {
 }
 
 func TestComputeL0Velocity_InsufficientData(t *testing.T) {
+	t.Parallel()
 	if v := computeL0Velocity(nil); v != 0 {
 		t.Errorf("expected 0 for nil, got %.4f", v)
 	}
@@ -213,6 +229,7 @@ func TestComputeL0Velocity_InsufficientData(t *testing.T) {
 }
 
 func TestComputeL0Acceleration_Constant(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamplesTime(time.Second, []float64{5, 6, 7, 8, 9, 10, 11}, []int64{0, 0, 0, 0, 0, 0, 0})
 	acc := computeL0Acceleration(samples)
 	if acc > 0.05 || acc < -0.05 {
@@ -221,6 +238,7 @@ func TestComputeL0Acceleration_Constant(t *testing.T) {
 }
 
 func TestComputeL0Acceleration_Positive(t *testing.T) {
+	t.Parallel()
 	// Accelerating: gaps increase (0.5, 0.5, 0.8, 1.0, 1.2, 1.5, 1.7, 2.0, 2.3, 2.5)
 	l0s := []float64{1.0, 1.5, 2.0, 2.8, 3.8, 5.0, 6.5, 8.2, 10.2, 12.5, 15.0}
 	samples := makePressureSamplesTime(500*time.Millisecond, l0s, make([]int64, len(l0s)))
@@ -231,6 +249,7 @@ func TestComputeL0Acceleration_Positive(t *testing.T) {
 }
 
 func TestComputeL0Acceleration_Negative(t *testing.T) {
+	t.Parallel()
 	// Decelerating rise: L0 still rises but by smaller amounts (gaps: 2, 2, 1.5, 1, 0.8, 0.6, 0.4, 0.3, 0.2)
 	l0s := []float64{1.0, 3.0, 5.0, 6.5, 7.5, 8.3, 8.9, 9.3, 9.6, 9.8}
 	samples := makePressureSamplesTime(500*time.Millisecond, l0s, make([]int64, len(l0s)))
@@ -241,6 +260,7 @@ func TestComputeL0Acceleration_Negative(t *testing.T) {
 }
 
 func TestRetryVelocity_Rising(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamplesTime(time.Second, []float64{10, 10, 10, 10, 10}, []int64{5, 10, 20, 40, 80})
 	vel := computeRetryVelocity(samples)
 	if vel <= 0 {
@@ -249,6 +269,7 @@ func TestRetryVelocity_Rising(t *testing.T) {
 }
 
 func TestRetryVelocity_Falling(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamplesTime(time.Second, []float64{10, 10, 10, 10, 10}, []int64{80, 40, 20, 10, 5})
 	vel := computeRetryVelocity(samples)
 	if vel >= 0 {
@@ -257,6 +278,7 @@ func TestRetryVelocity_Falling(t *testing.T) {
 }
 
 func TestGoroutineSlope(t *testing.T) {
+	t.Parallel()
 	samples := make([]PressureSample, 5)
 	now := time.Now()
 	for i := range samples {
@@ -272,6 +294,7 @@ func TestGoroutineSlope(t *testing.T) {
 }
 
 func TestDetectLimitCycle_No(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamplesTime(time.Second, []float64{5, 6, 7, 8, 9, 10}, []int64{0, 0, 0, 0, 0, 0})
 	lc, _, _ := detectLimitCycle(samples, 0.1)
 	if lc {
@@ -280,6 +303,7 @@ func TestDetectLimitCycle_No(t *testing.T) {
 }
 
 func TestDetectLimitCycle_Damped(t *testing.T) {
+	t.Parallel()
 	// Damped oscillation: amplitude decreases over time
 	l0s := make([]float64, 20)
 	for i := range l0s {
@@ -294,6 +318,7 @@ func TestDetectLimitCycle_Damped(t *testing.T) {
 }
 
 func TestDetectLimitCycle_Sustained(t *testing.T) {
+	t.Parallel()
 	// Sustained oscillation: constant amplitude
 	l0s := make([]float64, 20)
 	for i := range l0s {
@@ -313,6 +338,7 @@ func TestDetectLimitCycle_Sustained(t *testing.T) {
 }
 
 func TestPredictConvergence_HealthyStable(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamplesTime(500*time.Millisecond, []float64{2, 2, 2, 2, 2}, []int64{0, 0, 0, 0, 0})
 	converging, target, prob, _ := predictConvergence(samples, BasinHealthy, 0)
 	// Already converged: target == current, so converging=false, but probability is high
@@ -328,6 +354,7 @@ func TestPredictConvergence_HealthyStable(t *testing.T) {
 }
 
 func TestPredictConvergence_HealthyToStressed(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamplesTime(500*time.Millisecond, []float64{3, 4, 5, 6, 7}, []int64{0, 0, 0, 0, 0})
 	converging, target, prob, _ := predictConvergence(samples, BasinHealthy, 0.5)
 	if !converging {
@@ -342,6 +369,7 @@ func TestPredictConvergence_HealthyToStressed(t *testing.T) {
 }
 
 func TestPredictConvergence_StressedRecovering(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamplesTime(500*time.Millisecond, []float64{16, 14, 12, 10, 8}, []int64{10, 8, 5, 3, 1})
 	vel := computeL0Velocity(samples)
 	converging, target, _, _ := predictConvergence(samples, BasinStressed, vel)
@@ -354,6 +382,7 @@ func TestPredictConvergence_StressedRecovering(t *testing.T) {
 }
 
 func TestPredictConvergence_DegradedToStressed(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamplesTime(500*time.Millisecond, []float64{25, 23, 21, 19, 18}, []int64{50, 40, 30, 20, 15})
 	vel := computeL0Velocity(samples)
 	converging, target, _, _ := predictConvergence(samples, BasinDegraded, vel)
@@ -366,6 +395,7 @@ func TestPredictConvergence_DegradedToStressed(t *testing.T) {
 }
 
 func TestPredictConvergence_DegradedWorsening(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamplesTime(500*time.Millisecond, []float64{20, 21, 22, 23, 24}, []int64{30, 35, 40, 45, 50})
 	vel := computeL0Velocity(samples)
 	converging, target, prob, _ := predictConvergence(samples, BasinDegraded, vel)
@@ -381,6 +411,7 @@ func TestPredictConvergence_DegradedWorsening(t *testing.T) {
 }
 
 func TestPredictConvergence_Collapsed(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamplesTime(500*time.Millisecond, []float64{25, 26, 27, 28, 29}, []int64{100, 110, 120, 130, 140})
 	vel := computeL0Velocity(samples)
 	converging, target, _, _ := predictConvergence(samples, BasinCollapsed, vel)
@@ -393,6 +424,7 @@ func TestPredictConvergence_Collapsed(t *testing.T) {
 }
 
 func TestComputeEscapability_Healthy(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamplesTime(time.Second, []float64{3, 4, 3, 4, 3}, []int64{0, 0, 0, 0, 0})
 	esc, score := computeEscapability(samples, BasinHealthy)
 	if !esc {
@@ -404,6 +436,7 @@ func TestComputeEscapability_Healthy(t *testing.T) {
 }
 
 func TestComputeEscapability_DegradedRecovering(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamplesTime(time.Second, []float64{25, 23, 21, 19, 17}, []int64{50, 40, 30, 20, 10})
 	esc, score := computeEscapability(samples, BasinDegraded)
 	if !esc {
@@ -415,6 +448,7 @@ func TestComputeEscapability_DegradedRecovering(t *testing.T) {
 }
 
 func TestComputeEscapability_DegradedWorsening(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamplesTime(time.Second, []float64{20, 22, 24, 26, 28}, []int64{30, 50, 70, 90, 110})
 	esc, score := computeEscapability(samples, BasinDegraded)
 	if esc {
@@ -426,6 +460,7 @@ func TestComputeEscapability_DegradedWorsening(t *testing.T) {
 }
 
 func TestComputeEscapability_Collapsed(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamplesTime(time.Second, []float64{28, 29, 30, 31, 32}, []int64{120, 130, 140, 150, 160})
 	esc, _ := computeEscapability(samples, BasinCollapsed)
 	if esc {
@@ -434,6 +469,7 @@ func TestComputeEscapability_Collapsed(t *testing.T) {
 }
 
 func TestDetectHysteresis_NotEnoughTransitions(t *testing.T) {
+	t.Parallel()
 	trans := []BasinTransition{
 		{From: BasinHealthy, To: BasinStressed, L0AtCrossing: 8.0},
 		{From: BasinStressed, To: BasinHealthy, L0AtCrossing: 7.5},
@@ -446,6 +482,7 @@ func TestDetectHysteresis_NotEnoughTransitions(t *testing.T) {
 }
 
 func TestDetectHysteresis_Detected(t *testing.T) {
+	t.Parallel()
 	trans := []BasinTransition{
 		{From: BasinStressed, To: BasinDegraded, L0AtCrossing: 20.0},
 		{From: BasinDegraded, To: BasinStressed, L0AtCrossing: 15.0},
@@ -462,6 +499,7 @@ func TestDetectHysteresis_Detected(t *testing.T) {
 }
 
 func TestDetectHysteresis_MultipleEnterExits(t *testing.T) {
+	t.Parallel()
 	// Entry at ~20 L0, exit at ~10 L0 — clear hysteresis
 	trans := []BasinTransition{
 		{From: BasinStressed, To: BasinDegraded, L0AtCrossing: 20},
@@ -479,6 +517,7 @@ func TestDetectHysteresis_MultipleEnterExits(t *testing.T) {
 }
 
 func TestDegradationDuration(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	samples := make([]PressureSample, 5)
 	samples[0] = PressureSample{Timestamp: now, LastL0Score: 3, ActiveRetries: 0}
@@ -494,6 +533,7 @@ func TestDegradationDuration(t *testing.T) {
 }
 
 func TestDegradationDuration_NoDegradation(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamplesTime(time.Second, []float64{2, 3, 4, 3, 2}, []int64{0, 0, 0, 0, 0})
 	d := computeDegradationDuration(samples)
 	if d != 0 {
@@ -502,6 +542,7 @@ func TestDegradationDuration_NoDegradation(t *testing.T) {
 }
 
 func TestAnalyzeBasin_InsufficientData(t *testing.T) {
+	t.Parallel()
 	result := AnalyzeBasin(nil)
 	if result.CurrentBasin != BasinUnknown {
 		t.Errorf("expected unknown for nil, got %s", result.CurrentBasin)
@@ -517,6 +558,7 @@ func TestAnalyzeBasin_InsufficientData(t *testing.T) {
 }
 
 func TestAnalyzeBasin_HealthyConverged(t *testing.T) {
+	t.Parallel()
 	// Truly flat L0 near 2
 	samples := makePressureSamplesTime(500*time.Millisecond, []float64{2, 2, 2, 2, 2, 2, 2, 2}, []int64{0, 0, 0, 0, 0, 0, 0, 0})
 	result := AnalyzeBasin(samples)
@@ -535,6 +577,7 @@ func TestAnalyzeBasin_HealthyConverged(t *testing.T) {
 }
 
 func TestAnalyzeBasin_ApproachingStress(t *testing.T) {
+	t.Parallel()
 	// L0 rising from 3 towards 8
 	samples := makePressureSamplesTime(500*time.Millisecond, []float64{3, 4, 5, 6, 7}, []int64{0, 0, 0, 0, 0})
 	result := AnalyzeBasin(samples)
@@ -550,6 +593,7 @@ func TestAnalyzeBasin_ApproachingStress(t *testing.T) {
 }
 
 func TestAnalyzeBasin_StressedStationary(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamplesTime(500*time.Millisecond, []float64{11, 11.5, 10.5, 11, 11.2}, []int64{5, 5, 5, 5, 5})
 	result := AnalyzeBasin(samples)
 	if result.CurrentBasin != BasinStressed {
@@ -561,6 +605,7 @@ func TestAnalyzeBasin_StressedStationary(t *testing.T) {
 }
 
 func TestAnalyzeBasin_ApproachingDegradation(t *testing.T) {
+	t.Parallel()
 	// L0 rising from 12 toward 20
 	samples := makePressureSamplesTime(500*time.Millisecond, []float64{12, 14, 16, 18, 19}, []int64{5, 8, 12, 15, 18})
 	result := AnalyzeBasin(samples)
@@ -573,6 +618,7 @@ func TestAnalyzeBasin_ApproachingDegradation(t *testing.T) {
 }
 
 func TestAnalyzeBasin_DegradedStuck(t *testing.T) {
+	t.Parallel()
 	// L0 around 22 with no recovery sign
 	samples := makePressureSamplesTime(500*time.Millisecond, []float64{22, 22.5, 22.3, 22.8, 22.1}, []int64{40, 42, 41, 43, 40})
 	result := AnalyzeBasin(samples)
@@ -585,6 +631,7 @@ func TestAnalyzeBasin_DegradedStuck(t *testing.T) {
 }
 
 func TestAnalyzeBasin_EscapingDegradation(t *testing.T) {
+	t.Parallel()
 	// L0 falling but still in degraded basin (L0 >= 20)
 	samples := makePressureSamplesTime(500*time.Millisecond, []float64{25, 24, 23, 22, 21}, []int64{50, 45, 40, 35, 30})
 	result := AnalyzeBasin(samples)
@@ -600,6 +647,7 @@ func TestAnalyzeBasin_EscapingDegradation(t *testing.T) {
 }
 
 func TestAnalyzeBasin_Collapsed(t *testing.T) {
+	t.Parallel()
 	samples := makePressureSamplesTime(500*time.Millisecond, []float64{26, 27, 28, 29, 30}, []int64{110, 120, 130, 140, 150})
 	result := AnalyzeBasin(samples)
 	if result.CurrentBasin != BasinCollapsed {
@@ -614,6 +662,7 @@ func TestAnalyzeBasin_Collapsed(t *testing.T) {
 }
 
 func TestAnalyzeBasin_AcceleratingCollapse(t *testing.T) {
+	t.Parallel()
 	// L0 rising in degraded territory but not yet collapsed: 20-24.5 (gaps increasing)
 	l0s := []float64{20.0, 20.5, 21.2, 22.0, 23.0, 24.5}
 	samples := makePressureSamplesTime(500*time.Millisecond, l0s, []int64{30, 35, 45, 55, 65, 80})
@@ -625,6 +674,7 @@ func TestAnalyzeBasin_AcceleratingCollapse(t *testing.T) {
 }
 
 func TestAnalyzeBasin_LimitCycle(t *testing.T) {
+	t.Parallel()
 	// Sustained oscillation around L0 12 (stressed region)
 	l0s := make([]float64, 20)
 	for i := range l0s {
@@ -641,6 +691,7 @@ func TestAnalyzeBasin_LimitCycle(t *testing.T) {
 }
 
 func TestAnalyzeBasin_Transitions(t *testing.T) {
+	t.Parallel()
 	// healthy -> stressed -> healthy
 	l0s := []float64{2, 4, 6, 9, 12, 10, 8, 6, 4, 2}
 	samples := makePressureSamplesTime(time.Second, l0s, []int64{0, 0, 0, 0, 5, 3, 2, 1, 0, 0})
@@ -651,6 +702,7 @@ func TestAnalyzeBasin_Transitions(t *testing.T) {
 }
 
 func TestBasinAttractorInfo_FormatCompact(t *testing.T) {
+	t.Parallel()
 	info := BasinAttractorInfo{
 		CurrentBasin:      BasinHealthy,
 		Depth:             0.8,
@@ -668,6 +720,7 @@ func TestBasinAttractorInfo_FormatCompact(t *testing.T) {
 }
 
 func TestBasinAttractorInfo_FormatCompact_Unknown(t *testing.T) {
+	t.Parallel()
 	info := BasinAttractorInfo{CurrentBasin: BasinUnknown}
 	s := info.FormatCompact()
 	if s != "basin=unknown" {
@@ -676,6 +729,7 @@ func TestBasinAttractorInfo_FormatCompact_Unknown(t *testing.T) {
 }
 
 func TestBasinAttractorInfo_FormatReport(t *testing.T) {
+	t.Parallel()
 	info := BasinAttractorInfo{
 		CurrentBasin:        BasinDegraded,
 		Depth:               0.6,
@@ -700,6 +754,7 @@ func TestBasinAttractorInfo_FormatReport(t *testing.T) {
 }
 
 func TestBasinString(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		b   BasinType
 		exp string

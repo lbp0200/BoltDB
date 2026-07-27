@@ -384,7 +384,7 @@ func main() {
 
 	// 初始化集群（如果启用了集群模式）
 	if *clusterEnabledFlag {
-		c, err := cluster.NewCluster(db, "", *addrFlag)
+		c, err := cluster.NewCluster(db, "", *addrFlag, ctx)
 		if err != nil {
 			logger.Logger.Fatal().Err(err).Msg("Failed to create cluster")
 		}

@@ -90,6 +90,7 @@ func soakCheckNoLeak(t *testing.T, baseline, final int) {
 // Default concurrency is 50; override with SOAK_CLIENTS.
 // Data directory is ~/soak_boltdb_data; override with SOAK_DATA_DIR.
 func TestSoak(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("CI_NIGHTLY_SOAK") == "" {
 		t.Skip("soak test: goroutine threshold flaky in CI; set CI_NIGHTLY_SOAK=1 to run")
 	}

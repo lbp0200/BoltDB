@@ -58,15 +58,20 @@ echo "=== Remote host: $REMOTE_HOST ($REMOTE_USER)"
 ARGS=("$@")
 FULL_MODE=0
 # Extract --full flag (full suite, no -short)
-NEW_ARGS=()
+FILTERED=()
 for arg in "${ARGS[@]}"; do
     if [ "$arg" = "--full" ]; then
         FULL_MODE=1
     else
-        NEW_ARGS+=("$arg")
+        FILTERED+=("$arg")
     fi
 done
-ARGS=("${NEW_ARGS[@]}")
+if [ ${#FILTERED[@]} -eq 0 ]; then
+    ARGS=()
+else
+    set -- "${FILTERED[@]}"
+    ARGS=("$@")
+fi
 
 if [ "$FULL_MODE" -eq 1 ]; then
     # Full mode: no -short; default to the complete suite if no packages given.

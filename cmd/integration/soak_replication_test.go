@@ -192,6 +192,7 @@ func setupSoakReplication(t *testing.T) *soakReplEnv {
 }
 
 func TestSoakReplication(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping soak replication test in short mode")
 	}
@@ -359,6 +360,7 @@ func TestSoakReplication(t *testing.T) {
 //	SOAK_REPL_DURATION=10m go test -race -timeout 15m ./cmd/integration/ -run TestSoakReplicationShortStrict
 //	SOAK_REPL_DURATION=5m go test -race -timeout 8m ./cmd/integration/ -run TestSoakReplicationShortStrict
 func TestSoakReplicationShortStrict(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping soak replication short strict test in short mode")
 	}

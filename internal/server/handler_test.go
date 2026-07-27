@@ -692,6 +692,7 @@ func TestSubscriberCleanupOnDisconnect(t *testing.T) {
 
 // TestDisconnectMidTransaction 验证事务中断开后没有泄漏
 func TestDisconnectMidTransaction(t *testing.T) {
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 

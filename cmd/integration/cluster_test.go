@@ -48,7 +48,7 @@ func setupClusterTestServer(t *testing.T) {
 	}
 
 	// 创建集群（使用实际的监听地址）
-	c, err := cluster.NewCluster(clusterDB, "", clusterListener.Addr().String())
+	c, err := cluster.NewCluster(clusterDB, "", clusterListener.Addr().String(), context.Background())
 	if err != nil {
 		clusterListener.Close()
 		clusterDB.Close()
@@ -617,7 +617,7 @@ func startClusterNode(t *testing.T) *clusterNode {
 	tcpAddr := ln.Addr().(*net.TCPAddr)
 	addr := tcpAddr.String()
 
-	c, err := cluster.NewCluster(db, "", addr)
+	c, err := cluster.NewCluster(db, "", addr, context.Background())
 	assert.NoError(t, err)
 
 	h := &server.Handler{
@@ -663,6 +663,7 @@ func (n *clusterNode) stop() {
 
 // TestClusterMultiNode verifies two BoltDB nodes can MEET and exchange gossip over the cluster bus.
 func TestClusterMultiNode(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping multi-node cluster test in short mode")
 	}
@@ -736,6 +737,7 @@ func TestClusterMultiNode(t *testing.T) {
 // TestClusterGossipPropagation verifies that gossip payload (PFAIL, node info)
 // propagates between nodes via the cluster bus.
 func TestClusterGossipPropagation(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping gossip propagation test in short mode")
 	}
@@ -789,6 +791,7 @@ func TestClusterGossipPropagation(t *testing.T) {
 
 // TestClusterSlotSync verifies that slot assignments propagate between nodes via gossip.
 func TestClusterSlotSync(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping slot sync test in short mode")
 	}
@@ -849,6 +852,7 @@ func TestClusterSlotSync(t *testing.T) {
 // TestClusterSetSlotNodePropagation verifies that CLUSTER SETSLOT NODE on one node
 // propagates to other nodes via gossip (slot owner + epoch).
 func TestClusterSetSlotNodePropagation(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping SETSLOT NODE propagation test in short mode")
 	}
@@ -898,6 +902,7 @@ func TestClusterSetSlotNodePropagation(t *testing.T) {
 
 // TestClusterMovedRedirect verifies MOVED redirect when a key's slot is on another node.
 func TestClusterMovedRedirect(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping MOVED redirect test in short mode")
 	}
@@ -972,6 +977,7 @@ func TestClusterMovedRedirect(t *testing.T) {
 // 2. MIGRATING owner ASKs only when key is missing
 // 3. IMPORTING target accepts ASKING + GET without MOVED/ASK
 func TestClusterAskRedirect(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping ASK redirect test in short mode")
 	}
@@ -1121,6 +1127,7 @@ func TestClusterAskRedirect(t *testing.T) {
 // TestClusterMigratingSourceWriteFence verifies SET on an existing key while
 // the owner marks the slot MIGRATING is rejected (source write fence).
 func TestClusterMigratingSourceWriteFence(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping MIGRATING source write fence test in short mode")
 	}
@@ -1170,6 +1177,7 @@ func TestClusterMigratingSourceWriteFence(t *testing.T) {
 // 5. Verify keys exist on node2, deleted from node1
 // 6. Verify slot ownership transferred to node2
 func TestClusterMigrateSlot(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping MIGRATESLOT test in short mode")
 	}
@@ -1314,6 +1322,7 @@ func TestClusterMigrateSlot(t *testing.T) {
 // TestClusterMigrateRoundTripStability migrates a slot A→B then B→A with
 // rewritten values. Lightweight multi-round consistency oracle (not full soak).
 func TestClusterMigrateRoundTripStability(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping migrate round-trip stability in short mode")
 	}
@@ -1423,6 +1432,7 @@ func TestClusterMigrateRoundTripStability(t *testing.T) {
 // TestClusterMigrateNoReplacePreservesTarget ensures Phase-1 RESTORE does not
 // use REPLACE: a newer value already on the IMPORTING target survives migrate.
 func TestClusterMigrateNoReplacePreservesTarget(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping no-REPLACE migrate test in short mode")
 	}
@@ -1473,6 +1483,7 @@ func TestClusterMigrateNoReplacePreservesTarget(t *testing.T) {
 // TestClusterMigrateSlotMultiType migrates string/hash/list/set/zset keys that
 // share one hash-tag slot and asserts type-correct values on the target.
 func TestClusterMigrateSlotMultiType(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping multi-type MIGRATESLOT test in short mode")
 	}
@@ -1551,6 +1562,7 @@ func TestClusterMigrateSlotMultiType(t *testing.T) {
 // TestClusterImportingWriteFence verifies ASKING writes (except RESTORE) are
 // rejected on IMPORTING slots so Phase-1 RESTORE cannot race with clients.
 func TestClusterImportingWriteFence(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping IMPORTING write fence test in short mode")
 	}
@@ -1618,6 +1630,7 @@ func TestClusterImportingWriteFence(t *testing.T) {
 // TestClusterDelKeysInSlot verifies CLUSTER DELKEYSINSLOT removes keys in a slot
 // (Phase-1 abort cleanup primitive on IMPORTING target).
 func TestClusterDelKeysInSlot(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping DELKEYSINSLOT test in short mode")
 	}
@@ -1662,6 +1675,7 @@ func TestClusterDelKeysInSlot(t *testing.T) {
 // TestClusterMigrateSlotAbortCleanup simulates partial Phase-1 RESTORE orphans
 // on the target, then DELKEYSINSLOT + STABLE as abort cleanup does.
 func TestClusterMigrateSlotAbortCleanup(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping migrate abort cleanup test in short mode")
 	}
@@ -1733,6 +1747,7 @@ func TestClusterMigrateSlotAbortCleanup(t *testing.T) {
 // source while MIGRATESLOT runs. Writers must be fenced (not corrupt migration);
 // after migrate, all pre-seeded keys exist on the target with original values.
 func TestClusterMigrateSlotUnderLoad(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping migrate-under-load test in short mode")
 	}
@@ -1836,6 +1851,7 @@ func TestClusterMigrateSlotUnderLoad(t *testing.T) {
 // TestClusterFailover verifies that PFAIL reports from multiple nodes
 // trigger FAIL promotion and slot reassignment.
 func TestClusterFailover(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping failover test in short mode")
 	}
@@ -1907,6 +1923,7 @@ func TestClusterFailover(t *testing.T) {
 
 // TestClusterMigrateKey verifies the MIGRATE command copies a key between nodes.
 func TestClusterMigrateKey(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping MIGRATE test in short mode")
 	}

@@ -12,7 +12,7 @@ func prometheusText(s Snapshot) string {
 
 	b.WriteString("# HELP boltdb_build_info BoltDB build info\n")
 	b.WriteString("# TYPE boltdb_build_info gauge\n")
-	b.WriteString("boltdb_build_info{version=\"8.50.0\"} 1\n")
+	b.WriteString("boltdb_build_info{version=\"8.50.1\"} 1\n")
 
 	// L0 / Write Backpressure
 	b.WriteString("# HELP boltdb_l0_score L0 compaction score\n")

@@ -67,6 +67,7 @@ func generateTestCert(t *testing.T, dir string) (certPath, keyPath string) {
 }
 
 func TestTLSConfig_BuildAndWrapListener(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	certPath, keyPath := generateTestCert(t, dir)
 
@@ -137,6 +138,7 @@ func TestTLSConfig_BuildAndWrapListener(t *testing.T) {
 }
 
 func TestTLSConfig_NilConfigPassthrough(t *testing.T) {
+	t.Parallel()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
@@ -150,6 +152,7 @@ func TestTLSConfig_NilConfigPassthrough(t *testing.T) {
 }
 
 func TestTLSConfig_NotEnabled(t *testing.T) {
+	t.Parallel()
 	cfg := &TLSConfig{CertFile: "", KeyFile: ""}
 	if cfg.IsEnabled() {
 		t.Fatal("empty cert/key should not be enabled")
@@ -165,6 +168,7 @@ func TestTLSConfig_NotEnabled(t *testing.T) {
 }
 
 func TestTLSConfig_NonTLSClientRejected(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	certPath, keyPath := generateTestCert(t, dir)
 
@@ -224,6 +228,7 @@ func TestTLSConfig_NonTLSClientRejected(t *testing.T) {
 	}
 }
 func TestTLSConfig_InvalidCert(t *testing.T) {
+	t.Parallel()
 	cfg := &TLSConfig{
 		CertFile: "/nonexistent/cert.pem",
 		KeyFile:  "/nonexistent/key.pem",

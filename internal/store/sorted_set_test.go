@@ -913,7 +913,7 @@ func TestBZPopMax(t *testing.T) {
 	})
 
 	// Test BZPopMax
-	key, member, err := store.BZPopMax([]string{"zset"}, 1)
+	key, member, err := store.BZPopMax(context.Background(), []string{"zset"}, 1)
 	assert.NoError(t, err)
 	assert.Equal(t, "zset", key)
 	assert.Equal(t, "c", member.Member)
@@ -937,7 +937,7 @@ func TestBZPopMin(t *testing.T) {
 	})
 
 	// Test BZPopMin
-	key, member, err := store.BZPopMin([]string{"zset"}, 1)
+	key, member, err := store.BZPopMin(context.Background(), []string{"zset"}, 1)
 	assert.NoError(t, err)
 	assert.Equal(t, "zset", key)
 	assert.Equal(t, "a", member.Member)

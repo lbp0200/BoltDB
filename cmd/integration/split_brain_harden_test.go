@@ -24,6 +24,7 @@ import (
 //
 // Failure doc: docs/failures/split-brain-convergence.md
 func TestRegressionSplitBrainConvergenceHarden(t *testing.T) {
+	t.Parallel()
 	skipHeavyIntegrationInShort(t)
 
 	// ========================================================================

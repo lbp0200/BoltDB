@@ -7,6 +7,7 @@ import (
 )
 
 func TestLinearSlope_Positive(t *testing.T) {
+	t.Parallel()
 	y := []float64{0.5, 0.6, 0.7, 0.8, 0.9, 1.0}
 	slope := linearSlope(y)
 	if slope <= 0 {
@@ -19,6 +20,7 @@ func TestLinearSlope_Positive(t *testing.T) {
 }
 
 func TestLinearSlope_Negative(t *testing.T) {
+	t.Parallel()
 	y := []float64{1.0, 0.9, 0.8, 0.7, 0.6, 0.5}
 	slope := linearSlope(y)
 	if slope >= 0 {
@@ -30,6 +32,7 @@ func TestLinearSlope_Negative(t *testing.T) {
 }
 
 func TestLinearSlope_Flat(t *testing.T) {
+	t.Parallel()
 	y := []float64{0.9, 0.9, 0.9, 0.9, 0.9}
 	slope := linearSlope(y)
 	if slope != 0 {
@@ -38,6 +41,7 @@ func TestLinearSlope_Flat(t *testing.T) {
 }
 
 func TestLinearSlope_Noise(t *testing.T) {
+	t.Parallel()
 	y := []float64{0.8, 0.85, 0.78, 0.88, 0.82, 0.9}
 	slope := linearSlope(y)
 	if slope <= 0 {
@@ -46,6 +50,7 @@ func TestLinearSlope_Noise(t *testing.T) {
 }
 
 func TestLinearSlope_InsufficientData(t *testing.T) {
+	t.Parallel()
 	if slope := linearSlope(nil); slope != 0 {
 		t.Errorf("expected 0 for nil, got %.4f", slope)
 	}
@@ -55,6 +60,7 @@ func TestLinearSlope_InsufficientData(t *testing.T) {
 }
 
 func TestComputeOscillationStats_Stable(t *testing.T) {
+	t.Parallel()
 	overalls := []float64{0.9, 0.9, 0.9, 0.9, 0.9, 0.9}
 	osc := computeOscillationStats(overalls)
 	if osc.Oscillating {
@@ -66,6 +72,7 @@ func TestComputeOscillationStats_Stable(t *testing.T) {
 }
 
 func TestComputeOscillationStats_Monotonic(t *testing.T) {
+	t.Parallel()
 	overalls := []float64{0.5, 0.6, 0.7, 0.8, 0.9, 1.0}
 	osc := computeOscillationStats(overalls)
 	if osc.Oscillating {
@@ -74,6 +81,7 @@ func TestComputeOscillationStats_Monotonic(t *testing.T) {
 }
 
 func TestComputeOscillationStats_Oscillating(t *testing.T) {
+	t.Parallel()
 	overalls := []float64{0.9, 0.6, 0.9, 0.6, 0.9, 0.6}
 	osc := computeOscillationStats(overalls)
 	if !osc.Oscillating {
@@ -85,6 +93,7 @@ func TestComputeOscillationStats_Oscillating(t *testing.T) {
 }
 
 func TestComputeOscillationStats_BelowMinAmp(t *testing.T) {
+	t.Parallel()
 	overalls := []float64{0.9, 0.895, 0.9, 0.895, 0.9, 0.895}
 	osc := computeOscillationStats(overalls)
 	if osc.Oscillating {
@@ -93,6 +102,7 @@ func TestComputeOscillationStats_BelowMinAmp(t *testing.T) {
 }
 
 func TestComputeOscillationStats_InsufficientData(t *testing.T) {
+	t.Parallel()
 	osc := computeOscillationStats([]float64{0.9, 0.8, 0.7})
 	if osc.Oscillating {
 		t.Error("expected no oscillation with <4 samples")
@@ -100,6 +110,7 @@ func TestComputeOscillationStats_InsufficientData(t *testing.T) {
 }
 
 func TestComputePersistenceStats_NoDegradation(t *testing.T) {
+	t.Parallel()
 	snaps := makeTemporalSnaps([]float64{0.9, 0.9, 0.9}, "100ms")
 	p := computePersistenceStats(snaps)
 	if p.AnyDegraded {
@@ -108,6 +119,7 @@ func TestComputePersistenceStats_NoDegradation(t *testing.T) {
 }
 
 func TestComputePersistenceStats_StorageDegraded(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	snaps := []TemporalSnapshot{}
 	for i, score := range []float64{0.9, 0.9, 0.9, 0.9, 0.3, 0.3, 0.3} {
@@ -138,6 +150,7 @@ func TestComputePersistenceStats_StorageDegraded(t *testing.T) {
 }
 
 func TestComputePersistenceStats_ReplicationDegraded(t *testing.T) {
+	t.Parallel()
 	snaps := makeTemporalSnaps([]float64{0.9, 0.9, 0.9, 0.9, 0.9, 0.9}, "100ms")
 	// Override health scores
 	for i := 0; i < len(snaps); i++ {
@@ -166,6 +179,7 @@ func TestComputePersistenceStats_ReplicationDegraded(t *testing.T) {
 }
 
 func TestComputePersistenceStats_ClusterDegraded(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	snaps := []TemporalSnapshot{}
 	for i := 0; i < 6; i++ {
@@ -191,6 +205,7 @@ func TestComputePersistenceStats_ClusterDegraded(t *testing.T) {
 }
 
 func TestComputePersistenceStats_BreakOnRecovery(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	snaps := []TemporalSnapshot{}
 	scores := []float64{0.9, 0.3, 0.3, 0.9, 0.9, 0.9}
@@ -213,6 +228,7 @@ func TestComputePersistenceStats_BreakOnRecovery(t *testing.T) {
 }
 
 func TestComputePersistenceStats_InsufficientData(t *testing.T) {
+	t.Parallel()
 	p := computePersistenceStats(nil)
 	if p.AnyDegraded {
 		t.Error("expected no degradation with nil")
@@ -224,6 +240,7 @@ func TestComputePersistenceStats_InsufficientData(t *testing.T) {
 }
 
 func TestComputeRecoveryStats_NoTrough(t *testing.T) {
+	t.Parallel()
 	snaps := makeTemporalSnaps([]float64{0.9, 0.9, 0.9, 0.9, 0.9}, "100ms")
 	overalls := extractOveralls(snaps)
 	r := computeRecoveryStats(snaps, overalls)
@@ -233,6 +250,7 @@ func TestComputeRecoveryStats_NoTrough(t *testing.T) {
 }
 
 func TestComputeRecoveryStats_RecoverySuccess(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	snaps := []TemporalSnapshot{}
 	scores := []float64{0.9, 0.8, 0.3, 0.5, 0.7, 0.85}
@@ -260,6 +278,7 @@ func TestComputeRecoveryStats_RecoverySuccess(t *testing.T) {
 }
 
 func TestComputeRecoveryStats_TroughAtEnd(t *testing.T) {
+	t.Parallel()
 	snaps := makeTemporalSnaps([]float64{0.9, 0.8, 0.7, 0.6, 0.3}, "1s")
 	overalls := extractOveralls(snaps)
 	r := computeRecoveryStats(snaps, overalls)
@@ -269,6 +288,7 @@ func TestComputeRecoveryStats_TroughAtEnd(t *testing.T) {
 }
 
 func TestComputeRecoveryStats_NotSustained(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	snaps := []TemporalSnapshot{}
 	scores := []float64{0.9, 0.3, 0.5, 0.3, 0.4, 0.5}
@@ -291,6 +311,7 @@ func TestComputeRecoveryStats_NotSustained(t *testing.T) {
 }
 
 func TestComputeRecoveryStats_WithOscillations(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	snaps := []TemporalSnapshot{}
 	scores := []float64{0.9, 0.3, 0.4, 0.35, 0.5, 0.45, 0.6, 0.55, 0.7, 0.68, 0.8}
@@ -316,6 +337,7 @@ func TestComputeRecoveryStats_WithOscillations(t *testing.T) {
 }
 
 func TestComputeRecoveryStats_InsufficientData(t *testing.T) {
+	t.Parallel()
 	snaps := makeTemporalSnaps([]float64{0.9, 0.8}, "1s")
 	overalls := extractOveralls(snaps)
 	r := computeRecoveryStats(snaps, overalls)
@@ -325,6 +347,7 @@ func TestComputeRecoveryStats_InsufficientData(t *testing.T) {
 }
 
 func TestClassifyTrajectory_Stable(t *testing.T) {
+	t.Parallel()
 	traj := classifyTrajectory(
 		SlopeStats{Overall: 0.001},
 		OscillationStats{},
@@ -337,6 +360,7 @@ func TestClassifyTrajectory_Stable(t *testing.T) {
 }
 
 func TestClassifyTrajectory_Recovering(t *testing.T) {
+	t.Parallel()
 	traj := classifyTrajectory(
 		SlopeStats{Overall: 0.05},
 		OscillationStats{},
@@ -349,6 +373,7 @@ func TestClassifyTrajectory_Recovering(t *testing.T) {
 }
 
 func TestClassifyTrajectory_Degrading(t *testing.T) {
+	t.Parallel()
 	traj := classifyTrajectory(
 		SlopeStats{Overall: -0.05},
 		OscillationStats{},
@@ -361,6 +386,7 @@ func TestClassifyTrajectory_Degrading(t *testing.T) {
 }
 
 func TestClassifyTrajectory_Oscillating(t *testing.T) {
+	t.Parallel()
 	traj := classifyTrajectory(
 		SlopeStats{Overall: 0.0},
 		OscillationStats{Oscillating: true, ZeroCrossingCount: 5, MeanAmplitude: 0.1},
@@ -373,6 +399,7 @@ func TestClassifyTrajectory_Oscillating(t *testing.T) {
 }
 
 func TestClassifyTrajectory_OscillatingHealthy(t *testing.T) {
+	t.Parallel()
 	// Oscillation with high scores: still oscillating
 	traj := classifyTrajectory(
 		SlopeStats{Overall: 0.0},
@@ -386,6 +413,7 @@ func TestClassifyTrajectory_OscillatingHealthy(t *testing.T) {
 }
 
 func TestClassifyTrajectory_Stuck(t *testing.T) {
+	t.Parallel()
 	traj := classifyTrajectory(
 		SlopeStats{Overall: 0.002},
 		OscillationStats{},
@@ -398,6 +426,7 @@ func TestClassifyTrajectory_Stuck(t *testing.T) {
 }
 
 func TestAnalyzeTemporal_InsufficientData(t *testing.T) {
+	t.Parallel()
 	ta := AnalyzeTemporal(nil)
 	if ta.Trajectory != TrajectoryInsufficientData {
 		t.Errorf("expected insufficient_data, got %s", ta.Trajectory)
@@ -409,6 +438,7 @@ func TestAnalyzeTemporal_InsufficientData(t *testing.T) {
 }
 
 func TestAnalyzeTemporal_Stable(t *testing.T) {
+	t.Parallel()
 	snaps := makeTemporalSnaps([]float64{0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9}, "1s")
 	ta := AnalyzeTemporal(snaps)
 	if ta.Trajectory != TrajectoryStable {
@@ -420,6 +450,7 @@ func TestAnalyzeTemporal_Stable(t *testing.T) {
 }
 
 func TestAnalyzeTemporal_Degrading(t *testing.T) {
+	t.Parallel()
 	snaps := makeTemporalSnaps([]float64{1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1}, "1s")
 	ta := AnalyzeTemporal(snaps)
 	if ta.Trajectory != TrajectoryDegrading {
@@ -431,6 +462,7 @@ func TestAnalyzeTemporal_Degrading(t *testing.T) {
 }
 
 func TestAnalyzeTemporal_DimensionSlopes(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	snaps := []TemporalSnapshot{}
 	for i := 0; i < 10; i++ {
@@ -461,6 +493,7 @@ func TestAnalyzeTemporal_DimensionSlopes(t *testing.T) {
 }
 
 func TestTemporalAnalyzer_RingBuffer(t *testing.T) {
+	t.Parallel()
 	ta := NewTemporalAnalyzer()
 	// Fill beyond capacity (capacity is 300)
 	for i := 0; i < 310; i++ {
@@ -477,6 +510,7 @@ func TestTemporalAnalyzer_RingBuffer(t *testing.T) {
 }
 
 func TestTemporalAnalyzer_RecordAndAnalyze(t *testing.T) {
+	t.Parallel()
 	ta := NewTemporalAnalyzer()
 	for i := 0; i < 10; i++ {
 		ta.RecordHealth(HealthScore{
@@ -493,11 +527,13 @@ func TestTemporalAnalyzer_RecordAndAnalyze(t *testing.T) {
 }
 
 func TestTemporalAnalyzer_Empty(t *testing.T) {
+	t.Parallel()
 	ta := NewTemporalAnalyzer()
 	ta.Analyze() // should not panic
 }
 
 func TestTemporalAnalyzer_Clear(t *testing.T) {
+	t.Parallel()
 	ta := NewTemporalAnalyzer()
 	ta.RecordHealth(HealthScore{
 		Overall:           0.9,
@@ -512,6 +548,7 @@ func TestTemporalAnalyzer_Clear(t *testing.T) {
 }
 
 func TestTemporalAnalyzer_Snapshots(t *testing.T) {
+	t.Parallel()
 	ta := NewTemporalAnalyzer()
 	ta.RecordHealth(HealthScore{
 		Overall:           0.5,
@@ -538,6 +575,7 @@ func TestTemporalAnalyzer_Snapshots(t *testing.T) {
 }
 
 func TestTemporalAnalysis_FormatCompact(t *testing.T) {
+	t.Parallel()
 	ta := TemporalAnalysis{
 		Trajectory:    TrajectoryStable,
 		SnapshotCount: 50,
@@ -550,6 +588,7 @@ func TestTemporalAnalysis_FormatCompact(t *testing.T) {
 }
 
 func TestTemporalAnalysis_FormatCompact_Oscillating(t *testing.T) {
+	t.Parallel()
 	ta := TemporalAnalysis{
 		Trajectory:    TrajectoryOscillating,
 		SnapshotCount: 50,
@@ -572,6 +611,7 @@ func TestTemporalAnalysis_FormatCompact_Oscillating(t *testing.T) {
 }
 
 func TestTemporalAnalysis_FormatCompact_Recovering(t *testing.T) {
+	t.Parallel()
 	ta := TemporalAnalysis{
 		Trajectory:    TrajectoryRecovering,
 		SnapshotCount: 50,
@@ -589,6 +629,7 @@ func TestTemporalAnalysis_FormatCompact_Recovering(t *testing.T) {
 }
 
 func TestTemporalAnalysis_FormatReport(t *testing.T) {
+	t.Parallel()
 	ta := TemporalAnalysis{
 		Trajectory:    TrajectoryDegrading,
 		SnapshotCount: 100,
@@ -622,6 +663,7 @@ func TestTemporalAnalysis_FormatReport(t *testing.T) {
 }
 
 func TestTemporalAnalysis_FormatReport_Full(t *testing.T) {
+	t.Parallel()
 	ta := TemporalAnalysis{
 		Trajectory:    TrajectoryRecovering,
 		SnapshotCount: 100,
@@ -662,6 +704,7 @@ func TestTemporalAnalysis_FormatReport_Full(t *testing.T) {
 }
 
 func TestComputeRecoveryStats_DampingOverdamped(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	snaps := []TemporalSnapshot{}
 	scores := []float64{0.9, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8}
@@ -684,6 +727,7 @@ func TestComputeRecoveryStats_DampingOverdamped(t *testing.T) {
 }
 
 func TestComputeRecoveryStats_DampingUnderdamped(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	snaps := []TemporalSnapshot{}
 	scores := []float64{0.9, 0.3, 0.45, 0.35, 0.5, 0.4, 0.6, 0.5, 0.7, 0.65, 0.75}
@@ -706,6 +750,7 @@ func TestComputeRecoveryStats_DampingUnderdamped(t *testing.T) {
 }
 
 func TestComputeOscillationStats_Realistic(t *testing.T) {
+	t.Parallel()
 	// Simulate a realistic oscillation: slow damping around 0.7
 	overalls := []float64{}
 	for i := 0; i < 20; i++ {

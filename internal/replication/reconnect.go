@@ -2,6 +2,7 @@ package replication
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"math"
@@ -295,6 +296,17 @@ func (sr *SlaveReconnector) sendPSYNC(mc *MasterConnection) (fullResync bool, er
 }
 
 func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
+	// 从 stopCh 派生 context，使阻塞操作（如 XReadGroup）可被 shutdown 取消
+	replCtx, replCancel := context.WithCancel(context.Background())
+	defer replCancel()
+	go func() {
+		select {
+		case <-sr.stopCh:
+			replCancel()
+		case <-replCtx.Done():
+		}
+	}()
+
 	for {
 		select {
 		case <-sr.stopCh:
@@ -348,7 +360,7 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 
 		cmdBytes := serializeCommand(req.Args)
 
-		if err := executeReplicatedCommand(sr.store, req.Args); err != nil {
+		if err := executeReplicatedCommand(sr.store, req.Args, replCtx); err != nil {
 			currentOffset := sr.lastOffset.Load()
 			if isTransientReplicationError(err, cmd, currentOffset) {
 				// 命令字节已从主节点流中消费，必须推进 offset 与主节点保持锁步：

@@ -256,8 +256,10 @@ func (s *BotreonStore) BZPopMinBlocking(ctx context.Context, keys []string, time
 }
 
 // BZPopMax keeps backward compatibility
-func (s *BotreonStore) BZPopMax(keys []string, timeout int) (string, *ZSetMember, error) {
-	ctx := context.Background()
+func (s *BotreonStore) BZPopMax(ctx context.Context, keys []string, timeout int) (string, *ZSetMember, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
@@ -267,8 +269,10 @@ func (s *BotreonStore) BZPopMax(keys []string, timeout int) (string, *ZSetMember
 }
 
 // BZPopMin keeps backward compatibility
-func (s *BotreonStore) BZPopMin(keys []string, timeout int) (string, *ZSetMember, error) {
-	ctx := context.Background()
+func (s *BotreonStore) BZPopMin(ctx context.Context, keys []string, timeout int) (string, *ZSetMember, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)

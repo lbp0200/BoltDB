@@ -23,6 +23,7 @@ import (
 // Note: Full cluster mode (CLUSTER MEET between BoltDB and Redis) requires complex setup
 // and is tested manually. This test verifies basic standalone operations.
 func TestMixedClusterBoltDBAndRedis(t *testing.T) {
+	t.Parallel()
 	skipHeavyIntegrationInShort(t)
 	// Check if redis-server is available
 	if err := exec.Command("redis-server", "--version").Run(); err != nil {
@@ -81,7 +82,7 @@ dir %s
 	}
 	defer boltDB.Close()
 
-	c, err := cluster.NewCluster(boltDB, "", "")
+	c, err := cluster.NewCluster(boltDB, "", "", context.Background())
 	if err != nil {
 		t.Fatalf("Failed to create BoltDB cluster: %v", err)
 	}
@@ -147,6 +148,7 @@ dir %s
 
 // TestMixedClusterReplication tests replication from Redis to BoltDB
 func TestMixedClusterReplication(t *testing.T) {
+	t.Parallel()
 	skipHeavyIntegrationInShort(t)
 	// Check if redis-server is available
 	if err := exec.Command("redis-server", "--version").Run(); err != nil {
@@ -199,7 +201,7 @@ func TestMixedClusterReplication(t *testing.T) {
 	// Create replication manager
 	rm := replication.NewReplicationManager(boltDB)
 
-	c, err := cluster.NewCluster(boltDB, "", "")
+	c, err := cluster.NewCluster(boltDB, "", "", context.Background())
 	if err != nil {
 		t.Fatalf("Failed to create BoltDB cluster: %v", err)
 	}
@@ -291,6 +293,7 @@ func TestMixedClusterReplication(t *testing.T) {
 
 // TestMixedClusterRoleSwitch tests role switching between BoltDB and Redis
 func TestMixedClusterRoleSwitch(t *testing.T) {
+	t.Parallel()
 	skipHeavyIntegrationInShort(t)
 	// Check if redis-server is available
 	if err := exec.Command("redis-server", "--version").Run(); err != nil {
@@ -334,7 +337,7 @@ func TestMixedClusterRoleSwitch(t *testing.T) {
 
 	rm := replication.NewReplicationManager(boltDB)
 
-	c, err := cluster.NewCluster(boltDB, "", "")
+	c, err := cluster.NewCluster(boltDB, "", "", context.Background())
 	if err != nil {
 		t.Fatalf("Failed to create BoltDB cluster: %v", err)
 	}
@@ -393,6 +396,7 @@ func TestMixedClusterRoleSwitch(t *testing.T) {
 
 // TestMixedClusterDataIsolation tests that BoltDB and Redis maintain separate data
 func TestMixedClusterDataIsolation(t *testing.T) {
+	t.Parallel()
 	skipHeavyIntegrationInShort(t)
 	// Check if redis-server is available
 	if err := exec.Command("redis-server", "--version").Run(); err != nil {
@@ -433,7 +437,7 @@ func TestMixedClusterDataIsolation(t *testing.T) {
 	}
 	defer boltDB.Close()
 
-	c, err := cluster.NewCluster(boltDB, "", "")
+	c, err := cluster.NewCluster(boltDB, "", "", context.Background())
 	if err != nil {
 		t.Fatalf("Failed to create BoltDB cluster: %v", err)
 	}

@@ -1147,6 +1147,7 @@ func TestCompatConcurrentPubSub(t *testing.T) {
 // ============================================================================
 
 func TestCompatSummary(t *testing.T) {
+	t.Parallel()
 	t.Log("========================================")
 	t.Log("BoltDB Redis Compatibility Test Summary")
 	t.Log("========================================")

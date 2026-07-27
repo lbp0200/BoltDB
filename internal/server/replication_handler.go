@@ -213,7 +213,7 @@ func (h *Handler) handleSlaveReplicationConnection(ctx context.Context, slave *r
 		}
 	}()
 	if ctx == nil {
-		ctx = context.Background()
+		ctx = h.Ctx
 	}
 
 	defer func() {

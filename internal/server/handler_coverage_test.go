@@ -11,6 +11,7 @@ import (
 
 // TestExecuteCommand_PING tests PING command
 func TestExecuteCommand_PING_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -23,6 +24,7 @@ func TestExecuteCommand_PING_Coverage(t *testing.T) {
 
 // TestExecuteCommand_ECHO tests ECHO command
 func TestExecuteCommand_ECHO_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -35,6 +37,7 @@ func TestExecuteCommand_ECHO_Coverage(t *testing.T) {
 
 // TestExecuteCommand_ECHO_NoArgs tests ECHO without arguments
 func TestExecuteCommand_ECHO_NoArgs_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -46,6 +49,7 @@ func TestExecuteCommand_ECHO_NoArgs_Coverage(t *testing.T) {
 
 // TestExecuteCommand_ROLE_Master tests ROLE command for master
 func TestExecuteCommand_ROLE_Master_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -59,6 +63,7 @@ func TestExecuteCommand_ROLE_Master_Coverage(t *testing.T) {
 
 // TestExecuteCommand_CLIENT_LIST tests CLIENT LIST command
 func TestExecuteCommand_CLIENT_LIST_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -71,6 +76,7 @@ func TestExecuteCommand_CLIENT_LIST_Coverage(t *testing.T) {
 
 // TestExecuteCommand_CLIENT_GETNAME tests CLIENT GETNAME command
 func TestExecuteCommand_CLIENT_GETNAME_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -86,6 +92,7 @@ func TestExecuteCommand_CLIENT_GETNAME_Coverage(t *testing.T) {
 
 // TestExecuteCommand_CLIENT_SETNAME tests CLIENT SETNAME command
 func TestExecuteCommand_CLIENT_SETNAME_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -96,6 +103,7 @@ func TestExecuteCommand_CLIENT_SETNAME_Coverage(t *testing.T) {
 
 // TestExecuteCommand_CLIENT_SETNAME_NoArgs tests CLIENT SETNAME without name
 func TestExecuteCommand_CLIENT_SETNAME_NoArgs_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -107,6 +115,7 @@ func TestExecuteCommand_CLIENT_SETNAME_NoArgs_Coverage(t *testing.T) {
 
 // TestExecuteCommand_DBSIZE tests DBSIZE command
 func TestExecuteCommand_DBSIZE_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -123,6 +132,7 @@ func TestExecuteCommand_DBSIZE_Coverage(t *testing.T) {
 
 // TestExecuteCommand_DBSIZE_Empty tests DBSIZE on empty database
 func TestExecuteCommand_DBSIZE_Empty_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -135,6 +145,7 @@ func TestExecuteCommand_DBSIZE_Empty_Coverage(t *testing.T) {
 
 // TestExecuteCommand_FLUSHDB tests FLUSHDB command
 func TestExecuteCommand_FLUSHDB_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -154,6 +165,7 @@ func TestExecuteCommand_FLUSHDB_Coverage(t *testing.T) {
 
 // TestExecuteCommand_FLUSHALL tests FLUSHALL command
 func TestExecuteCommand_FLUSHALL_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -173,6 +185,7 @@ func TestExecuteCommand_FLUSHALL_Coverage(t *testing.T) {
 
 // TestExecuteCommand_LASTSAVE tests LASTSAVE command
 func TestExecuteCommand_LASTSAVE_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -186,6 +199,7 @@ func TestExecuteCommand_LASTSAVE_Coverage(t *testing.T) {
 
 // TestExecuteCommand_UNKNOWN tests unknown command
 func TestExecuteCommand_UNKNOWN_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -197,6 +211,7 @@ func TestExecuteCommand_UNKNOWN_Coverage(t *testing.T) {
 
 // TestExecuteCommand_EXPIRE tests EXPIRE command
 func TestExecuteCommand_EXPIRE_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -212,6 +227,7 @@ func TestExecuteCommand_EXPIRE_Coverage(t *testing.T) {
 
 // TestExecuteCommand_EXPIRE_KeyNotExists tests EXPIRE on non-existent key
 func TestExecuteCommand_EXPIRE_KeyNotExists_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -224,6 +240,7 @@ func TestExecuteCommand_EXPIRE_KeyNotExists_Coverage(t *testing.T) {
 
 // TestExecuteCommand_PERSIST tests PERSIST command
 func TestExecuteCommand_PERSIST_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -245,6 +262,7 @@ func TestExecuteCommand_PERSIST_Coverage(t *testing.T) {
 
 // TestExecuteCommand_PERSIST_NoTTL tests PERSIST on key without TTL
 func TestExecuteCommand_PERSIST_NoTTL_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -260,6 +278,7 @@ func TestExecuteCommand_PERSIST_NoTTL_Coverage(t *testing.T) {
 
 // TestExecuteCommand_TTL tests TTL command
 func TestExecuteCommand_TTL_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -276,6 +295,7 @@ func TestExecuteCommand_TTL_Coverage(t *testing.T) {
 
 // TestExecuteCommand_TTL_NoExpiry tests TTL on key without TTL
 func TestExecuteCommand_TTL_NoExpiry_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -291,6 +311,7 @@ func TestExecuteCommand_TTL_NoExpiry_Coverage(t *testing.T) {
 
 // TestExecuteCommand_TTL_KeyNotExists tests TTL on non-existent key
 func TestExecuteCommand_TTL_KeyNotExists_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -303,6 +324,7 @@ func TestExecuteCommand_TTL_KeyNotExists_Coverage(t *testing.T) {
 
 // TestExecuteCommand_PTTL tests PTTL command (milliseconds)
 func TestExecuteCommand_PTTL_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -319,6 +341,7 @@ func TestExecuteCommand_PTTL_Coverage(t *testing.T) {
 
 // TestExecuteCommand_SETEX tests SETEX command
 func TestExecuteCommand_SETEX_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -338,6 +361,7 @@ func TestExecuteCommand_SETEX_Coverage(t *testing.T) {
 
 // TestExecuteCommand_PSETEX tests PSETEX command
 func TestExecuteCommand_PSETEX_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -357,6 +381,7 @@ func TestExecuteCommand_PSETEX_Coverage(t *testing.T) {
 
 // TestExecuteCommand_SETNX_Coverage tests SETNX command
 func TestExecuteCommand_SETNX_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -375,6 +400,7 @@ func TestExecuteCommand_SETNX_Coverage(t *testing.T) {
 
 // TestExecuteCommand_SETNX_Exists tests SETNX on existing key
 func TestExecuteCommand_SETNX_Exists_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -395,6 +421,7 @@ func TestExecuteCommand_SETNX_Exists_Coverage(t *testing.T) {
 
 // TestExecuteCommand_MSETNX tests MSETNX command
 func TestExecuteCommand_MSETNX_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -416,6 +443,7 @@ func TestExecuteCommand_MSETNX_Coverage(t *testing.T) {
 
 // TestExecuteCommand_GETDEL_Coverage tests GETDEL command
 func TestExecuteCommand_GETDEL_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -435,6 +463,7 @@ func TestExecuteCommand_GETDEL_Coverage(t *testing.T) {
 
 // TestExecuteCommand_GETEX_Coverage tests GETEX command
 func TestExecuteCommand_GETEX_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -456,6 +485,7 @@ func TestExecuteCommand_GETEX_Coverage(t *testing.T) {
 
 // TestExecuteCommand_GETSET tests GETSET command
 func TestExecuteCommand_GETSET_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -476,6 +506,7 @@ func TestExecuteCommand_GETSET_Coverage(t *testing.T) {
 
 // TestExecuteCommand_STRLEN tests STRLEN command
 func TestExecuteCommand_STRLEN_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -490,6 +521,7 @@ func TestExecuteCommand_STRLEN_Coverage(t *testing.T) {
 
 // TestExecuteCommand_STRLEN_KeyNotExists tests STRLEN on non-existent key
 func TestExecuteCommand_STRLEN_KeyNotExists_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -502,6 +534,7 @@ func TestExecuteCommand_STRLEN_KeyNotExists_Coverage(t *testing.T) {
 
 // TestExecuteCommand_APPEND tests APPEND command
 func TestExecuteCommand_APPEND_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -520,6 +553,7 @@ func TestExecuteCommand_APPEND_Coverage(t *testing.T) {
 
 // TestExecuteCommand_APPEND_NewKey tests APPEND creating new key
 func TestExecuteCommand_APPEND_NewKey_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -537,6 +571,7 @@ func TestExecuteCommand_APPEND_NewKey_Coverage(t *testing.T) {
 
 // TestExecuteCommand_GETRANGE tests GETRANGE command
 func TestExecuteCommand_GETRANGE_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -551,6 +586,7 @@ func TestExecuteCommand_GETRANGE_Coverage(t *testing.T) {
 
 // TestExecuteCommand_GETRANGE_Negative tests GETRANGE with negative end
 func TestExecuteCommand_GETRANGE_Negative_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -565,6 +601,7 @@ func TestExecuteCommand_GETRANGE_Negative_Coverage(t *testing.T) {
 
 // TestExecuteCommand_SETRANGE tests SETRANGE command
 func TestExecuteCommand_SETRANGE_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -583,6 +620,7 @@ func TestExecuteCommand_SETRANGE_Coverage(t *testing.T) {
 
 // TestExecuteCommand_SETRANGE_Expand tests SETRANGE expanding key
 func TestExecuteCommand_SETRANGE_Expand_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -601,6 +639,7 @@ func TestExecuteCommand_SETRANGE_Expand_Coverage(t *testing.T) {
 
 // TestExecuteCommand_PFADD tests PFADD command
 func TestExecuteCommand_PFADD_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -618,6 +657,7 @@ func TestExecuteCommand_PFADD_Coverage(t *testing.T) {
 
 // TestExecuteCommand_PFCOUNT tests PFCOUNT command
 func TestExecuteCommand_PFCOUNT_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -632,6 +672,7 @@ func TestExecuteCommand_PFCOUNT_Coverage(t *testing.T) {
 
 // TestExecuteCommand_PFMERGE tests PFMERGE command
 func TestExecuteCommand_PFMERGE_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -650,6 +691,7 @@ func TestExecuteCommand_PFMERGE_Coverage(t *testing.T) {
 
 // TestExecuteCommand_RENAME tests RENAME command
 func TestExecuteCommand_RENAME_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -670,6 +712,7 @@ func TestExecuteCommand_RENAME_Coverage(t *testing.T) {
 
 // TestExecuteCommand_RENAMENX tests RENAMENX command
 func TestExecuteCommand_RENAMENX_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -694,6 +737,7 @@ func TestExecuteCommand_RENAMENX_Coverage(t *testing.T) {
 
 // TestExecuteCommand_COPY tests COPY command
 func TestExecuteCommand_COPY_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -715,6 +759,7 @@ func TestExecuteCommand_COPY_Coverage(t *testing.T) {
 
 // TestExecuteCommand_TYPE tests TYPE command
 func TestExecuteCommand_TYPE_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -729,6 +774,7 @@ func TestExecuteCommand_TYPE_Coverage(t *testing.T) {
 
 // TestExecuteCommand_TYPE_None tests TYPE on non-existent key
 func TestExecuteCommand_TYPE_None_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -741,6 +787,7 @@ func TestExecuteCommand_TYPE_None_Coverage(t *testing.T) {
 
 // TestExecuteCommand_TOUCH tests TOUCH command
 func TestExecuteCommand_TOUCH_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -765,6 +812,7 @@ func TestExecuteCommand_TOUCH_Coverage(t *testing.T) {
 
 // TestExecuteCommand_SLOWLOG_GET tests SLOWLOG GET command
 func TestExecuteCommand_SLOWLOG_GET_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -777,6 +825,7 @@ func TestExecuteCommand_SLOWLOG_GET_Coverage(t *testing.T) {
 
 // TestExecuteCommand_SLOWLOG_LEN tests SLOWLOG LEN command
 func TestExecuteCommand_SLOWLOG_LEN_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -789,6 +838,7 @@ func TestExecuteCommand_SLOWLOG_LEN_Coverage(t *testing.T) {
 
 // TestExecuteCommand_DEBUG_SLEEP tests DEBUG SLEEP command
 func TestExecuteCommand_DEBUG_SLEEP_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -804,6 +854,7 @@ func TestExecuteCommand_DEBUG_SLEEP_Coverage(t *testing.T) {
 
 // TestExecuteCommand_LOLWUT tests LOLWUT command
 func TestExecuteCommand_LOLWUT_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -816,6 +867,7 @@ func TestExecuteCommand_LOLWUT_Coverage(t *testing.T) {
 
 // TestExecuteCommand_LATENCY_LATEST tests LATENCY LATEST command
 func TestExecuteCommand_LATENCY_LATEST_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -828,6 +880,7 @@ func TestExecuteCommand_LATENCY_LATEST_Coverage(t *testing.T) {
 
 // TestExecuteCommand_MODULE_LIST tests MODULE LIST command
 func TestExecuteCommand_MODULE_LIST_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -841,6 +894,7 @@ func TestExecuteCommand_MODULE_LIST_Coverage(t *testing.T) {
 
 // TestExecuteCommand_READONLY tests READONLY command
 func TestExecuteCommand_READONLY_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -851,6 +905,7 @@ func TestExecuteCommand_READONLY_Coverage(t *testing.T) {
 
 // TestExecuteCommand_READWRITE tests READWRITE command
 func TestExecuteCommand_READWRITE_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -861,6 +916,7 @@ func TestExecuteCommand_READWRITE_Coverage(t *testing.T) {
 
 // TestExecuteCommand_XADD tests XADD command
 func TestExecuteCommand_XADD_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -878,6 +934,7 @@ func TestExecuteCommand_XADD_Coverage(t *testing.T) {
 
 // TestExecuteCommand_XLEN tests XLEN command
 func TestExecuteCommand_XLEN_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -893,6 +950,7 @@ func TestExecuteCommand_XLEN_Coverage(t *testing.T) {
 
 // TestExecuteCommand_XRANGE tests XRANGE command
 func TestExecuteCommand_XRANGE_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -923,6 +981,7 @@ func TestExecuteCommand_XRANGE_Coverage(t *testing.T) {
 
 // TestExecuteCommand_XREAD tests XREAD command
 func TestExecuteCommand_XREAD_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -970,6 +1029,7 @@ func TestExecuteCommand_XREAD_Coverage(t *testing.T) {
 
 // TestExecuteCommand_XGROUP_CREATE tests XGROUP CREATE command
 func TestExecuteCommand_XGROUP_CREATE_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1006,6 +1066,7 @@ func TestExecuteCommand_XGROUP_CREATE_Coverage(t *testing.T) {
 
 // TestExecuteCommand_XDEL tests XDEL command
 func TestExecuteCommand_XDEL_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1032,6 +1093,7 @@ func TestExecuteCommand_XDEL_Coverage(t *testing.T) {
 
 // TestExecuteCommand_GEOADD tests GEOADD command
 func TestExecuteCommand_GEOADD_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1058,6 +1120,7 @@ func TestExecuteCommand_GEOADD_Coverage(t *testing.T) {
 
 // TestExecuteCommand_GEODIST tests GEODIST command
 func TestExecuteCommand_GEODIST_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1073,6 +1136,7 @@ func TestExecuteCommand_GEODIST_Coverage(t *testing.T) {
 
 // TestExecuteCommand_GEOHASH tests GEOHASH command
 func TestExecuteCommand_GEOHASH_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1090,6 +1154,7 @@ func TestExecuteCommand_GEOHASH_Coverage(t *testing.T) {
 
 // TestExecuteCommand_GEOPOS tests GEOPOS command
 func TestExecuteCommand_GEOPOS_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1109,6 +1174,7 @@ func TestExecuteCommand_GEOPOS_Coverage(t *testing.T) {
 
 // TestExecuteCommand_GEOSEARCH tests GEOSEARCH command
 func TestExecuteCommand_GEOSEARCH_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1128,6 +1194,7 @@ func TestExecuteCommand_GEOSEARCH_Coverage(t *testing.T) {
 
 // TestExecuteCommand_GEOSEARCH_WithModifiers tests GEOSEARCH WITHCOORD/WITHDIST/WITHHASH
 func TestExecuteCommand_GEOSEARCH_WithModifiers_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1180,6 +1247,7 @@ func TestExecuteCommand_GEOSEARCH_WithModifiers_Coverage(t *testing.T) {
 
 // TestExecuteCommand_XINFO_STREAMS tests XINFO STREAM command
 func TestExecuteCommand_XINFO_STREAMS_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1200,6 +1268,7 @@ func TestExecuteCommand_XINFO_STREAMS_Coverage(t *testing.T) {
 
 // TestExecuteCommand_XTRIM tests XTRIM command
 func TestExecuteCommand_XTRIM_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1226,6 +1295,7 @@ func TestExecuteCommand_XTRIM_Coverage(t *testing.T) {
 
 // TestExecuteCommand_XACK tests XACK command
 func TestExecuteCommand_XACK_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1257,6 +1327,7 @@ func TestExecuteCommand_XACK_Coverage(t *testing.T) {
 
 // TestExecuteCommand_LPOS tests LPOS command
 func TestExecuteCommand_LPOS_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1273,6 +1344,7 @@ func TestExecuteCommand_LPOS_Coverage(t *testing.T) {
 
 // TestExecuteCommand_LMOVE tests LMOVE command
 func TestExecuteCommand_LMOVE_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1296,6 +1368,7 @@ func TestExecuteCommand_LMOVE_Coverage(t *testing.T) {
 
 // TestExecuteCommand_SINTERCARD tests SINTERCARD command
 func TestExecuteCommand_SINTERCARD_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1313,6 +1386,7 @@ func TestExecuteCommand_SINTERCARD_Coverage(t *testing.T) {
 
 // TestExecuteCommand_SDIFFSTORE tests SDIFFSTORE command
 func TestExecuteCommand_SDIFFSTORE_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1338,6 +1412,7 @@ func TestExecuteCommand_SDIFFSTORE_Coverage(t *testing.T) {
 
 // TestExecuteCommand_ZMPOP tests ZMPOP command
 func TestExecuteCommand_ZMPOP_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1375,6 +1450,7 @@ func TestExecuteCommand_ZMPOP_Coverage(t *testing.T) {
 
 // TestExecuteCommand_LMPOP tests LMPOP command
 func TestExecuteCommand_LMPOP_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1443,6 +1519,7 @@ func TestExecuteCommand_LMPOP_Coverage(t *testing.T) {
 
 // TestExecuteCommand_ZRANDMEMBER tests ZRANDMEMBER command
 func TestExecuteCommand_ZRANDMEMBER_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1473,6 +1550,7 @@ func TestExecuteCommand_ZRANDMEMBER_Coverage(t *testing.T) {
 
 // TestExecuteCommand_HRANDMEMBER tests HRANDMEMBER command
 func TestExecuteCommand_HRANDMEMBER_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1500,6 +1578,7 @@ func TestExecuteCommand_HRANDMEMBER_Coverage(t *testing.T) {
 
 // TestExecuteCommand_LCS tests LCS command
 func TestExecuteCommand_LCS_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1517,6 +1596,7 @@ func TestExecuteCommand_LCS_Coverage(t *testing.T) {
 
 // TestExecuteCommand_SADD tests SADD command
 func TestExecuteCommand_SADD_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1529,6 +1609,7 @@ func TestExecuteCommand_SADD_Coverage(t *testing.T) {
 
 // TestExecuteCommand_SREM tests SREM command
 func TestExecuteCommand_SREM_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1542,6 +1623,7 @@ func TestExecuteCommand_SREM_Coverage(t *testing.T) {
 
 // TestExecuteCommand_SMEMBERS tests SMEMBERS command
 func TestExecuteCommand_SMEMBERS_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1555,6 +1637,7 @@ func TestExecuteCommand_SMEMBERS_Coverage(t *testing.T) {
 
 // TestExecuteCommand_HSET tests HSET command
 func TestExecuteCommand_HSET_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1567,6 +1650,7 @@ func TestExecuteCommand_HSET_Coverage(t *testing.T) {
 
 // TestExecuteCommand_HGET tests HGET command
 func TestExecuteCommand_HGET_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1580,6 +1664,7 @@ func TestExecuteCommand_HGET_Coverage(t *testing.T) {
 
 // TestExecuteCommand_HDEL tests HDEL command
 func TestExecuteCommand_HDEL_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1593,6 +1678,7 @@ func TestExecuteCommand_HDEL_Coverage(t *testing.T) {
 
 // TestExecuteCommand_HRANDFIELD_Coverage tests HRANDFIELD command
 func TestExecuteCommand_HRANDFIELD_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1623,6 +1709,7 @@ func TestExecuteCommand_HRANDFIELD_Coverage(t *testing.T) {
 
 // TestExecuteCommand_ZADD tests ZADD command
 func TestExecuteCommand_ZADD_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1635,6 +1722,7 @@ func TestExecuteCommand_ZADD_Coverage(t *testing.T) {
 
 // TestExecuteCommand_ZREM tests ZREM command
 func TestExecuteCommand_ZREM_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1648,6 +1736,7 @@ func TestExecuteCommand_ZREM_Coverage(t *testing.T) {
 
 // TestExecuteCommand_ZSCORE tests ZSCORE command
 func TestExecuteCommand_ZSCORE_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1661,6 +1750,7 @@ func TestExecuteCommand_ZSCORE_Coverage(t *testing.T) {
 
 // TestExecuteCommand_ZRANGE tests ZRANGE command
 func TestExecuteCommand_ZRANGE_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1674,6 +1764,7 @@ func TestExecuteCommand_ZRANGE_Coverage(t *testing.T) {
 
 // TestExecuteCommand_ZCOUNT tests ZCOUNT command
 func TestExecuteCommand_ZCOUNT_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1687,6 +1778,7 @@ func TestExecuteCommand_ZCOUNT_Coverage(t *testing.T) {
 
 // TestExecuteQueuedCommand tests executeQueuedCommand for MULTI/EXEC transactions
 func TestExecuteQueuedCommand(t *testing.T) {
+	t.Parallel()
 
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()

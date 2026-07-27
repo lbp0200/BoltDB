@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -22,7 +23,7 @@ import (
 // TestBuildInfoResponse_EmptySection 验证空 section 返回所有段
 // Kills CONDITIONALS_NEGATION on each `section == "" || ...` check
 func TestBuildInfoResponse_EmptySection(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6337
@@ -44,7 +45,7 @@ func TestBuildInfoResponse_EmptySection(t *testing.T) {
 // TestBuildInfoResponse_AllSection 验证 "ALL" section 返回所有段
 // Kills BOUNDARY on "ALL" string comparison
 func TestBuildInfoResponse_AllSection(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6337
@@ -59,7 +60,7 @@ func TestBuildInfoResponse_AllSection(t *testing.T) {
 // TestBuildInfoResponse_ServerSection 验证只返回 Server 段
 // Kills CONDITIONALS_NEGATION on `section == "SERVER"` check
 func TestBuildInfoResponse_ServerSection(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6337
@@ -78,7 +79,7 @@ func TestBuildInfoResponse_ServerSection(t *testing.T) {
 // TestBuildInfoResponse_ReplicationSection 验证只返回 Replication 段
 // Kills CONDITIONALS_NEGATION on `section == "REPLICATION"` check
 func TestBuildInfoResponse_ReplicationSection(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6337
@@ -92,7 +93,7 @@ func TestBuildInfoResponse_ReplicationSection(t *testing.T) {
 // TestBuildInfoResponse_PersistenceSection 验证只返回 Persistence 段
 // Kills CONDITIONALS_NEGATION on `section == "PERSISTENCE"` check
 func TestBuildInfoResponse_PersistenceSection(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6337
@@ -106,7 +107,7 @@ func TestBuildInfoResponse_PersistenceSection(t *testing.T) {
 // TestBuildInfoResponse_StatsSection 验证只返回 Stats 段
 // Kills CONDITIONALS_NEGATION on `section == "STATS"` check
 func TestBuildInfoResponse_StatsSection(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6337
@@ -120,7 +121,7 @@ func TestBuildInfoResponse_StatsSection(t *testing.T) {
 // TestBuildInfoResponse_ClusterSection 验证只返回 Cluster 段
 // Kills CONDITIONALS_NEGATION on `section == "CLUSTER"` check
 func TestBuildInfoResponse_ClusterSection(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6337
@@ -134,7 +135,7 @@ func TestBuildInfoResponse_ClusterSection(t *testing.T) {
 // TestBuildInfoResponse_MemorySection 验证只返回 Memory 段
 // Kills CONDITIONALS_NEGATION on `section == "MEMORY"` check
 func TestBuildInfoResponse_MemorySection(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6337
@@ -150,7 +151,7 @@ func TestBuildInfoResponse_MemorySection(t *testing.T) {
 // TestBuildInfoResponse_CpuSection 验证只返回 CPU 段
 // Kills CONDITIONALS_NEGATION on `section == "CPU"` check
 func TestBuildInfoResponse_CpuSection(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6337
@@ -164,7 +165,7 @@ func TestBuildInfoResponse_CpuSection(t *testing.T) {
 // TestBuildInfoResponse_KeyspaceSection 验证只返回 Keyspace 段
 // Kills CONDITIONALS_NEGATION on `section == "KEYSPACE"` check
 func TestBuildInfoResponse_KeyspaceSection(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6337
@@ -177,7 +178,7 @@ func TestBuildInfoResponse_KeyspaceSection(t *testing.T) {
 // TestBuildInfoResponse_CommandstatsSection 验证只返回 Commandstats 段
 // Kills CONDITIONALS_NEGATION on `section == "COMMANDSTATS"` check
 func TestBuildInfoResponse_CommandstatsSection(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6337
@@ -190,7 +191,7 @@ func TestBuildInfoResponse_CommandstatsSection(t *testing.T) {
 // TestBuildInfoResponse_LatencySection 验证只返回 Latency 段
 // Kills CONDITIONALS_NEGATION on `section == "LATENCY"` check
 func TestBuildInfoResponse_LatencySection(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6337
@@ -205,7 +206,7 @@ func TestBuildInfoResponse_LatencySection(t *testing.T) {
 // TestBuildInfoResponse_ReplicationNil 验证 Replication==nil 时只输出段标题
 // Kills CONDITIONALS_NEGATION on `h.Replication != nil` check
 func TestBuildInfoResponse_ReplicationNil(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6337
@@ -221,7 +222,7 @@ func TestBuildInfoResponse_ReplicationNil(t *testing.T) {
 // TestBuildInfoResponse_ReplicationMasterRole 验证 master 角色输出
 // Kills CONDITIONALS_NEGATION on role switch cases
 func TestBuildInfoResponse_ReplicationMasterRole(t *testing.T) {
-
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -249,7 +250,7 @@ func TestBuildInfoResponse_ReplicationMasterRole(t *testing.T) {
 // TestBuildInfoResponse_ReplicationSlaveRole 验证 slave 角色输出
 // Kills CONDITIONALS_NEGATION on RoleSlave case
 func TestBuildInfoResponse_ReplicationSlaveRole(t *testing.T) {
-
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -282,7 +283,7 @@ func TestBuildInfoResponse_ReplicationSlaveRole(t *testing.T) {
 // TestBuildInfoResponse_ReplicationSlaveNoMasterAddr 验证 slave 无 master 地址时
 // Kills CONDITIONALS_NEGATION on `masterAddr != ""` check
 func TestBuildInfoResponse_ReplicationSlaveNoMasterAddr(t *testing.T) {
-
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -308,7 +309,7 @@ func TestBuildInfoResponse_ReplicationSlaveNoMasterAddr(t *testing.T) {
 // TestBuildInfoResponse_ReplicationSentinelRole 验证 sentinel 角色输出
 // Kills CONDITIONALS_NEGATION on "sentinel" case
 func TestBuildInfoResponse_ReplicationSentinelRole(t *testing.T) {
-
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -336,7 +337,7 @@ func TestBuildInfoResponse_ReplicationSentinelRole(t *testing.T) {
 // TestBuildInfoResponse_BackupNil 验证 Backup==nil 时无 persistence 详情
 // Kills CONDITIONALS_NEGATION on `h.Backup != nil` check
 func TestBuildInfoResponse_BackupNil(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6337
@@ -350,7 +351,7 @@ func TestBuildInfoResponse_BackupNil(t *testing.T) {
 // TestBuildInfoResponse_BackupNotNil 验证 Backup!=nil 时输出保存时间
 // Kills CONDITIONALS_NEGATION on `h.Backup != nil` check (positive path)
 func TestBuildInfoResponse_BackupNotNil(t *testing.T) {
-
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -373,13 +374,13 @@ func TestBuildInfoResponse_BackupNotNil(t *testing.T) {
 // TestBuildInfoResponse_ClusterEnabled 验证 Cluster!=nil 时输出 cluster_enabled:1
 // Kills CONDITIONALS_NEGATION on `h.Cluster != nil` check
 func TestBuildInfoResponse_ClusterEnabled(t *testing.T) {
-
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
 	defer db.Close()
 
-	c, err := cluster.NewCluster(db, "", "127.0.0.1:6337")
+	c, err := cluster.NewCluster(db, "", "127.0.0.1:6337", context.Background())
 	assert.NoError(t, err)
 
 	handler := &Handler{
@@ -396,7 +397,7 @@ func TestBuildInfoResponse_ClusterEnabled(t *testing.T) {
 // TestBuildInfoResponse_ClusterDisabled 验证 Cluster==nil 时输出 cluster_enabled:0
 // Kills CONDITIONALS_NEGATION on `h.Cluster == nil` else branch
 func TestBuildInfoResponse_ClusterDisabled(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6337
@@ -410,7 +411,7 @@ func TestBuildInfoResponse_ClusterDisabled(t *testing.T) {
 // TestFormatBytes_GB 验证 GB 级别格式化
 // Kills BOUNDARY on `bytes >= GB` check
 func TestFormatBytes_GB(t *testing.T) {
-
+	t.Parallel()
 	// 2.5 GB = 2.5 * 1024 * 1024 * 1024 = 2684354560
 	result := formatBytes(2684354560)
 	assert.True(t, strings.Contains(result, "G"))
@@ -420,7 +421,7 @@ func TestFormatBytes_GB(t *testing.T) {
 // TestFormatBytes_MB 验证 MB 级别格式化
 // Kills BOUNDARY on `bytes >= MB` check
 func TestFormatBytes_MB(t *testing.T) {
-
+	t.Parallel()
 	// 1.5 MB = 1.5 * 1024 * 1024 = 1572864
 	result := formatBytes(1572864)
 	assert.True(t, strings.Contains(result, "M"))
@@ -430,7 +431,7 @@ func TestFormatBytes_MB(t *testing.T) {
 // TestFormatBytes_KB 验证 KB 级别格式化
 // Kills BOUNDARY on `bytes >= KB` check
 func TestFormatBytes_KB(t *testing.T) {
-
+	t.Parallel()
 	// 512 bytes
 	result := formatBytes(512)
 	assert.True(t, strings.Contains(result, "512B"))
@@ -444,7 +445,7 @@ func TestFormatBytes_KB(t *testing.T) {
 // TestFormatBytes_Bytes 验证字节级别格式化
 // Kills BOUNDARY on default case
 func TestFormatBytes_Bytes(t *testing.T) {
-
+	t.Parallel()
 	result := formatBytes(0)
 	assert.Equal(t, "0B", result)
 
@@ -460,7 +461,7 @@ func TestFormatBytes_Bytes(t *testing.T) {
 // TestCheckAndHandleRedirect_NilCluster 验证非集群模式返回 nil
 // Kills CONDITIONALS_NEGATION on `h.Cluster == nil` check
 func TestCheckAndHandleRedirect_NilCluster(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -471,13 +472,13 @@ func TestCheckAndHandleRedirect_NilCluster(t *testing.T) {
 // TestCheckAndHandleRedirect_NoRedirect 验证集群模式无重定向时返回 nil
 // Kills CONDITIONALS_NEGATION on `redirect == nil` check
 func TestCheckAndHandleRedirect_NoRedirect(t *testing.T) {
-
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
 	defer db.Close()
 
-	c, err := cluster.NewCluster(db, "", "127.0.0.1:6337")
+	c, err := cluster.NewCluster(db, "", "127.0.0.1:6337", context.Background())
 	assert.NoError(t, err)
 
 	handler := &Handler{
@@ -496,12 +497,13 @@ func TestCheckAndHandleRedirect_NoRedirect(t *testing.T) {
 // TestCheckAndHandleRedirect_ImportingWriteFence blocks ASKING writes (not RESTORE)
 // on IMPORTING slots to prevent racing with Phase-1 migration RESTORE.
 func TestCheckAndHandleRedirect_ImportingWriteFence(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
 	defer db.Close()
 
-	c, err := cluster.NewCluster(db, "", "127.0.0.1:6337")
+	c, err := cluster.NewCluster(db, "", "127.0.0.1:6337", context.Background())
 	assert.NoError(t, err)
 	source := cluster.NewNode("source-node", "127.0.0.1:6338")
 	c.AddNode(source)
@@ -557,12 +559,13 @@ func TestCheckAndHandleRedirect_ImportingWriteFence(t *testing.T) {
 // TestCheckAndHandleRedirect_MigratingWriteFence blocks writes to existing keys
 // on a MIGRATING owner while still serving reads (and ASKing when key missing).
 func TestCheckAndHandleRedirect_MigratingWriteFence(t *testing.T) {
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
 	defer db.Close()
 
-	c, err := cluster.NewCluster(db, "", "127.0.0.1:6337")
+	c, err := cluster.NewCluster(db, "", "127.0.0.1:6337", context.Background())
 	assert.NoError(t, err)
 	target := cluster.NewNode("target-node", "127.0.0.1:6338")
 	c.AddNode(target)
@@ -606,7 +609,7 @@ func TestCheckAndHandleRedirect_MigratingWriteFence(t *testing.T) {
 // TestCheckAndHandleMultiKeyRedirect_NilCluster 验证非集群模式返回 nil
 // Kills CONDITIONALS_NEGATION on `h.Cluster == nil` in multi-key
 func TestCheckAndHandleMultiKeyRedirect_NilCluster(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -617,13 +620,13 @@ func TestCheckAndHandleMultiKeyRedirect_NilCluster(t *testing.T) {
 // TestCheckAndHandleMultiKeyRedirect_NoRedirect 验证集群模式无重定向时返回 nil
 // Kills CONDITIONALS_NEGATION on `movedError == nil` check
 func TestCheckAndHandleMultiKeyRedirect_NoRedirect(t *testing.T) {
-
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
 	defer db.Close()
 
-	c, err := cluster.NewCluster(db, "", "127.0.0.1:6337")
+	c, err := cluster.NewCluster(db, "", "127.0.0.1:6337", context.Background())
 	assert.NoError(t, err)
 
 	handler := &Handler{
@@ -642,7 +645,7 @@ func TestCheckAndHandleMultiKeyRedirect_NoRedirect(t *testing.T) {
 // TestRegisterConnection_NilClientInfo 验证 clientInfo==nil 时自动创建
 // Kills CONDITIONALS_NEGATION on `state.clientInfo == nil` check
 func TestRegisterConnection_NilClientInfo(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -661,7 +664,7 @@ func TestRegisterConnection_NilClientInfo(t *testing.T) {
 // TestRegisterConnection_ExistingClientInfo 验证 clientInfo!=nil 时不覆盖
 // Kills CONDITIONALS_NEGATION on `state.clientInfo == nil` else branch
 func TestRegisterConnection_ExistingClientInfo(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -685,7 +688,7 @@ func TestRegisterConnection_ExistingClientInfo(t *testing.T) {
 // TestProcessRequest_EmptyCommand 验证空命令返回错误
 // Kills CONDITIONALS_NEGATION on `len(args) == 0` check
 func TestProcessRequest_EmptyCommand(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -699,7 +702,7 @@ func TestProcessRequest_EmptyCommand(t *testing.T) {
 // TestProcessRequest_CommandCaseInsensitive 验证命令大小写不敏感
 // Kills BOUNDARY on strings.ToUpper
 func TestProcessRequest_CommandCaseInsensitive(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -714,7 +717,7 @@ func TestProcessRequest_CommandCaseInsensitive(t *testing.T) {
 // TestProcessRequest_ExpireNormalization 验证 EXPIRE 被规范化为 PEXPIREAT
 // Kills CONDITIONALS_NEGATION on EXPIRE/PEXPIRE normalization switch cases
 func TestProcessRequest_ExpireNormalization(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -737,7 +740,7 @@ func TestProcessRequest_ExpireNormalization(t *testing.T) {
 // TestProcessRequest_PexpireNormalization 验证 PEXPIRE 被规范化为 PEXPIREAT
 // Kills CONDITIONALS_NEGATION on PEXPIRE case
 func TestProcessRequest_PexpireNormalization(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -759,7 +762,7 @@ func TestProcessRequest_PexpireNormalization(t *testing.T) {
 // TestProcessRequest_ExpireInvalidSeconds 验证 EXPIRE 无效秒数
 // Kills CONDITIONALS_NEGATION on `err == nil` check in EXPIRE case
 func TestProcessRequest_ExpireInvalidSeconds(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -774,7 +777,7 @@ func TestProcessRequest_ExpireInvalidSeconds(t *testing.T) {
 // TestProcessRequest_PexpireInvalidMs 验证 PEXPIRE 无效毫秒数
 // Kills CONDITIONALS_NEGATION on `err == nil` check in PEXPIRE case
 func TestProcessRequest_PexpireInvalidMs(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -788,7 +791,7 @@ func TestProcessRequest_PexpireInvalidMs(t *testing.T) {
 // TestProcessRequest_ExpireNonExistentKey 验证 EXPIRE 不存在的 key
 // Kills ARITHMETIC on return value
 func TestProcessRequest_ExpireNonExistentKey(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -801,7 +804,7 @@ func TestProcessRequest_ExpireNonExistentKey(t *testing.T) {
 // TestProcessRequest_PexpireNonExistentKey 验证 PEXPIRE 不存在的 key
 // Kills ARITHMETIC on return value
 func TestProcessRequest_PexpireNonExistentKey(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -816,7 +819,7 @@ func TestProcessRequest_PexpireNonExistentKey(t *testing.T) {
 // TestBuildInfoResponse_ClientsSection 验证 Clients 段输出
 // Kills CONDITIONALS_NEGATION on `section == "CLIENTS"` check
 func TestBuildInfoResponse_ClientsSection(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6337
@@ -838,7 +841,7 @@ func TestBuildInfoResponse_ClientsSection(t *testing.T) {
 // TestBuildInfoResponse_ServerSectionDetailed 验证 Server 段所有字段
 // Kills BOUNDARY/CONDITIONALS on individual field outputs
 func TestBuildInfoResponse_ServerSectionDetailed(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6379
@@ -858,7 +861,7 @@ func TestBuildInfoResponse_ServerSectionDetailed(t *testing.T) {
 // TestBuildInfoResponse_MultiplexingApi 验证多路复用 API 字段
 // Kills CONDITIONALS_NEGATION on `runtime.GOOS == "linux"` check
 func TestBuildInfoResponse_MultiplexingApi(t *testing.T) {
-
+	t.Parallel()
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6337
@@ -873,7 +876,7 @@ func TestBuildInfoResponse_MultiplexingApi(t *testing.T) {
 // TestFormatBytes_ExactlyGB 验证正好 1GB 的格式化
 // Kills CONDITIONALS_BOUNDARY/NEGATION on `bytes >= GB` (exact boundary)
 func TestFormatBytes_ExactlyGB(t *testing.T) {
-
+	t.Parallel()
 	// Exactly 1 GB = 1073741824
 	result := formatBytes(1073741824)
 	assert.Equal(t, "1.00G", result)
@@ -882,7 +885,7 @@ func TestFormatBytes_ExactlyGB(t *testing.T) {
 // TestFormatBytes_BelowGB 验证略低于 1GB 的值不进入 GB 分支
 // Kills CONDITIONALS_BOUNDARY on `bytes >= GB` (below boundary)
 func TestFormatBytes_BelowGB(t *testing.T) {
-
+	t.Parallel()
 	// 1073741823 = 1GB - 1
 	result := formatBytes(1073741823)
 	assert.True(t, strings.Contains(result, "M"))
@@ -892,7 +895,7 @@ func TestFormatBytes_BelowGB(t *testing.T) {
 // TestFormatBytes_ExactlyMB 验证正好 1MB 的格式化
 // Kills CONDITIONALS_BOUNDARY/NEGATION on `bytes >= MB` (exact boundary)
 func TestFormatBytes_ExactlyMB(t *testing.T) {
-
+	t.Parallel()
 	// Exactly 1 MB = 1048576
 	result := formatBytes(1048576)
 	assert.Equal(t, "1.00M", result)
@@ -901,7 +904,7 @@ func TestFormatBytes_ExactlyMB(t *testing.T) {
 // TestFormatBytes_BelowMB 验证略低于 1MB 的值不进入 MB 分支
 // Kills CONDITIONALS_BOUNDARY on `bytes >= MB` (below boundary)
 func TestFormatBytes_BelowMB(t *testing.T) {
-
+	t.Parallel()
 	// 1048575 = 1MB - 1
 	result := formatBytes(1048575)
 	assert.True(t, strings.Contains(result, "K"))
@@ -911,7 +914,7 @@ func TestFormatBytes_BelowMB(t *testing.T) {
 // TestFormatBytes_ExactlyKB 验证正好 1KB 的格式化
 // Kills CONDITIONALS_BOUNDARY/NEGATION on `bytes >= KB` (exact boundary)
 func TestFormatBytes_ExactlyKB(t *testing.T) {
-
+	t.Parallel()
 	// Exactly 1 KB = 1024
 	result := formatBytes(1024)
 	assert.Equal(t, "1.00K", result)
@@ -920,7 +923,7 @@ func TestFormatBytes_ExactlyKB(t *testing.T) {
 // TestFormatBytes_BelowKB 验证略低于 1KB 的值不进入 KB 分支
 // Kills CONDITIONALS_BOUNDARY on `bytes >= KB` (below boundary)
 func TestFormatBytes_BelowKB(t *testing.T) {
-
+	t.Parallel()
 	// 1023 = 1KB - 1
 	result := formatBytes(1023)
 	assert.Equal(t, "1023B", result)
@@ -931,7 +934,7 @@ func TestFormatBytes_BelowKB(t *testing.T) {
 // TestBuildInfoResponse_MultipleSlaves 验证多从节点索引正确
 // Kills ARITHMETIC_BASE on slave index `i` in for loop (info.go:67)
 func TestBuildInfoResponse_MultipleSlaves(t *testing.T) {
-
+	t.Parallel()
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
@@ -962,7 +965,7 @@ func TestBuildInfoResponse_MultipleSlaves(t *testing.T) {
 // TestProcessRequest_ReplicaofNotPropagated 验证 REPLICAOF 命令不被传播
 // Kills CONDITIONALS_NEGATION on `cmd != "REPLICAOF"` check (handler_core.go:549)
 func TestProcessRequest_ReplicaofNotPropagated(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -976,7 +979,7 @@ func TestProcessRequest_ReplicaofNotPropagated(t *testing.T) {
 // TestProcessRequest_MigrateNotPropagated 验证 MIGRATE 命令不被传播
 // Kills CONDITIONALS_NEGATION on `cmd != "MIGRATE"` check (handler_core.go:549)
 func TestProcessRequest_MigrateNotPropagated(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -991,7 +994,7 @@ func TestProcessRequest_MigrateNotPropagated(t *testing.T) {
 // TestProcessRequest_ReplconfNotPropagated 验证 REPLCONF 命令不被传播
 // Kills CONDITIONALS_NEGATION on `cmd != "REPLCONF"` check (handler_core.go:549)
 func TestProcessRequest_ReplconfNotPropagated(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1003,7 +1006,7 @@ func TestProcessRequest_ReplconfNotPropagated(t *testing.T) {
 // TestProcessRequest_PsyncNotPropagated 验证 PSYNC 命令不被传播
 // Kills CONDITIONALS_NEGATION on `cmd != "PSYNC"` check (handler_core.go:549)
 func TestProcessRequest_PsyncNotPropagated(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1017,7 +1020,7 @@ func TestProcessRequest_PsyncNotPropagated(t *testing.T) {
 // TestProcessRequest_ExpirePropagation 验证 EXPIRE 规范化后的传播参数
 // Kills ARITHMETIC_BASE on `int64(seconds)*1000` (handler_core.go:534)
 func TestProcessRequest_ExpirePropagation(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
@@ -1040,7 +1043,7 @@ func TestProcessRequest_ExpirePropagation(t *testing.T) {
 // TestProcessRequest_PexpirePropagation 验证 PEXPIRE 规范化后的传播参数
 // Kills ARITHMETIC_BASE on `+ ms` (handler_core.go:541)
 func TestProcessRequest_PexpirePropagation(t *testing.T) {
-
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 

@@ -2,6 +2,7 @@ package replication
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"strconv"
 	"testing"
@@ -61,7 +62,7 @@ func TestExecuteReplicatedCommand_SET(t *testing.T) {
 	defer testStore.Close()
 
 	// Test SET command
-	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("SET"), []byte("testkey"), []byte("testvalue")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("SET"), []byte("testkey"), []byte("testvalue")}, context.Background())
 
 	// Verify the value was set
 	val, err := testStore.Get("testkey")
@@ -80,7 +81,7 @@ func TestExecuteReplicatedCommand_DEL(t *testing.T) {
 	testStore.Set("key2", "value2")
 
 	// Test DEL command
-	executeReplicatedCommand(testStore, [][]byte{[]byte("DEL"), []byte("key1")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("DEL"), []byte("key1")}, context.Background())
 
 	// Verify key1 is deleted
 	_, err := testStore.Get("key1")
@@ -94,7 +95,7 @@ func TestExecuteReplicatedCommand_INCR(t *testing.T) {
 	defer testStore.Close()
 
 	// Test INCR command on non-existent key (INCR creates the key)
-	executeReplicatedCommand(testStore, [][]byte{[]byte("INCR"), []byte("newcounter")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("INCR"), []byte("newcounter")}, context.Background())
 
 	// Verify value was incremented from 0 to 1
 	val, err := testStore.Get("newcounter")
@@ -109,7 +110,7 @@ func TestExecuteReplicatedCommand_INCRBY(t *testing.T) {
 	defer testStore.Close()
 
 	// Test INCRBY command on non-existent key
-	executeReplicatedCommand(testStore, [][]byte{[]byte("INCRBY"), []byte("counter"), []byte("5")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("INCRBY"), []byte("counter"), []byte("5")}, context.Background())
 
 	// Verify value was incremented from 0 to 5
 	val, err := testStore.Get("counter")
@@ -124,7 +125,7 @@ func TestExecuteReplicatedCommand_DECR(t *testing.T) {
 	defer testStore.Close()
 
 	// Test DECR command on non-existent key (creates key with -1)
-	executeReplicatedCommand(testStore, [][]byte{[]byte("DECR"), []byte("counter")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("DECR"), []byte("counter")}, context.Background())
 
 	// Verify value was decremented from 0 to -1
 	val, err := testStore.Get("counter")
@@ -139,7 +140,7 @@ func TestExecuteReplicatedCommand_DECRBY(t *testing.T) {
 	defer testStore.Close()
 
 	// Test DECRBY command on non-existent key
-	executeReplicatedCommand(testStore, [][]byte{[]byte("DECRBY"), []byte("counter"), []byte("3")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("DECRBY"), []byte("counter"), []byte("3")}, context.Background())
 
 	// Verify value was decremented from 0 to -3
 	val, err := testStore.Get("counter")
@@ -157,7 +158,7 @@ func TestExecuteReplicatedCommand_APPEND(t *testing.T) {
 	testStore.Set("key", "hello")
 
 	// Test APPEND command
-	executeReplicatedCommand(testStore, [][]byte{[]byte("APPEND"), []byte("key"), []byte(" world")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("APPEND"), []byte("key"), []byte(" world")}, context.Background())
 
 	// Verify value was appended
 	val, err := testStore.Get("key")
@@ -172,7 +173,7 @@ func TestExecuteReplicatedCommand_HSET(t *testing.T) {
 	defer testStore.Close()
 
 	// Test HSET command
-	executeReplicatedCommand(testStore, [][]byte{[]byte("HSET"), []byte("myhash"), []byte("field1"), []byte("value1")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("HSET"), []byte("myhash"), []byte("field1"), []byte("value1")}, context.Background())
 
 	// Verify value was set
 	val, err := testStore.HGet("myhash", "field1")
@@ -187,7 +188,7 @@ func TestExecuteReplicatedCommand_SADD(t *testing.T) {
 	defer testStore.Close()
 
 	// Test SADD command
-	executeReplicatedCommand(testStore, [][]byte{[]byte("SADD"), []byte("myset"), []byte("member1"), []byte("member2")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("SADD"), []byte("myset"), []byte("member1"), []byte("member2")}, context.Background())
 
 	// Verify members were added
 	count, err := testStore.SCard("myset")
@@ -204,7 +205,7 @@ func TestExecuteReplicatedCommand_ZADD(t *testing.T) {
 	// Test ZADD command
 	executeReplicatedCommand(testStore, [][]byte{
 		[]byte("ZADD"), []byte("myzset"), []byte("1.0"), []byte("member1"), []byte("2.0"), []byte("member2"),
-	})
+	}, context.Background())
 
 	// Verify members were added
 	count, err := testStore.ZCard("myzset")
@@ -219,7 +220,7 @@ func TestExecuteReplicatedCommand_RPUSH(t *testing.T) {
 	defer testStore.Close()
 
 	// Test RPUSH command
-	executeReplicatedCommand(testStore, [][]byte{[]byte("RPUSH"), []byte("mylist"), []byte("value1"), []byte("value2")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("RPUSH"), []byte("mylist"), []byte("value1"), []byte("value2")}, context.Background())
 
 	// Verify values were pushed
 	len, err := testStore.LLen("mylist")
@@ -234,7 +235,7 @@ func TestExecuteReplicatedCommand_LPUSH(t *testing.T) {
 	defer testStore.Close()
 
 	// Test LPUSH command
-	executeReplicatedCommand(testStore, [][]byte{[]byte("LPUSH"), []byte("mylist"), []byte("value1"), []byte("value2")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("LPUSH"), []byte("mylist"), []byte("value1"), []byte("value2")}, context.Background())
 
 	// Verify values were pushed
 	len, err := testStore.LLen("mylist")
@@ -249,10 +250,10 @@ func TestExecuteReplicatedCommand_EmptyArgs(t *testing.T) {
 	defer testStore.Close()
 
 	// Should not panic with empty args
-	executeReplicatedCommand(testStore, [][]byte{})
+	executeReplicatedCommand(testStore, [][]byte{}, context.Background())
 
 	// Should not panic with single arg
-	executeReplicatedCommand(testStore, [][]byte{[]byte("UNKNOWN")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("UNKNOWN")}, context.Background())
 }
 
 // TestExecuteReplicatedCommand_WithTTL tests SET with EX option
@@ -262,7 +263,7 @@ func TestExecuteReplicatedCommand_SetWithTTL(t *testing.T) {
 	defer testStore.Close()
 
 	// Test SET with EX
-	executeReplicatedCommand(testStore, [][]byte{[]byte("SET"), []byte("key"), []byte("value"), []byte("EX"), []byte("60")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("SET"), []byte("key"), []byte("value"), []byte("EX"), []byte("60")}, context.Background())
 
 	// Verify the value was set
 	val, err := testStore.Get("key")
@@ -277,7 +278,7 @@ func TestExecuteReplicatedCommand_SetWithPX(t *testing.T) {
 	defer testStore.Close()
 
 	// Test SET with PX (milliseconds)
-	executeReplicatedCommand(testStore, [][]byte{[]byte("SET"), []byte("key"), []byte("value"), []byte("PX"), []byte("60000")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("SET"), []byte("key"), []byte("value"), []byte("PX"), []byte("60000")}, context.Background())
 
 	// Verify the value was set
 	val, err := testStore.Get("key")
@@ -658,7 +659,7 @@ func TestExecuteReplicatedCommand_HINCRBY(t *testing.T) {
 	testStore.HSet("myhash", "field1", "10")
 
 	// Test HINCRBY command
-	executeReplicatedCommand(testStore, [][]byte{[]byte("HINCRBY"), []byte("myhash"), []byte("field1"), []byte("5")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("HINCRBY"), []byte("myhash"), []byte("field1"), []byte("5")}, context.Background())
 
 	// Verify value was incremented
 	val, err := testStore.HGet("myhash", "field1")
@@ -677,7 +678,7 @@ func TestExecuteReplicatedCommand_HDEL(t *testing.T) {
 	testStore.HSet("myhash", "field2", "value2")
 
 	// Test HDEL command
-	executeReplicatedCommand(testStore, [][]byte{[]byte("HDEL"), []byte("myhash"), []byte("field1")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("HDEL"), []byte("myhash"), []byte("field1")}, context.Background())
 
 	// Verify field was deleted
 	_, err := testStore.HGet("myhash", "field1")
@@ -702,7 +703,7 @@ func TestExecuteReplicatedCommand_ZREM(t *testing.T) {
 	})
 
 	// Test ZREM command
-	executeReplicatedCommand(testStore, [][]byte{[]byte("ZREM"), []byte("myzset"), []byte("member1")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("ZREM"), []byte("myzset"), []byte("member1")}, context.Background())
 
 	// Verify member was removed
 	count, err := testStore.ZCard("myzset")
@@ -720,7 +721,7 @@ func TestExecuteReplicatedCommand_SREM(t *testing.T) {
 	testStore.SAdd("myset", "member1", "member2")
 
 	// Test SREM command
-	executeReplicatedCommand(testStore, [][]byte{[]byte("SREM"), []byte("myset"), []byte("member1")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("SREM"), []byte("myset"), []byte("member1")}, context.Background())
 
 	// Verify member was removed
 	count, err := testStore.SCard("myset")
@@ -738,7 +739,7 @@ func TestExecuteReplicatedCommand_LSET(t *testing.T) {
 	testStore.RPush("mylist", "value1", "value2", "value3")
 
 	// Test LSET command
-	executeReplicatedCommand(testStore, [][]byte{[]byte("LSET"), []byte("mylist"), []byte("1"), []byte("newvalue")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("LSET"), []byte("mylist"), []byte("1"), []byte("newvalue")}, context.Background())
 
 	// Verify value was set
 	val, err := testStore.LIndex("mylist", 1)
@@ -756,7 +757,7 @@ func TestExecuteReplicatedCommand_LREM(t *testing.T) {
 	testStore.RPush("mylist", "a", "b", "a", "c")
 
 	// Test LREM command (remove first 2 'a')
-	executeReplicatedCommand(testStore, [][]byte{[]byte("LREM"), []byte("mylist"), []byte("2"), []byte("a")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("LREM"), []byte("mylist"), []byte("2"), []byte("a")}, context.Background())
 
 	// Verify elements were removed
 	len, err := testStore.LLen("mylist")
@@ -774,7 +775,7 @@ func TestExecuteReplicatedCommand_LTRIM(t *testing.T) {
 	testStore.RPush("mylist", "a", "b", "c", "d", "e")
 
 	// Test LTRIM command (keep elements 0-2)
-	executeReplicatedCommand(testStore, [][]byte{[]byte("LTRIM"), []byte("mylist"), []byte("0"), []byte("2")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("LTRIM"), []byte("mylist"), []byte("0"), []byte("2")}, context.Background())
 
 	// Verify list was trimmed
 	len, err := testStore.LLen("mylist")
@@ -794,7 +795,7 @@ func TestExecuteReplicatedCommand_ZINCRBY(t *testing.T) {
 	})
 
 	// Test ZINCRBY command
-	executeReplicatedCommand(testStore, [][]byte{[]byte("ZINCRBY"), []byte("myzset"), []byte("2.5"), []byte("member1")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("ZINCRBY"), []byte("myzset"), []byte("2.5"), []byte("member1")}, context.Background())
 
 	// Verify score was incremented
 	members, err := testStore.ZRange("myzset", 0, -1)
@@ -811,7 +812,7 @@ func TestExecuteReplicatedCommand_SETBIT(t *testing.T) {
 
 	testStore.Set("bitkey", "\x00")
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("SETBIT"), []byte("bitkey"), []byte("0"), []byte("1")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("SETBIT"), []byte("bitkey"), []byte("0"), []byte("1")}, context.Background())
 	assert.NoError(t, err)
 
 	bit, err := testStore.GetBit("bitkey", 0)
@@ -828,7 +829,7 @@ func TestExecuteReplicatedCommand_BITOP(t *testing.T) {
 	testStore.Set("key1", "\x0f")
 	testStore.Set("key2", "\xf0")
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BITOP"), []byte("OR"), []byte("dest"), []byte("key1"), []byte("key2")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BITOP"), []byte("OR"), []byte("dest"), []byte("key1"), []byte("key2")}, context.Background())
 	assert.NoError(t, err)
 
 	val, err := testStore.Get("dest")
@@ -842,7 +843,7 @@ func TestExecuteReplicatedCommand_BITFIELD(t *testing.T) {
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BITFIELD"), []byte("bfkey"), []byte("SET"), []byte("u8"), []byte("0"), []byte("42")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BITFIELD"), []byte("bfkey"), []byte("SET"), []byte("u8"), []byte("0"), []byte("42")}, context.Background())
 	assert.NoError(t, err)
 
 	val, err := testStore.Get("bfkey")
@@ -861,7 +862,7 @@ func TestExecuteReplicatedCommand_ZUNIONSTORE(t *testing.T) {
 	testStore.ZAdd("zset1", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}})
 	testStore.ZAdd("zset2", []store.ZSetMember{{Member: "b", Score: 3}, {Member: "c", Score: 4}})
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("ZUNIONSTORE"), []byte("dest"), []byte("2"), []byte("zset1"), []byte("zset2"), []byte("AGGREGATE"), []byte("SUM")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("ZUNIONSTORE"), []byte("dest"), []byte("2"), []byte("zset1"), []byte("zset2"), []byte("AGGREGATE"), []byte("SUM")}, context.Background())
 	assert.NoError(t, err)
 
 	count, err := testStore.ZCard("dest")
@@ -878,7 +879,7 @@ func TestExecuteReplicatedCommand_ZINTERSTORE(t *testing.T) {
 	testStore.ZAdd("zset1", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}})
 	testStore.ZAdd("zset2", []store.ZSetMember{{Member: "b", Score: 3}, {Member: "c", Score: 4}})
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("ZINTERSTORE"), []byte("dest"), []byte("2"), []byte("zset1"), []byte("zset2")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("ZINTERSTORE"), []byte("dest"), []byte("2"), []byte("zset1"), []byte("zset2")}, context.Background())
 	assert.NoError(t, err)
 
 	count, err := testStore.ZCard("dest")
@@ -900,7 +901,7 @@ func TestExecuteReplicatedCommand_ZDIFFSTORE(t *testing.T) {
 	testStore.ZAdd("zset1", []store.ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}, {Member: "c", Score: 3}})
 	testStore.ZAdd("zset2", []store.ZSetMember{{Member: "b", Score: 3}})
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("ZDIFFSTORE"), []byte("dest"), []byte("2"), []byte("zset1"), []byte("zset2")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("ZDIFFSTORE"), []byte("dest"), []byte("2"), []byte("zset1"), []byte("zset2")}, context.Background())
 	assert.NoError(t, err)
 
 	count, err := testStore.ZCard("dest")
@@ -923,7 +924,7 @@ func TestExecuteReplicatedCommand_ZRANGESTORE(t *testing.T) {
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("ZRANGESTORE"), []byte("dst"), []byte("src"),
 		[]byte("0"), []byte("1"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 
 	count, err := testStore.ZCard("dst")
@@ -946,7 +947,7 @@ func TestExecuteReplicatedCommand_ZRANGESTORE_BYSCORE(t *testing.T) {
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("ZRANGESTORE"), []byte("dst"), []byte("src"),
 		[]byte("1.5"), []byte("3.5"), []byte("BYSCORE"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 
 	count, err := testStore.ZCard("dst")
@@ -962,7 +963,7 @@ func TestExecuteReplicatedCommand_COPY_String(t *testing.T) {
 
 	testStore.Set("src", "hello")
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("src"), []byte("dst")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("src"), []byte("dst")}, context.Background())
 	assert.NoError(t, err)
 
 	val, err := testStore.Get("dst")
@@ -978,7 +979,7 @@ func TestExecuteReplicatedCommand_COPY_List(t *testing.T) {
 
 	testStore.RPush("src", "a", "b", "c")
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("src"), []byte("dst")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("src"), []byte("dst")}, context.Background())
 	assert.NoError(t, err)
 
 	items, err := testStore.LRange("dst", 0, -1)
@@ -997,7 +998,7 @@ func TestExecuteReplicatedCommand_COPY_Hash(t *testing.T) {
 	testStore.HSet("src", "field1", "val1")
 	testStore.HSet("src", "field2", "val2")
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("src"), []byte("dst")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("src"), []byte("dst")}, context.Background())
 	assert.NoError(t, err)
 
 	data, err := testStore.HGetAll("dst")
@@ -1015,7 +1016,7 @@ func TestExecuteReplicatedCommand_COPY_Set(t *testing.T) {
 
 	testStore.SAdd("src", "m1", "m2", "m3")
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("src"), []byte("dst")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("src"), []byte("dst")}, context.Background())
 	assert.NoError(t, err)
 
 	count, err := testStore.SCard("dst")
@@ -1034,7 +1035,7 @@ func TestExecuteReplicatedCommand_COPY_ZSet(t *testing.T) {
 		{Member: "b", Score: 2.0},
 	})
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("src"), []byte("dst")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("src"), []byte("dst")}, context.Background())
 	assert.NoError(t, err)
 
 	count, err := testStore.ZCard("dst")
@@ -1055,7 +1056,7 @@ func TestExecuteReplicatedCommand_COPY_Replace(t *testing.T) {
 	testStore.Set("src", "newvalue")
 	testStore.Set("dst", "oldvalue")
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("src"), []byte("dst"), []byte("REPLACE")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("src"), []byte("dst"), []byte("REPLACE")}, context.Background())
 	assert.NoError(t, err)
 
 	val, err := testStore.Get("dst")
@@ -1078,7 +1079,7 @@ func TestExecuteReplicatedCommand_GEOSEARCHSTORE(t *testing.T) {
 		[]byte("GEOSEARCHSTORE"), []byte("dst"), []byte("src"),
 		[]byte("FROMLONLAT"), []byte("15"), []byte("37"),
 		[]byte("BYRADIUS"), []byte("200"), []byte("km"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 
 	// Verify results were stored (at least one result)
@@ -1092,10 +1093,10 @@ func TestExecuteReplicatedCommand_Unknown(t *testing.T) {
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("UNKNOWNCMD")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("UNKNOWNCMD")}, context.Background())
 	assert.Error(t, err) // unknown commands now return error to trigger resync
 
-	err = executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("nonexistent"), []byte("dst")})
+	err = executeReplicatedCommand(testStore, [][]byte{[]byte("COPY"), []byte("nonexistent"), []byte("dst")}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1105,7 +1106,7 @@ func TestExecuteReplicatedCommand_SETBIT_InvalidArgs(t *testing.T) {
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("SETBIT"), []byte("key")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("SETBIT"), []byte("key")}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1122,7 +1123,7 @@ func TestExecuteReplicatedCommand_ZUNIONSTORE_Weights(t *testing.T) {
 		[]byte("ZUNIONSTORE"), []byte("dest"), []byte("2"), []byte("z1"), []byte("z2"),
 		[]byte("WEIGHTS"), []byte("2"), []byte("3"),
 		[]byte("AGGREGATE"), []byte("MAX"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 
 	count, err := testStore.ZCard("dest")
@@ -1136,7 +1137,7 @@ func TestExecuteReplicatedCommand_ZDIFFSTORE_Empty(t *testing.T) {
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("ZDIFFSTORE"), []byte("dest"), []byte("0")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("ZDIFFSTORE"), []byte("dest"), []byte("0")}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1149,7 +1150,7 @@ func TestExecuteReplicatedCommand_ZRANGESTORE_EmptyKey(t *testing.T) {
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("ZRANGESTORE"), []byte("dst"), []byte("nonexistent"),
 		[]byte("0"), []byte("-1"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 
 	count, err := testStore.ZCard("dst")
@@ -1163,7 +1164,7 @@ func TestExecuteReplicatedCommand_HSETNX(t *testing.T) {
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("HSETNX"), []byte("hash"), []byte("field"), []byte("value")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("HSETNX"), []byte("hash"), []byte("field"), []byte("value")}, context.Background())
 	assert.NoError(t, err)
 
 	val, err := testStore.HGet("hash", "field")
@@ -1177,7 +1178,7 @@ func TestExecuteReplicatedCommand_PFADD(t *testing.T) {
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("PFADD"), []byte("hll"), []byte("a"), []byte("b"), []byte("c")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("PFADD"), []byte("hll"), []byte("a"), []byte("b"), []byte("c")}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1186,10 +1187,10 @@ func TestExecuteReplicatedCommand_PFMERGE(t *testing.T) {
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
-	executeReplicatedCommand(testStore, [][]byte{[]byte("PFADD"), []byte("hll1"), []byte("a"), []byte("b")})
-	executeReplicatedCommand(testStore, [][]byte{[]byte("PFADD"), []byte("hll2"), []byte("c"), []byte("d")})
+	executeReplicatedCommand(testStore, [][]byte{[]byte("PFADD"), []byte("hll1"), []byte("a"), []byte("b")}, context.Background())
+	executeReplicatedCommand(testStore, [][]byte{[]byte("PFADD"), []byte("hll2"), []byte("c"), []byte("d")}, context.Background())
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("PFMERGE"), []byte("dest"), []byte("hll1"), []byte("hll2")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("PFMERGE"), []byte("dest"), []byte("hll1"), []byte("hll2")}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1201,7 +1202,7 @@ func TestExecuteReplicatedCommand_XADD(t *testing.T) {
 
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("XADD"), []byte("xadd:repl:stream"), []byte("*"), []byte("field"), []byte("val"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 
 	entryCount, err := testStore.XLen("xadd:repl:stream")
@@ -1216,7 +1217,7 @@ func TestExecuteReplicatedCommand_XACK(t *testing.T) {
 	defer testStore.Close()
 
 	// XACK on non-existent stream should not error
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("XACK"), []byte("stream"), []byte("group"), []byte("0-0")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("XACK"), []byte("stream"), []byte("group"), []byte("0-0")}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1227,7 +1228,7 @@ func TestExecuteReplicatedCommand_XCLAIM(t *testing.T) {
 	defer testStore.Close()
 
 	// XCLAIM on non-existent stream should not error
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("XCLAIM"), []byte("stream"), []byte("group"), []byte("consumer"), []byte("1000"), []byte("0-0")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("XCLAIM"), []byte("stream"), []byte("group"), []byte("consumer"), []byte("1000"), []byte("0-0")}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1237,7 +1238,7 @@ func TestExecuteReplicatedCommand_XGROUP(t *testing.T) {
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("XGROUP"), []byte("CREATE"), []byte("stream"), []byte("group"), []byte("0")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("XGROUP"), []byte("CREATE"), []byte("stream"), []byte("group"), []byte("0")}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1249,7 +1250,7 @@ func TestExecuteReplicatedCommand_BLPOP(t *testing.T) {
 
 	testStore.RPush("list1", "a", "b")
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BLPOP"), []byte("list1"), []byte("list2"), []byte("1")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BLPOP"), []byte("list1"), []byte("list2"), []byte("1")}, context.Background())
 	assert.NoError(t, err)
 
 	items, err := testStore.LRange("list1", 0, -1)
@@ -1266,7 +1267,7 @@ func TestExecuteReplicatedCommand_BZPOPMAX(t *testing.T) {
 
 	testStore.ZAdd("zset1", []store.ZSetMember{{Score: 1, Member: "a"}, {Score: 2, Member: "b"}})
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BZPOPMAX"), []byte("zset1"), []byte("zset2"), []byte("1")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BZPOPMAX"), []byte("zset1"), []byte("zset2"), []byte("1")}, context.Background())
 	assert.NoError(t, err)
 
 	// Verify element was popped
@@ -1283,7 +1284,7 @@ func TestExecuteReplicatedCommand_BZPOPMIN(t *testing.T) {
 
 	testStore.ZAdd("zset1", []store.ZSetMember{{Score: 1, Member: "a"}, {Score: 2, Member: "b"}})
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BZPOPMIN"), []byte("zset1"), []byte("1")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BZPOPMIN"), []byte("zset1"), []byte("1")}, context.Background())
 	assert.NoError(t, err)
 
 	// Verify element was popped
@@ -1300,7 +1301,7 @@ func TestExecuteReplicatedCommand_BRPOP(t *testing.T) {
 
 	testStore.RPush("list1", "a", "b")
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BRPOP"), []byte("list1"), []byte("1")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BRPOP"), []byte("list1"), []byte("1")}, context.Background())
 	assert.NoError(t, err)
 
 	items, err := testStore.LRange("list1", 0, -1)
@@ -1317,7 +1318,7 @@ func TestExecuteReplicatedCommand_BLMOVE(t *testing.T) {
 
 	testStore.RPush("src", "a", "b")
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BLMOVE"), []byte("src"), []byte("dst"), []byte("RIGHT"), []byte("LEFT")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BLMOVE"), []byte("src"), []byte("dst"), []byte("RIGHT"), []byte("LEFT")}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1329,7 +1330,7 @@ func TestExecuteReplicatedCommand_BRPOPLPUSH(t *testing.T) {
 
 	testStore.RPush("src", "a", "b")
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BRPOPLPUSH"), []byte("src"), []byte("dst")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("BRPOPLPUSH"), []byte("src"), []byte("dst")}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1340,23 +1341,23 @@ func TestExecuteReplicatedCommand_InvalidArgs(t *testing.T) {
 	defer testStore.Close()
 
 	// All invalid arg cases should not panic, just return nil or error
-	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("SETBIT"), []byte("k"), []byte("notanumber"), []byte("1")})
-	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("BITOP")})
-	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("BITFIELD")})
-	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("COPY")})
-	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZUNIONSTORE")})
-	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZUNIONSTORE"), []byte("d"), []byte("notanumber")})
-	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZINTERSTORE")})
-	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZDIFFSTORE")})
-	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZRANGESTORE")})
-	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("GEOSEARCHSTORE")})
-	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZUNIONSTORE"), []byte("d"), []byte("1"), []byte("k"), []byte("WEIGHTS")})
-	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZINTERSTORE"), []byte("d"), []byte("1"), []byte("k"), []byte("WEIGHTS")})
-	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("GEOSEARCHSTORE"), []byte("d"), []byte("s")})
-	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("GEOSEARCHSTORE"), []byte("d"), []byte("s"), []byte("FROMLONLAT")})
-	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("GEOSEARCHSTORE"), []byte("d"), []byte("s"), []byte("FROMLONLAT"), []byte("15"), []byte("37")})
-	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZRANGESTORE"), []byte("d"), []byte("s"), []byte("0"), []byte("-1"), []byte("LIMIT")})
-	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("GEOSEARCHSTORE"), []byte("d"), []byte("s"), []byte("FROMMEMBER"), []byte("nonexistent"), []byte("BYRADIUS"), []byte("100"), []byte("km")})
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("SETBIT"), []byte("k"), []byte("notanumber"), []byte("1")}, context.Background())
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("BITOP")}, context.Background())
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("BITFIELD")}, context.Background())
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("COPY")}, context.Background())
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZUNIONSTORE")}, context.Background())
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZUNIONSTORE"), []byte("d"), []byte("notanumber")}, context.Background())
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZINTERSTORE")}, context.Background())
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZDIFFSTORE")}, context.Background())
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZRANGESTORE")}, context.Background())
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("GEOSEARCHSTORE")}, context.Background())
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZUNIONSTORE"), []byte("d"), []byte("1"), []byte("k"), []byte("WEIGHTS")}, context.Background())
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZINTERSTORE"), []byte("d"), []byte("1"), []byte("k"), []byte("WEIGHTS")}, context.Background())
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("GEOSEARCHSTORE"), []byte("d"), []byte("s")}, context.Background())
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("GEOSEARCHSTORE"), []byte("d"), []byte("s"), []byte("FROMLONLAT")}, context.Background())
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("GEOSEARCHSTORE"), []byte("d"), []byte("s"), []byte("FROMLONLAT"), []byte("15"), []byte("37")}, context.Background())
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("ZRANGESTORE"), []byte("d"), []byte("s"), []byte("0"), []byte("-1"), []byte("LIMIT")}, context.Background())
+	_ = executeReplicatedCommand(testStore, [][]byte{[]byte("GEOSEARCHSTORE"), []byte("d"), []byte("s"), []byte("FROMMEMBER"), []byte("nonexistent"), []byte("BYRADIUS"), []byte("100"), []byte("km")}, context.Background())
 }
 
 // TestExecuteReplicatedCommand_GETDEL tests executeReplicatedCommand for GETDEL
@@ -1367,7 +1368,7 @@ func TestExecuteReplicatedCommand_GETDEL(t *testing.T) {
 
 	testStore.Set("key", "value")
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETDEL"), []byte("key")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETDEL"), []byte("key")}, context.Background())
 	assert.NoError(t, err)
 
 	_, err = testStore.Get("key")
@@ -1380,7 +1381,7 @@ func TestExecuteReplicatedCommand_GETDEL_NonExistent(t *testing.T) {
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETDEL"), []byte("nonexistent")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETDEL"), []byte("nonexistent")}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1392,7 +1393,7 @@ func TestExecuteReplicatedCommand_GETEX_EX(t *testing.T) {
 
 	testStore.Set("key", "value")
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETEX"), []byte("key"), []byte("EX"), []byte("100")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETEX"), []byte("key"), []byte("EX"), []byte("100")}, context.Background())
 	assert.NoError(t, err)
 
 	val, err := testStore.Get("key")
@@ -1408,7 +1409,7 @@ func TestExecuteReplicatedCommand_GETEX_PERSIST(t *testing.T) {
 
 	testStore.SetWithTTL("key", "value", 100*time.Second)
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETEX"), []byte("key"), []byte("PERSIST")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETEX"), []byte("key"), []byte("PERSIST")}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1420,7 +1421,7 @@ func TestExecuteReplicatedCommand_GETEX_NoOption(t *testing.T) {
 
 	testStore.Set("key", "value")
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETEX"), []byte("key")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETEX"), []byte("key")}, context.Background())
 	assert.NoError(t, err)
 
 	val, err := testStore.Get("key")
@@ -1434,7 +1435,7 @@ func TestExecuteReplicatedCommand_GETEX_NonExistent(t *testing.T) {
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETEX"), []byte("nonexistent")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("GETEX"), []byte("nonexistent")}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1445,8 +1446,8 @@ func TestExecuteReplicatedCommand_JSON_SET(t *testing.T) {
 	defer testStore.Close()
 
 	err := executeReplicatedCommand(testStore, [][]byte{
-		[]byte("JSON.SET"), []byte("jsonkey"), []byte("$"), []byte(`{"name":"test"}`),
-	})
+	 []byte("JSON.SET"), []byte("jsonkey"), []byte("$"), []byte(`{"name":"test"}`),
+	}, context.Background())
 	assert.NoError(t, err)
 
 	result, err := testStore.JSONGet("jsonkey", "$")
@@ -1461,15 +1462,14 @@ func TestExecuteReplicatedCommand_JSON_SET_WithNX(t *testing.T) {
 	defer testStore.Close()
 
 	err := executeReplicatedCommand(testStore, [][]byte{
-		[]byte("JSON.SET"), []byte("jsonnx"), []byte("$"), []byte(`{"val":1}`), []byte("NX"),
-	})
+	 []byte("JSON.SET"), []byte("jsonnx"), []byte("$"), []byte(`{"val":1}`), []byte("NX"),
+	}, context.Background())
 	assert.NoError(t, err)
 
 	// Second call with NX should not overwrite
 	err = executeReplicatedCommand(testStore, [][]byte{
-		[]byte("JSON.SET"), []byte("jsonnx"), []byte("$"), []byte(`{"val":2}`), []byte("NX"),
-	})
-	assert.NoError(t, err)
+	 []byte("JSON.SET"), []byte("jsonnx"), []byte("$"), []byte(`{"val":2}`), []byte("NX"),
+	}, context.Background())
 
 	result, err := testStore.JSONGet("jsonnx", "$")
 	assert.NoError(t, err)
@@ -1486,7 +1486,7 @@ func TestExecuteReplicatedCommand_JSON_DEL(t *testing.T) {
 
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("JSON.DEL"), []byte("jsondel"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1500,7 +1500,7 @@ func TestExecuteReplicatedCommand_JSON_ARRAPPEND(t *testing.T) {
 
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("JSON.ARRAPPEND"), []byte("jsonarr"), []byte("$"), []byte("3"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1514,7 +1514,7 @@ func TestExecuteReplicatedCommand_JSON_NUMINCRBY(t *testing.T) {
 
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("JSON.NUMINCRBY"), []byte("jsonnum"), []byte("$"), []byte("5"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1528,7 +1528,7 @@ func TestExecuteReplicatedCommand_JSON_NUMMULTBY(t *testing.T) {
 
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("JSON.NUMMULTBY"), []byte("jsonmult"), []byte("$"), []byte("2"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1542,7 +1542,7 @@ func TestExecuteReplicatedCommand_JSON_CLEAR(t *testing.T) {
 
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("JSON.CLEAR"), []byte("jsonclear"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1554,7 +1554,7 @@ func TestExecuteReplicatedCommand_TS_CREATE(t *testing.T) {
 
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("TS.CREATE"), []byte("tscreatekey"), []byte("RETENTION"), []byte("3600000"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1566,7 +1566,7 @@ func TestExecuteReplicatedCommand_TS_ADD(t *testing.T) {
 
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("TS.ADD"), []byte("tsaddkey"), []byte("1000"), []byte("42.5"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1578,7 +1578,7 @@ func TestExecuteReplicatedCommand_TS_ADD_AutoTimestamp(t *testing.T) {
 
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("TS.ADD"), []byte("tsaddauto"), []byte("*"), []byte("3.14"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1594,7 +1594,7 @@ func TestExecuteReplicatedCommand_TS_DEL(t *testing.T) {
 
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("TS.DEL"), []byte("tsdelkey"), []byte("100"), []byte("150"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1605,7 +1605,7 @@ func TestExecuteReplicatedCommand_JSON_InvalidArgs(t *testing.T) {
 	defer testStore.Close()
 
 	// JSON.SET with too few args should not panic
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("JSON.SET"), []byte("key")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("JSON.SET"), []byte("key")}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1616,11 +1616,11 @@ func TestExecuteReplicatedCommand_TS_InvalidArgs(t *testing.T) {
 	defer testStore.Close()
 
 	// TS.ADD with too few args should not panic
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("TS.ADD"), []byte("key")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("TS.ADD"), []byte("key")}, context.Background())
 	assert.NoError(t, err)
 
 	// TS.DEL with too few args should not panic
-	err = executeReplicatedCommand(testStore, [][]byte{[]byte("TS.DEL"), []byte("key")})
+	err = executeReplicatedCommand(testStore, [][]byte{[]byte("TS.DEL"), []byte("key")}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1636,7 +1636,7 @@ func TestExecuteReplicatedCommand_RESTORE(t *testing.T) {
 	assert.NoError(t, err)
 
 	// RESTORE to new key with REPLACE
-	err = executeReplicatedCommand(testStore, [][]byte{[]byte("RESTORE"), []byte("newkey"), []byte("0"), dumpData, []byte("REPLACE")})
+	err = executeReplicatedCommand(testStore, [][]byte{[]byte("RESTORE"), []byte("newkey"), []byte("0"), dumpData, []byte("REPLACE")}, context.Background())
 	assert.NoError(t, err)
 
 	// Verify restored value
@@ -1656,7 +1656,7 @@ func TestExecuteReplicatedCommand_RESTORE_WithTTL(t *testing.T) {
 	assert.NoError(t, err)
 
 	// RESTORE with 10s TTL
-	err = executeReplicatedCommand(testStore, [][]byte{[]byte("RESTORE"), []byte("newkey"), []byte("10000"), dumpData, []byte("REPLACE")})
+	err = executeReplicatedCommand(testStore, [][]byte{[]byte("RESTORE"), []byte("newkey"), []byte("10000"), dumpData, []byte("REPLACE")}, context.Background())
 	assert.NoError(t, err)
 
 	// Verify restored value
@@ -1675,7 +1675,7 @@ func TestExecuteReplicatedCommand_FLUSHDB(t *testing.T) {
 	testStore.Set("key2", "val2")
 
 	// FLUSHDB should clear all keys
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("FLUSHDB")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("FLUSHDB")}, context.Background())
 	assert.NoError(t, err)
 
 	_, err = testStore.Get("key1")
@@ -1693,7 +1693,7 @@ func TestExecuteReplicatedCommand_FLUSHALL(t *testing.T) {
 	testStore.Set("akey", "aval")
 
 	// FLUSHALL should clear all keys (same as FLUSHDB in BoltDB)
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("FLUSHALL")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("FLUSHALL")}, context.Background())
 	assert.NoError(t, err)
 
 	_, err = testStore.Get("akey")
@@ -1710,7 +1710,7 @@ func TestExecuteReplicatedCommand_XAUTOCLAIM(t *testing.T) {
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("XAUTOCLAIM"), []byte("stream"), []byte("group"),
 		[]byte("consumer"), []byte("1000"), []byte("0-0"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1724,7 +1724,7 @@ func TestExecuteReplicatedCommand_XAUTOCLAIM_WithOptions(t *testing.T) {
 		[]byte("XAUTOCLAIM"), []byte("stream"), []byte("group"),
 		[]byte("consumer"), []byte("1000"), []byte("0-0"),
 		[]byte("COUNT"), []byte("10"), []byte("JUSTID"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1740,7 +1740,7 @@ func TestExecuteReplicatedCommand_SORT_STORE_List(t *testing.T) {
 	// SORT mylist STORE sortedlist
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("SORT"), []byte("mylist"), []byte("STORE"), []byte("sortedlist"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 
 	// Verify stored result
@@ -1764,7 +1764,7 @@ func TestExecuteReplicatedCommand_SORT_STORE_Set(t *testing.T) {
 	// SORT myset ALPHA STORE sortedset
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("SORT"), []byte("myset"), []byte("ALPHA"), []byte("STORE"), []byte("sortedset"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 
 	// Verify stored result
@@ -1786,7 +1786,7 @@ func TestExecuteReplicatedCommand_SORT_STORE_Desc(t *testing.T) {
 
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("SORT"), []byte("mylist"), []byte("DESC"), []byte("STORE"), []byte("sortedlist"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 
 	vals, err := testStore.LRange("sortedlist", 0, -1)
@@ -1808,7 +1808,7 @@ func TestExecuteReplicatedCommand_SORT_NoStore(t *testing.T) {
 	// Read-only SORT without STORE should not error (no-op in replication)
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("SORT"), []byte("mylist"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1819,10 +1819,10 @@ func TestExecuteReplicatedCommand_RESTORE_InvalidArgs(t *testing.T) {
 	defer testStore.Close()
 
 	// RESTORE with too few args should not panic
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("RESTORE")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("RESTORE")}, context.Background())
 	assert.NoError(t, err)
 
-	err = executeReplicatedCommand(testStore, [][]byte{[]byte("RESTORE"), []byte("key")})
+	err = executeReplicatedCommand(testStore, [][]byte{[]byte("RESTORE"), []byte("key")}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1837,7 +1837,7 @@ func TestExecuteReplicatedCommand_SORT_STORE_Limit(t *testing.T) {
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("SORT"), []byte("mylist"), []byte("LIMIT"), []byte("1"), []byte("3"),
 		[]byte("STORE"), []byte("sortedlist"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 
 	vals, err := testStore.LRange("sortedlist", 0, -1)
@@ -1855,9 +1855,9 @@ func TestExecuteReplicatedCommand_XAUTOCLAIM_InvalidArgs(t *testing.T) {
 	defer testStore.Close()
 
 	// XAUTOCLAIM with too few args should not panic
-	err := executeReplicatedCommand(testStore, [][]byte{[]byte("XAUTOCLAIM")})
+	err := executeReplicatedCommand(testStore, [][]byte{[]byte("XAUTOCLAIM")}, context.Background())
 	assert.NoError(t, err)
-	err = executeReplicatedCommand(testStore, [][]byte{[]byte("XAUTOCLAIM"), []byte("key")})
+	err = executeReplicatedCommand(testStore, [][]byte{[]byte("XAUTOCLAIM"), []byte("key")}, context.Background())
 	assert.NoError(t, err)
 }
 
@@ -1871,7 +1871,7 @@ func TestExecuteReplicatedCommand_SORT_STORE_String(t *testing.T) {
 
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("SORT"), []byte("mystr"), []byte("STORE"), []byte("sortedlist"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 
 	vals, err := testStore.LRange("sortedlist", 0, -1)
@@ -1893,7 +1893,7 @@ func TestExecuteReplicatedCommand_RESTORE_OldFormat(t *testing.T) {
 	// Old format: RESTORE key serializedData REPLACE (no TTL)
 	err = executeReplicatedCommand(testStore, [][]byte{
 		[]byte("RESTORE"), []byte("newkey"), dumpData, []byte("REPLACE"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 
 	val, err := testStore.Get("newkey")
@@ -1918,7 +1918,7 @@ func TestExecuteReplicatedCommand_RESTORE_ABSTTL(t *testing.T) {
 	err = executeReplicatedCommand(testStore, [][]byte{
 		[]byte("RESTORE"), []byte("newkey"), []byte(ttlStr), dumpData,
 		[]byte("REPLACE"), []byte("ABSTTL"),
-	})
+	}, context.Background())
 	assert.NoError(t, err)
 
 	val, err := testStore.Get("newkey")
@@ -2086,14 +2086,14 @@ func TestExecuteReplicatedCommand_XREADGROUP_UpdatesPEL(t *testing.T) {
 
 	assert.NoError(t, executeReplicatedCommand(s, [][]byte{
 		[]byte("XADD"), []byte("s1"), []byte("*"), []byte("f"), []byte("v"),
-	}))
+	}, context.Background()))
 	assert.NoError(t, executeReplicatedCommand(s, [][]byte{
 		[]byte("XGROUP"), []byte("CREATE"), []byte("s1"), []byte("g"), []byte("0"),
-	}))
+	}, context.Background()))
 	assert.NoError(t, executeReplicatedCommand(s, [][]byte{
 		[]byte("XREADGROUP"), []byte("GROUP"), []byte("g"), []byte("c-old"),
 		[]byte("COUNT"), []byte("10"), []byte("STREAMS"), []byte("s1"), []byte(">"),
-	}))
+	}, context.Background()))
 
 	pending, err := s.XPending("s1", "g")
 	assert.NoError(t, err)
@@ -2103,7 +2103,7 @@ func TestExecuteReplicatedCommand_XREADGROUP_UpdatesPEL(t *testing.T) {
 	id := pending[0].ID
 	assert.NoError(t, executeReplicatedCommand(s, [][]byte{
 		[]byte("XCLAIM"), []byte("s1"), []byte("g"), []byte("c-new"), []byte("0"), []byte(id),
-	}))
+	}, context.Background()))
 	pending, err = s.XPending("s1", "g")
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(pending))
@@ -2119,14 +2119,14 @@ func TestExecuteReplicatedCommand_XAUTOCLAIM_TransfersPEL(t *testing.T) {
 
 	assert.NoError(t, executeReplicatedCommand(s, [][]byte{
 		[]byte("XADD"), []byte("s2"), []byte("1-0"), []byte("f"), []byte("v"),
-	}))
+	}, context.Background()))
 	assert.NoError(t, executeReplicatedCommand(s, [][]byte{
 		[]byte("XGROUP"), []byte("CREATE"), []byte("s2"), []byte("g"), []byte("0"),
-	}))
+	}, context.Background()))
 	assert.NoError(t, executeReplicatedCommand(s, [][]byte{
 		[]byte("XREADGROUP"), []byte("GROUP"), []byte("g"), []byte("c-old"),
 		[]byte("COUNT"), []byte("10"), []byte("STREAMS"), []byte("s2"), []byte(">"),
-	}))
+	}, context.Background()))
 	pending, err := s.XPending("s2", "g")
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(pending))
@@ -2135,7 +2135,7 @@ func TestExecuteReplicatedCommand_XAUTOCLAIM_TransfersPEL(t *testing.T) {
 	assert.NoError(t, executeReplicatedCommand(s, [][]byte{
 		[]byte("XAUTOCLAIM"), []byte("s2"), []byte("g"), []byte("c-new"),
 		[]byte("0"), []byte("0-0"), []byte("COUNT"), []byte("10"),
-	}))
+	}, context.Background()))
 	pending, err = s.XPending("s2", "g")
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(pending))

@@ -380,6 +380,7 @@ func toStringSlice(args []interface{}) []string {
 
 // TestReplicationCompleteness_String tests string write commands propagation
 func TestReplicationCompleteness_String(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, masterAddr, cleanup := setupReplicationTest(t)
 	defer cleanup()
 
@@ -485,6 +486,7 @@ func TestReplicationCompleteness_String(t *testing.T) {
 
 // TestReplicationCompleteness_Key tests key-level write commands propagation
 func TestReplicationCompleteness_Key(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, _, cleanup := setupReplicationTest(t)
 	defer cleanup()
 
@@ -570,6 +572,7 @@ func TestReplicationCompleteness_Key(t *testing.T) {
 
 // TestReplicationCompleteness_List tests list write commands propagation
 func TestReplicationCompleteness_List(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, _, cleanup := setupReplicationTest(t)
 	defer cleanup()
 
@@ -627,6 +630,7 @@ func TestReplicationCompleteness_List(t *testing.T) {
 
 // TestReplicationCompleteness_Hash tests hash write commands propagation
 func TestReplicationCompleteness_Hash(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, _, cleanup := setupReplicationTest(t)
 	defer cleanup()
 
@@ -682,6 +686,7 @@ func TestReplicationCompleteness_Hash(t *testing.T) {
 
 // TestReplicationCompleteness_Set tests set write commands propagation
 func TestReplicationCompleteness_Set(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, _, cleanup := setupReplicationTest(t)
 	defer cleanup()
 
@@ -740,6 +745,7 @@ func TestReplicationCompleteness_Set(t *testing.T) {
 
 // TestReplicationCompleteness_SortedSet tests sorted set write commands propagation
 func TestReplicationCompleteness_SortedSet(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, _, cleanup := setupReplicationTest(t)
 	defer cleanup()
 
@@ -783,6 +789,7 @@ func TestReplicationCompleteness_SortedSet(t *testing.T) {
 
 // TestReplicationCompleteness_Stream tests stream write commands propagation
 func TestReplicationCompleteness_Stream(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, masterAddr, cleanup := setupReplicationTest(t)
 	defer cleanup()
 
@@ -844,6 +851,7 @@ func TestReplicationCompleteness_Stream(t *testing.T) {
 
 // TestReplicationCompleteness_JSON tests JSON write commands propagation
 func TestReplicationCompleteness_JSON(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, _, cleanup := setupReplicationTest(t)
 	defer cleanup()
 
@@ -879,6 +887,7 @@ func TestReplicationCompleteness_JSON(t *testing.T) {
 
 // TestReplicationCompleteness_HLL tests HyperLogLog write commands propagation
 func TestReplicationCompleteness_HLL(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, _, cleanup := setupReplicationTest(t)
 	defer cleanup()
 
@@ -908,6 +917,7 @@ func TestReplicationCompleteness_HLL(t *testing.T) {
 
 // TestReplicationCompleteness_Geo tests Geo write commands propagation
 func TestReplicationCompleteness_Geo(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, _, cleanup := setupReplicationTest(t)
 	defer cleanup()
 

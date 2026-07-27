@@ -109,6 +109,7 @@ func TestBytesToFloat64_InvalidLength(t *testing.T) {
 }
 
 func TestProtectGoroutine(t *testing.T) {
+	t.Parallel()
 	t.Run("normal execution", func(t *testing.T) {
 		done := make(chan bool)
 		ProtectGoroutine(func() {

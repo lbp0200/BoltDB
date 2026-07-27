@@ -12,6 +12,7 @@ import (
 // 这是 "集成测试独立化"（P2c）的示例：每个测试获得独立的 DB + 服务器 + 客户端，
 // 无共享状态污染。可作为后续重构其他集成测试的模板。
 func TestIsolatedServer_SetGet(t *testing.T) {
+	t.Parallel()
 	srv := StartIsolatedServer(t)
 	ctx := context.Background()
 
@@ -33,6 +34,7 @@ func TestIsolatedServer_SetGet(t *testing.T) {
 
 // TestIsolatedServer_TTL 验证隔离服务器上 TTL 操作正确。
 func TestIsolatedServer_TTL(t *testing.T) {
+	t.Parallel()
 	srv := StartIsolatedServer(t)
 	ctx := context.Background()
 
@@ -62,6 +64,7 @@ func TestIsolatedServer_TTL(t *testing.T) {
 
 // TestIsolatedServer_MultiDataType 验证隔离服务器支持多种数据类型。
 func TestIsolatedServer_MultiDataType(t *testing.T) {
+	t.Parallel()
 	srv := StartIsolatedServer(t)
 	ctx := context.Background()
 

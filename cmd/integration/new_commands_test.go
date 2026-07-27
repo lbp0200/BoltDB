@@ -725,6 +725,7 @@ func TestClusterLinks(t *testing.T) {
 
 // TestReplicationNewCommands 测试新命令在主从复制模式下的传播
 func TestReplicationNewCommands(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -866,6 +867,7 @@ func TestReplicationNewCommands(t *testing.T) {
 
 // TestReplicationStreamXDelex 测试 XDELEX 在主从复制下的传播
 func TestReplicationStreamXDelex(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -902,6 +904,7 @@ func TestReplicationStreamXDelex(t *testing.T) {
 
 // TestReplicationSortedSetCommands 测试 ZINTERCARD/BZMPOP 在主从复制下的传播
 func TestReplicationSortedSetCommands(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 

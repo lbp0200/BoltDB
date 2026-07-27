@@ -369,6 +369,7 @@ func TestRestoreHLL_Coverage(t *testing.T) {
 }
 
 func TestIsUUIDFormat_Coverage(t *testing.T) {
+	t.Parallel()
 	assert.True(t, isUUIDFormat("550e8400-e29b-41d4-a716-446655440000"))
 	assert.False(t, isUUIDFormat(""))
 	assert.False(t, isUUIDFormat("not-a-uuid"))

@@ -180,6 +180,7 @@ func TestProcessRequestPropagateGate(t *testing.T) {
 // WRONGTYPE must not enter the replication backlog (offset unchanged).
 // Kills mutation that drops `!isErrorResponse(resp)` from processRequest.
 func TestProcessRequest_WrongTypeDoesNotAdvanceOffset(t *testing.T) {
+	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 

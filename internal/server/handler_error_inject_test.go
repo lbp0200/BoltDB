@@ -20,6 +20,7 @@ func checkErrorResp(t *testing.T, resp proto.RESP) {
 
 // TestErrorInjection_GetHandlerError 验证 store.Get 报错时 handler 返回 RESP Error
 func TestErrorInjection_GetHandlerError(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -42,6 +43,7 @@ func TestErrorInjection_GetHandlerError(t *testing.T) {
 
 // TestErrorInjection_SetHandlerError 验证 store.Set 报错时 handler 返回 RESP Error
 func TestErrorInjection_SetHandlerError(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -58,6 +60,7 @@ func TestErrorInjection_SetHandlerError(t *testing.T) {
 
 // TestErrorInjection_DelHandlerError 验证 store.Del 报错时 handler 返回 RESP Error
 func TestErrorInjection_DelHandlerError(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -78,6 +81,7 @@ func TestErrorInjection_DelHandlerError(t *testing.T) {
 
 // TestErrorInjection_ExpireHandlerError 验证 store.Expire 报错时 handler 返回 RESP Error
 func TestErrorInjection_ExpireHandlerError(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -98,6 +102,7 @@ func TestErrorInjection_ExpireHandlerError(t *testing.T) {
 
 // TestErrorInjection_HSetHandlerError 验证 store.HSet 报错时 handler 返回 RESP Error
 func TestErrorInjection_HSetHandlerError(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -114,6 +119,7 @@ func TestErrorInjection_HSetHandlerError(t *testing.T) {
 
 // TestErrorInjection_ZAddHandlerError 验证 store.ZAdd 报错时 handler 返回 RESP Error
 func TestErrorInjection_ZAddHandlerError(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -130,6 +136,7 @@ func TestErrorInjection_ZAddHandlerError(t *testing.T) {
 
 // TestErrorInjection_LPushHandlerError 验证 store.LPush 报错时 handler 返回 RESP Error
 func TestErrorInjection_LPushHandlerError(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -146,6 +153,7 @@ func TestErrorInjection_LPushHandlerError(t *testing.T) {
 
 // TestErrorInjection_SAddHandlerError 验证 store.SAdd 报错时 handler 返回 RESP Error
 func TestErrorInjection_SAddHandlerError(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()

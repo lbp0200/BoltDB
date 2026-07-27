@@ -10,7 +10,8 @@ import (
 
 // TestSORTOrdering_ListASC verifies SORT on list returns ascending numeric order.
 func TestSORTOrdering_ListASC(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("lst"), []byte("9"), []byte("3"), []byte("7"), []byte("1"), []byte("5")}, "127.0.0.1:12345")
@@ -26,7 +27,8 @@ func TestSORTOrdering_ListASC(t *testing.T) {
 
 // TestSORTOrdering_ListDESC verifies SORT DESC returns descending numeric order.
 func TestSORTOrdering_ListDESC(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("lst"), []byte("9"), []byte("3"), []byte("7"), []byte("1"), []byte("5")}, "127.0.0.1:12345")
@@ -42,7 +44,8 @@ func TestSORTOrdering_ListDESC(t *testing.T) {
 
 // TestSORTOrdering_Alpha verifies SORT ALPHA returns lexicographic order.
 func TestSORTOrdering_Alpha(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("lst"), []byte("banana"), []byte("apple"), []byte("cherry"), []byte("date")}, "127.0.0.1:12345")
@@ -58,7 +61,8 @@ func TestSORTOrdering_Alpha(t *testing.T) {
 
 // TestSORTOrdering_AlphaDESC verifies SORT ALPHA DESC returns reverse lexicographic order.
 func TestSORTOrdering_AlphaDESC(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("lst"), []byte("banana"), []byte("apple"), []byte("cherry"), []byte("date")}, "127.0.0.1:12345")
@@ -74,7 +78,8 @@ func TestSORTOrdering_AlphaDESC(t *testing.T) {
 
 // TestSORTOrdering_SingleElement verifies SORT on a single element returns it.
 func TestSORTOrdering_SingleElement(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("lst"), []byte("42")}, "127.0.0.1:12345")
@@ -87,7 +92,8 @@ func TestSORTOrdering_SingleElement(t *testing.T) {
 
 // TestSORTOrdering_EmptyList verifies SORT on non-existent key returns error.
 func TestSORTOrdering_EmptyList(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	resp := handler.executeCommand(state, "SORT", [][]byte{[]byte("nonexistent")}, "127.0.0.1:12345")
@@ -98,7 +104,8 @@ func TestSORTOrdering_EmptyList(t *testing.T) {
 
 // TestSORTOrdering_StringKey verifies SORT on string key returns the single value.
 func TestSORTOrdering_StringKey(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "SET", [][]byte{[]byte("strkey"), []byte("hello")}, "127.0.0.1:12345")
@@ -111,7 +118,8 @@ func TestSORTOrdering_StringKey(t *testing.T) {
 
 // TestSORTOrdering_SetKey verifies SORT on set returns sorted members.
 func TestSORTOrdering_SetKey(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "SADD", [][]byte{[]byte("myset"), []byte("z"), []byte("a"), []byte("m")}, "127.0.0.1:12345")
@@ -127,7 +135,8 @@ func TestSORTOrdering_SetKey(t *testing.T) {
 
 // TestSORTOrdering_ZSetByScore verifies SORT on zset sorts by score (numeric).
 func TestSORTOrdering_ZSetByScore(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "ZADD", [][]byte{[]byte("myzset"), []byte("3.5"), []byte("alpha"), []byte("1.0"), []byte("gamma"), []byte("2.0"), []byte("beta")}, "127.0.0.1:12345")
@@ -144,7 +153,8 @@ func TestSORTOrdering_ZSetByScore(t *testing.T) {
 
 // TestSORTOrdering_ZSetByScoreDESC verifies SORT DESC on zset sorts by score descending.
 func TestSORTOrdering_ZSetByScoreDESC(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "ZADD", [][]byte{[]byte("myzset"), []byte("3.5"), []byte("alpha"), []byte("1.0"), []byte("gamma"), []byte("2.0"), []byte("beta")}, "127.0.0.1:12345")
@@ -160,7 +170,8 @@ func TestSORTOrdering_ZSetByScoreDESC(t *testing.T) {
 
 // TestSORTOrdering_DuplicateValues verifies duplicate values are all present and sorted.
 func TestSORTOrdering_DuplicateValues(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("lst"), []byte("5"), []byte("3"), []byte("5"), []byte("1"), []byte("3")}, "127.0.0.1:12345")
@@ -176,7 +187,8 @@ func TestSORTOrdering_DuplicateValues(t *testing.T) {
 
 // TestSORTOrdering_AlphaDuplicateValues verifies ALPHA sort with duplicates.
 func TestSORTOrdering_AlphaDuplicateValues(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("lst"), []byte("c"), []byte("a"), []byte("b"), []byte("a"), []byte("c")}, "127.0.0.1:12345")
@@ -192,7 +204,8 @@ func TestSORTOrdering_AlphaDuplicateValues(t *testing.T) {
 
 // TestSORTOrdering_Limit verifies SORT LIMIT correctly slices sorted output.
 func TestSORTOrdering_Limit(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("lst"), []byte("9"), []byte("3"), []byte("7"), []byte("1"), []byte("5")}, "127.0.0.1:12345")
@@ -209,7 +222,8 @@ func TestSORTOrdering_Limit(t *testing.T) {
 
 // TestSORTOrdering_BY verifies SORT BY sorts using external key values.
 func TestSORTOrdering_BY(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("lst"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
@@ -229,7 +243,8 @@ func TestSORTOrdering_BY(t *testing.T) {
 
 // TestSORTOrdering_BYDESC verifies SORT BY DESC reverses external key sort.
 func TestSORTOrdering_BYDESC(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("lst"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
@@ -249,7 +264,8 @@ func TestSORTOrdering_BYDESC(t *testing.T) {
 
 // TestSORTOrdering_GET verifies SORT GET retrieves external keys after sort.
 func TestSORTOrdering_GET(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("lst"), []byte("a"), []byte("b")}, "127.0.0.1:12345")
@@ -268,7 +284,8 @@ func TestSORTOrdering_GET(t *testing.T) {
 
 // TestSORTOrdering_Store verifies SORT STORE writes sorted result as a list and returns count.
 func TestSORTOrdering_Store(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("lst"), []byte("9"), []byte("3"), []byte("7"), []byte("1"), []byte("5")}, "127.0.0.1:12345")
@@ -290,7 +307,8 @@ func TestSORTOrdering_Store(t *testing.T) {
 
 // TestSORTOrdering_WrongType verifies SORT on hash key returns error.
 func TestSORTOrdering_WrongType(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "HSET", [][]byte{[]byte("h"), []byte("f1"), []byte("v1")}, "127.0.0.1:12345")
@@ -303,7 +321,8 @@ func TestSORTOrdering_WrongType(t *testing.T) {
 // TestSORTOrdering_BYWithNonExistentKey verifies SORT BY with non-existent weight keys
 // returns an error (the Get for the weight key fails).
 func TestSORTOrdering_BYWithNonExistentKey(t *testing.T) {
-	handler, state := setupTestHandler(t)
+		t.Parallel()
+		handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("lst"), []byte("x"), []byte("y")}, "127.0.0.1:12345")

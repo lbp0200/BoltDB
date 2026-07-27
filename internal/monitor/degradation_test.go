@@ -172,6 +172,7 @@ func (m *mockTestingT) Errorf(string, ...any) {}
 func (m *mockTestingT) FailNow()              {}
 
 func TestCheckDegradation_OK(t *testing.T) {
+	t.Parallel()
 	pm := NewPressureMonitor(nil, nil)
 	now := time.Now()
 	pm.mu.Lock()
@@ -189,6 +190,7 @@ func TestCheckDegradation_OK(t *testing.T) {
 }
 
 func TestCheckDegradation_GoroutineFail(t *testing.T) {
+	t.Parallel()
 	pm := NewPressureMonitor(nil, nil)
 	now := time.Now()
 	pm.mu.Lock()
@@ -211,6 +213,7 @@ func TestCheckDegradation_GoroutineFail(t *testing.T) {
 }
 
 func TestCheckDegradation_GoroutineStableElevationOK(t *testing.T) {
+	t.Parallel()
 	pm := NewPressureMonitor(nil, nil)
 	now := time.Now()
 	pm.mu.Lock()
@@ -233,6 +236,7 @@ func TestCheckDegradation_GoroutineStableElevationOK(t *testing.T) {
 }
 
 func TestCheckDegradation_ActiveRetriesFail(t *testing.T) {
+	t.Parallel()
 	pm := NewPressureMonitor(nil, nil)
 	pm.mu.Lock()
 	pm.samples = []PressureSample{
@@ -248,6 +252,7 @@ func TestCheckDegradation_ActiveRetriesFail(t *testing.T) {
 }
 
 func TestCheckDegradation_ActiveRetriesWarn(t *testing.T) {
+	t.Parallel()
 	pm := NewPressureMonitor(nil, nil)
 	pm.mu.Lock()
 	pm.samples = []PressureSample{
@@ -264,6 +269,7 @@ func TestCheckDegradation_ActiveRetriesWarn(t *testing.T) {
 }
 
 func TestCheckDegradation_L0PeakFail(t *testing.T) {
+	t.Parallel()
 	pm := NewPressureMonitor(nil, nil)
 	pm.mu.Lock()
 	pm.samples = []PressureSample{
@@ -280,6 +286,7 @@ func TestCheckDegradation_L0PeakFail(t *testing.T) {
 }
 
 func TestCheckDegradation_L0NoRecovery(t *testing.T) {
+	t.Parallel()
 	pm := NewPressureMonitor(nil, nil)
 	pm.mu.Lock()
 	pm.samples = []PressureSample{
@@ -296,6 +303,7 @@ func TestCheckDegradation_L0NoRecovery(t *testing.T) {
 }
 
 func TestCheckDegradation_ReconnectFail(t *testing.T) {
+	t.Parallel()
 	pm := NewPressureMonitor(nil, nil)
 	pm.mu.Lock()
 	pm.samples = []PressureSample{
@@ -311,6 +319,7 @@ func TestCheckDegradation_ReconnectFail(t *testing.T) {
 }
 
 func TestCheckDegradation_SentinelFail(t *testing.T) {
+	t.Parallel()
 	pm := NewPressureMonitor(nil, nil)
 	pm.mu.Lock()
 	pm.samples = []PressureSample{
@@ -333,6 +342,7 @@ func TestCheckDegradation_SentinelFail(t *testing.T) {
 }
 
 func TestCheckDegradation_AllowDegraded(t *testing.T) {
+	t.Parallel()
 	pm := NewPressureMonitor(nil, nil)
 	pm.mu.Lock()
 	pm.samples = []PressureSample{

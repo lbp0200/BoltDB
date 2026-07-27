@@ -222,3 +222,18 @@ kill <PID>
 # 或使用 systemd
 sudo systemctl stop boltDB
 ```
+
+## 更多文档
+
+| 文档 | 说明 |
+|------|------|
+| [监控指南](../../docs/monitoring.md) | Prometheus 指标配置、指标全集、Grafana 面板建议 |
+| [RESP Shape Contract](../../docs/resp-shape-contract.md) | 响应结构契约测试（24 个形状校验） |
+| [RDB Length Encoding](../../docs/rdb-length-encoding.md) | 6/14/32-bit 长度编码边界测试 |
+| [写背压](../../docs/backpressure.md) | L0 写节流机制、阈值说明 |
+| [包结构概览](../../docs/package-overview.md) | 入口点、内部包职责、存储前缀、部署 |
+| [复制架构](../../docs/replication/architecture.md) | PSYNC、backlog、FULLRESYNC、RDB 快照、关闭生命周期 |
+| [测试分 tiers](../../docs/plans/test-tiers.md) | Tier A/B/C 测试策略与命令 |
+| [设计约束](../../docs/design-constraints.md) | 架构决策、关闭顺序、退化门禁 |
+| [部署文档](../../docs/deployment/) | Docker、systemd、Ubuntu、CentOS、Homebrew |
+| [故障模式](../../docs/failures/) | L0 坍缩、backlog 耗尽、写超时风暴等已知故障分析 |

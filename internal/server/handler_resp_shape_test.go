@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -853,6 +854,7 @@ func TestSPopNEmptyReturnsEmptyArray(t *testing.T) {
 }
 
 func TestSPopNEmptyReturnsEmptyArray_RESP3(t *testing.T) {
+	t.Parallel()
 	handler, state := setupRESP3(t)
 	defer handler.Db.Close()
 
@@ -915,6 +917,7 @@ func TestRESP3Shape_MemoryUsageMissingReturnsNull(t *testing.T) {
 }
 
 func TestRESP3Shape_BLMoveMissingReturnsNull(t *testing.T) {
+	t.Parallel()
 	handler, state := setupRESP3(t)
 	defer handler.Db.Close()
 
@@ -923,6 +926,7 @@ func TestRESP3Shape_BLMoveMissingReturnsNull(t *testing.T) {
 }
 
 func TestRESP3Shape_RPopLPushMissingReturnsNull(t *testing.T) {
+	t.Parallel()
 	handler, state := setupRESP3(t)
 	defer handler.Db.Close()
 
@@ -1208,7 +1212,7 @@ func setupTestClusterHandler(t *testing.T) (*Handler, *connState) {
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
 
-	c, err := cluster.NewCluster(db, "", "127.0.0.1:6337")
+	c, err := cluster.NewCluster(db, "", "127.0.0.1:6337", context.Background())
 	assert.NoError(t, err)
 
 	handler := &Handler{

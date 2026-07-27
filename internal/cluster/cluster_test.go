@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
@@ -14,7 +15,7 @@ func setupTestCluster(t *testing.T) (*Cluster, func()) {
 	s, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
 
-	cluster, err := NewCluster(s, "", "127.0.0.1:6379")
+	cluster, err := NewCluster(s, "", "127.0.0.1:6379", context.Background())
 	assert.NoError(t, err)
 
 	return cluster, func() {

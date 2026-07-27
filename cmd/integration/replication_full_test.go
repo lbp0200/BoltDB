@@ -186,6 +186,7 @@ func waitForFullresync(t *testing.T, masterClient, slaveClient *redis.Client, ti
 
 // TestReplicationMasterSlaveBasic 测试基本的主从复制
 func TestReplicationMasterSlaveBasic(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -206,6 +207,7 @@ func TestReplicationMasterSlaveBasic(t *testing.T) {
 
 // TestReplicationMasterSlaveMultipleKeys 测试多个键的复制
 func TestReplicationMasterSlaveMultipleKeys(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -232,6 +234,7 @@ func TestReplicationMasterSlaveMultipleKeys(t *testing.T) {
 
 // TestReplicationMasterSlaveCounter 测试计数器复制
 func TestReplicationMasterSlaveCounter(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -263,6 +266,7 @@ func TestReplicationMasterSlaveCounter(t *testing.T) {
 
 // TestReplicationMasterSlaveList 测试列表复制
 func TestReplicationMasterSlaveList(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -287,6 +291,7 @@ func TestReplicationMasterSlaveList(t *testing.T) {
 
 // TestReplicationMasterSlaveHash 测试哈希复制
 func TestReplicationMasterSlaveHash(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -312,6 +317,7 @@ func TestReplicationMasterSlaveHash(t *testing.T) {
 
 // TestReplicationMasterSlaveSet 测试集合复制
 func TestReplicationMasterSlaveSet(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -337,6 +343,7 @@ func TestReplicationMasterSlaveSet(t *testing.T) {
 
 // TestReplicationMasterSlaveZSet 测试有序集合复制
 func TestReplicationMasterSlaveZSet(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -366,6 +373,7 @@ func TestReplicationMasterSlaveZSet(t *testing.T) {
 
 // TestReplicationMasterSlaveDEL 测试删除复制
 func TestReplicationMasterSlaveDEL(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -397,6 +405,7 @@ func TestReplicationMasterSlaveDEL(t *testing.T) {
 
 // TestReplicationMasterSlaveInfo 测试复制信息
 func TestReplicationMasterSlaveInfo(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -431,6 +440,7 @@ func TestReplicationMasterSlaveInfo(t *testing.T) {
 
 // TestReplicationMasterSlaveRole 测试ROLE命令
 func TestReplicationMasterSlaveRole(t *testing.T) {
+	t.Parallel()
 	masterClient, slaveClient, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -453,6 +463,7 @@ func TestReplicationMasterSlaveRole(t *testing.T) {
 
 // TestPropagation_SET 测试 SET 命令传播
 func TestPropagation_SET(t *testing.T) {
+	t.Parallel()
 	master, slave, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -468,6 +479,7 @@ func TestPropagation_SET(t *testing.T) {
 
 // TestPropagation_SETEX 测试 SETEX 命令传播
 func TestPropagation_SETEX(t *testing.T) {
+	t.Parallel()
 	master, slave, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -483,6 +495,7 @@ func TestPropagation_SETEX(t *testing.T) {
 
 // TestPropagation_EXPIRE 测试 EXPIRE 传播
 func TestPropagation_EXPIRE(t *testing.T) {
+	t.Parallel()
 	master, slave, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -534,6 +547,7 @@ func TestPropagation_EXPIRE(t *testing.T) {
 
 // TestPropagation_DEL 测试 DEL 传播
 func TestPropagation_DEL(t *testing.T) {
+	t.Parallel()
 	master, slave, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -557,6 +571,7 @@ func TestPropagation_DEL(t *testing.T) {
 
 // TestPropagation_RENAME 测试 RENAME 传播
 func TestPropagation_RENAME(t *testing.T) {
+	t.Parallel()
 	master, slave, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -579,6 +594,7 @@ func TestPropagation_RENAME(t *testing.T) {
 
 // TestPropagation_MULTIEXEC 测试事务传播
 func TestPropagation_MULTIEXEC(t *testing.T) {
+	t.Parallel()
 	master, slave, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -602,6 +618,7 @@ func TestPropagation_MULTIEXEC(t *testing.T) {
 
 // TestPropagation_LPUSH 测试 LPUSH 传播
 func TestPropagation_LPUSH(t *testing.T) {
+	t.Parallel()
 	master, slave, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -618,6 +635,7 @@ func TestPropagation_LPUSH(t *testing.T) {
 
 // TestPropagation_SADD 测试 SADD 传播
 func TestPropagation_SADD(t *testing.T) {
+	t.Parallel()
 	master, slave, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -632,6 +650,7 @@ func TestPropagation_SADD(t *testing.T) {
 
 // TestPropagation_ZADD 测试 ZADD 传播
 func TestPropagation_ZADD(t *testing.T) {
+	t.Parallel()
 	master, slave, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -646,6 +665,7 @@ func TestPropagation_ZADD(t *testing.T) {
 
 // TestPropagation_PERSIST 测试 PERSIST 传播
 func TestPropagation_PERSIST(t *testing.T) {
+	t.Parallel()
 	master, slave, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -665,6 +685,7 @@ func TestPropagation_PERSIST(t *testing.T) {
 
 // TestPropagation_HSET 测试 HSET 传播
 func TestPropagation_HSET(t *testing.T) {
+	t.Parallel()
 	master, slave, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -687,6 +708,7 @@ func TestPropagation_HSET(t *testing.T) {
 
 // TestPropagation_LPOP 测试 LPOP 传播
 func TestPropagation_LPOP(t *testing.T) {
+	t.Parallel()
 	master, slave, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -706,6 +728,7 @@ func TestPropagation_LPOP(t *testing.T) {
 
 // TestPropagation_ReadOnly 测试只读命令不传播（验证不破坏复制状态）
 func TestPropagation_ReadOnly(t *testing.T) {
+	t.Parallel()
 	master, slave, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -724,6 +747,7 @@ func TestPropagation_ReadOnly(t *testing.T) {
 
 // TestReplicationChaos_Load 测试复制在持续写入下的稳定性
 func TestReplicationChaos_Load(t *testing.T) {
+	t.Parallel()
 	master, slave, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -765,6 +789,7 @@ func TestReplicationChaos_Load(t *testing.T) {
 
 // TestReplicationChaos_RapidWrite 测试高速写入下的 slave 同步正确性
 func TestReplicationChaos_RapidWrite(t *testing.T) {
+	t.Parallel()
 	master, slave, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
@@ -834,6 +859,7 @@ func TestReplicationChaos_RapidWrite(t *testing.T) {
 
 // TestReplicationChaos_SlowClient 测试慢客户端场景（输出缓冲区限制）
 func TestReplicationChaos_SlowClient(t *testing.T) {
+	t.Parallel()
 	master, _, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 

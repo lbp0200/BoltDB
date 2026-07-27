@@ -7,11 +7,11 @@ require (
 	github.com/dgraph-io/badger/v4 v4.9.1
 	github.com/golang/snappy v1.0.0
 	github.com/google/uuid v1.6.0
-	github.com/klauspost/compress v1.18.6
+	github.com/klauspost/compress v1.19.1
 	github.com/pierrec/lz4/v4 v4.1.21
 	github.com/redis/go-redis/v9 v9.17.2
 	github.com/rs/zerolog v1.35.1
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	github.com/zeebo/assert v1.3.1
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	pgregory.net/rapid v1.3.0
@@ -33,8 +33,8 @@ require (
 	go.opentelemetry.io/otel v1.37.0 // indirect
 	go.opentelemetry.io/otel/metric v1.37.0 // indirect
 	go.opentelemetry.io/otel/trace v1.37.0 // indirect
-	golang.org/x/net v0.43.0 // indirect
-	golang.org/x/sys v0.37.0 // indirect
-	google.golang.org/protobuf v1.36.7 // indirect
+	golang.org/x/net v0.57.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

@@ -14,6 +14,7 @@ import (
 
 // buildPubSubPush coverage: message path, pmessage path, RESP2 and RESP3
 func TestBuildPubSubPush_Message_Coverage(t *testing.T) {
+	t.Parallel()
 
 	msg := &store.Message{
 		Channel: "testchan",
@@ -36,6 +37,7 @@ func TestBuildPubSubPush_Message_Coverage(t *testing.T) {
 }
 
 func TestBuildPubSubPush_PMessage_Coverage(t *testing.T) {
+	t.Parallel()
 
 	msg := &store.Message{
 		Channel: "testchan",
@@ -55,6 +57,7 @@ func TestBuildPubSubPush_PMessage_Coverage(t *testing.T) {
 // runPubSubLoop coverage: test early return when subscriber is nil
 
 func TestRunPubSubLoop_NilSubscriber_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -77,6 +80,7 @@ func TestRunPubSubLoop_NilSubscriber_Coverage(t *testing.T) {
 // broadcastToMonitors coverage: 80% — test with active monitor clients
 
 func TestBroadcastToMonitors_WithClients_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -96,6 +100,7 @@ func TestBroadcastToMonitors_WithClients_Coverage(t *testing.T) {
 // copyHash coverage: 80% — test HGetAll error path (wrong type)
 
 func TestCopyHash_WrongType_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -111,6 +116,7 @@ func TestCopyHash_WrongType_Coverage(t *testing.T) {
 // Error paths first
 
 func TestProcessPubSubCommand_NoArgs_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -122,6 +128,7 @@ func TestProcessPubSubCommand_NoArgs_Coverage(t *testing.T) {
 }
 
 func TestProcessPubSubCommand_PubSubDisabled_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -137,6 +144,7 @@ func TestProcessPubSubCommand_PubSubDisabled_Coverage(t *testing.T) {
 }
 
 func TestProcessPubSubCommand_SubscribeNoChannels_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -151,6 +159,7 @@ func TestProcessPubSubCommand_SubscribeNoChannels_Coverage(t *testing.T) {
 }
 
 func TestProcessPubSubCommand_Subscribe_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -166,6 +175,7 @@ func TestProcessPubSubCommand_Subscribe_Coverage(t *testing.T) {
 }
 
 func TestProcessPubSubCommand_PSUBSCRIBE_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -181,6 +191,7 @@ func TestProcessPubSubCommand_PSUBSCRIBE_Coverage(t *testing.T) {
 }
 
 func TestProcessPubSubCommand_PSUBSCRIBE_NoChannels_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -195,6 +206,7 @@ func TestProcessPubSubCommand_PSUBSCRIBE_NoChannels_Coverage(t *testing.T) {
 }
 
 func TestProcessPubSubCommand_Unsubscribe_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -210,6 +222,7 @@ func TestProcessPubSubCommand_Unsubscribe_Coverage(t *testing.T) {
 }
 
 func TestProcessPubSubCommand_UnsubscribeSpecific_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -226,6 +239,7 @@ func TestProcessPubSubCommand_UnsubscribeSpecific_Coverage(t *testing.T) {
 }
 
 func TestProcessPubSubCommand_PUnsubscribe_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -240,6 +254,7 @@ func TestProcessPubSubCommand_PUnsubscribe_Coverage(t *testing.T) {
 }
 
 func TestProcessPubSubCommand_PUnsubscribeSpecific_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -256,6 +271,7 @@ func TestProcessPubSubCommand_PUnsubscribeSpecific_Coverage(t *testing.T) {
 }
 
 func TestProcessPubSubCommand_Ping_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -268,6 +284,7 @@ func TestProcessPubSubCommand_Ping_Coverage(t *testing.T) {
 }
 
 func TestProcessPubSubCommand_Quit_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -279,6 +296,7 @@ func TestProcessPubSubCommand_Quit_Coverage(t *testing.T) {
 }
 
 func TestProcessPubSubCommand_Default_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -292,6 +310,7 @@ func TestProcessPubSubCommand_Default_Coverage(t *testing.T) {
 // processMonitorCommand coverage: 0% -> 100%
 
 func TestProcessMonitorCommand_EmptyArgs_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -303,6 +322,7 @@ func TestProcessMonitorCommand_EmptyArgs_Coverage(t *testing.T) {
 }
 
 func TestProcessMonitorCommand_Quit_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -314,6 +334,7 @@ func TestProcessMonitorCommand_Quit_Coverage(t *testing.T) {
 }
 
 func TestProcessMonitorCommand_Ping_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -326,6 +347,7 @@ func TestProcessMonitorCommand_Ping_Coverage(t *testing.T) {
 }
 
 func TestProcessMonitorCommand_Default_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -340,6 +362,7 @@ func TestProcessMonitorCommand_Default_Coverage(t *testing.T) {
 // Tests the graceful connection-close + wg.Wait() path
 
 func TestHandler_Shutdown_NoConnections_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -350,6 +373,7 @@ func TestHandler_Shutdown_NoConnections_Coverage(t *testing.T) {
 }
 
 func TestHandler_Shutdown_WithConnections_Coverage(t *testing.T) {
+	t.Parallel()
 
 	state := &connState{}
 	handler := setupHandlerWithConns(t, []*connState{state})
@@ -362,6 +386,7 @@ func TestHandler_Shutdown_WithConnections_Coverage(t *testing.T) {
 // runMonitorLoop coverage: 0% — test early return when monitorCh is nil
 
 func TestRunMonitorLoop_NilChannel_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -373,6 +398,7 @@ func TestRunMonitorLoop_NilChannel_Coverage(t *testing.T) {
 // processRequest coverage: 56.2% — test MONITOR command path (broadcast filter)
 
 func TestProcessRequest_MONITOR_Command_Coverage(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -384,6 +410,7 @@ func TestProcessRequest_MONITOR_Command_Coverage(t *testing.T) {
 }
 
 func TestHandlePSyncWithRDB_WrongArgs(t *testing.T) {
+	t.Parallel()
 
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -397,6 +424,7 @@ func TestHandlePSyncWithRDB_WrongArgs(t *testing.T) {
 }
 
 func TestHandlePSyncWithRDB_InvalidOffset(t *testing.T) {
+	t.Parallel()
 
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -410,6 +438,7 @@ func TestHandlePSyncWithRDB_InvalidOffset(t *testing.T) {
 }
 
 func TestHandleSlaveReplicationConnection_NilContext(t *testing.T) {
+	t.Parallel()
 
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -428,6 +457,7 @@ func TestHandleSlaveReplicationConnection_NilContext(t *testing.T) {
 }
 
 func TestHandleSlaveReplicationConnection_CancelledContext(t *testing.T) {
+	t.Parallel()
 
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()

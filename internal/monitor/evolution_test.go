@@ -12,6 +12,7 @@ import (
 )
 
 func TestSaveEvolutionHistory(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	now := time.Now()
 
@@ -26,11 +27,13 @@ func TestSaveEvolutionHistory(t *testing.T) {
 }
 
 func TestSaveEvolutionHistory_Error(t *testing.T) {
+	t.Parallel()
 	err := SaveEvolutionHistory("/nonexistent-path-12345", "test", []byte(`{}`), time.Now())
 	assert.Error(t, err)
 }
 
 func TestSaveEvolutionHistory_Overwrites(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	now := time.Now()
 
@@ -46,6 +49,7 @@ func TestSaveEvolutionHistory_Overwrites(t *testing.T) {
 }
 
 func TestLoadEvolutionHistory(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	now := time.Now()
 
@@ -69,6 +73,7 @@ func TestLoadEvolutionHistory(t *testing.T) {
 }
 
 func TestLoadEvolutionHistory_EmptyDir(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	runs, err := LoadEvolutionHistory(dir, "test")
 	assert.NoError(t, err)
@@ -76,12 +81,14 @@ func TestLoadEvolutionHistory_EmptyDir(t *testing.T) {
 }
 
 func TestLoadEvolutionHistory_InvalidDir(t *testing.T) {
+	t.Parallel()
 	runs, err := LoadEvolutionHistory("/nonexistent-12345", "test")
 	assert.Error(t, err)
 	assert.Nil(t, runs)
 }
 
 func TestLoadEvolutionHistory_FiltersPrefix(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	now := time.Now()
 
@@ -114,6 +121,7 @@ func makeRun(converging bool, prob float64) EvolutionRun {
 
 // health_slope < -0.02 + high convergence prob → FAIL → WARN
 func TestApplyConvergenceSuppression_HealthSlopeSuppressed(t *testing.T) {
+	t.Parallel()
 	r := EvolutionReport{
 		Level:             LevelFail,
 		GateReasons:       []string{"health slope in last 3 runs: -0.0300 (threshold: -0.02)"},
@@ -150,6 +158,7 @@ func TestApplyConvergenceSuppression_HealthSlopeSuppressed(t *testing.T) {
 
 // sustained_oscillation + high convergence prob → FAIL → WARN
 func TestApplyConvergenceSuppression_OscillationSuppressed(t *testing.T) {
+	t.Parallel()
 	r := EvolutionReport{
 		Level:            LevelFail,
 		GateReasons:      []string{"sustained oscillation pattern detected across runs"},
@@ -172,6 +181,7 @@ func TestApplyConvergenceSuppression_OscillationSuppressed(t *testing.T) {
 
 // regime_shift_to_worse + high convergence prob → still FAIL
 func TestApplyConvergenceSuppression_RegimeShiftNeverSuppressed(t *testing.T) {
+	t.Parallel()
 	r := EvolutionReport{
 		Level:              LevelFail,
 		GateReasons:        []string{"regime shift to worse basin state (sustained)"},
@@ -194,6 +204,7 @@ func TestApplyConvergenceSuppression_RegimeShiftNeverSuppressed(t *testing.T) {
 
 // evolving_degradation + high convergence prob → still FAIL
 func TestApplyConvergenceSuppression_EscalatingDegradationNeverSuppressed(t *testing.T) {
+	t.Parallel()
 	r := EvolutionReport{
 		Level:                 LevelFail,
 		GateReasons:           []string{"degradation escalating across runs"},
@@ -216,6 +227,7 @@ func TestApplyConvergenceSuppression_EscalatingDegradationNeverSuppressed(t *tes
 
 // regime shift + health slope (mixed): regime shift dominates → FAIL preserved
 func TestApplyConvergenceSuppression_MixedConditionsRegimeShiftDominates(t *testing.T) {
+	t.Parallel()
 	r := EvolutionReport{
 		Level: LevelFail,
 		GateReasons: []string{
@@ -242,6 +254,7 @@ func TestApplyConvergenceSuppression_MixedConditionsRegimeShiftDominates(t *test
 
 // not enough convergence signal → FAIL not suppressed
 func TestApplyConvergenceSuppression_NotEnoughConvergence(t *testing.T) {
+	t.Parallel()
 	r := EvolutionReport{
 		Level:             LevelFail,
 		GateReasons:       []string{"health slope in last 3 runs: -0.0300 (threshold: -0.02)"},
@@ -264,6 +277,7 @@ func TestApplyConvergenceSuppression_NotEnoughConvergence(t *testing.T) {
 
 // single run → convergingCount=1 < threshold(2) → no suppression
 func TestApplyConvergenceSuppression_SingleRunNoSuppression(t *testing.T) {
+	t.Parallel()
 	r := EvolutionReport{
 		Level:             LevelFail,
 		GateReasons:       []string{"health slope in last 3 runs: -0.0300 (threshold: -0.02)"},
@@ -284,6 +298,7 @@ func TestApplyConvergenceSuppression_SingleRunNoSuppression(t *testing.T) {
 
 // not LevelFail → no-op, suppression is a no-op
 func TestApplyConvergenceSuppression_WarnLevelNoOp(t *testing.T) {
+	t.Parallel()
 	r := EvolutionReport{
 		Level:       LevelWarn,
 		GateReasons: []string{"health dropped for 3 consecutive runs"},
@@ -305,6 +320,7 @@ func TestApplyConvergenceSuppression_WarnLevelNoOp(t *testing.T) {
 
 // no runs → no-op
 func TestApplyConvergenceSuppression_NoRunsNoOp(t *testing.T) {
+	t.Parallel()
 	r := EvolutionReport{
 		Level: LevelFail,
 	}
@@ -316,6 +332,7 @@ func TestApplyConvergenceSuppression_NoRunsNoOp(t *testing.T) {
 }
 
 func TestClassifyDirection(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		slope    float64
 		isHealth bool
@@ -337,6 +354,7 @@ func TestClassifyDirection(t *testing.T) {
 }
 
 func TestFixTrendDirection(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		initial  string
 		slope    float64
@@ -360,6 +378,7 @@ func TestFixTrendDirection(t *testing.T) {
 }
 
 func TestExtractFloat(t *testing.T) {
+	t.Parallel()
 	runs := []EvolutionRun{
 		{HealthOverall: 0.5},
 		{HealthOverall: 0.8},
@@ -375,6 +394,7 @@ func TestExtractFloat(t *testing.T) {
 }
 
 func TestComputeRecentSlope_FewRuns(t *testing.T) {
+	t.Parallel()
 	runs := []EvolutionRun{{HealthOverall: 0.5}}
 	slope := computeRecentSlope(runs, func(r EvolutionRun) float64 { return r.HealthOverall })
 	if slope != 0 {
@@ -383,6 +403,7 @@ func TestComputeRecentSlope_FewRuns(t *testing.T) {
 }
 
 func TestComputeRecentSlope_TwoRuns(t *testing.T) {
+	t.Parallel()
 	runs := []EvolutionRun{
 		{HealthOverall: 0.5},
 		{HealthOverall: 0.7},
@@ -394,6 +415,7 @@ func TestComputeRecentSlope_TwoRuns(t *testing.T) {
 }
 
 func TestComputeRecentSlope_ThreeRuns(t *testing.T) {
+	t.Parallel()
 	runs := []EvolutionRun{
 		{HealthOverall: 0.9},
 		{HealthOverall: 0.8},
@@ -408,6 +430,7 @@ func TestComputeRecentSlope_ThreeRuns(t *testing.T) {
 }
 
 func TestComputeSparseSlope_FewNonZero(t *testing.T) {
+	t.Parallel()
 	runs := []EvolutionRun{{HealthOverall: 0.0}, {HealthOverall: 0.5}, {HealthOverall: 0.7}}
 	slope := computeSparseSlope(runs, func(r EvolutionRun) float64 { return r.HealthOverall })
 	if slope <= 0 {
@@ -416,6 +439,7 @@ func TestComputeSparseSlope_FewNonZero(t *testing.T) {
 }
 
 func TestComputeSparseSlope_AllZero(t *testing.T) {
+	t.Parallel()
 	runs := []EvolutionRun{{HealthOverall: 0.0}, {HealthOverall: 0.0}}
 	slope := computeSparseSlope(runs, func(r EvolutionRun) float64 { return r.HealthOverall })
 	if slope != 0 {
@@ -424,6 +448,7 @@ func TestComputeSparseSlope_AllZero(t *testing.T) {
 }
 
 func TestComputeSparseSlope_SingleNonZero(t *testing.T) {
+	t.Parallel()
 	runs := []EvolutionRun{{HealthOverall: 0.0}, {HealthOverall: 0.0}, {HealthOverall: 0.5}}
 	slope := computeSparseSlope(runs, func(r EvolutionRun) float64 { return r.HealthOverall })
 	if slope != 0 {
@@ -432,6 +457,7 @@ func TestComputeSparseSlope_SingleNonZero(t *testing.T) {
 }
 
 func TestClassifySlope(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		slope  float64
 		metric string

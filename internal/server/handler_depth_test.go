@@ -11,6 +11,7 @@ import (
 
 // TestStringBoundary_EmptyKey tests GET on nonexistent key
 func TestStringBoundary_EmptyKey(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -23,6 +24,7 @@ func TestStringBoundary_EmptyKey(t *testing.T) {
 
 // TestStringBoundary_MaxValueSize tests SET/GET with large value
 func TestStringBoundary_MaxValueSize(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -44,6 +46,7 @@ func TestStringBoundary_MaxValueSize(t *testing.T) {
 
 // TestStringBoundary_EmptyString tests SET with empty value
 func TestStringBoundary_EmptyString(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -59,6 +62,7 @@ func TestStringBoundary_EmptyString(t *testing.T) {
 
 // TestIncrBoundary_MaxInt64 tests INCR on boundary values
 func TestIncrBoundary_MaxInt64(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -80,6 +84,7 @@ func TestIncrBoundary_MaxInt64(t *testing.T) {
 
 // TestIncrBoundary_NegativeToPositive tests DECR crossing zero
 func TestIncrBoundary_NegativeToPositive(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -103,6 +108,7 @@ func TestIncrBoundary_NegativeToPositive(t *testing.T) {
 
 // TestStringError_TypeMismatch tests string command on non-string type
 func TestStringError_TypeMismatch(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -119,6 +125,7 @@ func TestStringError_TypeMismatch(t *testing.T) {
 
 // TestStringError_WrongNumberOfArguments tests GET without key argument
 func TestStringError_WrongNumberOfArguments(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -131,6 +138,7 @@ func TestStringError_WrongNumberOfArguments(t *testing.T) {
 
 // TestStringError_SetGetInvalidArgs tests SET with missing value
 func TestStringError_SetGetInvalidArgs(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -144,6 +152,7 @@ func TestStringError_SetGetInvalidArgs(t *testing.T) {
 
 // TestStringError_IncrOnFloat tests INCR on float value
 func TestStringError_IncrOnFloat(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -159,6 +168,7 @@ func TestStringError_IncrOnFloat(t *testing.T) {
 
 // TestListBoundary_EmptyList tests LPOP on nonexistent key
 func TestListBoundary_EmptyList(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -171,6 +181,7 @@ func TestListBoundary_EmptyList(t *testing.T) {
 
 // TestListBoundary_SingleElement tests LPOP/RPOP on list with one element
 func TestListBoundary_SingleElement(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -191,6 +202,7 @@ func TestListBoundary_SingleElement(t *testing.T) {
 
 // TestListBoundary_IndexOverflow tests LLEN and LINDEX on large list
 func TestListBoundary_IndexOverflow(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -214,6 +226,7 @@ func TestListBoundary_IndexOverflow(t *testing.T) {
 
 // TestListBoundary_NegativeIndex tests negative index access
 func TestListBoundary_NegativeIndex(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -247,6 +260,7 @@ func TestListBoundary_NegativeIndex(t *testing.T) {
 
 // TestListError_TypeMismatch tests list command on string type
 func TestListError_TypeMismatch(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -261,6 +275,7 @@ func TestListError_TypeMismatch(t *testing.T) {
 
 // TestListError_InvalidIndex tests LSET with invalid index
 func TestListError_InvalidIndex(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -275,6 +290,7 @@ func TestListError_InvalidIndex(t *testing.T) {
 
 // TestStringBoundary_DecrOverflow tests DECR at int64 min boundary
 func TestStringBoundary_DecrOverflow(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -296,6 +312,7 @@ func TestStringBoundary_DecrOverflow(t *testing.T) {
 
 // TestStringBoundary_GetrangeFullString tests GETRANGE with full range
 func TestStringBoundary_GetrangeFullString(t *testing.T) {
+	t.Parallel()
 	// Not parallel — avoids BadgerDB contention on slow CI runners
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -311,6 +328,7 @@ func TestStringBoundary_GetrangeFullString(t *testing.T) {
 
 // TestStringBoundary_GetrangeOutOfBounds tests GETRANGE beyond string bounds
 func TestStringBoundary_GetrangeOutOfBounds(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -326,6 +344,7 @@ func TestStringBoundary_GetrangeOutOfBounds(t *testing.T) {
 
 // TestStringError_WrongTypeForDecr tests DECR on hash key returns WRONGTYPE
 func TestStringError_WrongTypeForDecr(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -339,6 +358,7 @@ func TestStringError_WrongTypeForDecr(t *testing.T) {
 
 // TestStringError_WrongTypeForDecrby tests DECRBY on set key returns WRONGTYPE
 func TestStringError_WrongTypeForDecrby(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -352,6 +372,7 @@ func TestStringError_WrongTypeForDecrby(t *testing.T) {
 
 // TestStringError_SetexWrongType tests SETEX on zset key returns WRONGTYPE
 func TestStringError_SetexWrongType(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -365,6 +386,7 @@ func TestStringError_SetexWrongType(t *testing.T) {
 
 // TestStringError_PsetexWrongType tests PSETEX on list key returns WRONGTYPE
 func TestStringError_PsetexWrongType(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -380,6 +402,7 @@ func TestStringError_PsetexWrongType(t *testing.T) {
 
 // TestStringBoundary_SetbitGetbitBasic tests SETBIT and GETBIT
 func TestStringBoundary_SetbitGetbitBasic(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -399,6 +422,7 @@ func TestStringBoundary_SetbitGetbitBasic(t *testing.T) {
 
 // TestStringBoundary_SetbitOutOfRange tests SETBIT on offset beyond practical limits
 func TestStringBoundary_SetbitOutOfRange(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -418,6 +442,7 @@ func TestStringBoundary_SetbitOutOfRange(t *testing.T) {
 
 // TestStringBoundary_SetrangeExtend tests SETRANGE extending a string
 func TestStringBoundary_SetrangeExtend(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -439,6 +464,7 @@ func TestStringBoundary_SetrangeExtend(t *testing.T) {
 
 // TestListBoundary_LinsertBefore tests LINSERT BEFORE first element
 func TestListBoundary_LinsertBefore(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -461,6 +487,7 @@ func TestListBoundary_LinsertBefore(t *testing.T) {
 
 // TestListBoundary_LinsertAfter tests LINSERT AFTER an element
 func TestListBoundary_LinsertAfter(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -477,6 +504,7 @@ func TestListBoundary_LinsertAfter(t *testing.T) {
 
 // TestListBoundary_LinsertNotFound tests LINSERT when pivot not found
 func TestListBoundary_LinsertNotFound(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -492,6 +520,7 @@ func TestListBoundary_LinsertNotFound(t *testing.T) {
 
 // TestListBoundary_LposBasic tests LPOS returns correct index
 func TestListBoundary_LposBasic(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -506,6 +535,7 @@ func TestListBoundary_LposBasic(t *testing.T) {
 
 // TestListBoundary_LposRank tests LPOS with RANK returns nth occurrence
 func TestListBoundary_LposRank(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -522,6 +552,7 @@ func TestListBoundary_LposRank(t *testing.T) {
 
 // TestListBoundary_LmoveBasic tests LMOVE from one list to another
 func TestListBoundary_LmoveBasic(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -546,6 +577,7 @@ func TestListBoundary_LmoveBasic(t *testing.T) {
 
 // TestListBoundary_LpushxBasic tests LPUSHX adds to existing list only
 func TestListBoundary_LpushxBasic(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -560,6 +592,7 @@ func TestListBoundary_LpushxBasic(t *testing.T) {
 
 // TestListBoundary_LpushxNotExist tests LPUSHX does nothing if key doesn't exist
 func TestListBoundary_LpushxNotExist(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -572,6 +605,7 @@ func TestListBoundary_LpushxNotExist(t *testing.T) {
 
 // TestListBoundary_RpushxBasic tests RPUSHX adds to existing list only
 func TestListBoundary_RpushxBasic(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -586,6 +620,7 @@ func TestListBoundary_RpushxBasic(t *testing.T) {
 
 // TestListError_WrongTypeForLinsert tests LINSERT on wrong type
 func TestListError_WrongTypeForLinsert(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -600,6 +635,7 @@ func TestListError_WrongTypeForLinsert(t *testing.T) {
 
 // TestHashBoundary_HsetNxBasic tests HSETNX behavior
 func TestHashBoundary_HsetNxBasic(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -621,6 +657,7 @@ func TestHashBoundary_HsetNxBasic(t *testing.T) {
 
 // TestHashBoundary_HincrbyBasic tests HINCRBY with positive increment
 func TestHashBoundary_HincrbyBasic(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -635,6 +672,7 @@ func TestHashBoundary_HincrbyBasic(t *testing.T) {
 
 // TestHashBoundary_HincrbyNegative tests HINCRBY with negative increment
 func TestHashBoundary_HincrbyNegative(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -649,6 +687,7 @@ func TestHashBoundary_HincrbyNegative(t *testing.T) {
 
 // TestHashBoundary_HincrbyFloatBasic tests HINCRBYFLOAT with float value
 func TestHashBoundary_HincrbyFloatBasic(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -663,6 +702,7 @@ func TestHashBoundary_HincrbyFloatBasic(t *testing.T) {
 
 // TestHashBoundary_HrandfieldBasic tests HRANDFIELD returns a field
 func TestHashBoundary_HrandfieldBasic(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -681,6 +721,7 @@ func TestHashBoundary_HrandfieldBasic(t *testing.T) {
 
 // TestHashBoundary_HrandfieldWithValues tests HRANDFIELD with WITHVALUES
 func TestHashBoundary_HrandfieldWithValues(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -696,6 +737,7 @@ func TestHashBoundary_HrandfieldWithValues(t *testing.T) {
 
 // TestHashError_WrongTypeForHset tests HSET on wrong type returns error
 func TestHashError_WrongTypeForHset(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -710,6 +752,7 @@ func TestHashError_WrongTypeForHset(t *testing.T) {
 
 // TestHashError_WrongTypeForHget tests HGET on wrong type returns error
 func TestHashError_WrongTypeForHget(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -724,6 +767,7 @@ func TestHashError_WrongTypeForHget(t *testing.T) {
 
 // TestHashError_HincrbyOnNonNumeric tests HINCRBY on non-numeric value
 func TestHashError_HincrbyOnNonNumeric(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -738,6 +782,7 @@ func TestHashError_HincrbyOnNonNumeric(t *testing.T) {
 
 // TestHashError_HincrbyFloatOnNonNumeric tests HINCRBYFLOAT on non-numeric value
 func TestHashError_HincrbyFloatOnNonNumeric(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -752,6 +797,7 @@ func TestHashError_HincrbyFloatOnNonNumeric(t *testing.T) {
 
 // TestSetBoundary_SaddBasic tests SADD with multiple members
 func TestSetBoundary_SaddBasic(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -769,6 +815,7 @@ func TestSetBoundary_SaddBasic(t *testing.T) {
 
 // TestSetBoundary_SremBasic tests SREM behavior
 func TestSetBoundary_SremBasic(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -788,6 +835,7 @@ func TestSetBoundary_SremBasic(t *testing.T) {
 
 // TestSetBoundary_ScardBasic tests SCARD returns set size
 func TestSetBoundary_ScardBasic(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -802,6 +850,7 @@ func TestSetBoundary_ScardBasic(t *testing.T) {
 
 // TestSetBoundary_SrandmemberBasic tests SRANDMEMBER returns a member
 func TestSetBoundary_SrandmemberBasic(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -816,6 +865,7 @@ func TestSetBoundary_SrandmemberBasic(t *testing.T) {
 
 // TestSetBoundary_SpopBasic tests SPOP removes and returns a member
 func TestSetBoundary_SpopBasic(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -834,6 +884,7 @@ func TestSetBoundary_SpopBasic(t *testing.T) {
 
 // TestSetError_WrongTypeForSadd tests SADD on string key returns WRONGTYPE
 func TestSetError_WrongTypeForSadd(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -848,6 +899,7 @@ func TestSetError_WrongTypeForSadd(t *testing.T) {
 
 // TestSetError_WrongTypeForSrem tests SREM on string key returns WRONGTYPE
 func TestSetError_WrongTypeForSrem(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -862,6 +914,7 @@ func TestSetError_WrongTypeForSrem(t *testing.T) {
 
 // TestSetError_WrongTypeForSismember tests SISMEMBER on string key returns WRONGTYPE
 func TestSetError_WrongTypeForSismember(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -876,6 +929,7 @@ func TestSetError_WrongTypeForSismember(t *testing.T) {
 
 // TestSetError_WrongTypeForSmembers tests SMEMBERS on string key returns WRONGTYPE
 func TestSetError_WrongTypeForSmembers(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -890,6 +944,7 @@ func TestSetError_WrongTypeForSmembers(t *testing.T) {
 
 // TestSetError_WrongTypeForScard tests SCARD on string key returns WRONGTYPE
 func TestSetError_WrongTypeForScard(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -906,6 +961,7 @@ func TestSetError_WrongTypeForScard(t *testing.T) {
 
 // TestSortedSetBoundary_ZaddBasic tests ZADD adds new members with scores
 func TestSortedSetBoundary_ZaddBasic(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -925,6 +981,7 @@ func TestSortedSetBoundary_ZaddBasic(t *testing.T) {
 
 // TestSortedSetBoundary_ZremBasic tests ZREM removes existing members
 func TestSortedSetBoundary_ZremBasic(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -946,6 +1003,7 @@ func TestSortedSetBoundary_ZremBasic(t *testing.T) {
 
 // TestSortedSetBoundary_ZcardBasic tests ZCARD returns sorted set cardinality
 func TestSortedSetBoundary_ZcardBasic(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -960,6 +1018,7 @@ func TestSortedSetBoundary_ZcardBasic(t *testing.T) {
 
 // TestSortedSetBoundary_ZscoreBasic tests ZSCORE returns member score
 func TestSortedSetBoundary_ZscoreBasic(t *testing.T) {
+	t.Parallel()
 	// Not parallel — avoids BadgerDB contention on slow CI runners
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -980,6 +1039,7 @@ func TestSortedSetBoundary_ZscoreBasic(t *testing.T) {
 
 // TestSortedSetBoundary_ZrangeBasic tests ZRANGE returns members by rank
 func TestSortedSetBoundary_ZrangeBasic(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -995,6 +1055,7 @@ func TestSortedSetBoundary_ZrangeBasic(t *testing.T) {
 
 // TestSortedSetError_WrongTypeForZadd tests ZADD on string key returns WRONGTYPE
 func TestSortedSetError_WrongTypeForZadd(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1009,6 +1070,7 @@ func TestSortedSetError_WrongTypeForZadd(t *testing.T) {
 
 // TestSortedSetError_WrongTypeForZrem tests ZREM on string key returns WRONGTYPE
 func TestSortedSetError_WrongTypeForZrem(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1023,6 +1085,7 @@ func TestSortedSetError_WrongTypeForZrem(t *testing.T) {
 
 // TestSortedSetError_WrongTypeForZcard tests ZCARD on string key returns WRONGTYPE
 func TestSortedSetError_WrongTypeForZcard(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1037,6 +1100,7 @@ func TestSortedSetError_WrongTypeForZcard(t *testing.T) {
 
 // TestSortedSetError_WrongTypeForZscore tests ZSCORE on string key returns WRONGTYPE
 func TestSortedSetError_WrongTypeForZscore(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1051,6 +1115,7 @@ func TestSortedSetError_WrongTypeForZscore(t *testing.T) {
 
 // TestSortedSetError_WrongTypeForZrange tests ZRANGE on string key returns WRONGTYPE
 func TestSortedSetError_WrongTypeForZrange(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1067,6 +1132,7 @@ func TestSortedSetError_WrongTypeForZrange(t *testing.T) {
 
 // TestClusterError_ClusterDisabled tests CLUSTER commands return error when cluster is disabled
 func TestClusterError_ClusterDisabled(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1080,6 +1146,7 @@ func TestClusterError_ClusterDisabled(t *testing.T) {
 
 // TestClusterError_ClusterDisabledNodes tests CLUSTER NODES returns error when disabled
 func TestClusterError_ClusterDisabledNodes(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1092,6 +1159,7 @@ func TestClusterError_ClusterDisabledNodes(t *testing.T) {
 
 // TestClusterError_ClusterDisabledKeySlot tests CLUSTER KEYSLOT returns error when disabled
 func TestClusterError_ClusterDisabledKeySlot(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1104,6 +1172,7 @@ func TestClusterError_ClusterDisabledKeySlot(t *testing.T) {
 
 // TestClusterError_ClusterDisabledSlots tests CLUSTER SLOTS returns error when disabled
 func TestClusterError_ClusterDisabledSlots(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1116,6 +1185,7 @@ func TestClusterError_ClusterDisabledSlots(t *testing.T) {
 
 // TestClusterError_InvalidSubcommand tests CLUSTER with invalid subcommand returns error
 func TestClusterError_InvalidSubcommand(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1130,6 +1200,7 @@ func TestClusterError_InvalidSubcommand(t *testing.T) {
 
 // TestReplicationBoundary_RoleMaster tests ROLE returns master when node is master
 func TestReplicationBoundary_RoleMaster(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1143,6 +1214,7 @@ func TestReplicationBoundary_RoleMaster(t *testing.T) {
 
 // TestReplicationBoundary_ReplconfListeningPort tests REPLCONF LISTENING-PORT
 func TestReplicationBoundary_ReplconfListeningPort(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1156,6 +1228,7 @@ func TestReplicationBoundary_ReplconfListeningPort(t *testing.T) {
 
 // TestReplicationBoundary_ReplconfCapa tests REPLCONF CAPA
 func TestReplicationBoundary_ReplconfCapa(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1169,6 +1242,7 @@ func TestReplicationBoundary_ReplconfCapa(t *testing.T) {
 
 // TestReplicationError_ReplconfInvalidSubcommand tests REPLCONF with invalid subcommand
 func TestReplicationError_ReplconfInvalidSubcommand(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1181,6 +1255,7 @@ func TestReplicationError_ReplconfInvalidSubcommand(t *testing.T) {
 
 // TestReplicationError_ReplconfAckWithoutArgs tests REPLCONF ACK without offset
 func TestReplicationError_ReplconfAckWithoutArgs(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1195,6 +1270,7 @@ func TestReplicationError_ReplconfAckWithoutArgs(t *testing.T) {
 
 // TestSentinelBoundary_InfoReplication tests INFO replication returns sentinel-compatible format
 func TestSentinelBoundary_InfoReplication(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1214,6 +1290,7 @@ func TestSentinelBoundary_InfoReplication(t *testing.T) {
 
 // TestSentinelBoundary_ReplconfGetack tests REPLCONF GETACK returns ACK format
 func TestSentinelBoundary_ReplconfGetack(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
@@ -1231,6 +1308,7 @@ func TestSentinelBoundary_ReplconfGetack(t *testing.T) {
 
 // TestSentinelError_ReplconfUnknownSubcommand tests REPLCONF with unknown subcommand
 func TestSentinelError_ReplconfUnknownSubcommand(t *testing.T) {
+	t.Parallel()
 
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()

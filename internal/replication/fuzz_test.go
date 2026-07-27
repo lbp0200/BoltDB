@@ -1,6 +1,7 @@
 package replication
 
 import (
+	"context"
 	"testing"
 
 	"github.com/lbp0200/BoltDB/internal/store"
@@ -20,7 +21,7 @@ func FuzzExecuteReplicatedCommand(f *testing.F) {
 		}
 		defer testStore.Close()
 
-		_ = executeReplicatedCommand(testStore, [][]byte{[]byte(data)})
+		_ = executeReplicatedCommand(testStore, [][]byte{[]byte(data)}, context.Background())
 	})
 }
 

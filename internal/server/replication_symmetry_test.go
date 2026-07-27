@@ -12,6 +12,7 @@ import (
 // corresponding handler in executeReplicatedCommand (or is explicitly excluded).
 // This prevents drift between the handler dispatch and replication dispatch.
 func TestReplicationSymmetry_WriteCommandsCovered(t *testing.T) {
+	t.Parallel()
 	writeCmds := getWriteCommandSet()
 
 	var missing, excluded []string
@@ -44,6 +45,7 @@ func TestReplicationSymmetry_WriteCommandsCovered(t *testing.T) {
 // corresponds to an actual isWriteCommand. Orphans indicate either dead code or
 // a command that was removed from the handler but not from replication.
 func TestReplicationSymmetry_NoOrphanCommands(t *testing.T) {
+	t.Parallel()
 	writeCmds := getWriteCommandSet()
 
 	var orphan []string
@@ -86,6 +88,7 @@ func formatCmdList(cmds []string) string {
 //  4. Integration: attach slave first → write → assert slave state
 //  5. Error path: WRONGTYPE / failed write must not enter backlog as success
 func TestReplicationWriteCommandChecklist(t *testing.T) {
+	t.Parallel()
 	// Step 1–2: symmetry (same as Covered + NoOrphan)
 	writeCmds := getWriteCommandSet()
 	for cmd := range writeCmds {

@@ -7,6 +7,7 @@ import (
 )
 
 func TestDetectRegimeShiftToWorse(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		runs []EvolutionRun
@@ -52,6 +53,7 @@ func TestDetectRegimeShiftToWorse(t *testing.T) {
 }
 
 func TestDetectOscillationTrend(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		runs []EvolutionRun
@@ -82,6 +84,7 @@ func TestDetectOscillationTrend(t *testing.T) {
 }
 
 func TestDetectRegimeShift(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		runs     []EvolutionRun
@@ -119,6 +122,7 @@ func TestDetectRegimeShift(t *testing.T) {
 }
 
 func TestDetectEscalation(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		runs []EvolutionRun
@@ -155,6 +159,7 @@ func TestDetectEscalation(t *testing.T) {
 }
 
 func TestBuildWarnings(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	tests := []struct {
 		name string
@@ -209,6 +214,7 @@ func TestBuildWarnings(t *testing.T) {
 }
 
 func TestComputeEvolutionLevel(t *testing.T) {
+	t.Parallel()
 	t.Run("run count < 3", func(t *testing.T) {
 		r := EvolutionReport{RunCount: 2}
 		level, reasons := computeEvolutionLevel(r)
@@ -364,6 +370,7 @@ func TestComputeEvolutionLevel(t *testing.T) {
 }
 
 func TestAnalyzeEvolution(t *testing.T) {
+	t.Parallel()
 	t.Run("less than 2 runs", func(t *testing.T) {
 		runs := []EvolutionRun{{Timestamp: time.Now()}}
 		r := AnalyzeEvolution(runs)
@@ -481,6 +488,7 @@ func TestAnalyzeEvolution(t *testing.T) {
 }
 
 func TestComputeDrift(t *testing.T) {
+	t.Parallel()
 	t.Run("less than 2 runs", func(t *testing.T) {
 		r := EvolutionReport{RunCount: 1}
 		d := r.ComputeDrift(3)
@@ -577,6 +585,7 @@ func TestComputeDrift(t *testing.T) {
 }
 
 func TestFormatEvolutionReport(t *testing.T) {
+	t.Parallel()
 	t.Run("insufficient data", func(t *testing.T) {
 		r := EvolutionReport{
 			AnalysisTime: time.Now(),
@@ -721,6 +730,7 @@ func TestFormatEvolutionReport(t *testing.T) {
 }
 
 func TestWriteTrendRow(t *testing.T) {
+	t.Parallel()
 	t.Run("with direction", func(t *testing.T) {
 		var b strings.Builder
 		writeTrendRow(&b, "Health (Overall)", 0.035, "improving")
@@ -747,6 +757,7 @@ func TestWriteTrendRow(t *testing.T) {
 }
 
 func TestFindTransitionRun(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	t.Run("basin shift", func(t *testing.T) {
 		runs := []EvolutionRun{

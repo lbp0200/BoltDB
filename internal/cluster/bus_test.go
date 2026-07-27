@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"bytes"
+	"context"
 	"net"
 	"strings"
 	"testing"
@@ -102,7 +103,7 @@ func TestNewClusterBus(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	bus := NewClusterBus(cluster)
+	bus := NewClusterBus(cluster, context.Background())
 	assert.NotNil(t, bus)
 	assert.NotNil(t, bus.ctx)
 	assert.NotNil(t, bus.peers)
@@ -114,7 +115,7 @@ func TestClusterBusStartStop(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	bus := NewClusterBus(cluster)
+	bus := NewClusterBus(cluster, context.Background())
 
 	err := bus.Start("127.0.0.1", 0)
 	assert.NoError(t, err)
@@ -137,7 +138,7 @@ func TestClusterBusDoubleStop(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	bus := NewClusterBus(cluster)
+	bus := NewClusterBus(cluster, context.Background())
 	err := bus.Start("127.0.0.1", 0)
 	assert.NoError(t, err)
 
@@ -160,7 +161,7 @@ func TestBuildGossipPayload(t *testing.T) {
 	// Clear default all-slots and assign a specific range
 	cluster.Myself.Slots = []SlotRange{{Start: 0, End: 1000}}
 
-	bus := NewClusterBus(cluster)
+	bus := NewClusterBus(cluster, context.Background())
 	payload := bus.BuildGossipPayload()
 
 	assert.NotNil(t, payload)
@@ -191,7 +192,7 @@ func TestBuildGossipPayloadWithPFail(t *testing.T) {
 	peer.Epoch = 5
 	cluster.Nodes["peer1"] = peer
 
-	bus := NewClusterBus(cluster)
+	bus := NewClusterBus(cluster, context.Background())
 	payload := bus.BuildGossipPayload()
 
 	assert.NotNil(t, payload)
@@ -219,7 +220,7 @@ func TestApplyGossipPayloadSlotReconciliation(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	bus := NewClusterBus(cluster)
+	bus := NewClusterBus(cluster, context.Background())
 
 	payload := &GossipPayload{
 		Epoch: 1,
@@ -250,7 +251,7 @@ func TestApplyGossipPayloadEpoch(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	bus := NewClusterBus(cluster)
+	bus := NewClusterBus(cluster, context.Background())
 
 	payload := &GossipPayload{Epoch: 100}
 	dirty := bus.ApplyGossipPayloadFrom("peer1", payload)
@@ -268,7 +269,7 @@ func TestApplyGossipPayloadPfailPromotion(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	bus := NewClusterBus(cluster)
+	bus := NewClusterBus(cluster, context.Background())
 
 	peer1 := NewNode("peer1", "127.0.0.1:6380")
 	peer2 := NewNode("peer2", "127.0.0.1:6381")
@@ -300,7 +301,7 @@ func TestHasPeer(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	bus := NewClusterBus(cluster)
+	bus := NewClusterBus(cluster, context.Background())
 	assert.False(t, bus.HasPeer("peer1"))
 
 	bus.registerPeer("peer1", &mockConn{}, nil)
@@ -322,7 +323,7 @@ func TestApplyGossipPayloadGossipSection(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	bus := NewClusterBus(cluster)
+	bus := NewClusterBus(cluster, context.Background())
 
 	payload := &GossipPayload{
 		Nodes: []GossipNodeInfo{
@@ -362,7 +363,7 @@ func TestApplyGossipPayloadSlotsHigherEpoch(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	bus := NewClusterBus(cluster)
+	bus := NewClusterBus(cluster, context.Background())
 
 	peer1 := NewNode("peer1", "127.0.0.1:6380")
 	cluster.Nodes["peer1"] = peer1
@@ -415,7 +416,7 @@ func TestBusPeerCount(t *testing.T) {
 	cluster, cleanup := setupTestCluster(t)
 	defer cleanup()
 
-	bus := NewClusterBus(cluster)
+	bus := NewClusterBus(cluster, context.Background())
 	assert.Equal(t, 0, bus.PeerCount())
 
 	bus.registerPeer("peer1", &mockConn{}, nil)
