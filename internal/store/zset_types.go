@@ -58,6 +58,12 @@ func decodeScore(b []byte) float64 {
 	return math.Float64frombits(bits)
 }
 
+// DecodeScore 是 decodeScore 的公开导出版本，供 replication 包使用。
+// 将 encodeScore 编码的字节还原为 float64 分数值。
+func DecodeScore(b []byte) float64 {
+	return decodeScore(b)
+}
+
 // encodeMeta 编码元数据
 func encodeMeta(meta ZSetsMetaValue) []byte {
 	b := make([]byte, 12)

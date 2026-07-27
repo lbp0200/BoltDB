@@ -754,7 +754,7 @@ func readZSetInTxn(txn *badger.Txn, key string) ([]store.ZSetMember, error) {
 		if err != nil {
 			return nil, err
 		}
-		score := math.Float64frombits(binary.BigEndian.Uint64(scoreBytes))
+		score := store.DecodeScore(scoreBytes)
 		result = append(result, store.ZSetMember{Member: member, Score: score})
 	}
 	return result, nil
