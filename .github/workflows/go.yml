@@ -17,10 +17,6 @@ permissions:
   contents: read
   id-token: write
 
-env:
-  # 所有 action 均已升级到原生支持 Node 24 的版本
-  # (actions/cache@v6, golangci-lint-action@v9, codecov-action@v6)
-
 jobs:
   test:
     runs-on: ubuntu-latest
