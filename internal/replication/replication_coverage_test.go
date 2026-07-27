@@ -1446,7 +1446,7 @@ func TestExecuteReplicatedCommand_JSON_SET(t *testing.T) {
 	defer testStore.Close()
 
 	err := executeReplicatedCommand(testStore, [][]byte{
-	 []byte("JSON.SET"), []byte("jsonkey"), []byte("$"), []byte(`{"name":"test"}`),
+		[]byte("JSON.SET"), []byte("jsonkey"), []byte("$"), []byte(`{"name":"test"}`),
 	}, context.Background())
 	assert.NoError(t, err)
 
@@ -1462,13 +1462,13 @@ func TestExecuteReplicatedCommand_JSON_SET_WithNX(t *testing.T) {
 	defer testStore.Close()
 
 	err := executeReplicatedCommand(testStore, [][]byte{
-	 []byte("JSON.SET"), []byte("jsonnx"), []byte("$"), []byte(`{"val":1}`), []byte("NX"),
+		[]byte("JSON.SET"), []byte("jsonnx"), []byte("$"), []byte(`{"val":1}`), []byte("NX"),
 	}, context.Background())
 	assert.NoError(t, err)
 
 	// Second call with NX should not overwrite
 	err = executeReplicatedCommand(testStore, [][]byte{
-	 []byte("JSON.SET"), []byte("jsonnx"), []byte("$"), []byte(`{"val":2}`), []byte("NX"),
+		[]byte("JSON.SET"), []byte("jsonnx"), []byte("$"), []byte(`{"val":2}`), []byte("NX"),
 	}, context.Background())
 
 	result, err := testStore.JSONGet("jsonnx", "$")
