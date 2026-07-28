@@ -72,7 +72,8 @@ func TestParseLevel_WithSpaces(t *testing.T) {
 }
 
 func TestSetLevel(t *testing.T) {
-	t.Parallel()
+	// NOTE: no t.Parallel() — modifies global Logger, would race with
+	// other tests reading Logger via Debug/Info etc.
 	// Save original level
 	originalLevel := GetLevel()
 	defer SetLevel(originalLevel)
@@ -87,7 +88,7 @@ func TestSetLevel(t *testing.T) {
 }
 
 func TestSetLevelFromString(t *testing.T) {
-	t.Parallel()
+	// NOTE: no t.Parallel() — modifies global Logger
 	// Save original level
 	originalLevel := GetLevel()
 	defer SetLevel(originalLevel)
@@ -105,7 +106,7 @@ func TestSetLevelFromString(t *testing.T) {
 }
 
 func TestGetLevelString(t *testing.T) {
-	t.Parallel()
+	// NOTE: no t.Parallel() — modifies global Logger
 	// Save original level
 	originalLevel := GetLevel()
 	defer SetLevel(originalLevel)

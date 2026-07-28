@@ -17,7 +17,7 @@ func withSilentLogger(t *testing.T, fn func()) {
 }
 
 func TestDebug_Info_Warning_Error_Coverage(t *testing.T) {
-	t.Parallel()
+	// NOTE: no t.Parallel() — modifies global Logger via withSilentLogger + SetLevel
 	withSilentLogger(t, func() {
 		SetLevel(zerolog.DebugLevel)
 		Debug("test %s", "debug")
@@ -28,7 +28,7 @@ func TestDebug_Info_Warning_Error_Coverage(t *testing.T) {
 }
 
 func TestDebugWith_InfoWith_WarningWith_ErrorWith_Coverage(t *testing.T) {
-	t.Parallel()
+	// NOTE: no t.Parallel() — modifies global Logger via withSilentLogger + SetLevel
 	withSilentLogger(t, func() {
 		SetLevel(zerolog.DebugLevel)
 		e := DebugWith("key", "val")

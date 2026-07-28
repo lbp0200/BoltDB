@@ -66,6 +66,15 @@ type StreamReadResult struct {
 	Entries []StreamEntry
 }
 
+// zsetRankCache provides O(1) ZRANK/ZREVRANK lookups for a single zset.
+// Built lazily on first ZRANK after any write to the zset.
+type zsetRankCache struct {
+	mu      sync.RWMutex
+	dirty   bool
+	members map[string]int64 // member → forward rank (0-based)
+	scores  map[string]float64
+}
+
 // BotreonStore is the main store structure
 type BotreonStore struct {
 	db              *badger.DB
@@ -95,6 +104,12 @@ type BotreonStore struct {
 	queryBudgetConfig atomic.Pointer[QueryBudgetConfig]
 	// queryBudgetTrips counts how many times checkScanBudget returned ErrQueryBudgetExceeded.
 	queryBudgetTrips atomic.Int64
+
+	// zsetRankCache 为 ZSet 提供 O(1) ZRANK/ZREVRANK 缓存。
+	// 键为 zset 名，值为 member → rank 映射 + dirty 标记。
+	// lazy build: 首次 ZRANK 时扫描 BadgerDB 构建，写操作标记 dirty。
+	zsetRankMu     sync.RWMutex
+	zsetRankCaches map[string]*zsetRankCache
 
 	// 重试指标
 	retryMu      sync.Mutex
@@ -465,6 +480,7 @@ func NewBotreonStoreWithCompression(path string, compressionType CompressionType
 		blockingZPopChans:   make(map[string][]chan string),
 		streamBlockingChans: make(map[string][]chan StreamReadResult),
 		l0Cache:             &l0Cache{},
+		zsetRankCaches:      make(map[string]*zsetRankCache),
 		closeCh:             make(chan struct{}),
 		scanBookmarks:       make(map[uint64][]byte),
 	}
@@ -678,7 +694,7 @@ func (s *BotreonStore) ClearAllData() error {
 }
 
 func (s *BotreonStore) ClearCaches() {
-	// 读缓存已移除，ClearCaches 为空操作保留 API 兼容性
+	s.clearAllZSetRankCaches()
 }
 
 // clearAllDataIterative 迭代删除所有键（DropPrefix 失败时的备选方案）

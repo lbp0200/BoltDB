@@ -196,5 +196,6 @@ func (s *BotreonStore) ZRemRangeByLex(zSetName, min, max string) (int64, error) 
 		}
 		return nil
 	}, 20)
+	s.markZSetDirty(zSetName)
 	return removed, err
 }

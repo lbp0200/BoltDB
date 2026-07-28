@@ -28,6 +28,7 @@ func (s *BotreonStore) ZUnionStore(destination string, keys []string, weights []
 	if err == nil && notify {
 		s.notifyBlockingZPop(destination)
 	}
+	s.markZSetDirty(destination)
 	return count, err
 }
 
@@ -55,6 +56,7 @@ func (s *BotreonStore) ZInterStore(destination string, keys []string, weights []
 	if err == nil && notify {
 		s.notifyBlockingZPop(destination)
 	}
+	s.markZSetDirty(destination)
 	return count, err
 }
 
@@ -82,6 +84,7 @@ func (s *BotreonStore) ZDiffStore(destination string, keys []string) (int64, err
 	if err == nil && notify {
 		s.notifyBlockingZPop(destination)
 	}
+	s.markZSetDirty(destination)
 	return count, err
 }
 

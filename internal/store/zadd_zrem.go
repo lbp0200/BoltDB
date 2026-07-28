@@ -13,6 +13,7 @@ func (s *BotreonStore) ZAdd(zSetName string, members []ZSetMember) error {
 		return err
 	}
 	if len(members) == 0 {
+		s.markZSetDirty(zSetName)
 		return nil
 	}
 	var addedNewMember bool
@@ -24,6 +25,7 @@ func (s *BotreonStore) ZAdd(zSetName string, members []ZSetMember) error {
 	if err == nil && addedNewMember {
 		s.notifyBlockingZPop(zSetName)
 	}
+	s.markZSetDirty(zSetName)
 	return err
 }
 
@@ -203,6 +205,7 @@ func (s *BotreonStore) ZRem(zSetName, member string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	s.markZSetDirty(zSetName)
 	return deleted, nil
 }
 
@@ -309,6 +312,7 @@ func (s *BotreonStore) ZRemRangeByRank(zSetName string, start, stop int64) (int6
 		}
 		return nil
 	}, 20)
+	s.markZSetDirty(zSetName)
 	return removed, err
 }
 
@@ -330,6 +334,7 @@ func (s *BotreonStore) ZRemRangeByScore(zSetName string, minScore, maxScore floa
 		}
 		return nil
 	}, 20)
+	s.markZSetDirty(zSetName)
 	return removed, err
 }
 

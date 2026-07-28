@@ -26,6 +26,12 @@ env:
   SOAK_REPL_DURATION: ${{ github.event.inputs.duration || '1h' }}
   SOAK_JSONL_DIR: /tmp/soak-artifacts/jsonl
   SOAK_REPORT_DIR: /tmp/soak-artifacts/report
+  # GOMEMLIMIT: GitHub ubuntu-latest has ~7GB RAM. Set a soft limit to
+  # prevent the Go runtime from OOMing the runner (exit 143) under load.
+  # The -race flag (2-5x memory overhead) is omitted from long soak jobs
+  # because they test stability, not races; short stress/regression jobs
+  # below still use -race.
+  GOMEMLIMIT: 5120MiB
 
 jobs:
   standalone:
@@ -67,7 +73,11 @@ jobs:
           # Bounded to 300m (job ceiling is 360m) so the test self-terminates
           # with exit 124 on overrun instead of the runner killing the job
           # with SIGTERM (exit 143). Tracks SOAK_DURATION within the envelope.
-          go test -race -timeout 300m \
+          # NOTE: no -race flag — the race detector adds 2-5x memory overhead
+          # and regularly OOMs the 7GB GHA runner. Race coverage is provided
+          # by the short stress/regression jobs below and by test-fast/test-heavy
+          # in go.yml. Soak tests measure long-term stability, not races.
+          go test -timeout 300m \
             ./cmd/integration/ -run TestSoak -v 2>&1 | tee /tmp/soak-artifacts/test-output.txt
 
       - name: Evolution gate check
@@ -138,7 +148,8 @@ jobs:
         run: |
           mkdir -p /tmp/soak-artifacts/jsonl /tmp/soak-artifacts/report
           # Bounded to 300m (job ceiling is 360m) — see standalone job note.
-          go test -race -timeout 300m \
+          # NOTE: no -race flag for the same reason as the standalone job.
+          go test -timeout 300m \
             ./cmd/integration/ -run TestSoakReplication -v 2>&1 | tee /tmp/soak-artifacts/test-output.txt
 
       - name: Evolution gate check

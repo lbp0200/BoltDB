@@ -215,6 +215,9 @@ func (h *Handler) handleSlaveReplicationConnection(ctx context.Context, slave *r
 	if ctx == nil {
 		ctx = h.Ctx
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	defer func() {
 		// 关闭连接
