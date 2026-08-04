@@ -262,6 +262,9 @@ func (h *Handler) handleEXPIRE(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'EXPIRE' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	seconds, err := strconv.Atoi(string(args[1]))
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
@@ -280,6 +283,9 @@ func (h *Handler) handleEXPIREAT(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'EXPIREAT' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	timestamp, err := strconv.ParseInt(string(args[1]), 10, 64)
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
@@ -298,6 +304,9 @@ func (h *Handler) handlePEXPIRE(state *connState, args [][]byte, remoteAddr stri
 		return proto.NewError("ERR wrong number of arguments for 'PEXPIRE' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	milliseconds, err := strconv.ParseInt(string(args[1]), 10, 64)
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
@@ -316,6 +325,9 @@ func (h *Handler) handlePEXPIREAT(state *connState, args [][]byte, remoteAddr st
 		return proto.NewError("ERR wrong number of arguments for 'PEXPIREAT' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	timestamp, err := strconv.ParseInt(string(args[1]), 10, 64)
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
@@ -334,6 +346,9 @@ func (h *Handler) handleTTL(state *connState, args [][]byte, remoteAddr string) 
 		return proto.NewError("ERR wrong number of arguments for 'TTL' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	ttl, err := h.Db.TTL(key)
 	if err != nil {
 		return proto.NewInteger(-2)
@@ -347,6 +362,9 @@ func (h *Handler) handlePTTL(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'PTTL' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	pttl, err := h.Db.PTTL(key)
 	if err != nil {
 		return proto.NewInteger(-2)
@@ -370,6 +388,9 @@ func (h *Handler) handlePERSIST(state *connState, args [][]byte, remoteAddr stri
 		return proto.NewError("ERR wrong number of arguments for 'PERSIST' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	h.markDirtyKeys(state, key)
 	success, err := h.Db.Persist(key)
 	if err != nil {

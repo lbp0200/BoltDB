@@ -60,6 +60,9 @@ func (h *Handler) handleExpireTime(state *connState, args [][]byte, remoteAddr s
 		return proto.NewError("ERR wrong number of arguments for 'EXPIRETIME' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	expireTime, err := h.Db.ExpireTime(key)
 	if err != nil {
 		return proto.NewInteger(-2)
@@ -73,6 +76,9 @@ func (h *Handler) handlePExpireTime(state *connState, args [][]byte, remoteAddr 
 		return proto.NewError("ERR wrong number of arguments for 'PEXPIRETIME' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	pexpireTime, err := h.Db.PExpireTime(key)
 	if err != nil {
 		return proto.NewInteger(-2)
