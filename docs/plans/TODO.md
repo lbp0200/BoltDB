@@ -130,3 +130,42 @@ boltDB -dir=/data/boltdb -addr=:6379 -cluster
 - 定时 BGSAVE
 - 监控：磁盘使用率 >80% 告警、L0 score >10 告警、goroutine 异常增长
 - 生产环境**推荐 NVMe SSD**，机械盘仅适用于非延迟敏感场景
+
+---
+
+## 2.16 集群测试计划（2026-08-04，v8.51.2）
+
+**环境**：`10.1.2.16:6337-6339` 三节点集群，v8.34.0 → v8.51.2 升级完成（含 node ID 持久化修复）。
+
+**目标**：验证升级后集群的生产可用性——数据完整性、故障自愈、备份恢复、性能基线。
+
+| 阶段 | 内容 | 验证点 |
+|------|------|--------|
+| 0 基线 | 版本/集群状态/槽位/节点 ID | 三节点 v8.51.2，`cluster_state: ok`，5461/5462/5461，ID 稳定 |
+| 1 冒烟 | 命令覆盖抽查 + 跨节点路由 + 错误路径 | String/List/Hash/Set/ZSet/Stream 代表命令、MOVED/ASK、WRONGTYPE |
+| 2 数据 | `scale-data-filler` 灌入 10 万 key + 完整性校验 + 重启持久化 | DBSIZE 之和 = 总数；抽样 GET 全命中；重启后数据不丢 |
+| 3 故障 | 单节点 kill + 恢复 + 全节点滚动重启 | 降级窗口、gossip 自愈、槽位回迁、ID 稳定 |
+| 4 备份 | BGSAVE → RDB 产物 → 恢复验证 | RDB 完整、恢复后数据一致 |
+| 5 性能 | redis-benchmark GET/SET 吞吐 + P99 | 对比 v8.34.0 scale-tier1 基线（GET 68,587 req/s、P99 < 0.9ms） |
+| 6 稳定 | 持续混合读写 + goroutine/L0/内存监控 | 无异常增长（可选，未执行） |
+
+**执行状态**：✅ 已完成（2026-08-04）。六阶段中阶段 0-5 执行完毕，阶段 6（长期稳定性）未执行（可后续按需补跑）。
+
+### 测试结果摘要（2026-08-04）
+
+| 阶段 | 结果 |
+|------|------|
+| 0 基线 | ✅ 三节点 v8.51.2，`cluster_state: ok`，槽位 5461/5462/5461，ID 稳定 |
+| 1 冒烟 | ✅ String/List/Hash/Set/ZSet 命令覆盖全部通过；跨节点 MOVED 正确；错误路径（WRONGTYPE/非法参数/未知命令）正确 |
+| 2 数据 | ✅ 灌入 99,485 keys（0 错误，95,600 keys/s）；DBSIZE 总和精确吻合；抽样 500/500 命中；node2 重启后数据零丢失、ID 稳定 |
+| 3 故障 | ✅ kill node3 → 存活节点服务不中断；恢复后 gossip 自愈、数据完整；全节点滚动重启后 99,500 keys 完好（含 TTL 过期归因） |
+| 4 备份 | ✅ BGSAVE 三节点 RDB 产物（REDIS0009 魔数 + CRC64 尾部）；LoadRDBWithStore 恢复验证通过（0 错误） |
+| 5 性能 | ✅ GET 67,935 req/s（基线 68,587，-0.95% 持平）；P99 < 0.9ms（持平）；SET 62,972 req/s |
+
+### 测试中发现并修复的问题
+
+| 问题 | 根因 | 修复 | 状态 |
+|------|------|------|------|
+| **P1 视图不一致** | 旧 config 顶层 `node_id` 缺失（v8.34.0 之前创建），升级后 `loadPersistedNodeID` 读到空 → 生成新 ID → 旧 ID 变幽灵节点、槽位被其他节点认领 | 已修（loadPersistedNodeID addr 回退，commit `ad6f7db`）+ 运维 FORGET 幽灵节点 + MEET 重建视图 | ✅ 已修复 |
+| **P2 EXPIRE/TTL 集群路由缺失** | EXPIRE/EXPIREAT/PEXPIRE/PEXPIREAT/TTL/PTTL/PERSIST/EXPIRETIME/PEXPIRETIME 缺 `checkAndHandleRedirect`，非 owner 节点返回 0/-2 而非 MOVED | 9 个命令补上集群路由检查（commit `8185d6c`），已部署 2.16 实测 MOVED 生效 | ✅ 已修复 |
+| **P3 FAIL 晋升槽位不归还** | `bus.go:547` PFAIL 多数票 → FAIL 晋升时将失败节点槽位重新分配给"自己"，节点恢复后槽位不归还 → 视图永久错位 | 运维释放错误槽位（DELSLOTS）恢复视图；**代码层面待修**：FAIL 晋升后节点恢复时应归还槽位 | ⚠️ 运维已恢复，代码待跟进 |
