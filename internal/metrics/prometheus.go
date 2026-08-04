@@ -5,6 +5,10 @@ import (
 	"strings"
 )
 
+// BuildVersion 由 main 包在启动时注入（与 internal/server.Version 一致），
+// 避免硬编码版本号在 CI 自动发版时与实际发布版本漂移。
+var BuildVersion = "dev"
+
 // prometheusText 将 Snapshot 渲染为 Prometheus 文本格式（exposition format）。
 // 符合 https://prometheus.io/docs/instrumenting/exposition_formats/
 func prometheusText(s Snapshot) string {
@@ -12,7 +16,7 @@ func prometheusText(s Snapshot) string {
 
 	b.WriteString("# HELP boltdb_build_info BoltDB build info\n")
 	b.WriteString("# TYPE boltdb_build_info gauge\n")
-	b.WriteString("boltdb_build_info{version=\"8.50.1\"} 1\n")
+	fmt.Fprintf(&b, "boltdb_build_info{version=\"%s\"} 1\n", BuildVersion)
 
 	// L0 / Write Backpressure
 	b.WriteString("# HELP boltdb_l0_score L0 compaction score\n")

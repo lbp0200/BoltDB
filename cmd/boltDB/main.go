@@ -351,6 +351,7 @@ func main() {
 	}
 
 	// 初始化 metrics 采集
+	metrics.BuildVersion = server.Version
 	collector := metrics.NewCollector()
 	collector.QueryBudgetTripsFn = db.GetQueryBudgetTrips
 	collector.RetryMetricsFn = func() (int64, int64, int64, int64, int64, float64) {
