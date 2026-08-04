@@ -146,7 +146,10 @@ func (c *Cluster) LoadConfig() (bool, error) {
 
 // loadPersistedNodeID 读取持久化的节点 ID。
 // 用于重启时复用相同的节点 ID，避免槽位表丢失。
-func loadPersistedNodeID(db *badger.DB) string {
+// addr 用于兼容旧版本 config：顶层 node_id 字段可能为空（如 v8.34.0 之前的
+// 节点目录），此时回退到从节点表中按地址匹配自己的节点 ID，避免重启后
+// 生成新 ID 导致旧 ID 变幽灵节点、槽位被其他节点认领（见 v8.51.1 升级事故）。
+func loadPersistedNodeID(db *badger.DB, addr string) string {
 	var nodeID string
 	err := db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(configKey))
@@ -162,6 +165,15 @@ func loadPersistedNodeID(db *badger.DB) string {
 			return err
 		}
 		nodeID = state.NodeID
+		if nodeID == "" && addr != "" {
+			// 旧版本 config 顶层 node_id 缺失：按地址匹配节点表中的自身条目
+			for id, n := range state.Nodes {
+				if n.Addr == addr {
+					nodeID = id
+					break
+				}
+			}
+		}
 		return nil
 	})
 	if err != nil {

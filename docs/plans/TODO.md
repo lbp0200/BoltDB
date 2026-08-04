@@ -31,6 +31,7 @@
 | ZRANK O(n) 优化 | 已完成 ✅（in-memory rank cache，O(1) 平均查询）|
 | Backlog resize 热更新 | 已完成 ✅（CONFIG SET `backlog-size`）|
 | 58 个跳过测试审计 | 已完成 ✅（51 远程通过，4 个 nil pointer 已修，3 个 resource 保留）|
+| v8.51.1 自动发版验证 | 2026-08-04 完成：CI 门禁修复后自动发版成功（metrics 版本注入修复 + guard_bench.sh `-run '^$'` + GHA flaky skip），2.16 集群滚动升级 v8.34.0 → v8.51.1 |
 
 ---
 
@@ -92,6 +93,7 @@
 |----|------|
 | Cluster 长时 soak | 未验证 3+ 节点长期运行稳定性 |
 | 3 个重测试保留跳过 | `TestReplicationStress`/`Chaos`/`ClusterMultiNode` — 即使远程也需长时间，GHA 保持跳过 |
+| **node1 重启后节点 ID 持久化失败** | 2026-08-04 v8.34.0→v8.51.1 升级：node1 重启后 `loadPersistedNodeID` 未恢复旧 ID（`27fd849d` → `5f8ced07`），槽位 0-5460 被 6339 认领、数据路由错位，已手工 `DELSLOTS`+`ADDSLOTSRANGE` 修复。根因：旧版本 config 顶层 `node_id` 字段缺失，`loadPersistedNodeID` 读到空后生成新 ID。**已修复 ✅**：`loadPersistedNodeID(db, addr)` 增加 addr 回退——顶层 `node_id` 为空时按地址从节点表匹配自身 ID（见 commit），防止升级/重启后 ID 漂移 |
 
 ### 256GB 实测数据（2026-07-27）
 

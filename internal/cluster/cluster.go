@@ -35,7 +35,7 @@ type Cluster struct {
 func NewCluster(store *store.BotreonStore, nodeID, addr string, ctx context.Context) (*Cluster, error) {
 	if nodeID == "" {
 		// 尝试从持久化配置恢复节点 ID，确保重启后 ID 不变
-		persistedID := loadPersistedNodeID(store.GetDB())
+		persistedID := loadPersistedNodeID(store.GetDB(), addr)
 		if persistedID != "" {
 			nodeID = persistedID
 		} else {
