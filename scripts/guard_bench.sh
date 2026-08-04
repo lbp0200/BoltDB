@@ -57,7 +57,9 @@ trap "rm -f $RAW $CLEANED" EXIT
 TIMEOUT="${TIMEOUT:-300s}"
 
 echo "Running $TARGET benchmarks..."
-go test -bench="$PATTERN" -benchmem -count=5 -timeout="$TIMEOUT" "$PKG" 2>/dev/null > "$RAW"
+# -run '^$' 只跑基准、跳过单元测试：单元测试在 CI runner 上 flaky 会导致
+# go test 非零退出，让基准回归守卫误报失败（见 v8.51.1 发版 CI 失败记录）
+go test -run '^$' -bench="$PATTERN" -benchmem -count=5 -timeout="$TIMEOUT" "$PKG" 2>/dev/null > "$RAW"
 
 if $CLEAN; then
   # Strip badger log noise and reassemble benchmark name + result
