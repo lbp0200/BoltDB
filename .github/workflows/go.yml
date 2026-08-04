@@ -40,7 +40,8 @@ jobs:
         # （bash scripts/remote-test.sh -race -short ./internal/... 验证），见 v8.51.1 发版 CI 失败记录。
         # TestRESP3Shape_LPosMissingReturnsNull / TestSORTOrdering_GET — [GHA: resource] 时序断言
         # TestHashBoundary_HrandfieldWithValues / TestStringBoundary_DecrOverflow / TestServerSortedSetCommands3 — [GHA: resource]
-        run: go test -race -timeout 180s -short -p=2 -parallel=4 -coverprofile=coverage.out -covermode=atomic -skip 'TestRESP3Shape_LPosMissingReturnsNull|TestSORTOrdering_GET|TestHashBoundary_HrandfieldWithValues|TestStringBoundary_DecrOverflow|TestServerSortedSetCommands3' ./internal/... ./cmd/boltDB/... 2>&1
+        # TestXAUTOCLAIM_NoArgs — [GHA: resource] stream mutation kill 时序断言
+        run: go test -race -timeout 180s -short -p=2 -parallel=4 -coverprofile=coverage.out -covermode=atomic -skip 'TestRESP3Shape_LPosMissingReturnsNull|TestSORTOrdering_GET|TestHashBoundary_HrandfieldWithValues|TestStringBoundary_DecrOverflow|TestServerSortedSetCommands3|TestXAUTOCLAIM_NoArgs' ./internal/... ./cmd/boltDB/... 2>&1
 
       - name: Upload coverage
         if: always()
