@@ -153,3 +153,56 @@ func TestLoadState_UpdatesExistingNode(t *testing.T) {
 	assert.Equal(t, "master", updated.Flags[0])
 	assert.Equal(t, int64(10), updated.Epoch)
 }
+
+func TestLoadState_UsurpedSlots(t *testing.T) {
+	t.Parallel()
+	cluster := &Cluster{
+		Myself:       NewNode("self-id", "127.0.0.1:6379"),
+		Nodes:        make(map[string]*Node),
+		usurpedSlots: make(map[string][]SlotRange),
+	}
+
+	state := persistedClusterState{
+		UsurpedSlots: []persistedSlotOwner{
+			{Start: 1000, End: 2000, NodeID: "failed-id"},
+			{Start: 3000, End: 3000, NodeID: "failed-id"},
+		},
+	}
+
+	cluster.loadState(state)
+
+	ranges, ok := cluster.usurpedSlots["failed-id"]
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(ranges))
+	assert.Equal(t, uint32(1000), ranges[0].Start)
+	assert.Equal(t, uint32(2000), ranges[0].End)
+	assert.Equal(t, uint32(3000), ranges[1].Start)
+}
+
+func TestSaveLoad_UsurpedSlots_RoundTrip(t *testing.T) {
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+
+	peer := NewNode("failed-id", "127.0.0.1:6380")
+	cluster.Nodes["failed-id"] = peer
+	cluster.usurpedSlots["failed-id"] = []SlotRange{{Start: 1000, End: 2000}}
+
+	assert.NoError(t, cluster.SaveConfig())
+
+	// Load into a fresh cluster backed by the same store
+	reloaded := &Cluster{
+		Myself:       NewNode("self-id", "127.0.0.1:6379"),
+		Nodes:        make(map[string]*Node),
+		Store:        cluster.Store,
+		usurpedSlots: make(map[string][]SlotRange),
+	}
+	found, err := reloaded.LoadConfig()
+	assert.NoError(t, err)
+	assert.True(t, found)
+
+	ranges, ok := reloaded.usurpedSlots["failed-id"]
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(ranges))
+	assert.Equal(t, uint32(1000), ranges[0].Start)
+	assert.Equal(t, uint32(2000), ranges[0].End)
+}

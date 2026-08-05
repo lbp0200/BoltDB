@@ -280,6 +280,24 @@ func NewNodeFromGossip(id, addr string, flags []string, epoch, pingSent, pongRec
 	return node
 }
 
+// ClearFailFlag 清除节点的 FAIL / PFAIL 标记。
+// 返回 true 表示之前确实存在 FAIL 或 PFAIL 标记（节点已恢复）。
+func (n *Node) ClearFailFlag() bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	cleaned := make([]string, 0, len(n.Flags))
+	hadFail := false
+	for _, f := range n.Flags {
+		if f == FlagFail || f == FlagPFail {
+			hadFail = true
+			continue
+		}
+		cleaned = append(cleaned, f)
+	}
+	n.Flags = cleaned
+	return hadFail
+}
+
 // PromotePFailToFail promotes PFAIL to FAIL. Returns true when promotion happened.
 func (n *Node) PromotePFailToFail() bool {
 	n.mu.Lock()

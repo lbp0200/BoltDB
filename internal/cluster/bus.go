@@ -263,16 +263,16 @@ func (b *ClusterBus) handleBusConn(conn net.Conn, knownPeerID string) {
 
 		switch cmd {
 		case "PING":
-			b.handlePING(senderID)
+			aliveDirty := b.handlePING(senderID)
 			dirty := b.ApplyGossipPayloadFrom(senderID, payload)
 			// Respond with PONG + our payload
 			respPayload := b.BuildGossipPayload()
 			_ = writeBusMsg(conn, "PONG", b.cluster.Myself.ID, respPayload)
-			b.saveIfDirty(dirty)
+			b.saveIfDirty(aliveDirty || dirty)
 		case "PONG":
-			b.handlePONG(senderID)
+			aliveDirty := b.handlePONG(senderID)
 			dirty := b.ApplyGossipPayloadFrom(senderID, payload)
-			b.saveIfDirty(dirty)
+			b.saveIfDirty(aliveDirty || dirty)
 		}
 	}
 }
@@ -286,22 +286,30 @@ func (b *ClusterBus) registerPeer(peerID string, conn net.Conn, reader *bufio.Re
 	b.peers[peerID] = &busPeer{conn: conn, id: peerID, reader: reader}
 }
 
-func (b *ClusterBus) handlePING(senderID string) {
-	b.cluster.mu.RLock()
+func (b *ClusterBus) handlePING(senderID string) bool {
+	b.cluster.mu.Lock()
+	defer b.cluster.mu.Unlock()
 	node, ok := b.cluster.Nodes[senderID]
-	b.cluster.mu.RUnlock()
-	if ok {
-		node.UpdatePong()
+	if !ok {
+		return false
 	}
+	node.UpdatePong()
+	// 收到存活节点的 PING：若其此前被标记 FAIL/PFAIL，则清除标记
+	// 并归还 FAIL 晋升时接管的槽位（P3）。
+	return b.cluster.recoverFailedNode(senderID)
 }
 
-func (b *ClusterBus) handlePONG(senderID string) {
-	b.cluster.mu.RLock()
+func (b *ClusterBus) handlePONG(senderID string) bool {
+	b.cluster.mu.Lock()
+	defer b.cluster.mu.Unlock()
 	node, ok := b.cluster.Nodes[senderID]
-	b.cluster.mu.RUnlock()
-	if ok {
-		node.UpdatePong()
+	if !ok {
+		return false
 	}
+	node.UpdatePong()
+	// 收到存活节点的 PONG：若其此前被标记 FAIL/PFAIL，则清除标记
+	// 并归还 FAIL 晋升时接管的槽位（P3）。
+	return b.cluster.recoverFailedNode(senderID)
 }
 
 func (b *ClusterBus) SendPING() {
@@ -429,12 +437,20 @@ func (b *ClusterBus) ApplyGossipPayloadFrom(reporterID string, payload *GossipPa
 	}
 
 	// Gossip section first: learn about other nodes before processing slot owners
+	now := time.Now().UnixMilli()
 	for _, gi := range payload.Nodes {
 		if gi.ID == b.cluster.Myself.ID {
 			continue
 		}
 		if existing, ok := b.cluster.Nodes[gi.ID]; ok {
 			existing.MergeGossipState(gi.Epoch, gi.PongRecv)
+			// 间接恢复：其他节点 gossip 报告该节点最近有响应（新鲜 PongRecv），
+			// 说明它已恢复 → 清除 FAIL 标记并归还 FAIL 晋升时接管的槽位（P3）。
+			if existing.HasFailFlag() && gi.PongRecv > 0 && now-gi.PongRecv < failTimeout.Milliseconds() {
+				if b.cluster.recoverFailedNode(gi.ID) {
+					dirty = true
+				}
+			}
 		} else {
 			// 防幽灵节点：gossip 可能带来 MEET 过程中残留的 placeholder
 			//（不同 NodeID 但同 Addr），跳过已存在相同地址的条目
@@ -544,13 +560,9 @@ func (b *ClusterBus) ApplyGossipPayloadFrom(reporterID string, payload *GossipPa
 						Msg("cluster gossip: FAIL promoted via multi-node agreement")
 					dirty = true
 
-					// Reassign failed node's slots to self
-					for i := uint32(0); i < SlotCount; i++ {
-						if b.cluster.Slots[i] != nil && b.cluster.Slots[i].ID == pfailID {
-							b.cluster.Slots[i] = b.cluster.Myself
-							b.cluster.Myself.AddSlotRange(i, i)
-						}
-					}
+					// Reassign failed node's slots to self, recording the takeover
+					// so slots can be returned when the node recovers (P3).
+					b.cluster.usurpFailedNodeSlots(pfailID)
 					// Clean up PFAIL reports for this node
 					delete(b.cluster.pfailReports, pfailID)
 				}

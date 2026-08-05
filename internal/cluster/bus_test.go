@@ -465,3 +465,132 @@ func (m *mockConn) RemoteAddr() net.Addr             { return &net.TCPAddr{IP: n
 func (m *mockConn) SetDeadline(time.Time) error      { return nil }
 func (m *mockConn) SetReadDeadline(time.Time) error  { return nil }
 func (m *mockConn) SetWriteDeadline(time.Time) error { return nil }
+
+// TestApplyGossipPayloadFailRecoveryDirect verifies a FAIL node recovering via
+// direct PONG gets its fail flag cleared and its usurped slots returned (P3).
+func TestApplyGossipPayloadFailRecoveryDirect(t *testing.T) {
+	t.Parallel()
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+
+	bus := NewClusterBus(cluster, context.Background())
+
+	peer1 := NewNode("peer1", "127.0.0.1:6380")
+	peer2 := NewNode("peer2", "127.0.0.1:6381")
+	cluster.Nodes["peer1"] = peer1
+	cluster.Nodes["peer2"] = peer2
+
+	// Assign peer2 some slots and clear them from Myself
+	for i := uint32(1000); i <= 2000; i++ {
+		cluster.Slots[i] = peer2
+	}
+	peer2.AddSlotRange(1000, 2000)
+	cluster.Myself.Slots = []SlotRange{{Start: 0, End: 999}, {Start: 2001, End: 16383}}
+
+	// FAIL promotion (single reporter is enough for a 2-peer cluster)
+	payload := &GossipPayload{PFail: []string{"peer2"}}
+	dirty := bus.ApplyGossipPayloadFrom("peer1", payload)
+	assert.True(t, dirty)
+	assert.True(t, peer2.hasFailFlag())
+	for i := uint32(1000); i <= 2000; i++ {
+		assert.Equal(t, cluster.Myself, cluster.Slots[i])
+	}
+	assert.Equal(t, 1, len(cluster.usurpedSlots["peer2"]))
+
+	// peer2 recovers: sends a PONG over the bus
+	aliveDirty := bus.handlePONG("peer2")
+	assert.True(t, aliveDirty)
+
+	assert.False(t, peer2.hasFailFlag())
+	for i := uint32(1000); i <= 2000; i++ {
+		assert.Equal(t, peer2, cluster.Slots[i])
+	}
+	// Usurp record cleared
+	_, ok := cluster.usurpedSlots["peer2"]
+	assert.False(t, ok)
+	// Myself's slot ranges rebuilt: 1000-2000 no longer owned by self
+	assert.False(t, cluster.Myself.HasSlot(1000))
+	assert.False(t, cluster.Myself.HasSlot(2000))
+	assert.True(t, cluster.Myself.HasSlot(999))
+	assert.True(t, cluster.Myself.HasSlot(2001))
+}
+
+// TestApplyGossipPayloadFailRecoveryViaGossip verifies indirect recovery:
+// a peer's gossip reporting a fresh PongRecv for a FAIL node clears the flag
+// and returns the usurped slots (P3).
+func TestApplyGossipPayloadFailRecoveryViaGossip(t *testing.T) {
+	t.Parallel()
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+
+	bus := NewClusterBus(cluster, context.Background())
+
+	peer1 := NewNode("peer1", "127.0.0.1:6380")
+	peer2 := NewNode("peer2", "127.0.0.1:6381")
+	cluster.Nodes["peer1"] = peer1
+	cluster.Nodes["peer2"] = peer2
+
+	for i := uint32(1000); i <= 2000; i++ {
+		cluster.Slots[i] = peer2
+	}
+	peer2.AddSlotRange(1000, 2000)
+	cluster.Myself.Slots = []SlotRange{{Start: 0, End: 999}, {Start: 2001, End: 16383}}
+
+	// FAIL promotion
+	dirty := bus.ApplyGossipPayloadFrom("peer1", &GossipPayload{PFail: []string{"peer2"}})
+	assert.True(t, dirty)
+	assert.True(t, peer2.hasFailFlag())
+
+	// peer1 gossips that peer2 just responded (fresh PongRecv)
+	now := time.Now().UnixMilli()
+	dirty = bus.ApplyGossipPayloadFrom("peer1", &GossipPayload{
+		Nodes: []GossipNodeInfo{
+			{ID: "peer2", Addr: "127.0.0.1:6381", PongRecv: now},
+		},
+	})
+	assert.True(t, dirty)
+	assert.False(t, peer2.hasFailFlag())
+	for i := uint32(1000); i <= 2000; i++ {
+		assert.Equal(t, peer2, cluster.Slots[i])
+	}
+	_, ok := cluster.usurpedSlots["peer2"]
+	assert.False(t, ok)
+}
+
+// TestApplyGossipPayloadStalePongNoRecovery verifies that a stale PongRecv in
+// gossip does NOT trigger recovery (keeps FAIL flag and usurped slots).
+func TestApplyGossipPayloadStalePongNoRecovery(t *testing.T) {
+	t.Parallel()
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+
+	bus := NewClusterBus(cluster, context.Background())
+
+	peer1 := NewNode("peer1", "127.0.0.1:6380")
+	peer2 := NewNode("peer2", "127.0.0.1:6381")
+	cluster.Nodes["peer1"] = peer1
+	cluster.Nodes["peer2"] = peer2
+
+	for i := uint32(1000); i <= 2000; i++ {
+		cluster.Slots[i] = peer2
+	}
+	peer2.AddSlotRange(1000, 2000)
+	cluster.Myself.Slots = []SlotRange{{Start: 0, End: 999}, {Start: 2001, End: 16383}}
+
+	// FAIL promotion
+	dirty := bus.ApplyGossipPayloadFrom("peer1", &GossipPayload{PFail: []string{"peer2"}})
+	assert.True(t, dirty)
+
+	// Stale PongRecv (older than failTimeout) must not recover the node
+	stale := time.Now().UnixMilli() - failTimeout.Milliseconds() - 1000
+	dirty = bus.ApplyGossipPayloadFrom("peer1", &GossipPayload{
+		Nodes: []GossipNodeInfo{
+			{ID: "peer2", Addr: "127.0.0.1:6381", PongRecv: stale},
+		},
+	})
+	assert.False(t, dirty)
+	assert.True(t, peer2.hasFailFlag())
+	for i := uint32(1000); i <= 2000; i++ {
+		assert.Equal(t, cluster.Myself, cluster.Slots[i])
+	}
+}

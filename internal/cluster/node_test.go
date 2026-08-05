@@ -183,6 +183,30 @@ func TestNode_IsFailed_WithFlag(t *testing.T) {
 	assert.True(t, node.IsFailed())
 }
 
+// TestNode_ClearFailFlag tests clearing FAIL/PFAIL flags
+func TestNode_ClearFailFlag(t *testing.T) {
+	t.Parallel()
+	node := NewNode("node1", "127.0.0.1:6379")
+	node.Flags = append(node.Flags, FlagFail, FlagMaster)
+
+	assert.True(t, node.ClearFailFlag())
+	assert.False(t, node.HasFailFlag())
+	assert.True(t, node.IsMaster()) // non-fail flags preserved
+
+	// No fail flag → returns false
+	assert.False(t, node.ClearFailFlag())
+}
+
+// TestNode_ClearFailFlag_PFail clears PFAIL too
+func TestNode_ClearFailFlag_PFail(t *testing.T) {
+	t.Parallel()
+	node := NewNode("node1", "127.0.0.1:6379")
+	node.Flags = append(node.Flags, FlagPFail)
+
+	assert.True(t, node.ClearFailFlag())
+	assert.False(t, node.HasFailFlag())
+}
+
 // TestGenerateNodeID tests generateNodeID
 func TestGenerateNodeID(t *testing.T) {
 	t.Parallel()

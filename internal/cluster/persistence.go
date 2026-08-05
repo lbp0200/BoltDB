@@ -20,6 +20,8 @@ type persistedClusterState struct {
 	Addr           string                    `json:"addr"`
 	MigratingSlots []persistedSlotMigration  `json:"migrating_slots,omitempty"`
 	ImportingSlots []persistedSlotMigration  `json:"importing_slots,omitempty"`
+	// UsurpedSlots: FAIL 晋升时从失败节点接管的槽位清单（节点恢复时归还）。
+	UsurpedSlots []persistedSlotOwner `json:"usurped_slots,omitempty"`
 }
 
 type persistedSlotMigration struct {
@@ -63,6 +65,17 @@ func (c *Cluster) saveConfigLocked() error {
 	}
 
 	mergeSlotOwners(c.Slots, &state)
+
+	// 持久化 FAIL 晋升时接管的槽位清单（节点恢复时归还）
+	for nodeID, ranges := range c.usurpedSlots {
+		for _, r := range ranges {
+			state.UsurpedSlots = append(state.UsurpedSlots, persistedSlotOwner{
+				Start:  r.Start,
+				End:    r.End,
+				NodeID: nodeID,
+			})
+		}
+	}
 
 	// 持久化当前节点的迁移状态（中断恢复）
 	for slot, targetAddr := range c.Myself.GetMigratingSlotsMap() {
@@ -216,6 +229,11 @@ func (c *Cluster) loadState(state persistedClusterState) {
 	}
 	for _, is := range state.ImportingSlots {
 		c.Myself.importingSlots[is.Slot] = is.Addr
+	}
+
+	// 恢复 FAIL 晋升时接管的槽位清单（节点恢复时归还）
+	for _, u := range state.UsurpedSlots {
+		c.usurpedSlots[u.NodeID] = append(c.usurpedSlots[u.NodeID], SlotRange{Start: u.Start, End: u.End})
 	}
 }
 

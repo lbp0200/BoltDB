@@ -168,4 +168,4 @@ boltDB -dir=/data/boltdb -addr=:6379 -cluster
 |------|------|------|------|
 | **P1 视图不一致** | 旧 config 顶层 `node_id` 缺失（v8.34.0 之前创建），升级后 `loadPersistedNodeID` 读到空 → 生成新 ID → 旧 ID 变幽灵节点、槽位被其他节点认领 | 已修（loadPersistedNodeID addr 回退，commit `ad6f7db`）+ 运维 FORGET 幽灵节点 + MEET 重建视图 | ✅ 已修复 |
 | **P2 EXPIRE/TTL 集群路由缺失** | EXPIRE/EXPIREAT/PEXPIRE/PEXPIREAT/TTL/PTTL/PERSIST/EXPIRETIME/PEXPIRETIME 缺 `checkAndHandleRedirect`，非 owner 节点返回 0/-2 而非 MOVED | 9 个命令补上集群路由检查（commit `8185d6c`），已部署 2.16 实测 MOVED 生效 | ✅ 已修复 |
-| **P3 FAIL 晋升槽位不归还** | `bus.go:547` PFAIL 多数票 → FAIL 晋升时将失败节点槽位重新分配给"自己"，节点恢复后槽位不归还 → 视图永久错位 | 运维释放错误槽位（DELSLOTS）恢复视图；**代码层面待修**：FAIL 晋升后节点恢复时应归还槽位 | ⚠️ 运维已恢复，代码待跟进 |
+| **P3 FAIL 晋升槽位不归还** | `bus.go` PFAIL 多数票 → FAIL 晋升时将失败节点槽位重新分配给"自己"，节点恢复后槽位不归还 → 视图永久错位 | 已修：FAIL 晋升时记录接管清单（`usurpedSlots`，含持久化），节点恢复（直接 PING/PONG 或 gossip 新鲜 PongRecv）时清除 FAIL 标记并归还槽位、提升 epoch 传播到全集群；归还仅限仍由本节点持有的槽位 | ✅ 已修复（`recoverFailedNode` + `ClearFailFlag`，远程测试通过） |

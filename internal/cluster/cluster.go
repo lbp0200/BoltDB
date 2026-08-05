@@ -29,6 +29,9 @@ type Cluster struct {
 	Bus    *ClusterBus         // 集群总线（节点间持久 TCP 连接）
 
 	pfailReports map[string]map[string]struct{} // nodeID → set of reporters
+	// usurpedSlots: FAIL 晋升时从失败节点接管的槽位（nodeID → 槽位范围）。
+	// 节点恢复时按此清单归还槽位，避免视图永久错位（P3）。
+	usurpedSlots map[string][]SlotRange
 }
 
 // NewCluster 创建新集群
@@ -58,6 +61,7 @@ func NewCluster(store *store.BotreonStore, nodeID, addr string, ctx context.Cont
 		Store:        store,
 		Epoch:        0,
 		pfailReports: make(map[string]map[string]struct{}),
+		usurpedSlots: make(map[string][]SlotRange),
 	}
 	cluster.Nodes[nodeID] = myself
 
@@ -144,6 +148,84 @@ func (c *Cluster) RemoveNode(nodeID string) {
 	if err := c.SaveConfig(); err != nil {
 		logger.Logger.Warn().Err(err).Str("nodeID", nodeID).Msg("RemoveNode: failed to persist config")
 	}
+}
+
+// usurpFailedNodeSlots 在 FAIL 晋升时接管失败节点的槽位，并记录接管清单，
+// 以便节点恢复后归还（P3：避免视图永久错位）。
+// 调用者必须持有 c.mu 写锁。
+func (c *Cluster) usurpFailedNodeSlots(failedNodeID string) {
+	var taken []uint32
+	for i := uint32(0); i < SlotCount; i++ {
+		if c.Slots[i] != nil && c.Slots[i].ID == failedNodeID {
+			c.Slots[i] = c.Myself
+			c.Myself.AddSlotRange(i, i)
+			taken = append(taken, i)
+		}
+	}
+	if len(taken) > 0 {
+		c.usurpedSlots[failedNodeID] = mergeConsecutiveSlots(taken)
+	}
+}
+
+// recoverFailedNode 处理 FAIL 节点恢复：清除 FAIL/PFAIL 标记，
+// 并将 FAIL 晋升时接管的槽位归还给该节点。
+// 调用者必须持有 c.mu 写锁。返回 true 表示视图发生了变化（需要持久化）。
+func (c *Cluster) recoverFailedNode(nodeID string) bool {
+	node, ok := c.Nodes[nodeID]
+	if !ok {
+		return false
+	}
+	dirty := false
+	if node.ClearFailFlag() {
+		dirty = true
+		logger.Logger.Info().
+			Str("node", nodeID).
+			Str("addr", node.Addr).
+			Msg("cluster gossip: FAIL node recovered, clearing fail flag")
+	}
+	delete(c.pfailReports, nodeID)
+
+	ranges, taken := c.usurpedSlots[nodeID]
+	if !taken {
+		return dirty
+	}
+	delete(c.usurpedSlots, nodeID)
+
+	for _, r := range ranges {
+		for i := r.Start; i <= r.End; i++ {
+			// 仅归还仍由本节点持有的槽位；已被迁移/改指其他节点的槽位不动
+			if c.Slots[i] != nil && c.Slots[i].ID == c.Myself.ID {
+				c.Slots[i] = node
+				node.AddSlotRange(i, i)
+				dirty = true
+			}
+		}
+	}
+	if dirty {
+		// 归还后重建本节点的槽位范围（AddSlotRange 是增量式的，需去掉已归还槽位）
+		c.rebuildMyselfSlotRanges()
+		// 提升恢复节点的 epoch，使归还通过 gossip 的 epoch 仲裁传播到所有节点
+		c.Epoch++
+		node.SetEpoch(c.Epoch)
+		logger.Logger.Info().
+			Str("node", nodeID).
+			Str("addr", node.Addr).
+			Int("ranges", len(ranges)).
+			Msg("cluster gossip: FAIL node recovered, slots returned")
+	}
+	return dirty
+}
+
+// rebuildMyselfSlotRanges 根据 Slots 映射重建本节点的槽位范围。
+// 调用者必须持有 c.mu 写锁。
+func (c *Cluster) rebuildMyselfSlotRanges() {
+	var mine []uint32
+	for i := uint32(0); i < SlotCount; i++ {
+		if c.Slots[i] != nil && c.Slots[i].ID == c.Myself.ID {
+			mine = append(mine, i)
+		}
+	}
+	c.Myself.SetSlots(mergeConsecutiveSlots(mine))
 }
 
 // AssignSlot 将槽位分配给指定节点
