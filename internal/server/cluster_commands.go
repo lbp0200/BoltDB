@@ -80,10 +80,19 @@ func (h *Handler) handleCLUSTER(state *connState, args [][]byte, remoteAddr stri
 	// CONFIG 命令（用于 redis-benchmark 兼容性）
 }
 
-// respValue 将 interface{} 编码为 RESP 值：int64 → integer，其余 → bulk string。
+// respValue 将 interface{} 编码为 RESP 值：int64 → integer，
+// []interface{} → 嵌套数组（递归），其余 → bulk string。
 func respValue(v interface{}) proto.RESP {
-	if n, ok := v.(int64); ok {
-		return proto.NewInteger(n)
+	switch t := v.(type) {
+	case int64:
+		return proto.NewInteger(t)
+	case []interface{}:
+		elems := make([]proto.RESP, len(t))
+		for i, item := range t {
+			elems[i] = respValue(item)
+		}
+		return &proto.NestedArray{Elems: elems}
+	default:
+		return proto.NewBulkString([]byte(fmt.Sprintf("%v", v)))
 	}
-	return proto.NewBulkString([]byte(fmt.Sprintf("%v", v)))
 }

@@ -187,6 +187,42 @@ func TestClusterCommands(t *testing.T) {
 	slotsArr, ok := slots.([][]interface{})
 	assert.True(t, ok)
 	assert.Equal(t, 1, len(slotsArr)) // 1 merged slot range (0-16383)
+
+	// 测试CLUSTER SHARDS（Redis 7 格式，redis-benchmark --cluster 依赖）
+	shards, err := cmd.HandleCommand([]string{"SHARDS"})
+	assert.NoError(t, err)
+	shardsArr, ok := shards.([][]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(shardsArr))
+	shard := shardsArr[0]
+	assert.Equal(t, "slots", shard[0])
+	slotsRange, ok := shard[1].([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(slotsRange)) // [start, end] 扁平数组，单节点单范围
+	assert.Equal(t, int64(0), slotsRange[0])
+	assert.Equal(t, int64(SlotCount-1), slotsRange[1])
+	assert.Equal(t, "nodes", shard[2])
+	nodesArr, ok := shard[3].([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(nodesArr))
+	nodeInfo, ok := nodesArr[0].([]interface{})
+	assert.True(t, ok)
+	// node 为 key/value 扁平数组，包含标准字段
+	hasKey := func(key string) bool {
+		for i := 0; i+1 < len(nodeInfo); i += 2 {
+			if nodeInfo[i] == key {
+				return true
+			}
+		}
+		return false
+	}
+	for _, key := range []string{"id", "port", "ip", "endpoint", "role", "health"} {
+		assert.True(t, hasKey(key))
+	}
+
+	// 未知子命令仍报错
+	_, err = cmd.HandleCommand([]string{"SHARDZ"})
+	assert.Error(t, err)
 }
 
 func TestClusterMeet(t *testing.T) {

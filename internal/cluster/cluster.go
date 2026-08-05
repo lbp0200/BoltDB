@@ -370,7 +370,10 @@ func (c *Cluster) formatNodeLine(node *Node) string {
 				slotStrs = append(slotStrs, fmt.Sprintf("%d-%d", r.Start, r.End))
 			}
 		}
-		slots = fmt.Sprintf(" %s", fmt.Sprintf("%v", slotStrs))
+		// Redis 标准 CLUSTER NODES 槽位为空格分隔、无方括号（如 "0-5460"）。
+		// Go %v 会输出 [0-5460]，redis-benchmark 会把 '[' 当作 migrating/importing
+		// 语法解析后忽略，导致 "master node has no slots"。
+		slots = " " + strings.Join(slotStrs, " ")
 	}
 
 	pingSent := node.PingSent

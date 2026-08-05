@@ -37,6 +37,8 @@ func (cc *ClusterCommands) HandleCommand(args []string) (interface{}, error) {
 		return cc.handleNodes(subArgs)
 	case "SLOTS":
 		return cc.handleSlots(subArgs)
+	case "SHARDS":
+		return cc.handleShards(subArgs)
 	case "INFO":
 		return cc.handleInfo(subArgs)
 	case "KEYSLOT":
@@ -100,6 +102,61 @@ func (cc *ClusterCommands) handleNodes(args []string) (string, error) {
 func (cc *ClusterCommands) handleSlots(args []string) (interface{}, error) {
 	slots := cc.cluster.GetClusterSlots()
 	return slots, nil
+}
+
+// handleShards 返回 CLUSTER SHARDS（Redis 7 标准格式，redis-benchmark --cluster 依赖）。
+// 格式：[[ "slots", [start,end,...], "nodes", [ [id,..,port(int),..,role,..,health,..], ... ] ], ...]
+// 当前无副本拓扑，每个 shard 只含 master 节点；node 为 key/value 扁平数组。
+func (cc *ClusterCommands) handleShards(args []string) (interface{}, error) {
+	cc.cluster.mu.RLock()
+	defer cc.cluster.mu.RUnlock()
+
+	// 按节点分组槽位
+	nodeSlots := make(map[string][]uint32)
+	for i := uint32(0); i < SlotCount; i++ {
+		if cc.cluster.Slots[i] != nil {
+			nodeSlots[cc.cluster.Slots[i].ID] = append(nodeSlots[cc.cluster.Slots[i].ID], i)
+		}
+	}
+
+	var shards [][]interface{}
+	for nodeID, slotList := range nodeSlots {
+		node := cc.cluster.Nodes[nodeID]
+		if node == nil {
+			continue
+		}
+		host, portStr, err := node.GetHostPort()
+		if err != nil {
+			continue
+		}
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			continue
+		}
+
+		// slots: [start, end, start, end, ...]
+		ranges := mergeConsecutiveSlots(slotList)
+		slotsArr := make([]interface{}, 0, len(ranges)*2)
+		for _, r := range ranges {
+			slotsArr = append(slotsArr, int64(r.Start), int64(r.End))
+		}
+
+		nodeArr := []interface{}{
+			"id", node.ID,
+			"port", int64(port),
+			"ip", host,
+			"endpoint", host,
+			"role", "master",
+			"replication-offset", int64(0),
+			"health", "online",
+		}
+
+		shards = append(shards, []interface{}{
+			"slots", slotsArr,
+			"nodes", []interface{}{nodeArr},
+		})
+	}
+	return shards, nil
 }
 
 // handleInfo 处理CLUSTER INFO命令
