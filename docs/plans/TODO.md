@@ -108,7 +108,9 @@
 
 **关键发现：** 机械盘 + 256GB 规模下 BadgerDB compaction 能收敛，1.3x 放大符合预期。速率从 375 MB/s 降至 77.7 MB/s 的瓶颈在 **机械盘随机写入 + compaction 稳态，非代码**。建议 SSD 复测以获取 SSD 基线。
 
-**SSD 复测观察（2026-08-05，未完成）：** 远程 10.1.2.16 有 nvme SSD（/home 129G 可用），尝试 16GB（16,383 keys × 1MB）填充复测。结果**不可靠，未采纳为基线**：16 个 write i/o timeout、DBSIZE 13228/16383（缺 19%）、磁盘占用 91G（放大 5.7x，与机械盘 1.3x 严重背离）。根因疑似 /home 被 models(82G)/cache(34G)/venv(18G) 占用导致空间压力 + IO 争抢，16GB 填充膨胀到 91G 后 /home 仅剩 39G。**建议在干净 SSD 环境（无其他大文件争抢、空间 ≥ 300G）重测**。注意 scale-filler key 为唯一递增（无冲突），放大异常非工具所致。
+**SSD 复测观察（2026-08-05，未完成）：** 远程 10.1.2.16 有 nvme SSD（/home 129G 可用），尝试 16GB（16,383 keys × 1MB）填充复测。结果**不可靠，未采纳为基线**：16 个 write i/o timeout、DBSIZE 13228/16383（缺 19%）、磁盘占用 91G（放大 5.7x，与机械盘 1.3x 严重背离）。
+
+**机械盘集群复测观察（2026-08-05，未完成）：** 在 2.16 集群（/usr 机械盘，空间充足 770G）用同一 scale-filler 灌 64GB（65,534 keys × 1MB），同样失败：66 个 write i/o timeout、DBSIZE 无变化（2,082,118，填充前后一致）、抽样 66 key 仅 1 个为 1MB（其余仍是 1024B 旧值）、磁盘 +45G。**两次失败同源：`scale-data-filler` 每 batch 1000 keys × 1MB = 1GB 单请求体，远超客户端 WriteTimeout/服务端处理能力**（日志 "Keys written: 65534" 为误导——`completed` 计数无条件累加，与 Exec 成败无关）。集群本身 0 panic/stall、`cluster_state: ok` 全程稳定。**待办：修复 scale-filler（缩小 batch 或按 value-size 自适应）后重测**；此前对 SSD 失败归因于 /home 空间压力的判断不准确，根因是工具 batch 过大。
 
 ### 推荐生产部署配置
 
