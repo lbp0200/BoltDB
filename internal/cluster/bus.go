@@ -464,10 +464,10 @@ func (b *ClusterBus) ApplyGossipPayloadFrom(reporterID string, payload *GossipPa
 	}
 
 	// Slot owner reconciliation: resolve conflicts by epoch
+	// 注意：不跳过 "自己" 的条目——FAIL 接管期间节点被 kill，恢复后本地视图
+	// 可能已被接管方的广播污染（epoch 更高），必须允许其他节点广播的
+	// "自己拥有槽位"（归还时提升过 epoch）参与仲裁以自我纠正（P3）。
 	for _, entry := range payload.SlotOwners {
-		if entry.NodeID == b.cluster.Myself.ID {
-			continue
-		}
 		for _, r := range entry.Ranges {
 			for slot := r.Start; slot <= r.End; slot++ {
 				currentOwner := b.cluster.Slots[slot]
@@ -476,16 +476,24 @@ func (b *ClusterBus) ApplyGossipPayloadFrom(reporterID string, payload *GossipPa
 					ownerEpoch = currentOwner.GetEpoch()
 				}
 				if currentOwner == nil || ownerEpoch < entry.Epoch {
-					if peerNode, ok := b.cluster.Nodes[entry.NodeID]; ok {
-						if b.cluster.Slots[slot] != peerNode {
-							b.cluster.Slots[slot] = peerNode
-							dirty = true
-							logger.Logger.Debug().
-								Str("slotOwner", entry.NodeID).
-								Uint32("slot", slot).
-								Msg("cluster gossip: slot owner updated via gossip")
+					var peerNode *Node
+					if entry.NodeID == b.cluster.Myself.ID {
+						peerNode = b.cluster.Myself
+					} else {
+						peerNode = b.cluster.Nodes[entry.NodeID]
+					}
+					if peerNode != nil && b.cluster.Slots[slot] != peerNode {
+						b.cluster.Slots[slot] = peerNode
+						// 同步 node.Slots 字段：CLUSTER NODES 显示与
+						// BuildGossipPayload 广播都基于它。不同步会导致
+						// 恢复节点自己广播时丢失"自己拥有"的声明（P3）。
+						peerNode.AddSlotRange(slot, slot)
+						dirty = true
+						logger.Logger.Debug().
+							Str("slotOwner", entry.NodeID).
+							Uint32("slot", slot).
+							Msg("cluster gossip: slot owner updated via gossip")
 
-						}
 					}
 				}
 			}

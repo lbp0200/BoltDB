@@ -557,6 +557,64 @@ func TestApplyGossipPayloadFailRecoveryViaGossip(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// TestApplyGossipPayloadOwnSlotEntryArbitration verifies that a gossip entry
+// claiming slots for MYSELF participates in epoch arbitration. Without this,
+// a FAIL-recovered node can never correct its own polluted view (P3): the
+// usurper's higher-epoch broadcast overwrote its local slot map, and the
+// later "self owns" broadcast was skipped by the old `continue`.
+func TestApplyGossipPayloadOwnSlotEntryArbitration(t *testing.T) {
+	t.Parallel()
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+
+	bus := NewClusterBus(cluster, context.Background())
+
+	peer1 := NewNode("peer1", "127.0.0.1:6380")
+	cluster.Nodes["peer1"] = peer1
+	cluster.Nodes[cluster.Myself.ID] = cluster.Myself
+
+	// Local view polluted by the usurper: slot 5000 currently points to peer1
+	// (as if peer1's higher-epoch FAIL takeover broadcast had been applied).
+	cluster.Slots[5000] = peer1
+	cluster.Myself.Slots = []SlotRange{} // self lost the slot locally
+
+	// Now a peer broadcasts that WE own slot 5000 with a higher epoch
+	// (this is what recoverFailedNode's epoch bump produces on the usurper).
+	peer1.SetEpoch(1)
+	cluster.Myself.SetEpoch(0)
+	payload := &GossipPayload{
+		SlotOwners: []SlotOwnerEntry{
+			{
+				NodeID: cluster.Myself.ID,
+				Epoch:  10,
+				Ranges: []SlotOwnerRange{
+					{Start: 5000, End: 5000},
+				},
+			},
+		},
+	}
+
+	dirty := bus.ApplyGossipPayloadFrom("peer1", payload)
+	assert.True(t, dirty)
+	assert.Equal(t, cluster.Myself, cluster.Slots[5000])
+
+	// Lower-epoch self entry must NOT steal a slot owned by a peer.
+	cluster.Slots[6000] = peer1
+	dirty = bus.ApplyGossipPayloadFrom("peer1", &GossipPayload{
+		SlotOwners: []SlotOwnerEntry{
+			{
+				NodeID: cluster.Myself.ID,
+				Epoch:  1, // lower than peer1's epoch
+				Ranges: []SlotOwnerRange{
+					{Start: 6000, End: 6000},
+				},
+			},
+		},
+	})
+	assert.False(t, dirty)
+	assert.Equal(t, peer1, cluster.Slots[6000])
+}
+
 // TestApplyGossipPayloadStalePongNoRecovery verifies that a stale PongRecv in
 // gossip does NOT trigger recovery (keeps FAIL flag and usurped slots).
 func TestApplyGossipPayloadStalePongNoRecovery(t *testing.T) {
