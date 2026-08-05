@@ -299,11 +299,15 @@ func (n *Node) ClearFailFlag() bool {
 }
 
 // PromotePFailToFail promotes PFAIL to FAIL. Returns true when promotion happened.
+// 只检查是否已是 FAIL：本地已 MarkPFail（PFAIL）是晋升的正常前置状态，
+// 旧实现用 hasFailFlag()（FAIL 或 PFAIL）判断会让 PFAIL 节点永远无法晋升（P5）。
 func (n *Node) PromotePFailToFail() bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if n.hasFailFlag() {
-		return false
+	for _, f := range n.Flags {
+		if f == FlagFail {
+			return false
+		}
 	}
 	n.Flags = append(n.Flags, FlagFail)
 	cleaned := make([]string, 0, len(n.Flags))

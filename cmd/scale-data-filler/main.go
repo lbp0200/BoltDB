@@ -68,7 +68,16 @@ func main() {
 	// Calculate work
 	keyOverhead := 30
 	totalKeys := int(sizeBytes / int64(*valueSize+keyOverhead))
-	batchSize := 1000
+
+	// batchSize: cap each pipeline batch at ~16MB request body so large
+	// values (e.g. 1MB) do not produce 1GB single requests that exceed the
+	// client WriteTimeout / server processing capacity (observed as i/o
+	// timeouts with DBSIZE unchanged and a misleading "Keys written").
+	const maxBatchBytes = 16 << 20 // 16MB
+	batchSize := maxBatchBytes / (*valueSize + keyOverhead)
+	if batchSize < 1 {
+		batchSize = 1
+	}
 
 	log.Printf("Target: %s = %d keys, %d bytes each", *sizeFlag, totalKeys, *valueSize)
 	log.Printf("Starting fill with %d concurrent workers...", *concurrency)
@@ -119,18 +128,25 @@ func main() {
 				pipe.Set(context.Background(), key, value, 0)
 			}
 			_, err := pipe.Exec(context.Background())
-			if err != nil {
-				// In cluster mode, MOVED errors are handled automatically
-				// Only real errors count
-				if !strings.Contains(err.Error(), "MOVED") &&
-					!strings.Contains(err.Error(), "ASK") {
-					errors.Add(1)
-					if errors.Load() <= 10 {
-						log.Printf("  Write error: %v", err)
+			if err != nil && !strings.Contains(err.Error(), "MOVED") &&
+				!strings.Contains(err.Error(), "ASK") {
+				// Pipeline failed (e.g. i/o timeout): retry each key
+				// individually so the completed counter reflects reality
+				// instead of unconditionally counting the whole batch.
+				for j := keyStart; j < end; j++ {
+					key := fmt.Sprintf("scale:k:%012d", j)
+					if e := rdb.Set(context.Background(), key, value, 0).Err(); e != nil {
+						errors.Add(1)
+						if errors.Load() <= 10 {
+							log.Printf("  Write error: %v", e)
+						}
+					} else {
+						completed.Add(1)
 					}
 				}
+			} else {
+				completed.Add(int64(end - keyStart))
 			}
-			completed.Add(int64(end - keyStart))
 		}(i)
 	}
 

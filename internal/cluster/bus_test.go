@@ -283,7 +283,10 @@ func TestApplyGossipPayloadPfailPromotion(t *testing.T) {
 	peer2.AddSlotRange(1000, 2000)
 	cluster.Myself.Slots = []SlotRange{{Start: 0, End: 999}, {Start: 2001, End: 16383}}
 
-	// With 2 non-self nodes, threshold=1, so single report promotes to FAIL.
+	// FAIL promotion requires local PFAIL detection (MarkPFail) plus enough
+	// peer reports. With 2 non-self nodes, threshold=1 (one peer report +
+	// local vote = majority), so peer1's single report promotes peer2.
+	peer2.MarkPFail()
 	payload := &GossipPayload{PFail: []string{"peer2"}}
 
 	dirty := bus.ApplyGossipPayloadFrom("peer1", payload)
@@ -487,7 +490,8 @@ func TestApplyGossipPayloadFailRecoveryDirect(t *testing.T) {
 	peer2.AddSlotRange(1000, 2000)
 	cluster.Myself.Slots = []SlotRange{{Start: 0, End: 999}, {Start: 2001, End: 16383}}
 
-	// FAIL promotion (single reporter is enough for a 2-peer cluster)
+	// FAIL promotion (local PFAIL detection + single peer report, P5)
+	peer2.MarkPFail()
 	payload := &GossipPayload{PFail: []string{"peer2"}}
 	dirty := bus.ApplyGossipPayloadFrom("peer1", payload)
 	assert.True(t, dirty)
@@ -536,7 +540,8 @@ func TestApplyGossipPayloadFailRecoveryViaGossip(t *testing.T) {
 	peer2.AddSlotRange(1000, 2000)
 	cluster.Myself.Slots = []SlotRange{{Start: 0, End: 999}, {Start: 2001, End: 16383}}
 
-	// FAIL promotion
+	// FAIL promotion (local PFAIL detection + single peer report, P5)
+	peer2.MarkPFail()
 	dirty := bus.ApplyGossipPayloadFrom("peer1", &GossipPayload{PFail: []string{"peer2"}})
 	assert.True(t, dirty)
 	assert.True(t, peer2.hasFailFlag())
@@ -635,7 +640,8 @@ func TestApplyGossipPayloadStalePongNoRecovery(t *testing.T) {
 	peer2.AddSlotRange(1000, 2000)
 	cluster.Myself.Slots = []SlotRange{{Start: 0, End: 999}, {Start: 2001, End: 16383}}
 
-	// FAIL promotion
+	// FAIL promotion (local PFAIL detection + single peer report, P5)
+	peer2.MarkPFail()
 	dirty := bus.ApplyGossipPayloadFrom("peer1", &GossipPayload{PFail: []string{"peer2"}})
 	assert.True(t, dirty)
 

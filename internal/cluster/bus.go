@@ -553,15 +553,21 @@ func (b *ClusterBus) ApplyGossipPayloadFrom(reporterID string, payload *GossipPa
 				}
 			}
 
-			// Threshold: majority (at least 2 for 3+ node cluster, at least 1 for 2-node)
-			threshold := totalNodes/2 + 1
-			if totalNodes <= 2 {
-				threshold = 1 // single reporter is enough for 2-node cluster
-			}
+			// Threshold: number of OTHER nodes' reports required for FAIL,
+			// counting our own local PFAIL detection as one vote.
+			// Majority of N nodes = N/2+1; reports needed = N/2 = (totalNodes+1)/2.
+			// 2-node: 1 report; 3-node: 1 report + local; 5-node: 2 reports + local.
+			// (The old `totalNodes/2+1` with the `totalNodes <= 2` special case
+			// ignored the local vote and let a single gossip report promote a
+			// healthy node to FAIL under load — P5.)
+			threshold := (totalNodes + 1) / 2
 
 			if reportCount >= threshold {
 				node := b.cluster.Nodes[pfailID]
-				if node != nil && node.PromotePFailToFail() {
+				// Local confirmation is required: the node must have been
+				// detected as PFAIL by OUR OWN failure check, otherwise a
+				// single peer report could promote a healthy node.
+				if node != nil && node.HasFailFlag() && node.PromotePFailToFail() {
 					logger.Logger.Warn().Str("node", pfailID).
 						Int("reports", reportCount).
 						Int("threshold", threshold).
