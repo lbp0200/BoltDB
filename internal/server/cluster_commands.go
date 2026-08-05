@@ -37,7 +37,9 @@ func (h *Handler) handleCLUSTER(state *connState, args [][]byte, remoteAddr stri
 		return proto.NewBulkString([]byte(strings.Join(v, "\n")))
 	case [][]interface{}:
 		// 对于CLUSTER SLOTS，槽位信息
-		// 格式：[[startSlot, endSlot, [host, port, nodeId]], ...]
+		// 标准 Redis 格式：[[start(integer), end(integer), [host, port(integer), nodeId]], ...]
+		// 注意：start/end/port 必须是 RESP integer，字符串会让严格客户端
+		// （redis-benchmark --cluster）解析失败。
 		slotsResp := make([]proto.RESP, len(v))
 		for i, slotEntry := range v {
 			entry := make([]proto.RESP, len(slotEntry))
@@ -45,11 +47,11 @@ func (h *Handler) handleCLUSTER(state *connState, args [][]byte, remoteAddr stri
 				if sub, ok := item.([]interface{}); ok {
 					subEntry := make([]proto.RESP, len(sub))
 					for k, subItem := range sub {
-						subEntry[k] = proto.NewBulkString([]byte(fmt.Sprintf("%v", subItem)))
+						subEntry[k] = respValue(subItem)
 					}
 					entry[j] = &proto.NestedArray{Elems: subEntry}
 				} else {
-					entry[j] = proto.NewBulkString([]byte(fmt.Sprintf("%v", item)))
+					entry[j] = respValue(item)
 				}
 			}
 			slotsResp[i] = &proto.NestedArray{Elems: entry}
@@ -62,11 +64,11 @@ func (h *Handler) handleCLUSTER(state *connState, args [][]byte, remoteAddr stri
 			if sub, ok := item.([]interface{}); ok {
 				subEntry := make([]proto.RESP, len(sub))
 				for k, subItem := range sub {
-					subEntry[k] = proto.NewBulkString([]byte(fmt.Sprintf("%v", subItem)))
+					subEntry[k] = respValue(subItem)
 				}
 				entries[i] = &proto.NestedArray{Elems: subEntry}
 			} else {
-				entries[i] = proto.NewBulkString([]byte(fmt.Sprintf("%v", item)))
+				entries[i] = respValue(item)
 			}
 		}
 		return &proto.NestedArray{Elems: entries}
@@ -76,4 +78,12 @@ func (h *Handler) handleCLUSTER(state *connState, args [][]byte, remoteAddr stri
 	}
 
 	// CONFIG 命令（用于 redis-benchmark 兼容性）
+}
+
+// respValue 将 interface{} 编码为 RESP 值：int64 → integer，其余 → bulk string。
+func respValue(v interface{}) proto.RESP {
+	if n, ok := v.(int64); ok {
+		return proto.NewInteger(n)
+	}
+	return proto.NewBulkString([]byte(fmt.Sprintf("%v", v)))
 }

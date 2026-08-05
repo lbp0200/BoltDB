@@ -399,7 +399,13 @@ func (c *Cluster) GetClusterSlots() [][]interface{} {
 		}
 
 		// 格式: [start, end, [ip, port, nodeid], ...]
-		host, port, err := node.GetHostPort()
+		// port 必须是整数（标准 Redis 返回整数），字符串会导致
+		// 严格客户端（如 redis-benchmark --cluster）解析失败。
+		host, portStr, err := node.GetHostPort()
+		if err != nil {
+			continue
+		}
+		port, err := strconv.Atoi(portStr)
 		if err != nil {
 			continue
 		}
@@ -407,7 +413,7 @@ func (c *Cluster) GetClusterSlots() [][]interface{} {
 		slotInfo := []interface{}{
 			int64(r.Start),
 			int64(r.End),
-			[]interface{}{host, port, node.ID},
+			[]interface{}{host, int64(port), node.ID},
 		}
 
 		// 如果有replica，添加replica信息
