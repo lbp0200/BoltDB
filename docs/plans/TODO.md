@@ -110,7 +110,7 @@
 
 **SSD 复测观察（2026-08-05，未完成）：** 远程 10.1.2.16 有 nvme SSD（/home 129G 可用），尝试 16GB（16,383 keys × 1MB）填充复测。结果**不可靠，未采纳为基线**：16 个 write i/o timeout、DBSIZE 13228/16383（缺 19%）、磁盘占用 91G（放大 5.7x，与机械盘 1.3x 严重背离）。
 
-**机械盘集群复测（2026-08-05）：** 根因确认为 `scale-data-filler` 每 batch 1000 keys × 1MB = 1GB 单请求体超时（"Keys written" 计数误导），**已修复**：batch 按 value-size 自适应（单批 ≤16MB）+ 失败逐 key 重试精确计数。修复后重测 64GB（65,534 keys × 1MB）填充正常推进（0 errors，~130 keys/s），但**暴露 P5 集群 bug**（见下），填充于 11.6% 停止止损。集群本身 0 panic/stall、`cluster_state: ok`。
+**机械盘集群复测（2026-08-05）✅ 已完成：** 根因确认为 `scale-data-filler` 每 batch 1000 keys × 1MB = 1GB 单请求体超时（"Keys written" 计数误导），**已修复**：batch 按 value-size 自适应（单批 ≤16MB）+ 失败逐 key 重试精确计数。修复后重测 64GB（65,534 keys × 1MB）**全部完成，0 errors，39m6s（28 keys/s ≈ 28 MB/s 聚合）**。**P5 集群 bug**（见下）已修复并验证：高负载下 PFAIL 标记偶发但无单点误判晋升、无 usurp，仅 1 次合法多数派晋升（本地检测 + 1 peer 报告，2-4s 内自动恢复归还槽位），epoch 稳定 5490 三节点一致，`cluster_state: ok` 全程。**实测数据**：DBSIZE 2,086,131（覆盖写无丢失）、磁盘 76G→207G（+131G，覆盖写 + 旧值未回收，放大 ~2.05x 高于全新写 1.3x，属预期）、0 panic/0 stall。**对比 256GB 单机基线（77.7 MB/s、1.3x）**：集群聚合 28 MB/s 较低——三节点共享同一机械盘 /usr IO 竞争 + 覆盖写 + gossip 开销，非代码瓶颈。
 
 ### 推荐生产部署配置
 
