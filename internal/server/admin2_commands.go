@@ -405,6 +405,13 @@ func (h *Handler) handleDEBUG(state *connState, args [][]byte, remoteAddr string
 			}
 			discardRatio = r
 		}
+		// Force a full compaction first: GC picks vlog files based on discard
+		// stats that the LSM only records during compaction. Without this,
+		// files whose tombstones never met their data in a compaction (e.g.
+		// after a FLUSHDB with few remaining L0 tables) are never rewritten.
+		if err := h.Db.GetDB().Flatten(1); err != nil {
+			return wrapStoreError(err)
+		}
 		rewritten, err := h.Db.RunValueLogGC(discardRatio)
 		if err != nil {
 			return wrapStoreError(err)
