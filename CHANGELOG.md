@@ -1,5 +1,22 @@
 # Changelog
 
+## v8.52.0 (2026-08-06) — 复制 WAL 有界化 + Value Log GC + FLUSHDB 系统 key 保护
+
+> **修复 backlog WAL 只写不删导致的多 GB 无界增长（线上 3 节点共 106GB，重启吞 38GB）；新增 DEBUG GC 命令回收 vlog 垃圾（node2 实测 32GB → 1.1MB）；修复 FLUSHDB 误删复制元数据与集群配置导致的重启脑裂（replId 丢失 + 全槽位认领）。**
+
+### Bug 修复
+
+- **Backlog WAL 从不截断（f250ad3）**：`BacklogWAL.Truncate` 存在但生产代码零调用，`backlog.wal` 无限增长（100GB 规模测试后每节点 33-37GB），且每次重启 `os.ReadFile` 整文件回放（38GB 文件实测 17 分钟 + 30GB RSS 峰值）。修复：Replay 后立即截断 + 运行期按 2×backlog size 阈值周期截断（atomic 计数 + CAS 门控，热路径无锁）；`Append` 锁内读 `len(buf)` 消除既有竞态；修复全消费场景不截断的边界缺陷。线上 3 节点 WAL 全部降到 4KB-1.9MB，重启秒级。
+- **FLUSHDB 误删系统 key（d82b2b4）**：`ClearAllData` 遍历删除所有 key，包括 `__REPL_META__:*`（replId/offset/backlog）与 `cluster:config`（节点表/槽位/epoch）。后果：重启生成新 replId（从节点被迫 FULLRESYNC）、节点认领全部 16383 槽，多节点同时重启即脑裂（线上实测）。修复：清库跳过系统 key，重启后节点 ID 与槽位保留。
+
+### 新功能
+
+- **`DEBUG GC [discardRatio]`（d82b2b4 + 5288001）**：BadgerDB value log 垃圾回收命令，返回重写的 vlog 文件数。执行前强制 `Flatten` 使 discard 统计就绪（badger 仅在 compaction 时记录 discard，FLUSHDB 后 tombstone 未与数据相遇的文件永不重写）。
+
+### 已知限制
+
+- node3 的 35GB vlog 暂无法回收：tombstone 卡在空 L0 层无法下沉到 L5/L6 旧数据，discard 统计缺失（badger 机制限制），待自然 compaction 后重跑 `DEBUG GC`。
+
 ## v8.38.0 (2026-07-18) — 基准回归门禁 + ZSet 性能基线 + 质量基础设施
 
 > **建立 Benchmark 性能回归门禁体系（Tier A），阻止性能退化无声合入。新增 ZSet 操作在 100/1K/10K 规模下的性能基线。补全覆盖率仪表盘。引入每周覆盖率报告 CI。**
