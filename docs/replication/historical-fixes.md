@@ -133,6 +133,44 @@ exponential backoff to blow up, preventing timely reconnection.
 
 ---
 
+## f250ad3 — Backlog WAL Never Truncated (Unbounded Growth)
+
+**Date:** Aug 2026
+
+**Summary:** `BacklogWAL.Truncate` existed but was never called from
+production code, so `backlog.wal` grew without limit — 37GB per node after
+the 100GB scale test (~106GB across the cluster) — and every restart re-read
+the whole file into memory via `os.ReadFile` (17min + 30GB RSS peak on a
+38GB file, real behavior observed during the fix's rollout).
+
+**Root cause:** The truncate-trigger heuristic documented in
+`BacklogWAL.Truncate` ("truncate when the WAL file exceeds 2x the backlog
+size") was never wired up. The WAL was append-only by design but nothing
+ever called Truncate.
+
+**Fix:**
+- `BacklogWAL` gained a `fileMu` RWMutex so the Truncate/Close file
+  replacement serializes against concurrent Flush writes (no lost-data
+  window); `Append` now reads `len(buf)` under `bufMu` (pre-existing race
+  exposed by `-race`); Truncate's all-consumed case was fixed (a fully
+  consumed WAL was never emptied).
+- `ReplicationManager` truncates once right after `SetBacklogWAL` replay
+  (cleans stale multi-GB files at startup) and periodically from
+  `PropagateCommand` when the file exceeds 2× backlog size, throttled by an
+  atomic counter + CAS gate so the per-command hot path takes no lock.
+
+**Regression guards:**
+- `TestBacklogWAL_Truncate_AllConsumed`
+- `TestBacklogWAL_Truncate_ConcurrentAppend`
+- `TestReplicationManager_WALTruncateTriggered`
+- Full replication suite + `TestRegressionDuplicateWindowMeasurement`,
+  `TestRegressionSnapshotFullresyncOffset`, `TestRegressionPsyncReconnectNoLoss`
+
+**Deployment:** rolled out to the 3-node 10.1.2.16 cluster; all three
+`backlog.wal` files went from 33–37GB to 4KB (~106GB reclaimed).
+
+---
+
 ## Summary
 
 | Commit | Date | Scope | Problem |
@@ -142,3 +180,4 @@ exponential backoff to blow up, preventing timely reconnection.
 | `8b05096` | May 2026 | Multi-fix | TOCTOU, deadlock, offset drift, shutdown race |
 | `c2dd4c7` | May 2026 | Test | Deflake goroutine leak test |
 | `df46325` | Jun 2026 | Multi-fix | CLIENT KILL leak, write deadline, backoff reset |
+| `f250ad3` | Aug 2026 | Backlog WAL | Never truncated — unbounded growth, multi-GB startup replay |
