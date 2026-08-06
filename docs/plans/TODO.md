@@ -175,3 +175,18 @@ boltDB -dir=/data/boltdb -addr=:6379 -cluster
 | **P3 FAIL 晋升槽位不归还** | `bus.go` PFAIL 多数票 → FAIL 晋升时将失败节点槽位重新分配给"自己"，节点恢复后槽位不归还 → 视图永久错位 | 已修：FAIL 晋升时记录接管清单（`usurpedSlots`，含持久化），节点恢复（直接 PING/PONG 或 gossip 新鲜 PongRecv）时清除 FAIL 标记并归还槽位、提升 epoch 传播到全集群；归还仅限仍由本节点持有的槽位。**2.16 集群实测（2026-08-05）**：kill node3 → node1/node2 晋升 FAIL 并接管 `[10923-16383]` → 恢复 node3 → FAIL 自动清除、槽位自动归还，三节点 `cluster_state: ok`（5461/5462/5461），数据路由/DBSIZE 无异常。实测发现并修复 2 个边界缺口：① 恢复节点自身视图被接管广播污染后无法自我纠正（slot owner reconciliation 跳过"自己"条目）→ 允许自己条目参与 epoch 仲裁；② 仲裁更新 Slots 数组但未同步 `node.Slots` 字段（CLUSTER NODES 显示与广播失真）→ `AddSlotRange` 同步 | ✅ 已修复（commits `8bc4100` + `70b5465`，远程测试 + 2.16 集群实测通过） |
 | **P4 BZPOPMAX/MIN on string 不返回 WRONGTYPE** | `redis_cli_compat.sh` 402/406 行：对 string 类型 key 执行 BZPOPMAX/BZPOPMIN，期望返回 `WRONGTYPE`，实际返回 nil（空响应）——阻塞弹出未做类型检查 | 已修（commit `8fcd879`）：`ZPopMax`/`ZPopMin` 事务开头加 `checkKeyType(KeyTypeSortedSet)`，非 zset 类型返回 `ErrWrongType`，handler 层转 WRONGTYPE | ✅ 已修复（兼容套件 77/77，远程测试 store + server 通过） |
 | **P5 FAIL 晋升阈值过低（单报告即晋升）** | 64GB 机械盘集群复测（2026-08-05）时发现：`bus.go` 阈值公式 `totalNodes/2+1` 配 `totalNodes<=2→1` 特例，3 节点集群（totalNodes=2）被错误降为 1——单节点 gossip 报告即可把健康节点晋升 FAIL；且 `PromotePFailToFail` 用 `hasFailFlag()`（FAIL **或** PFAIL）判断，本地已 PFAIL 的节点反而无法晋升 | 已修（待提交）：① 阈值改 `(totalNodes+1)/2`（多数派，含本地 1 票）；② 晋升前置条件 `node.HasFailFlag()`（本地已检测 PFAIL，防单报告误判）；③ `PromotePFailToFail` 只检查 FlagFail（允许从 PFAIL 晋升）。高负载下 gossip 超时不再单点误判 FAIL、不再 usurp 健康节点槽位 | ✅ 已修复（远程测试通过；2.16 集群 RESET HARD 重建视图后 `cluster_state: ok`，5461/5462/5461） |
+
+---
+
+## v8.52.0 发布遗留项（2026-08-06）
+
+> 发布 `v8.52.0`（WAL 截断 `f250ad3` + vlog GC/FLUSHDB 保护 `d82b2b4` + GC Flatten `5288001`）后记录的遗留观察，均为非阻塞项。
+
+| 项 | 现象 | 状态 |
+|----|------|------|
+| **node3 vlog 35GB 未回收** | `DEBUG GC` 在 node1/node2 完整回收（36G/32G → 1.1M），node3 返回 0 次重写：FLUSHDB 的 tombstone 卡在空 L0 层（3.6KB 表，score 0.00），无法下沉到 L5/L6 旧数据触发 discard 统计；`Flatten` 按 score 跳过空层。属 badger 机制限制，非命令缺陷 | ⏳ 待自然 compaction 后重跑 `DEBUG GC`（有写流量触发 L0 堆积后即可） |
+| **`CLUSTER INFO` slots_assigned 统计口径** | 当前统计"本节点拥有的槽数"（如 5461），Redis 语义为"全集群已分配槽总数"（应为 16383）；`CLUSTER SLOTS`/`CLUSTER NODES` 显示正确，仅 INFO 口径差异 | ⏳ 兼容性待评估（影响客户端拓扑解析） |
+| **node2 slots_assigned 恒为 5462（off-by-one）** | 8/4-8/6 多次观察 node2 视角 `slots_assigned:5462`（应 5461），三节点合计 16384；`CLUSTER SLOTS` 三段范围正确，疑似统计实现边界重复计数 | ⏳ 待查（统计代码而非路由数据） |
+| **gossip 心跳 1s→5s** | 空闲节点每节点 ~4% CPU（gossip PING/PONG + badger compactor 50ms 轮询），实测瞬时 CPU 0%、load 0.27；调大 `pingPeriod` 可降空闲开销 | ⏳ 低优先级（收益有限） |
+| **`BlockCacheSize` 未显式配置** | 吃 badger 默认 256MB/节点，`IndexCacheSize` 已显式 100MB；可显式调小 | ⏳ 低优先级 |
+| **Replay 流式瘦身** | `Replay` 用 `os.ReadFile` 整文件读入 + 逐条 make/加锁；WAL 截断后文件有界（4KB-1.9M），触发条件已消除 | ⏳ 防御性优化，延期 |
