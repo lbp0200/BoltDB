@@ -194,3 +194,7 @@ boltDB -dir=/data/boltdb -addr=:6379 -cluster
 | **scale-data-filler 集群模式慢（~10 keys/s）** | `cmd/scale-data-filler` 用 `redis.NewClusterClient`，但 `Pipeline()` 跨槽 key 时 Exec 失败 → 回退逐 key Set → 1MB value 只有 ~10 keys/s（机械盘 28 keys/s 的"基线"同样受影响，非磁盘瓶颈）。修复方向：启动时拉 `CLUSTER SLOTS` 按槽分组，每组用普通 client pipeline；SSD 基线本次已改用 redis-benchmark（~340 MB/s 聚合） | ⏳ 待修（filler 工具缺陷） |
 
 | **SSD 1MB value 集群写入异常（待查）** | 2026-08-06 尝试 SSD 基线：`redis-benchmark --cluster -d 1048576`（-r 20000000 随机 key）实测 **~7 keys/s**（7MB/s，比机械盘 filler 28MB/s 还慢），且 vlog 放大异常（663 keys ≈ 1GB 数据 → 74 个 vlog 文件 ≈ 74GB 逻辑 / du 13G 实际；FLUSHDB 后 vlog 文件数 17-18 个/节点）。服务器 active_retries=0、无 stall/blocked，benchmark 客户端 CPU 0.4%（等响应）。疑似 badger 1MB value 写入路径问题（vlog 轮换/压缩/GC 交互），需专门调查；**机械盘 28MB/s 基线同样存疑**（filler 逐 key 瓶颈） | ⏳ 待查（专项：1MB value 写入路径） |
+
+| **usurp 后 CLUSTER NODES 显示失真（小）** | 2026-08-06 实测：FAIL 晋升 usurp 后 `CLUSTER SLOTS` 正确显示接管，但 `CLUSTER NODES` 的接管方行不显示新槽位（node.Slots 字段未随 usurp 同步，P3 的 AddSlotRange 同步修复覆盖了归还路径未覆盖 usurp 路径）；不影响路由 | ⏳ 低优先级（显示层） |
+| **SSD 1MB value 写入调查结论（2026-08-06）** | ① 单次 1MB SET 无 GC 时 0.011s（写入路径正常）；② **DEBUG GC 重写 vlog 期间单次 SET 14.8s（1350× 减速）**——GC 与写入严重互斥（GC 应在维护窗口跑）；③ 并发 benchmark 1-7 keys/s 的测量被"多 benchmark 残留进程 + 集群重启拓扑未稳定 + node2 usurp 事件"污染，非单一根因；④ vlog 74GB"放大"系 benchmark 缺 -r 覆盖写同一 key 所致（65,534×1MB），非 bug | ✅ 已查清（GC 干扰为真实运维注意事项，已记入 cluster-ops.sh gc 说明） |
+| **usurp 重启边界** | node 重启后 usurpedSlots 从持久化恢复，但节点未被标 FAIL → 无归还事件 → 槽位永久占用（2026-08-06 线上实测） | ✅ 已修复（v8.52.3 `a25781d`：PONG 新鲜即归还，bus 层触发 + 2 测试；线上 kill/恢复场景验证通过） |
