@@ -274,3 +274,71 @@ func TestGossip_SetPingInterval(t *testing.T) {
 	defer g.Stop()
 	assert.Equal(t, 5*time.Second, g.pingInterval)
 }
+
+// TestCluster_UsurpReturned verifies recoverFailedNode returns usurped slots
+// even when the node never carried a FAIL flag (restart boundary: usurpedSlots
+// is restored from persistence but no FAIL-clear event fires).
+func TestCluster_UsurpReturned(t *testing.T) {
+	t.Parallel()
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+
+	peer := NewNode("peer1", "127.0.0.1:6380")
+	cluster.mu.Lock()
+	cluster.Nodes["peer1"] = peer
+	cluster.usurpedSlots["peer1"] = []SlotRange{{Start: 100, End: 199}}
+	for i := uint32(100); i <= 199; i++ {
+		cluster.Slots[i] = cluster.Myself
+	}
+	cluster.mu.Unlock()
+
+	assert.True(t, cluster.HasUsurpedSlots("peer1"))
+
+	cluster.mu.Lock()
+	dirty := cluster.recoverFailedNode("peer1")
+	cluster.mu.Unlock()
+	assert.True(t, dirty)
+
+	// Slots returned to the peer; usurp list cleared.
+	cluster.mu.RLock()
+	assert.Equal(t, peer, cluster.Slots[100])
+	assert.Equal(t, peer, cluster.Slots[199])
+	cluster.mu.RUnlock()
+	assert.False(t, cluster.HasUsurpedSlots("peer1"))
+}
+
+// TestApplyGossipPayload_UsurpReturnedAfterRestart verifies the P3 restart
+// boundary: after a node restart, usurpedSlots restored from persistence are
+// returned as soon as a fresh PONG for the usurped node arrives, even though
+// the node never had a FAIL flag set in this process.
+func TestApplyGossipPayload_UsurpReturnedAfterRestart(t *testing.T) {
+	t.Parallel()
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+	bus := NewClusterBus(cluster, context.Background())
+
+	peer := NewNode("peer1", "127.0.0.1:6380")
+	cluster.mu.Lock()
+	cluster.Nodes["peer1"] = peer
+	// Simulate restored usurp state: peer's slots 100-199 were taken over.
+	cluster.usurpedSlots["peer1"] = []SlotRange{{Start: 100, End: 199}}
+	for i := uint32(100); i <= 199; i++ {
+		cluster.Slots[i] = cluster.Myself
+	}
+	cluster.mu.Unlock()
+
+	// Peer reports fresh PongRecv, no FAIL flag.
+	payload := &GossipPayload{
+		Nodes: []GossipNodeInfo{
+			{ID: "peer1", Addr: "127.0.0.1:6380", PongRecv: time.Now().UnixMilli()},
+		},
+	}
+	dirty := bus.ApplyGossipPayloadFrom("peer2", payload)
+	assert.True(t, dirty)
+
+	cluster.mu.RLock()
+	assert.Equal(t, peer, cluster.Slots[100])
+	assert.Equal(t, peer, cluster.Slots[199])
+	cluster.mu.RUnlock()
+	assert.False(t, cluster.HasUsurpedSlots("peer1"))
+}

@@ -451,6 +451,17 @@ func (b *ClusterBus) ApplyGossipPayloadFrom(reporterID string, payload *GossipPa
 					dirty = true
 				}
 			}
+			// P3 重启边界：usurpedSlots 从持久化恢复，但节点从未被标 FAIL
+			// （重启后内存态干净，无 FAIL 清除事件）→ 只要 PONG 新鲜即归还，
+			// 否则 node 重启后槽位被旧 usurp 清单永久占用。
+			// 注意：此处已持有 b.cluster.mu 写锁，直接读 map（勿用 RLock 方法）。
+			_, usurped := b.cluster.usurpedSlots[gi.ID]
+			if !existing.HasFailFlag() && usurped &&
+				gi.PongRecv > 0 && now-gi.PongRecv < failTimeout.Milliseconds() {
+				if b.cluster.recoverFailedNode(gi.ID) {
+					dirty = true
+				}
+			}
 		} else {
 			// 防幽灵节点：gossip 可能带来 MEET 过程中残留的 placeholder
 			//（不同 NodeID 但同 Addr），跳过已存在相同地址的条目

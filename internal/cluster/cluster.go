@@ -167,6 +167,16 @@ func (c *Cluster) usurpFailedNodeSlots(failedNodeID string) {
 	}
 }
 
+// HasUsurpedSlots 报告本节点是否仍持有指定节点的 usurp 槽位清单。
+// 用于重启后归还：usurpedSlots 从持久化恢复，但若节点从未被标 FAIL
+// （无 FAIL 清除事件），归还不会自动触发——只要 PONG 新鲜即应归还。
+func (c *Cluster) HasUsurpedSlots(nodeID string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	_, ok := c.usurpedSlots[nodeID]
+	return ok
+}
+
 // recoverFailedNode 处理 FAIL 节点恢复：清除 FAIL/PFAIL 标记，
 // 并将 FAIL 晋升时接管的槽位归还给该节点。
 // 调用者必须持有 c.mu 写锁。返回 true 表示视图发生了变化（需要持久化）。
