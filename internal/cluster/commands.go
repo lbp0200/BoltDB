@@ -166,21 +166,31 @@ func (cc *ClusterCommands) handleInfo(args []string) (string, error) {
 
 	cc.cluster.mu.RLock()
 	totalNodes := len(cc.cluster.Nodes)
-	totalSlots := 0
+	assignedSlots := 0
+	okSlots := 0
 	clusterSize := 0
 	for _, node := range cc.cluster.Nodes {
 		if node.IsMaster() && !node.HasFailFlag() {
 			clusterSize++
 		}
 	}
+	// Redis 语义：slots_assigned/slots_ok 是"全集群"已分配槽数，
+	// 不是本节点拥有的槽数（客户端据此判断集群是否完整）。
 	for i := uint32(0); i < SlotCount; i++ {
-		if cc.cluster.Slots[i] == myself {
-			totalSlots++
+		if cc.cluster.Slots[i] != nil {
+			assignedSlots++
+			if !cc.cluster.Slots[i].HasFailFlag() {
+				okSlots++
+			}
 		}
+	}
+	state := "ok"
+	if assignedSlots < SlotCount {
+		state = "fail"
 	}
 	cc.cluster.mu.RUnlock()
 
-	info := fmt.Sprintf(`cluster_state:ok
+	info := fmt.Sprintf(`cluster_state:%s
 cluster_slots_assigned:%d
 cluster_slots_ok:%d
 cluster_slots_pfail:0
@@ -191,7 +201,7 @@ cluster_current_epoch:%d
 cluster_my_epoch:%d
 cluster_stats_messages_sent:0
 cluster_stats_messages_received:0`,
-		totalSlots, totalSlots, totalNodes, clusterSize, epoch, myself.Epoch)
+		state, assignedSlots, okSlots, totalNodes, clusterSize, epoch, myself.Epoch)
 
 	return info, nil
 }

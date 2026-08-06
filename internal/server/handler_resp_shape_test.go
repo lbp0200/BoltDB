@@ -433,14 +433,15 @@ func TestRESPShape_CLUSTER_SLOTS(t *testing.T) {
 			t.Fatalf("slot entry %d should have >=3 elements (got %d)", i, len(slotEntry.Elems))
 		}
 
-		// First two elements are BulkString (start/end slot numbers)
-		_, okStart := slotEntry.Elems[0].(*proto.BulkString)
+		// First two elements are Integer (start/end slot numbers) — matches
+		// real Redis CLUSTER SLOTS (integer since Redis 6, not BulkString).
+		_, okStart := slotEntry.Elems[0].(*proto.Integer)
 		if !okStart {
-			t.Fatalf("slot entry %d element 0 (start) should be BulkString (got %T)", i, slotEntry.Elems[0])
+			t.Fatalf("slot entry %d element 0 (start) should be Integer (got %T)", i, slotEntry.Elems[0])
 		}
-		_, okEnd := slotEntry.Elems[1].(*proto.BulkString)
+		_, okEnd := slotEntry.Elems[1].(*proto.Integer)
 		if !okEnd {
-			t.Fatalf("slot entry %d element 1 (end) should be BulkString (got %T)", i, slotEntry.Elems[1])
+			t.Fatalf("slot entry %d element 1 (end) should be Integer (got %T)", i, slotEntry.Elems[1])
 		}
 
 		// Third element is NestedArray: [host, port, nodeID]
@@ -448,14 +449,19 @@ func TestRESPShape_CLUSTER_SLOTS(t *testing.T) {
 		if !ok {
 			t.Fatalf("slot entry %d element 2 should be NestedArray (got %T)", i, slotEntry.Elems[2])
 		}
+		// Node info is [ip (BulkString), port (Integer), nodeID (BulkString)]
+		// — matches real Redis CLUSTER SLOTS.
 		if len(nodeInfo.Elems) != 3 {
 			t.Fatalf("slot entry %d node info should have 3 elements (got %d)", i, len(nodeInfo.Elems))
 		}
-		for j, subElem := range nodeInfo.Elems {
-			_, ok := subElem.(*proto.BulkString)
-			if !ok {
-				t.Fatalf("slot entry %d node info element %d should be BulkString (got %T)", i, j, subElem)
-			}
+		if _, ok := nodeInfo.Elems[0].(*proto.BulkString); !ok {
+			t.Fatalf("slot entry %d node info element 0 (ip) should be BulkString (got %T)", i, nodeInfo.Elems[0])
+		}
+		if _, ok := nodeInfo.Elems[1].(*proto.Integer); !ok {
+			t.Fatalf("slot entry %d node info element 1 (port) should be Integer (got %T)", i, nodeInfo.Elems[1])
+		}
+		if _, ok := nodeInfo.Elems[2].(*proto.BulkString); !ok {
+			t.Fatalf("slot entry %d node info element 2 (id) should be BulkString (got %T)", i, nodeInfo.Elems[2])
 		}
 	}
 }

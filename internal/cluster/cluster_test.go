@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -159,6 +160,13 @@ func TestClusterCommands(t *testing.T) {
 	infoStr, ok := info.(string)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(infoStr, "cluster_state:ok"))
+	// 单节点认领全部槽：slots_assigned 应为全集群口径（16384），而非本节点口径
+	if !strings.Contains(infoStr, fmt.Sprintf("cluster_slots_assigned:%d", SlotCount)) {
+		t.Fatalf("slots_assigned should be cluster-wide %d, got:\n%s", SlotCount, infoStr)
+	}
+	if !strings.Contains(infoStr, fmt.Sprintf("cluster_slots_ok:%d", SlotCount)) {
+		t.Fatalf("slots_ok should be cluster-wide %d, got:\n%s", SlotCount, infoStr)
+	}
 
 	// 测试CLUSTER MYID
 	myid, err := cmd.HandleCommand([]string{"MYID"})
@@ -692,4 +700,31 @@ func TestNodeUpdatePing(t *testing.T) {
 	node.mu.RLock()
 	assert.True(t, node.PingSent >= firstPing)
 	node.mu.RUnlock()
+}
+
+// TestClusterInfo_PartialAssignment verifies the Redis-compatible semantics:
+// slots_assigned counts cluster-wide assigned slots, and cluster_state turns
+// fail when slots are missing.
+func TestClusterInfo_PartialAssignment(t *testing.T) {
+	t.Parallel()
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+	cmd := NewClusterCommands(cluster)
+
+	// Release all slots from the single node (simulate incomplete cluster).
+	for i := uint32(0); i < SlotCount; i++ {
+		cluster.Slots[i] = nil
+	}
+	cluster.Myself.ClearSlots()
+
+	info, err := cmd.HandleCommand([]string{"INFO"})
+	assert.NoError(t, err)
+	infoStr, ok := info.(string)
+	assert.True(t, ok)
+	if !strings.Contains(infoStr, "cluster_state:fail") {
+		t.Fatalf("expected cluster_state:fail with unassigned slots, got:\n%s", infoStr)
+	}
+	if !strings.Contains(infoStr, "cluster_slots_assigned:0") {
+		t.Fatalf("expected slots_assigned:0 with no assigned slots, got:\n%s", infoStr)
+	}
 }
