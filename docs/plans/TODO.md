@@ -192,3 +192,5 @@ boltDB -dir=/data/boltdb -addr=:6379 -cluster
 | **Replay 流式瘦身** | `Replay` 用 `os.ReadFile` 整文件读入 + 逐条 make/加锁；WAL 截断后文件有界（4KB-1.9M），触发条件已消除 | ⏳ 防御性优化，延期 |
 
 | **scale-data-filler 集群模式慢（~10 keys/s）** | `cmd/scale-data-filler` 用 `redis.NewClusterClient`，但 `Pipeline()` 跨槽 key 时 Exec 失败 → 回退逐 key Set → 1MB value 只有 ~10 keys/s（机械盘 28 keys/s 的"基线"同样受影响，非磁盘瓶颈）。修复方向：启动时拉 `CLUSTER SLOTS` 按槽分组，每组用普通 client pipeline；SSD 基线本次已改用 redis-benchmark（~340 MB/s 聚合） | ⏳ 待修（filler 工具缺陷） |
+
+| **SSD 1MB value 集群写入异常（待查）** | 2026-08-06 尝试 SSD 基线：`redis-benchmark --cluster -d 1048576`（-r 20000000 随机 key）实测 **~7 keys/s**（7MB/s，比机械盘 filler 28MB/s 还慢），且 vlog 放大异常（663 keys ≈ 1GB 数据 → 74 个 vlog 文件 ≈ 74GB 逻辑 / du 13G 实际；FLUSHDB 后 vlog 文件数 17-18 个/节点）。服务器 active_retries=0、无 stall/blocked，benchmark 客户端 CPU 0.4%（等响应）。疑似 badger 1MB value 写入路径问题（vlog 轮换/压缩/GC 交互），需专门调查；**机械盘 28MB/s 基线同样存疑**（filler 逐 key 瓶颈） | ⏳ 待查（专项：1MB value 写入路径） |
