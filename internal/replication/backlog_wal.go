@@ -1,7 +1,11 @@
 package replication
 
 import (
+	"bufio"
 	"encoding/binary"
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -130,16 +134,38 @@ func (w *BacklogWAL) Sync() error {
 	return w.file.Sync()
 }
 
+// replayStreamThreshold: WAL files at or above this size use the streaming
+// two-pass replay instead of reading the whole file into memory. The direct
+// path keeps a multi-GB file from allocating multi-GB of RSS on startup.
+var replayStreamThreshold int64 = 8 << 20 // 8MB
+
 // Replay reads the WAL file from the beginning and reconstructs the backlog
 // state into the given ReplicationBacklog. The backlog must be empty or in
 // its initial state. After Replay, the backlog's offset and buffer reflect
 // all entries in the WAL.
+//
+// Large files use a streaming two-pass scan (O(64KB) memory): the first pass
+// finds the final offset, the second pass replays only the entries inside
+// the live window [finalOffset - backlogSize, finalOffset).
 func (w *BacklogWAL) Replay(backlog *ReplicationBacklog) error {
-	data, err := os.ReadFile(w.path)
+	fi, err := os.Stat(w.path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil // fresh start, no WAL
 		}
+		return err
+	}
+	if fi.Size() < replayStreamThreshold {
+		return w.replayDirect(backlog)
+	}
+	return w.replayStreaming(backlog)
+}
+
+// replayDirect reads the whole WAL file and replays every entry (the
+// original implementation, fine for bounded files).
+func (w *BacklogWAL) replayDirect(backlog *ReplicationBacklog) error {
+	data, err := os.ReadFile(w.path)
+	if err != nil {
 		return err
 	}
 
@@ -172,6 +198,112 @@ func (w *BacklogWAL) Replay(backlog *ReplicationBacklog) error {
 		Int64("final_offset", backlog.GetCurrentOffset()).
 		Msg("BacklogWAL: replay complete")
 	return nil
+}
+
+// replayStreaming replays a large WAL in two streaming passes with O(64KB)
+// memory: the first pass finds the final offset, the second pass restores
+// only entries inside the live window [finalOffset - size, finalOffset).
+// Entries outside the window are skipped. This is equivalent to
+// replayDirect (the ring buffer only retains the last `size` bytes anyway)
+// but never allocates a whole-file buffer.
+func (w *BacklogWAL) replayStreaming(backlog *ReplicationBacklog) error {
+	// Pass 1: scan headers only (skip payloads) to find the final offset.
+	var endOffset int64
+	if err := w.scanHeaders(func(offset int64, length int32) error {
+		endOffset = offset + int64(length)
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	retainStart := endOffset - backlog.GetSize()
+	if retainStart < 0 {
+		retainStart = 0
+	}
+
+	// Pass 2: restore only entries inside the live window.
+	return w.scanFull(func(offset int64, data []byte) error {
+		if offset < retainStart {
+			return nil
+		}
+		backlog.mu.Lock()
+		backlog.restoreEntry(offset, data)
+		backlog.mu.Unlock()
+		return nil
+	})
+}
+
+// scanHeaders streams over WAL entry headers, discarding payloads.
+// Returns nil on a clean EOF or a truncated tail entry (matching
+// replayDirect's tolerance).
+func (w *BacklogWAL) scanHeaders(fn func(offset int64, length int32) error) error {
+	f, err := os.Open(w.path)
+	if err != nil {
+		return err
+	}
+	defer f.Close() //nolint:errcheck
+	r := bufio.NewReaderSize(f, 64*1024)
+
+	header := make([]byte, 12)
+	for {
+		if _, err := io.ReadFull(r, header); err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				return nil // clean EOF, or truncated tail entry: ignore
+			}
+			return err
+		}
+		offset := int64(binary.BigEndian.Uint64(header[0:8]))
+		length := int32(binary.BigEndian.Uint32(header[8:12]))
+		if length < 0 {
+			return fmt.Errorf("backlog WAL corrupted: negative entry length at offset %d", offset)
+		}
+		if _, err := io.CopyN(io.Discard, r, int64(length)); err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				return nil
+			}
+			return err
+		}
+		if err := fn(offset, length); err != nil {
+			return err
+		}
+	}
+}
+
+// scanFull streams over WAL entries, calling fn with each entry's payload.
+// The payload slice is only valid during the callback. Returns nil on a
+// clean EOF or a truncated tail entry.
+func (w *BacklogWAL) scanFull(fn func(offset int64, data []byte) error) error {
+	f, err := os.Open(w.path)
+	if err != nil {
+		return err
+	}
+	defer f.Close() //nolint:errcheck
+	r := bufio.NewReaderSize(f, 64*1024)
+
+	header := make([]byte, 12)
+	for {
+		if _, err := io.ReadFull(r, header); err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				return nil // clean EOF, or truncated tail entry: ignore
+			}
+			return err
+		}
+		offset := int64(binary.BigEndian.Uint64(header[0:8]))
+		length := int32(binary.BigEndian.Uint32(header[8:12]))
+		if length < 0 {
+			return fmt.Errorf("backlog WAL corrupted: negative entry length at offset %d", offset)
+		}
+		data := make([]byte, length)
+		if _, err := io.ReadFull(r, data); err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				return nil
+			}
+			return err
+		}
+		if err := fn(offset, data); err != nil {
+			return err
+		}
+	}
 }
 
 // restoreEntry appends a command entry to the backlog ring buffer, setting

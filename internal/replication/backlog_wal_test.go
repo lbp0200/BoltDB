@@ -396,3 +396,109 @@ func TestBacklogWAL_CrashRecovery(t *testing.T) {
 	// Should have recovered all 3 entries
 	assert.True(t, backlog.GetCurrentOffset() > 0)
 }
+
+// TestBacklogWAL_Replay_Streaming verifies the streaming two-pass replay
+// path (used for WAL files >= replayStreamThreshold) produces exactly the
+// same backlog state as the direct whole-file replay.
+func TestBacklogWAL_Replay_Streaming(t *testing.T) {
+	// Not parallel — mutates the package-level replayStreamThreshold.
+	oldThreshold := replayStreamThreshold
+	replayStreamThreshold = 512 // force streaming path for any non-empty file
+	defer func() { replayStreamThreshold = oldThreshold }()
+
+	dir := t.TempDir()
+	wal, err := NewBacklogWAL(dir)
+	assert.NoError(t, err)
+	defer wal.Close()
+
+	cmd := []byte("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n") // 27 bytes
+	const n = 100
+	for i := 0; i < n; i++ {
+		err = wal.Append(int64(i*27), cmd)
+		assert.NoError(t, err)
+	}
+	err = wal.Flush()
+	assert.NoError(t, err)
+
+	// Streaming replay must reconstruct the same offset as direct replay.
+	streamed := NewReplicationBacklog(4096)
+	err = wal.Replay(streamed)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(n*27), streamed.GetCurrentOffset())
+
+	// Content within the window must match the source bytes.
+	got, err := streamed.GetRange(int64(n*27)-3*27, int64(n*27))
+	assert.NoError(t, err)
+	assert.Equal(t, string(cmd)+string(cmd)+string(cmd), string(got))
+}
+
+// TestBacklogWAL_Replay_Streaming_CircularOverwrite verifies the streaming
+// path skips entries outside the live window identically to the direct path.
+func TestBacklogWAL_Replay_Streaming_CircularOverwrite(t *testing.T) {
+	oldThreshold := replayStreamThreshold
+	replayStreamThreshold = 512
+	defer func() { replayStreamThreshold = oldThreshold }()
+
+	dir := t.TempDir()
+	wal, err := NewBacklogWAL(dir)
+	assert.NoError(t, err)
+	defer wal.Close()
+
+	cmd := []byte("*3\r\n$3\r\nSET\r\n$1\r\nx\r\n$1\r\n1\r\n") // 27 bytes
+	const n = 100
+	for i := 0; i < n; i++ {
+		err = wal.Append(int64(i*27), cmd)
+		assert.NoError(t, err)
+	}
+	err = wal.Flush()
+	assert.NoError(t, err)
+
+	// Small backlog (50 bytes): ring wraps many times, only the last 50
+	// bytes are available.
+	streamed := NewReplicationBacklog(50)
+	err = wal.Replay(streamed)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(n*27), streamed.GetCurrentOffset())
+
+	// Direct (whole-file) replay must give the identical state.
+	replayStreamThreshold = oldThreshold
+	direct := NewReplicationBacklog(50)
+	err = wal.Replay(direct)
+	assert.NoError(t, err)
+	assert.Equal(t, direct.GetCurrentOffset(), streamed.GetCurrentOffset())
+	assert.Equal(t, direct.GetAvailableLength(), streamed.GetAvailableLength())
+}
+
+// TestBacklogWAL_Replay_Streaming_TruncatedTail verifies the streaming path
+// tolerates a truncated entry at the end of the WAL (crash residue).
+func TestBacklogWAL_Replay_Streaming_TruncatedTail(t *testing.T) {
+	oldThreshold := replayStreamThreshold
+	replayStreamThreshold = 512
+	defer func() { replayStreamThreshold = oldThreshold }()
+
+	dir := t.TempDir()
+	wal, err := NewBacklogWAL(dir)
+	assert.NoError(t, err)
+	defer wal.Close()
+
+	cmd := []byte("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n") // 27 bytes
+	for i := 0; i < 5; i++ {
+		err = wal.Append(int64(i*27), cmd)
+		assert.NoError(t, err)
+	}
+	err = wal.Flush()
+	assert.NoError(t, err)
+
+	// Simulate a crash mid-entry: append 10 garbage bytes to the file.
+	f, err := os.OpenFile(wal.GetPath(), os.O_APPEND|os.O_WRONLY, 0644)
+	assert.NoError(t, err)
+	_, err = f.Write([]byte("garbage123"))
+	assert.NoError(t, err)
+	assert.NoError(t, f.Close())
+
+	// Streaming replay must ignore the truncated tail and keep full entries.
+	backlog := NewReplicationBacklog(4096)
+	err = wal.Replay(backlog)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(5*27), backlog.GetCurrentOffset())
+}
