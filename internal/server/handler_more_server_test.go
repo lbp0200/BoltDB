@@ -308,6 +308,22 @@ func TestServerDebugCommands(t *testing.T) {
 		assert.True(t, strings.Contains(string(*errResp), "unknown DEBUG subcommand"))
 	})
 
+	t.Run("DEBUG GC", func(t *testing.T) {
+		// On an almost-empty store this may rewrite 0 files, but must return
+		// an integer without error.
+		resp := handler.executeCommand(state, "DEBUG", [][]byte{[]byte("GC")}, "127.0.0.1:12345")
+		di, ok := resp.(*proto.Integer)
+		assert.True(t, ok)
+		assert.True(t, *di >= 0)
+	})
+
+	t.Run("DEBUG GC invalid ratio", func(t *testing.T) {
+		resp := handler.executeCommand(state, "DEBUG", [][]byte{[]byte("GC"), []byte("1.5")}, "127.0.0.1:12345")
+		errResp, ok := resp.(*proto.Error)
+		assert.True(t, ok)
+		assert.True(t, strings.Contains(string(*errResp), "invalid discard ratio"))
+	})
+
 	t.Run("DEBUG no args", func(t *testing.T) {
 		resp := handler.executeCommand(state, "DEBUG", nil, "127.0.0.1:12345")
 		errResp, ok := resp.(*proto.Error)

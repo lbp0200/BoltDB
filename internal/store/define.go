@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -754,6 +755,25 @@ func (s *BotreonStore) waitForWritesReady() error {
 	return fmt.Errorf("writes blocked after %d attempts", maxAttempts)
 }
 
+// systemKeyPrefixes 是清库（FLUSHDB/ClearAllData）时必须保留的系统 key。
+// 删除它们会破坏复制身份与集群拓扑：replId 丢失 → 重启生成新 ID，
+// 从节点被迫 FULLRESYNC；cluster:config 丢失 → 重启后节点认领全部槽位，
+// 多节点同时重启即脑裂（见 2026-08 线上事故）。
+var systemKeyPrefixes = [][]byte{
+	[]byte("__REPL_META__:"), // replId、master_offset、backlog
+	[]byte("cluster:config"), // 集群节点表/槽位/epoch
+}
+
+// isSystemKey 报告 key 是否为清库时应保留的系统 key。
+func isSystemKey(key []byte) bool {
+	for _, prefix := range systemKeyPrefixes {
+		if bytes.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // collectAllKeys 只读扫描所有键
 func (s *BotreonStore) collectAllKeys() ([][]byte, error) {
 	var keys [][]byte
@@ -767,6 +787,9 @@ func (s *BotreonStore) collectAllKeys() ([][]byte, error) {
 			item := it.Item()
 			keyCopy := make([]byte, len(item.Key()))
 			copy(keyCopy, item.Key())
+			if isSystemKey(keyCopy) {
+				continue // 保留复制元数据与集群配置
+			}
 			keys = append(keys, keyCopy)
 		}
 		return nil
@@ -833,4 +856,30 @@ func isUUIDFormat(s string) bool {
 		}
 	}
 	return true
+}
+
+// RunValueLogGC runs BadgerDB value log garbage collection, rewriting vlog
+// files whose discard ratio exceeds the given threshold (0.0-1.0, e.g. 0.5
+// rewrites files that are at least 50% garbage). It keeps rewriting files
+// until no eligible file remains (badger.ErrNoRewrite) and returns the number
+// of vlog files rewritten. A single pass may not reclaim everything; callers
+// can invoke it repeatedly.
+func (s *BotreonStore) RunValueLogGC(discardRatio float64) (int, error) {
+	if s == nil || s.db == nil {
+		return 0, fmt.Errorf("store not open")
+	}
+	if discardRatio < 0 || discardRatio > 1 {
+		return 0, fmt.Errorf("invalid discard ratio %v (must be 0.0-1.0)", discardRatio)
+	}
+	rewritten := 0
+	for {
+		err := s.db.RunValueLogGC(discardRatio)
+		if errors.Is(err, badger.ErrNoRewrite) {
+			return rewritten, nil
+		}
+		if err != nil {
+			return rewritten, err
+		}
+		rewritten++
+	}
 }

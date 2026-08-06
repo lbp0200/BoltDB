@@ -393,6 +393,23 @@ func (h *Handler) handleDEBUG(state *connState, args [][]byte, remoteAddr string
 	case "SET-ACTIVE-EXPIRE":
 		// DEBUG SET-ACTIVE-EXPIRE <0|1> — enable/disable active expiration (testing only)
 		return proto.OK
+	case "GC":
+		// DEBUG GC [discardRatio] — run BadgerDB value log garbage collection,
+		// rewriting vlog files that are at least discardRatio (default 0.5)
+		// garbage. Returns the number of vlog files rewritten.
+		discardRatio := 0.5
+		if len(args) >= 2 {
+			r, err := strconv.ParseFloat(string(args[1]), 64)
+			if err != nil || r < 0 || r > 1 {
+				return proto.NewError("ERR invalid discard ratio (must be 0.0-1.0)")
+			}
+			discardRatio = r
+		}
+		rewritten, err := h.Db.RunValueLogGC(discardRatio)
+		if err != nil {
+			return wrapStoreError(err)
+		}
+		return proto.NewInteger(int64(rewritten))
 	default:
 		return proto.NewError(fmt.Sprintf("ERR unknown DEBUG subcommand '%s'", subcommand))
 	}
