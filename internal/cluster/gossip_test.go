@@ -251,3 +251,26 @@ func TestGossip_ContextCancellation(t *testing.T) {
 	g.Stop()
 	assert.False(t, g.started.Load())
 }
+
+func TestGossip_SetPingInterval(t *testing.T) {
+	t.Parallel()
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+
+	g := NewGossiper(context.Background(), cluster)
+	assert.Equal(t, pingPeriod, g.pingInterval) // default 1s
+
+	// Invalid values are ignored.
+	g.SetPingInterval(0)
+	g.SetPingInterval(-time.Second)
+	assert.Equal(t, pingPeriod, g.pingInterval)
+
+	// Valid override takes effect.
+	g.SetPingInterval(5 * time.Second)
+	assert.Equal(t, 5*time.Second, g.pingInterval)
+
+	// Must be settable before Start and used by the loop.
+	g.Start()
+	defer g.Stop()
+	assert.Equal(t, 5*time.Second, g.pingInterval)
+}

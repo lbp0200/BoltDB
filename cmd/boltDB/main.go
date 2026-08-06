@@ -36,6 +36,7 @@ var (
 	skipStartupCleanup      = flag.Bool("skip-startup-cleanup", false, "skip startup cleanup (data integrity check)")
 	clientOutputBufferLimit = flag.Int64("client-output-buffer-limit", 32<<20, "per-client output buffer hard limit in bytes (default 32MB, 0 = unlimited)")
 	replBacklogSizeFlag     = flag.String("repl-backlog-size", "", "replication backlog size (e.g. 100mb, 1gb, default 1mb)")
+	gossipIntervalFlag      = flag.Duration("gossip-interval", 1*time.Second, "cluster gossip PING interval (default 1s, e.g. 5s to reduce idle CPU)")
 	metricsAddrFlag         = flag.String("metrics-addr", "", "metrics HTTP listen addr (e.g. :6338, empty = disabled)")
 	maxClientsFlag          = flag.Int("maxclients", 10000, "max number of connected clients (0 = unlimited)")
 	idleTimeoutFlag         = flag.Int("timeout", 0, "idle client timeout in seconds (0 = no timeout)")
@@ -392,6 +393,8 @@ func main() {
 		handler.Cluster = c
 		// 替换为服务器生命周期 context，使 gossip 随 shutdown 自动停止
 		c.Gossip = cluster.NewGossiper(ctx, c)
+		// 可配置的 PING 间隔：空闲集群可用 -gossip-interval 调大以降 CPU
+		c.Gossip.SetPingInterval(*gossipIntervalFlag)
 		// 启动 gossip 循环
 		c.Gossip.Start()
 		// 使用服务器生命周期 context 替代 context.Background()

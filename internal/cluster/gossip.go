@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	pingPeriod       = 1 * time.Second
-	gossipFanout     = 3 // nodes pinged per cycle
+	pingPeriod       = 1 * time.Second // default gossip PING interval (overridable via SetPingInterval)
+	gossipFanout     = 3               // nodes pinged per cycle
 	failTimeout      = 5 * time.Second
 	cleanupInterval  = 10 * time.Second
 	staleNodeTimeout = 60 * time.Second
@@ -20,11 +20,12 @@ const (
 
 // Gossiper manages periodic PING/PONG exchange between cluster nodes.
 type Gossiper struct {
-	cluster *Cluster
-	ctx     context.Context
-	cancel  context.CancelFunc
-	wg      sync.WaitGroup
-	started atomic.Bool
+	cluster      *Cluster
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
+	started      atomic.Bool
+	pingInterval time.Duration // PING period; default pingPeriod, set before Start
 }
 
 // NewGossiper creates a new Gossiper for the given cluster.
@@ -33,10 +34,20 @@ type Gossiper struct {
 func NewGossiper(ctx context.Context, c *Cluster) *Gossiper {
 	ctx, cancel := context.WithCancel(ctx)
 	return &Gossiper{
-		cluster: c,
-		ctx:     ctx,
-		cancel:  cancel,
+		cluster:      c,
+		ctx:          ctx,
+		cancel:       cancel,
+		pingInterval: pingPeriod,
 	}
+}
+
+// SetPingInterval overrides the gossip PING period (default 1s).
+// Must be called before Start; values <= 0 are ignored.
+func (g *Gossiper) SetPingInterval(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	g.pingInterval = d
 }
 
 // Start begins the gossip loop. Must be called after cluster is configured.
@@ -65,7 +76,7 @@ func (g *Gossiper) Stop() {
 // gossipLoop periodically sends PINGs to random peers.
 func (g *Gossiper) gossipLoop() {
 	defer g.wg.Done()
-	ticker := time.NewTicker(pingPeriod)
+	ticker := time.NewTicker(g.pingInterval)
 	defer ticker.Stop()
 
 	for {
