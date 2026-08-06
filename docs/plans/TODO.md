@@ -190,3 +190,5 @@ boltDB -dir=/data/boltdb -addr=:6379 -cluster
 | **gossip 心跳 1s→5s** | 空闲节点每节点 ~4% CPU（gossip PING/PONG + badger compactor 50ms 轮询），实测瞬时 CPU 0%、load 0.27；调大 `pingPeriod` 可降空闲开销 | ⏳ 低优先级（收益有限） |
 | **`BlockCacheSize` 未显式配置** | 吃 badger 默认 256MB/节点，`IndexCacheSize` 已显式 100MB；可显式调小 | ⏳ 低优先级 |
 | **Replay 流式瘦身** | `Replay` 用 `os.ReadFile` 整文件读入 + 逐条 make/加锁；WAL 截断后文件有界（4KB-1.9M），触发条件已消除 | ⏳ 防御性优化，延期 |
+
+| **scale-data-filler 集群模式慢（~10 keys/s）** | `cmd/scale-data-filler` 用 `redis.NewClusterClient`，但 `Pipeline()` 跨槽 key 时 Exec 失败 → 回退逐 key Set → 1MB value 只有 ~10 keys/s（机械盘 28 keys/s 的"基线"同样受影响，非磁盘瓶颈）。修复方向：启动时拉 `CLUSTER SLOTS` 按槽分组，每组用普通 client pipeline；SSD 基线本次已改用 redis-benchmark（~340 MB/s 聚合） | ⏳ 待修（filler 工具缺陷） |
