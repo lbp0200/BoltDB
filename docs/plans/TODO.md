@@ -185,8 +185,8 @@ boltDB -dir=/data/boltdb -addr=:6379 -cluster
 | 项 | 现象 | 状态 |
 |----|------|------|
 | **node3 vlog 35GB 未回收** | `DEBUG GC` 在 node1/node2 完整回收（36G/32G → 1.1M），node3 返回 0 次重写：FLUSHDB 的 tombstone 卡在空 L0 层（3.6KB 表，score 0.00），无法下沉到 L5/L6 旧数据触发 discard 统计；`Flatten` 按 score 跳过空层。属 badger 机制限制，非命令缺陷 | ⏳ 待自然 compaction 后重跑 `DEBUG GC`（有写流量触发 L0 堆积后即可） |
-| **`CLUSTER INFO` slots_assigned 统计口径** | 当前统计"本节点拥有的槽数"（如 5461），Redis 语义为"全集群已分配槽总数"（应为 16383）；`CLUSTER SLOTS`/`CLUSTER NODES` 显示正确，仅 INFO 口径差异 | ⏳ 兼容性待评估（影响客户端拓扑解析） |
-| **node2 slots_assigned 恒为 5462（off-by-one）** | 8/4-8/6 多次观察 node2 视角 `slots_assigned:5462`（应 5461），三节点合计 16384；`CLUSTER SLOTS` 三段范围正确，疑似统计实现边界重复计数 | ⏳ 待查（统计代码而非路由数据） |
+| **`CLUSTER INFO` slots_assigned 统计口径** | 原统计"本节点拥有的槽数"（如 5461），Redis 语义为"全集群已分配槽总数"（16384）；客户端据此判断集群完整性 | ✅ 已修复（v8.52.1 `f6e33cc`）：改为全集群口径 + 槽不全时 `cluster_state:fail`；线上三节点均显示 `slots_assigned:16384` |
+| **node2 slots_assigned 恒为 5462（off-by-one）** | 已澄清：非统计 bug，是**分配不均**——初始部署范围 `0-5460 / 5461-10922 / 10923-16383` 中 node2 恰好含 5462 个槽（范围含两端）；新口径（全集群槽数）下不再暴露；若需均分可改 `5461-10921 / 10922-16383`（空库时无迁移成本） | ✅ 已澄清（v8.52.1） |
 | **gossip 心跳 1s→5s** | 空闲节点每节点 ~4% CPU（gossip PING/PONG + badger compactor 50ms 轮询），实测瞬时 CPU 0%、load 0.27；调大 `pingPeriod` 可降空闲开销 | ⏳ 低优先级（收益有限） |
 | **`BlockCacheSize` 未显式配置** | 吃 badger 默认 256MB/节点，`IndexCacheSize` 已显式 100MB；可显式调小 | ⏳ 低优先级 |
 | **Replay 流式瘦身** | `Replay` 用 `os.ReadFile` 整文件读入 + 逐条 make/加锁；WAL 截断后文件有界（4KB-1.9M），触发条件已消除 | ⏳ 防御性优化，延期 |
