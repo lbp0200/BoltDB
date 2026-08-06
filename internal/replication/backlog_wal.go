@@ -35,6 +35,10 @@ type BacklogWAL struct {
 	bufMu sync.Mutex
 	buf   []byte // write buffer for batching
 
+	// fileMu guards the file handle against replacement by Truncate while a
+	// concurrent Flush is writing. Writers take RLock; Truncate/Close take Lock.
+	fileMu sync.RWMutex
+
 	// stats
 	totalEntries atomic.Int64
 	totalBytes   atomic.Int64
@@ -74,17 +78,20 @@ func (w *BacklogWAL) Append(offset int64, cmdBytes []byte) error {
 		return nil // silently ignore writes after close
 	}
 	// Encode: [offset(8)] [length(4)] [cmdBytes]
+	needFlush := false
 	w.bufMu.Lock()
 	w.buf = binary.BigEndian.AppendUint64(w.buf, uint64(offset))
 	w.buf = binary.BigEndian.AppendUint32(w.buf, uint32(len(cmdBytes)))
 	w.buf = append(w.buf, cmdBytes...)
+	// Read the length under the lock: Truncate may swap w.buf concurrently.
+	needFlush = len(w.buf) >= 65536
 	w.bufMu.Unlock()
 
 	w.totalEntries.Add(1)
 	w.totalBytes.Add(int64(12 + len(cmdBytes)))
 
 	// Flush when buffer reaches 64KB
-	if len(w.buf) >= 65536 {
+	if needFlush {
 		return w.Flush()
 	}
 	return nil
@@ -95,17 +102,26 @@ func (w *BacklogWAL) Append(offset int64, cmdBytes []byte) error {
 // equivalent to a ≤64KB loss window. Call Sync() explicitly if you need
 // stricter guarantees.
 func (w *BacklogWAL) Flush() error {
+	data := w.takeBuffer()
+	if len(data) == 0 {
+		return nil
+	}
+	w.fileMu.RLock()
+	_, err := w.file.Write(data)
+	w.fileMu.RUnlock()
+	return err
+}
+
+// takeBuffer extracts and clears the write buffer under bufMu.
+func (w *BacklogWAL) takeBuffer() []byte {
 	w.bufMu.Lock()
+	defer w.bufMu.Unlock()
 	if len(w.buf) == 0 {
-		w.bufMu.Unlock()
 		return nil
 	}
 	data := w.buf
 	w.buf = make([]byte, 0, 65536)
-	w.bufMu.Unlock()
-
-	_, err := w.file.Write(data)
-	return err
+	return data
 }
 
 // Sync performs fsync on the WAL file. Provides the strongest crash guarantee
@@ -196,8 +212,17 @@ func (b *ReplicationBacklog) restoreEntry(offset int64, data []byte) {
 // WAL entry's offset that you never need again. The simplest heuristic:
 // truncate when the WAL file exceeds 2x the backlog size.
 func (w *BacklogWAL) Truncate(retainedStartOffset int64) error {
-	if err := w.Flush(); err != nil {
-		return err
+	// Hold the exclusive lock for the whole replacement so no concurrent
+	// Flush can write into the old file after it has been renamed away.
+	w.fileMu.Lock()
+	defer w.fileMu.Unlock()
+
+	// Flush buffered entries to the current file first so no data is lost
+	// during the file replacement.
+	if data := w.takeBuffer(); len(data) > 0 {
+		if _, err := w.file.Write(data); err != nil {
+			return err
+		}
 	}
 
 	// Read current WAL
@@ -207,7 +232,7 @@ func (w *BacklogWAL) Truncate(retainedStartOffset int64) error {
 	}
 
 	// Find the first entry whose offset >= retainedStartOffset
-	cutPos := 0
+	cutPos := -1
 	pos := 0
 	for pos+12 <= len(data) {
 		offset := int64(binary.BigEndian.Uint64(data[pos:]))
@@ -219,8 +244,12 @@ func (w *BacklogWAL) Truncate(retainedStartOffset int64) error {
 		pos += 12 + int(length)
 	}
 
+	if cutPos == -1 {
+		// Every entry is consumed: drop the whole file.
+		cutPos = len(data)
+	}
 	if cutPos == 0 {
-		return nil // nothing to truncate
+		return nil // everything is retained, nothing to truncate
 	}
 
 	// Write tail to temp file and rename atomically
@@ -245,15 +274,30 @@ func (w *BacklogWAL) Truncate(retainedStartOffset int64) error {
 	return nil
 }
 
+// GetFileSize returns the current size of the WAL file on disk.
+func (w *BacklogWAL) GetFileSize() (int64, error) {
+	w.fileMu.RLock()
+	defer w.fileMu.RUnlock()
+	st, err := w.file.Stat()
+	if err != nil {
+		return 0, err
+	}
+	return st.Size(), nil
+}
+
 // Close flushes pending data and closes the WAL file.
 func (w *BacklogWAL) Close() error {
 	if w.closed.Load() {
 		return nil // already closed
 	}
 	w.closed.Store(true)
-	if err := w.Flush(); err != nil {
-		w.file.Close() //nolint:errcheck
-		return err
+	w.fileMu.Lock()
+	defer w.fileMu.Unlock()
+	if data := w.takeBuffer(); len(data) > 0 {
+		if _, err := w.file.Write(data); err != nil {
+			w.file.Close() //nolint:errcheck
+			return err
+		}
 	}
 	return w.file.Close()
 }

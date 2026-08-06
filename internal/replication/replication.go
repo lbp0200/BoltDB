@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/lbp0200/BoltDB/internal/logger"
 	"github.com/lbp0200/BoltDB/internal/store"
@@ -15,6 +16,16 @@ const (
 	RoleMaster = "master"
 	RoleSlave  = "slave"
 )
+
+// walTruncateFactor: truncate the backlog WAL when its file exceeds this
+// multiple of the in-memory backlog size. Keeps the WAL bounded to ~2x the
+// ring buffer instead of growing without limit (see BacklogWAL.Truncate).
+const walTruncateFactor int64 = 2
+
+// walCheckIntervalDivisor: re-check the WAL file size after this fraction of
+// a backlog-worth of bytes has been appended. Throttles the stat() syscall
+// off the per-command hot path.
+const walCheckIntervalDivisor int64 = 4
 
 // ReplicationManager 管理主从复制
 type ReplicationManager struct {
@@ -26,6 +37,7 @@ type ReplicationManager struct {
 	slaves           map[string]*SlaveConnection // 从节点连接(当role=master时)
 	backlog          *ReplicationBacklog         // 复制积压缓冲区
 	wal              *BacklogWAL                 // 持久化 WAL（nil = 不使用，向后兼容）
+	walCheckBytes    atomic.Int64                // bytes appended since last WAL size check
 	masterReplOffset int64                       // 主节点复制偏移量
 	replId           string                      // 复制ID(主节点运行ID)
 	store            *store.BotreonStore         // 数据存储
@@ -139,6 +151,12 @@ func (rm *ReplicationManager) SetBacklogWAL(wal *BacklogWAL) {
 	if wal != nil {
 		if err := wal.Replay(rm.backlog); err != nil {
 			logger.Logger.Warn().Err(err).Msg("failed to replay WAL on SetBacklogWAL")
+		}
+		// Replayed entries outside the live window were never truncated in
+		// older builds, so the WAL can carry a stale multi-GB tail. Drop it
+		// now so every restart doesn't re-read the whole file.
+		if err := wal.Truncate(rm.backlog.AvailableStartOffset()); err != nil {
+			logger.Logger.Warn().Err(err).Msg("failed to truncate backlog WAL after replay")
 		}
 	}
 }
@@ -331,6 +349,7 @@ func (rm *ReplicationManager) PropagateCommand(cmd [][]byte) {
 		if err := wal.Append(cmdOffset, cmdBytes); err != nil {
 			logger.Logger.Warn().Err(err).Int64("offset", cmdOffset).Msg("backlog WAL append failed")
 		}
+		rm.maybeTruncateBacklogWAL(int64(len(cmdBytes)))
 	}
 
 	// Live push under propMu so slave install (CatchUpAndEnableSlave) can
@@ -347,6 +366,43 @@ func (rm *ReplicationManager) PropagateCommand(cmd [][]byte) {
 					Msg("传播命令到从节点失败")
 				// handleSlaveReplicationConnection 会在断连时清理
 			}
+		}
+	}
+}
+
+// maybeTruncateBacklogWAL keeps the backlog WAL file bounded: once the file
+// exceeds walTruncateFactor × backlog size, entries before the live window's
+// start offset are dropped. The size check is throttled to roughly once per
+// walCheckIntervalDivisor of a backlog-worth of writes so the stat() syscall
+// stays off the per-command hot path. The counter is atomic and the check is
+// CAS-gated so this never takes the manager write lock on the hot path.
+func (rm *ReplicationManager) maybeTruncateBacklogWAL(written int64) {
+	threshold := rm.backlog.GetSize() / walCheckIntervalDivisor
+	if threshold <= 0 {
+		return
+	}
+	acc := rm.walCheckBytes.Add(written)
+	if acc < threshold {
+		return
+	}
+	// Exactly one caller wins the reset; the others skip this round.
+	if !rm.walCheckBytes.CompareAndSwap(acc, 0) {
+		return
+	}
+
+	wal := rm.GetBacklogWAL()
+	if wal == nil {
+		return
+	}
+	retainStart := rm.backlog.AvailableStartOffset()
+	sz, err := wal.GetFileSize()
+	if err != nil {
+		logger.Logger.Debug().Err(err).Msg("backlog WAL size check failed")
+		return
+	}
+	if sz > walTruncateFactor*rm.backlog.GetSize() {
+		if err := wal.Truncate(retainStart); err != nil {
+			logger.Logger.Warn().Err(err).Msg("backlog WAL truncate failed")
 		}
 	}
 }

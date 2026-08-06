@@ -3,6 +3,9 @@ package replication
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/zeebo/assert"
@@ -227,6 +230,124 @@ func TestBacklogWAL_ReplayTruncated(t *testing.T) {
 
 	// Should have the last 2 entries (offset 54 + 27 = 81, then 81 + 27 = 108)
 	assert.Equal(t, int64(108), backlog.GetCurrentOffset())
+}
+
+func TestBacklogWAL_Truncate_AllConsumed(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	wal, err := NewBacklogWAL(dir)
+	assert.NoError(t, err)
+	defer wal.Close()
+
+	// Write 4 entries (each command is 27 bytes)
+	for i := 0; i < 4; i++ {
+		offset := int64(i * 27)
+		err = wal.Append(offset, []byte("*3\r\n$3\r\nSET\r\n$1\r\nx\r\n$1\r\n1\r\n"))
+		assert.NoError(t, err)
+	}
+	err = wal.Flush()
+	assert.NoError(t, err)
+
+	// Truncate past the last entry: everything is consumed, file must be emptied
+	err = wal.Truncate(4 * 27)
+	assert.NoError(t, err)
+
+	data, err := os.ReadFile(wal.GetPath())
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(data))
+}
+
+func TestBacklogWAL_Truncate_ConcurrentAppend(t *testing.T) {
+	// Not parallel — WAL I/O, avoid contention
+	dir := t.TempDir()
+	wal, err := NewBacklogWAL(dir)
+	assert.NoError(t, err)
+	defer wal.Close()
+
+	const total = 400
+	cmd := []byte("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n") // 27 bytes
+	var progress atomic.Int64                                // bytes appended so far
+	done := make(chan struct{})
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer close(done)
+		for i := 0; i < total; i++ {
+			if err := wal.Append(int64(i*27), cmd); err != nil {
+				t.Errorf("append %d: %v", i, err)
+				return
+			}
+			progress.Store(int64(i+1) * 27)
+			if i%50 == 49 {
+				if err := wal.Flush(); err != nil {
+					t.Errorf("flush: %v", err)
+					return
+				}
+			}
+		}
+	}()
+
+	// Truncate concurrently, keeping only the last 2 entries written so far.
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			retain := progress.Load() - 2*27
+			if retain > 0 {
+				if err := wal.Truncate(retain); err != nil {
+					t.Errorf("truncate: %v", err)
+					return
+				}
+			}
+			runtime.Gosched()
+		}
+	}()
+
+	wg.Wait()
+
+	// Replay: final offset must match the full write stream, and the last two
+	// entries must be intact (they are always inside the retained window).
+	err = wal.Close()
+	assert.NoError(t, err)
+
+	wal2, err := NewBacklogWAL(dir)
+	assert.NoError(t, err)
+	defer wal2.Close()
+
+	replayed := NewReplicationBacklog(4096)
+	err = wal2.Replay(replayed)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(total*27), replayed.GetCurrentOffset())
+
+	got, err := replayed.GetRange(int64(total*27)-2*27, int64(total*27))
+	assert.NoError(t, err)
+	assert.Equal(t, string(cmd)+string(cmd), string(got))
+}
+
+func TestBacklogWAL_GetFileSize(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	wal, err := NewBacklogWAL(dir)
+	assert.NoError(t, err)
+	defer wal.Close()
+
+	sz, err := wal.GetFileSize()
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), sz)
+
+	err = wal.Append(0, []byte("*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\n1\r\n"))
+	assert.NoError(t, err)
+	err = wal.Flush()
+	assert.NoError(t, err)
+
+	sz, err = wal.GetFileSize()
+	assert.NoError(t, err)
+	assert.True(t, sz > 0)
 }
 
 func TestBacklogWAL_Append_AfterClose(t *testing.T) {

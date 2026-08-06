@@ -141,6 +141,43 @@ func TestReplicationManager_PropagateCommand(t *testing.T) {
 	assert.Equal(t, cmdBytes, data)
 }
 
+func TestReplicationManager_WALTruncateTriggered(t *testing.T) {
+	// Not parallel — WAL I/O
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	rm.SetBacklogSize(64 * 1024)
+
+	dir := t.TempDir()
+	wal, err := NewBacklogWAL(dir)
+	assert.NoError(t, err)
+	defer wal.Close()
+	rm.SetBacklogWAL(wal)
+
+	// Write enough commands to exceed walTruncateFactor × backlog size
+	// (128KB threshold, 27-byte commands → 10K commands ≈ 270KB).
+	const n = 10000
+	for i := 0; i < n; i++ {
+		rm.PropagateCommand([][]byte{[]byte("SET"), []byte("k"), []byte("v")})
+	}
+
+	// File must be bounded: truncated back to roughly the live window
+	// instead of holding all n commands (which would be ~270KB+).
+	sz, err := wal.GetFileSize()
+	assert.NoError(t, err)
+	if sz > 2*64*1024+4096 {
+		t.Fatalf("WAL size %d not bounded by threshold", sz)
+	}
+
+	// Replay must reconstruct exactly the same offset as the live backlog.
+	// Flush first: entries still in the 64KB write buffer are not on disk yet.
+	err = wal.Flush()
+	assert.NoError(t, err)
+	replayed := NewReplicationBacklog(64 * 1024)
+	err = wal.Replay(replayed)
+	assert.NoError(t, err)
+	assert.Equal(t, rm.GetBacklog().GetCurrentOffset(), replayed.GetCurrentOffset())
+}
+
 func TestReplicationManager_MultipleSlaveIds(t *testing.T) {
 	t.Parallel()
 	testStore := setupTestStore(t)
