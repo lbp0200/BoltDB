@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/dgraph-io/badger/v4"
 )
@@ -51,6 +52,48 @@ func (s *BotreonStore) XGroupCreate(key, group, startID string) error {
 		}
 		return txn.Set(groupKey, data)
 	}, 30)
+}
+
+// XGroupCreateConsumer explicitly creates a consumer in a group.
+// Redis XGROUP CREATECONSUMER 语义：返回 1 = 消费者新建，0 = 已存在。
+func (s *BotreonStore) XGroupCreateConsumer(key, group, consumer string) (int64, error) {
+	var created int64
+	err := s.retryUpdate(func(txn *badger.Txn) error {
+		created = 0
+		groupKey := streamGroupDataKey(key, group)
+		item, err := txn.Get(groupKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return nil // 组不存在：不创建（Redis 返回 0）
+		}
+		if err != nil {
+			return err
+		}
+
+		var groupData *StreamGroup
+		if err := item.Value(func(val []byte) error {
+			return json.Unmarshal(val, &groupData)
+		}); err != nil {
+			return err
+		}
+
+		if groupData.Consumers == nil {
+			groupData.Consumers = make(map[string]*StreamConsumer)
+		}
+		if _, exists := groupData.Consumers[consumer]; !exists {
+			groupData.Consumers[consumer] = &StreamConsumer{
+				Name:     consumer,
+				LastSeen: time.Now().UnixMilli(),
+			}
+			created = 1
+		}
+
+		data, err := json.Marshal(groupData)
+		if err != nil {
+			return err
+		}
+		return txn.Set(groupKey, data)
+	}, 30)
+	return created, err
 }
 
 // XGroupDelConsumer removes a consumer from a group

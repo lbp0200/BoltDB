@@ -957,7 +957,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			if len(ids) == 0 {
 				return nil
 			}
-			_, err := s.XClaim(key, group, consumer, minIdleTime, ids...)
+			_, err := s.XClaim(key, group, consumer, XClaimOptions{MinIdleTime: minIdleTime}, ids...)
 			return err
 		}
 

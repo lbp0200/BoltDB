@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/dgraph-io/badger/v4"
@@ -696,35 +697,74 @@ func (s *BotreonStore) JSONDebugMemory(key, path string) (int64, error) {
 	return int64(len(serialized)), nil
 }
 
-// getValueByPath gets a value from JSON by path (simplified JSONPath)
+// getValueByPath gets a value from JSON by path.
+// 支持 RedisJSON 路径子集：字段访问（$.a.b）与数组下标（$[0]、$.arr[1]、
+// $.arr[-1] 负索引），不支持通配符与过滤表达式。
 func getValueByPath(root interface{}, path string) (interface{}, error) {
-	// Normalize path
+	// Normalize path: 去掉 $ 前缀，得到 token 流（字段名或 [index]）
 	path = strings.TrimPrefix(path, "$")
-	if len(path) > 0 && path[0] == '.' {
-		path = path[1:]
-	}
-	if path == "" {
-		return root, nil
-	}
-
-	// Split path by dot
-	parts := strings.Split(path, ".")
 	current := root
 
-	for _, part := range parts {
-		if part == "" {
-			continue
-		}
-
-		switch v := current.(type) {
-		case map[string]interface{}:
-			val, ok := v[part]
+	// 手动解析 token：字段（.name）或数组下标（[n]）
+	for i := 0; i < len(path); {
+		switch path[i] {
+		case '.':
+			i++
+			start := i
+			for i < len(path) && path[i] != '.' && path[i] != '[' {
+				i++
+			}
+			field := path[start:i]
+			if field == "" {
+				continue
+			}
+			m, ok := current.(map[string]interface{})
 			if !ok {
-				return nil, fmt.Errorf("path not found: %s", part)
+				return nil, fmt.Errorf("path not traversable: %s", field)
+			}
+			val, ok := m[field]
+			if !ok {
+				return nil, fmt.Errorf("path not found: %s", field)
 			}
 			current = val
+		case '[':
+			end := strings.IndexByte(path[i:], ']')
+			if end == -1 {
+				return nil, fmt.Errorf("invalid path: unmatched '['")
+			}
+			idxStr := path[i+1 : i+end]
+			idx, err := strconv.Atoi(idxStr)
+			if err != nil {
+				return nil, fmt.Errorf("invalid array index: %s", idxStr)
+			}
+			arr, ok := current.([]interface{})
+			if !ok {
+				return nil, fmt.Errorf("path not traversable: [%s]", idxStr)
+			}
+			if idx < 0 {
+				idx += len(arr) // 负索引从末尾数
+			}
+			if idx < 0 || idx >= len(arr) {
+				return nil, fmt.Errorf("array index out of range: %s", idxStr)
+			}
+			current = arr[idx]
+			i += end + 1
 		default:
-			return nil, fmt.Errorf("path not traversable: %s", part)
+			// 兼容无 $ 前缀且无前导点的路径（如 "a.b"）
+			start := i
+			for i < len(path) && path[i] != '.' && path[i] != '[' {
+				i++
+			}
+			field := path[start:i]
+			m, ok := current.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("path not traversable: %s", field)
+			}
+			val, ok := m[field]
+			if !ok {
+				return nil, fmt.Errorf("path not found: %s", field)
+			}
+			current = val
 		}
 	}
 

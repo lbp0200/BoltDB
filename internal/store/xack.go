@@ -208,8 +208,22 @@ func (s *BotreonStore) XPending(key, group string) ([]StreamPendingEntry, error)
 	return pending, err
 }
 
-// XClaim claims pending messages
-func (s *BotreonStore) XClaim(key, group, consumer string, minIdleTime int64, ids ...string) ([]string, error) {
+// XClaimOptions 携带 XCLAIM 的可选认领参数（Redis 语义）。
+// MinIdleTime: 仅认领空闲时间 >= 该值的消息（0 = 不检查）。
+// Force: 即使 id 不在 PEL 中也加入并认领（XCLAIM FORCE）。
+// IdleMS: 认领后把 LastDelivery 设为 now-IdleMS（XCLAIM IDLE），0 = 用 now。
+// TimeMS: 认领后把 LastDelivery 设为绝对时间戳 TimeMS（XCLAIM TIME），0 = 用 now。
+// RetryCount: 认领后把 DeliveryCount 设为该值（XCLAIM RETRYCOUNT），0 = 递增。
+type XClaimOptions struct {
+	MinIdleTime int64
+	Force       bool
+	IdleMS      int64
+	TimeMS      int64
+	RetryCount  int64
+}
+
+// XClaim claims pending messages.
+func (s *BotreonStore) XClaim(key, group, consumer string, opts XClaimOptions, ids ...string) ([]string, error) {
 	var claimed []string
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {
@@ -230,18 +244,38 @@ func (s *BotreonStore) XClaim(key, group, consumer string, minIdleTime int64, id
 		}
 
 		now := time.Now().UnixNano() / int64(time.Millisecond)
+		lastDelivery := now
+		if opts.IdleMS > 0 {
+			lastDelivery = now - opts.IdleMS
+		}
+		if opts.TimeMS > 0 {
+			lastDelivery = opts.TimeMS
+		}
 
 		for _, id := range ids {
 			if p, exists := groupData.Pending[id]; exists {
-				if minIdleTime > 0 {
+				if opts.MinIdleTime > 0 {
 					idleTime := now - p.LastDelivery
-					if idleTime < minIdleTime {
+					if idleTime < opts.MinIdleTime {
 						continue
 					}
 				}
 				p.Consumer = consumer
-				p.LastDelivery = now
-				p.DeliveryCount++
+				p.LastDelivery = lastDelivery
+				if opts.RetryCount > 0 {
+					p.DeliveryCount = opts.RetryCount
+				} else {
+					p.DeliveryCount++
+				}
+				claimed = append(claimed, id)
+			} else if opts.Force {
+				// FORCE: claim even if not in PEL — create the entry
+				groupData.Pending[id] = &StreamPendingEntry{
+					ID:            id,
+					Consumer:      consumer,
+					LastDelivery:  lastDelivery,
+					DeliveryCount: 1,
+				}
 				claimed = append(claimed, id)
 			}
 		}

@@ -991,12 +991,14 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 		var remainingTTL time.Duration
 
 		for _, op := range ops {
-			// Convert offset (can be negative, meaning from end)
+			// Convert offset: negative means counting from the end of the
+			// string (Redis BITFIELD semantics: -1 = last bit, -8 = last byte).
 			bitOffset := op.offset
 			if bitOffset < 0 {
-				// Negative offset means from the end
-				// For simplicity, we don't support this for now
-				return fmt.Errorf("BITFIELD: negative offset not supported")
+				bitOffset = int64(len(data))*8 + bitOffset
+				if bitOffset < 0 {
+					return fmt.Errorf("BITFIELD: offset out of range")
+				}
 			}
 
 			// Calculate byte and bit positions

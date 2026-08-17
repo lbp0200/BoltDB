@@ -636,9 +636,12 @@ func (s *BotreonStore) TSRevRange(key string, start, stop string, count int64) (
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
-		// For reverse iteration, we seek to the end and iterate backwards
+		// For reverse iteration, we seek to the end and iterate backwards.
+		// seekKey 必须与 tsDataKey 的存储格式一致（%d 无填充），否则
+		// %020d 的零填充 key 在字典序上永远小于实际数据 key，反向迭代
+		// 从 seek 位置向前找不到任何数据（TS.REVRANGE 恒返回空）。
 		seekKey := append([]byte{}, prefix...)
-		seekKey = append(seekKey, []byte(fmt.Sprintf("%020d", stopTS))...)
+		seekKey = append(seekKey, []byte(strconv.FormatInt(stopTS, 10))...)
 
 		for it.Seek(seekKey); it.ValidForPrefix(prefix); it.Next() {
 			item := it.Item()
@@ -804,14 +807,87 @@ func (s *BotreonStore) TSIncrBy(key string, timestamp int64, value float64) (int
 	return s.TSAdd(key, ts, newVal, TSAddOptions{})
 }
 
-// TSAddRule creates a compaction rule (stub - not fully implemented)
-func (s *BotreonStore) TSAddRule(sourceKey, destKey, aggregator string, bucketDuration int64) error {
-	// Store rule in metadata (simplified)
-	return nil
+// tsRuleKey returns the key for a compaction rule metadata entry.
+// Rules are stored as "TS:rule:<source>:<dest>" so they are not confused
+// with data points ("TS:<key>:data:...") or series metadata ("TS:<key>:meta").
+func tsRuleKey(sourceKey, destKey string) []byte {
+	return []byte(fmt.Sprintf("%srule:%s:%s", prefixTS, sourceKey, destKey))
 }
 
-// TSDelRule deletes a compaction rule (stub - not fully implemented)
+// validAggregators is the set of RedisTimeSeries compaction aggregators.
+var validAggregators = map[string]bool{
+	"AVG": true, "SUM": true, "MIN": true, "MAX": true, "COUNT": true,
+	"FIRST": true, "LAST": true, "RANGE": true, "STD.P": true, "STD.S": true,
+	"VAR.P": true, "VAR.S": true, "TWA": true,
+}
+
+// TSAddRule creates a compaction rule (source → dest, AGGREGATION aggregator
+// bucketDuration). The rule is persisted so TS.CREATERULE is not a no-op;
+// creating a second rule on the same destKey fails like Redis does.
+func (s *BotreonStore) TSAddRule(sourceKey, destKey, aggregator string, bucketDuration int64) error {
+	agg := strings.ToUpper(strings.TrimSpace(aggregator))
+	if !validAggregators[agg] {
+		return fmt.Errorf("ERR unknown aggregator '%s'", aggregator)
+	}
+	if bucketDuration <= 0 {
+		return fmt.Errorf("ERR bucket duration must be positive")
+	}
+
+	key := tsRuleKey(sourceKey, destKey)
+	return s.retryUpdate(func(txn *badger.Txn) error {
+		if _, err := txn.Get(key); err == nil {
+			return fmt.Errorf("ERR rule already exists on destination key '%s'", destKey)
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
+		val := fmt.Sprintf("%s|%d", agg, bucketDuration)
+		return txn.Set(key, []byte(val))
+	}, 30)
+}
+
+// TSDelRule deletes a compaction rule (source → dest).
 func (s *BotreonStore) TSDelRule(sourceKey, destKey, aggregator string, bucketDuration int64) error {
-	// Delete rule from metadata (simplified)
-	return nil
+	key := tsRuleKey(sourceKey, destKey)
+	return s.retryUpdate(func(txn *badger.Txn) error {
+		// Delete only if the rule actually exists; deleting a non-existent
+		// rule is a silent no-op (Redis returns OK either way).
+		if _, err := txn.Get(key); errors.Is(err, badger.ErrKeyNotFound) {
+			return nil
+		} else if err != nil {
+			return err
+		}
+		return txn.Delete(key)
+	}, 30)
+}
+
+// TSGetRule returns the stored aggregator and bucket duration for the rule
+// from sourceKey to destKey, or false if no such rule exists.
+func (s *BotreonStore) TSGetRule(sourceKey, destKey string) (string, int64, bool, error) {
+	key := tsRuleKey(sourceKey, destKey)
+	var agg string
+	var duration int64
+	var found bool
+	err := s.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(key)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		val, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		parts := strings.SplitN(string(val), "|", 2)
+		if len(parts) == 2 {
+			agg = parts[0]
+			if d, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
+				duration = d
+			}
+		}
+		found = true
+		return nil
+	})
+	return agg, duration, found, err
 }
