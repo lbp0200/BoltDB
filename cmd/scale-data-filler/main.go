@@ -5,6 +5,12 @@
 //	go run cmd/scale-data-filler/main.go \
 //	   --nodes 10.1.2.16:6337,10.1.2.16:6338,10.1.2.16:6339 \
 //	   --size 10GB --value-size 1024 --concurrency 20
+//
+// 集群模式说明：启动时先拉取 CLUSTER SLOTS 得到槽位 → 节点映射，然后按槽
+// 位归属把每个 batch 的 key 分组，每组用普通 client（非 ClusterClient）
+// pipeline 发往对应节点。原因：go-redis ClusterClient 的 Pipeline() 跨槽
+// key 时 Exec 会整批失败（任一节点错误毒化整批），回退逐 key Set 只有
+// ~10 keys/s；按槽分组后每组 pipeline 的 key 都属于同一节点，无跨槽问题。
 package main
 
 import (
@@ -21,6 +27,12 @@ import (
 
 	"github.com/redis/go-redis/v9"
 )
+
+// slotOwner 描述 CLUSTER SLOTS 中一个槽位范围的归属节点。
+type slotOwner struct {
+	start, end int
+	addr       string
+}
 
 func main() {
 	nodesFlag := flag.String("nodes", "10.1.2.16:6337,10.1.2.16:6338,10.1.2.16:6339", "comma-separated node addrs")
@@ -49,7 +61,9 @@ func main() {
 		return
 	}
 
-	// Create cluster client
+	ctx := context.Background()
+
+	// Create cluster client (used for Ping and measureGET)
 	rdb := redis.NewClusterClient(&redis.ClusterOptions{
 		Addrs:        nodes,
 		PoolSize:     *concurrency,
@@ -57,13 +71,43 @@ func main() {
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	})
+	defer func() { _ = rdb.Close() }()
 
 	// Verify cluster health
-	err := rdb.Ping(context.Background()).Err()
+	err := rdb.Ping(ctx).Err()
 	if err != nil {
 		log.Fatalf("cluster ping failed: %v", err)
 	}
 	log.Printf("Cluster healthy (%d nodes)", len(nodes))
+
+	// Fetch CLUSTER SLOTS: slot ranges → node addr. This must be done before
+	// writing so each key can be routed to the node owning its slot (see file
+	// header for why ClusterClient pipeline is not used).
+	slotOwners, err := fetchSlotOwners(ctx, nodes[0])
+	if err != nil {
+		log.Fatalf("failed to fetch CLUSTER SLOTS: %v", err)
+	}
+	if len(slotOwners) == 0 {
+		log.Fatal("CLUSTER SLOTS returned no ranges — are slots assigned?")
+	}
+	log.Printf("Cluster slots: %d ranges across %d nodes", len(slotOwners), countOwnerAddrs(slotOwners))
+
+	// One plain client per owner node: pipelines built from it only contain
+	// keys owned by that node, so Exec never fails across slots.
+	clients := make(map[string]*redis.Client, len(slotOwners))
+	for _, o := range slotOwners {
+		if _, ok := clients[o.addr]; ok {
+			continue
+		}
+		clients[o.addr] = redis.NewClient(&redis.Options{
+			Addr:         o.addr,
+			PoolSize:     *concurrency,
+			MinIdleConns: *concurrency / 2,
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 30 * time.Second,
+		})
+		defer func() { _ = clients[o.addr].Close() }()
+	}
 
 	// Calculate work
 	keyOverhead := 30
@@ -108,7 +152,8 @@ func main() {
 		}
 	}()
 
-	// Worker pool
+	// Worker pool: each batch is split by slot ownership and sent as one
+	// pipeline per owner node (all keys in a group belong to that node).
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, *concurrency)
 	for i := 0; i < totalKeys; i += batchSize {
@@ -118,34 +163,46 @@ func main() {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			pipe := rdb.Pipeline()
 			end := keyStart + batchSize
 			if end > totalKeys {
 				end = totalKeys
 			}
+
+			// Group keys by owning node.
+			groups := make(map[string][]string)
 			for j := keyStart; j < end; j++ {
 				key := fmt.Sprintf("scale:k:%012d", j)
-				pipe.Set(context.Background(), key, value, 0)
-			}
-			_, err := pipe.Exec(context.Background())
-			if err != nil && !strings.Contains(err.Error(), "MOVED") &&
-				!strings.Contains(err.Error(), "ASK") {
-				// Pipeline failed (e.g. i/o timeout): retry each key
-				// individually so the completed counter reflects reality
-				// instead of unconditionally counting the whole batch.
-				for j := keyStart; j < end; j++ {
-					key := fmt.Sprintf("scale:k:%012d", j)
-					if e := rdb.Set(context.Background(), key, value, 0).Err(); e != nil {
-						errors.Add(1)
-						if errors.Load() <= 10 {
-							log.Printf("  Write error: %v", e)
-						}
-					} else {
-						completed.Add(1)
-					}
+				addr := ownerAddr(slotOwners, keySlot(key))
+				if addr == "" {
+					errors.Add(1)
+					continue
 				}
-			} else {
-				completed.Add(int64(end - keyStart))
+				groups[addr] = append(groups[addr], key)
+			}
+
+			for addr, keys := range groups {
+				client := clients[addr]
+				pipe := client.Pipeline()
+				for _, key := range keys {
+					pipe.Set(ctx, key, value, 0)
+				}
+				if _, err := pipe.Exec(ctx); err != nil {
+					// Pipeline failed (e.g. i/o timeout): retry each key
+					// individually so the completed counter reflects reality
+					// instead of unconditionally counting the whole batch.
+					for _, key := range keys {
+						if e := client.Set(ctx, key, value, 0).Err(); e != nil {
+							errors.Add(1)
+							if errors.Load() <= 10 {
+								log.Printf("  Write error: %v", e)
+							}
+						} else {
+							completed.Add(1)
+						}
+					}
+				} else {
+					completed.Add(int64(len(keys)))
+				}
 			}
 		}(i)
 	}
@@ -163,7 +220,7 @@ func main() {
 	var foundKeys int64
 	for _, node := range nodes {
 		c := redis.NewClient(&redis.Options{Addr: node, PoolSize: 1})
-		n, err := c.DBSize(context.Background()).Result()
+		n, err := c.DBSize(ctx).Result()
 		if err == nil {
 			foundKeys += n
 		}
@@ -174,6 +231,76 @@ func main() {
 	// Performance measurement
 	log.Printf("=== Performance after fill ===")
 	measureGET(rdb, foundKeys, *concurrency)
+}
+
+// fetchSlotOwners 通过任一节点拉取 CLUSTER SLOTS，返回每个槽位范围及其
+// 主节点地址（Nodes[0] 为主节点）。
+func fetchSlotOwners(ctx context.Context, addr string) ([]slotOwner, error) {
+	client := redis.NewClient(&redis.Options{Addr: addr, PoolSize: 1})
+	defer func() { _ = client.Close() }()
+
+	slots, err := client.ClusterSlots(ctx).Result()
+	if err != nil {
+		return nil, err
+	}
+	owners := make([]slotOwner, 0, len(slots))
+	for _, s := range slots {
+		if len(s.Nodes) == 0 {
+			continue
+		}
+		owners = append(owners, slotOwner{start: s.Start, end: s.End, addr: s.Nodes[0].Addr})
+	}
+	return owners, nil
+}
+
+// ownerAddr 返回拥有指定槽位的节点地址；未分配时返回空串。
+func ownerAddr(owners []slotOwner, slot int) string {
+	for _, o := range owners {
+		if slot >= o.start && slot <= o.end {
+			return o.addr
+		}
+	}
+	return ""
+}
+
+// countOwnerAddrs 统计槽位范围涉及的独立节点数。
+func countOwnerAddrs(owners []slotOwner) int {
+	seen := make(map[string]struct{}, len(owners))
+	for _, o := range owners {
+		seen[o.addr] = struct{}{}
+	}
+	return len(seen)
+}
+
+// keySlot 计算 key 的槽位（CRC-16/XModem + {} hashtag 规则），
+// 与 internal/cluster.Slot 的算法保持一致。
+func keySlot(key string) int {
+	start := strings.IndexByte(key, '{')
+	if start == -1 {
+		return int(crc16([]byte(key))) % 16384
+	}
+	end := strings.IndexByte(key[start+1:], '}')
+	if end == -1 {
+		return int(crc16([]byte(key))) % 16384
+	}
+	return int(crc16([]byte(key[start+1:start+1+end]))) % 16384
+}
+
+// crc16 implements CRC-16/XModem (polynomial 0x1021, initial value 0x0000).
+// This matches Redis's CRC16 implementation for slot calculation.
+func crc16(data []byte) uint16 {
+	crc := uint16(0)
+	for _, b := range data {
+		crc ^= uint16(b) << 8
+		for i := 0; i < 8; i++ {
+			if crc&0x8000 != 0 {
+				crc = (crc << 1) ^ 0x1021
+			} else {
+				crc <<= 1
+			}
+		}
+	}
+	return crc
 }
 
 func measureGET(rdb *redis.ClusterClient, keyCount int64, concurrency int) {
