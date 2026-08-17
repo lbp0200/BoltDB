@@ -108,7 +108,8 @@ func (h *Handler) runPubSubLoop(ctx context.Context, conn net.Conn, reader *bufi
 					m.outputBytes += int64(n)
 				}
 				h.connsMu.Unlock()
-				if tracked && h.OutputBufferLimit > 0 && m.outputBytes > h.OutputBufferLimit {
+				// CLIENT NOEVICT ON：输出缓冲区超限不主动断开该连接
+				if tracked && h.OutputBufferLimit > 0 && m.outputBytes > h.OutputBufferLimit && !state.noEvict.Load() {
 					logger.Logger.Warn().
 						Str("remote_addr", remoteAddr).
 						Int64("output_bytes", m.outputBytes).
@@ -439,7 +440,8 @@ func (h *Handler) runMonitorLoop(conn net.Conn, writer *bufio.Writer, state *con
 					m.outputBytes += int64(n)
 				}
 				h.connsMu.Unlock()
-				if tracked && h.OutputBufferLimit > 0 && m.outputBytes > h.OutputBufferLimit {
+				// CLIENT NOEVICT ON：输出缓冲区超限不主动断开该连接
+				if tracked && h.OutputBufferLimit > 0 && m.outputBytes > h.OutputBufferLimit && !state.noEvict.Load() {
 					logger.Logger.Warn().
 						Str("remote_addr", remoteAddr).
 						Int64("output_bytes", m.outputBytes).

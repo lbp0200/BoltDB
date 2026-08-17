@@ -39,6 +39,16 @@ type connState struct {
 	monitorCh     chan []byte
 	respVersion   int // 2 for RESP2 (default), 3 for RESP3; set by HELLO
 	blocking      atomic.Bool
+	// noEvict 由 CLIENT NOEVICT ON 设置：输出缓冲区超限时不主动断开
+	// 该连接（Redis 语义：客户端声明自身可以承受大输出缓冲）。
+	noEvict atomic.Bool
+	// tracking 由 CLIENT TRACKING ON/OFF 设置：客户端缓存跟踪开关。
+	// BoltDB 不推送 RESP3 失效通知，但状态必须真实存储（CLIENT INFO /
+	// GETREDIR 可见），而非 no-op。
+	tracking atomic.Bool
+	// trackingRedirect 是 CLIENT TRACKING ... REDIRECT <id> 的重定向目标
+	// 客户端 ID（GETREDIR 返回；0 = 无重定向）。
+	trackingRedirect atomic.Int64
 	// currentCmd is set for the duration of executeCommand so redirect/fence
 	// helpers know whether the access is a write (IMPORTING write fence).
 	currentCmd string
@@ -97,6 +107,18 @@ type Handler struct {
 	// 添加新命令计数时在对应的 handleXXX 函数中调用 h.incrementCmdCounter("CMD")。
 	cmdCounters   map[string]*atomic.Int64
 	cmdCountersMu sync.Mutex
+
+	// pauseUntil 是 CLIENT PAUSE 的过期时间（Unix 毫秒，0 = 未暂停）。
+	// 暂停窗口内除豁免命令（CLIENT/QUIT/AUTH/HELLO/COMMAND 等）外，
+	// 所有命令在 executeCommand 入口等待直到 UNPAUSE 或超时（故障转移窗口）。
+	pauseUntil atomic.Int64
+
+	// OnShutdown 由 main 注入：SHUTDOWN 命令触发优雅关闭的钩子。
+	// 通常指向 signal.NotifyContext 的 cancel()——cancel 使 ctx.Done()
+	// 关闭，ServeTCP 返回后 main 走完整关闭序列（replMgr.Stop →
+	// handler.Shutdown → backupMgr.Wait → db.Close）。
+	// nil 表示未接线（单元测试环境），SHUTDOWN 仅返回 OK。
+	OnShutdown func()
 }
 
 // connMeta 连接元数据
@@ -108,6 +130,8 @@ type connMeta struct {
 	outputBytes int64
 	lastRead    time.Time
 	lastWrite   time.Time
+	// limitReader 累计该连接读取的字节数（供 CLUSTER CALLS 统计输入量）
+	limitReader *CumulativeLimitReader
 }
 
 // ClientInfo 客户端连接信息
@@ -125,6 +149,8 @@ type ClientInfo struct {
 	Multi    int                 //事务中的命令数
 	Cmd      string              // 最后执行的命令
 	OFlags   string              // 客户端输出缓冲区限制标志
+	LibName  string              // 客户端库名称（CLIENT SETINFO LIB-NAME）
+	LibVer   string              // 客户端库版本（CLIENT SETINFO LIB-VER）
 	Events   string              // 事件处理标志
 	Keys     map[string]struct{} // 客户端监控的键
 	ReadOnly bool                // 只读模式
@@ -347,14 +373,11 @@ func (h *Handler) handleConnection(conn net.Conn) {
 		}
 	}()
 
-	reader := bufio.NewReader(conn)
-	// 如果配置了 MaxInputBytes，用 CumulativeLimitReader 包装输入流，
-	// 防止单连接通过发送大 bulk 请求耗尽服务器内存。
-	var limitReader *CumulativeLimitReader
-	if h.MaxInputBytes > 0 {
-		limitReader = NewCumulativeLimitReader(conn, h.MaxInputBytes)
-		reader = bufio.NewReader(limitReader)
-	}
+	// 用 CumulativeLimitReader 包装输入流：既在配置 MaxInputBytes 时
+	// 限制单连接累计读取量，也始终累计已读字节数（CLUSTER CALLS 统计
+	// NetInputBytes 的数据源；limit<=0 时不限制只计数）。
+	reader := bufio.NewReader(NewCumulativeLimitReader(conn, h.MaxInputBytes))
+	limitReader := NewCumulativeLimitReader(conn, h.MaxInputBytes)
 	writer := bufio.NewWriter(conn)
 
 	// 在复制接管时，需要关闭reader/writer以防止defer尝试Flush
@@ -401,6 +424,13 @@ func (h *Handler) handleConnection(conn net.Conn) {
 	}
 
 	h.registerConnection(state, conn, remoteAddr)
+
+	// 记录 limitReader 引用，供 CLUSTER CALLS 统计该连接输入字节量
+	h.connsMu.Lock()
+	if m, ok := h.conns[state]; ok {
+		m.limitReader = limitReader
+	}
+	h.connsMu.Unlock()
 
 	defer func() {
 		state.mu.Lock()
@@ -551,7 +581,8 @@ func (h *Handler) handleConnection(conn net.Conn) {
 			m.outputBytes += int64(flushBytes)
 		}
 		h.connsMu.Unlock()
-		if tracked && h.OutputBufferLimit > 0 && m.outputBytes > h.OutputBufferLimit {
+		// CLIENT NOEVICT ON：输出缓冲区超限不主动断开该连接
+		if tracked && h.OutputBufferLimit > 0 && m.outputBytes > h.OutputBufferLimit && !state.noEvict.Load() {
 			logger.Logger.Warn().
 				Str("remote_addr", remoteAddr).
 				Int64("output_bytes", m.outputBytes).

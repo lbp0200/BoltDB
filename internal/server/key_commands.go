@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lbp0200/BoltDB/internal/logger"
 	"github.com/lbp0200/BoltDB/internal/proto"
 )
 
@@ -201,7 +202,7 @@ func (h *Handler) handleOBJECT(state *connState, args [][]byte, remoteAddr strin
 			[]byte("ENCODING"),
 			[]byte("  -- Return the internal encoding of an object."),
 			[]byte("FREQ"),
-			[]byte("  -- Return the access frequency of an object (stub, always 0)."),
+			[]byte("  -- Return the access frequency of an object (always 0; no LFU)."),
 			[]byte("HELP"),
 			[]byte("  -- Return this help text."),
 			[]byte("IDLETIME"),
@@ -243,13 +244,37 @@ func (h *Handler) handleOBJECT(state *connState, args [][]byte, remoteAddr strin
 		}
 		return proto.NewBulkString([]byte(encoding))
 	case "IDLETIME":
+		// BadgerDB 不维护访问时间，空闲时间恒为 0；但与其他 OBJECT
+		// 子命令保持一致：不存在的 key 返回 nil（RESP3）/ 空 bulk（RESP2）。
+		exists, err := h.Db.Exists(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
+		if !exists {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
+			return proto.NewBulkString(nil)
+		}
 		idletime, err := h.Db.ObjectIdleTime(key)
 		if err != nil {
 			return wrapStoreError(err)
 		}
 		return proto.NewInteger(idletime)
 	case "FREQ":
-		// BoltDB doesn't support LFU, return 0
+		// BoltDB doesn't support LFU, so the frequency is always 0.
+		// Keep consistency with other OBJECT subcommands: a non-existent
+		// key returns nil (RESP3) / empty bulk (RESP2), not an integer.
+		exists, err := h.Db.Exists(key)
+		if err != nil {
+			return wrapStoreError(err)
+		}
+		if !exists {
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
+			return proto.NewBulkString(nil)
+		}
 		return proto.NewInteger(0)
 	default:
 		return proto.NewError("ERR syntax error")
@@ -532,9 +557,30 @@ func (h *Handler) handleTOUCH(state *connState, args [][]byte, remoteAddr string
 }
 
 // handleSHUTDOWN 实现 SHUTDOWN 命令
+// SHUTDOWN [NOSAVE|SAVE] [NOW|FORCE|ABORT]
+// 触发优雅关闭：通过 OnShutdown 钩子（main 注入的 cancel()）让
+// ServeTCP 返回，随后 main 执行 replMgr.Stop → handler.Shutdown →
+// backupMgr.Wait → db.Close 的完整关闭序列。数据本身由 BadgerDB
+// 持久化，SAVE/NOSAVE 不改变行为（无独立 RDB 快照需要落盘）。
 func (h *Handler) handleSHUTDOWN(state *connState, args [][]byte, remoteAddr string) proto.RESP {
-	// SHUTDOWN 命令（简化实现：返回错误，因为没有优雅关闭机制）
-	return proto.NewError("ERR Redis is running in read-only mode. To shutdown use SHUTDOWN NOSAVE or SHUTDOWN SAVE")
+	// 参数校验：可选 [NOSAVE|SAVE]，Redis 7+ 追加 [NOW|FORCE|ABORT]
+	for _, arg := range args {
+		opt := strings.ToUpper(string(arg))
+		switch opt {
+		case "NOSAVE", "SAVE", "NOW", "FORCE", "ABORT":
+			// 接受的选项（语义等价：触发优雅关闭）
+		default:
+			return proto.NewError(fmt.Sprintf("ERR Unknown option %s", opt))
+		}
+	}
+	logger.Logger.Warn().Str("remote_addr", remoteAddr).Msg("SHUTDOWN command received, initiating graceful shutdown")
+	if h.OnShutdown != nil {
+		// 触发关闭序列。注意不能在当前连接 goroutine 里直接等待
+		// handler.Shutdown()（wg.Wait 会等自己），而是通过 cancel()
+		// 让 ServeTCP 返回，由 main 主流程执行关闭序列。
+		h.OnShutdown()
+	}
+	return proto.OK
 }
 
 // handleKEYS 实现 KEYS 命令

@@ -314,6 +314,45 @@ func buildCommandInfo(c cmdInfo) proto.RESP {
 	}
 }
 
+// buildCommandDoc 构建 COMMAND DOCS 格式的命令文档（Redis 8 语义）。
+// 返回 doc 部分（[field, value, ...] 数组）；name 由 handleCommand 的
+// DOCS 分支单独 append（输出为 [name, doc, name, doc, ...] 扁平数组）。
+func buildCommandDoc(c cmdInfo) proto.RESP {
+	flagArgs := make([][]byte, len(c.flags))
+	for i, f := range c.flags {
+		flagArgs[i] = []byte(f)
+	}
+	return &proto.NestedArray{
+		Elems: []proto.RESP{
+			proto.NewBulkString([]byte("summary")),
+			proto.NewBulkString([]byte("")),
+			proto.NewBulkString([]byte("since")),
+			proto.NewBulkString([]byte("1.0.0")),
+			proto.NewBulkString([]byte("group")),
+			proto.NewBulkString([]byte(commandGroup(c))),
+			proto.NewBulkString([]byte("arity")),
+			proto.NewInteger(int64(c.arity)),
+			proto.NewBulkString([]byte("flags")),
+			&proto.Array{Args: flagArgs},
+		},
+	}
+}
+
+// commandGroup 根据 flags 推断命令所属组（Redis COMMAND DOCS 的 group 字段）。
+func commandGroup(c cmdInfo) string {
+	for _, f := range c.flags {
+		switch f {
+		case flagAdmin:
+			return "server"
+		case flagPubSub:
+			return "pubsub"
+		case flagWrite:
+			return "generic"
+		}
+	}
+	return "generic"
+}
+
 func handleCommand(args [][]byte) proto.RESP {
 	if len(args) == 0 {
 		infos := make([]proto.RESP, len(commandRegistry))
@@ -327,6 +366,24 @@ func handleCommand(args [][]byte) proto.RESP {
 	switch sub {
 	case "COUNT":
 		return proto.NewInteger(int64(len(commandRegistry)))
+
+	case "DOCS":
+		// COMMAND DOCS [command-name ...]：无参返回所有命令文档
+		if len(args) == 1 {
+			docs := make([]proto.RESP, 0, len(commandRegistry)*2)
+			for _, c := range commandRegistry {
+				docs = append(docs, proto.NewBulkString([]byte(c.name)), buildCommandDoc(c))
+			}
+			return &proto.NestedArray{Elems: docs}
+		}
+		docs := make([]proto.RESP, 0, len(args)*2)
+		for _, nameBytes := range args[1:] {
+			name := strings.ToUpper(string(nameBytes))
+			if c, ok := commandMap[name]; ok {
+				docs = append(docs, proto.NewBulkString([]byte(c.name)), buildCommandDoc(c))
+			}
+		}
+		return &proto.NestedArray{Elems: docs}
 
 	case "INFO":
 		if len(args) == 1 {
@@ -342,6 +399,55 @@ func handleCommand(args [][]byte) proto.RESP {
 			}
 		}
 		return &proto.NestedArray{Elems: infos}
+
+	case "GETKEYS":
+		// COMMAND GETKEYS cmd arg... — 返回命令涉及的 key 参数
+		if len(args) < 2 {
+			return proto.NewError("ERR Unknown subcommand or wrong number of arguments for 'GETKEYS'. Try COMMAND HELP.")
+		}
+		cmdName := strings.ToUpper(string(args[1]))
+		c, ok := commandMap[cmdName]
+		if !ok {
+			return proto.NewError("ERR Invalid command specified")
+		}
+		if c.firstKey == 0 {
+			return proto.NewError("ERR The command has no key arguments")
+		}
+		cmdArgs := args[2:]
+		first := c.firstKey
+		last := c.lastKey
+		if first < 0 {
+			first = len(cmdArgs) + first + 1
+		}
+		if last < 0 {
+			last = len(cmdArgs) + last + 1
+		}
+		keys := make([][]byte, 0, (last-first)/c.step+1)
+		for i := first - 1; i < last && i < len(cmdArgs); i += c.step {
+			if i >= 0 {
+				keys = append(keys, cmdArgs[i])
+			}
+		}
+		return &proto.Array{Args: keys}
+
+	case "LIST":
+		// COMMAND LIST [FILTERBY PATTERN pattern] — 返回命令名列表
+		names := make([][]byte, 0, len(commandRegistry))
+		for _, c := range commandRegistry {
+			names = append(names, []byte(c.name))
+		}
+		return &proto.Array{Args: names}
+
+	case "HELP":
+		return &proto.Array{Args: [][]byte{
+			[]byte("COMMAND <subcommand> [<arg> ...]. Subcommands are:"),
+			[]byte("COUNT"),
+			[]byte("DOCS [<command-name> ...]"),
+			[]byte("GETKEYS <full-command>"),
+			[]byte("HELP"),
+			[]byte("INFO [<command-name> ...]"),
+			[]byte("LIST"),
+		}}
 
 	default:
 		return proto.NewError(fmt.Sprintf("ERR unknown subcommand '%s'", sub))

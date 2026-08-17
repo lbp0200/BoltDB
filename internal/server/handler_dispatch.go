@@ -4,15 +4,54 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/logger"
 	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/lbp0200/BoltDB/internal/replication"
 )
 
+// pauseExempt 报告命令是否在 CLIENT PAUSE 窗口内豁免（不被阻塞等待）。
+// 连接/认证/管理类命令必须豁免，否则 CLIENT UNPAUSE 自身无法执行、
+// 心跳和认证也会被卡死。
+func (h *Handler) pauseExempt(cmd string) bool {
+	switch cmd {
+	case "CLIENT", "QUIT", "AUTH", "HELLO", "COMMAND", "PING", "SHUTDOWN":
+		// SHUTDOWN 是管理命令：即使处于 CLIENT PAUSE 窗口也必须立即
+		// 执行，否则暂停期间无法优雅关停服务器。
+		return true
+	}
+	return false
+}
+
+// waitPauseWindow 阻塞当前命令直到 CLIENT PAUSE 窗口结束：
+// pauseUntil 归零（CLIENT UNPAUSE 调用）或当前时间超过 pauseUntil
+// （暂停超时自动恢复）。连接上下文取消（关闭/服务器关闭）时立即返回，
+// 避免优雅关闭被暂停窗口拖住。轮询间隔 10ms 保证 UNPAUSE 及时生效。
+func (h *Handler) waitPauseWindow(state *connState) {
+	for {
+		until := h.pauseUntil.Load()
+		if until == 0 || time.Now().UnixMilli() >= until {
+			return
+		}
+		select {
+		case <-state.ctx.Done():
+			return
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
 func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, remoteAddr string) proto.RESP {
 	if state == nil {
 		return proto.NewError("ERR internal error: nil connState")
+	}
+
+	// CLIENT PAUSE 窗口：暂停期间除豁免命令（CLIENT/QUIT/AUTH/HELLO/
+	// COMMAND/PING 等）外，所有命令在入口等待直到 UNPAUSE 或暂停超时。
+	// 这是 Redis CLIENT PAUSE 的语义：故障转移期间停止处理客户端命令。
+	if !h.pauseExempt(cmd) {
+		h.waitPauseWindow(state)
 	}
 
 	state.mu.Lock()

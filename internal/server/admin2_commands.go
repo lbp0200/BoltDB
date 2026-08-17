@@ -293,6 +293,16 @@ func (h *Handler) handleMEMORY(state *connState, args [][]byte, remoteAddr strin
 			return proto.NewError("ERR wrong number of arguments for 'MEMORY USAGE' command")
 		}
 		key := string(args[1])
+		// 可选 SAMPLES count：Redis 语义下影响近似采样数；BoltDB 的
+		// MemoryUsage 为精确估算，SAMPLES 不改变结果，但必须校验格式。
+		if len(args) > 2 {
+			if strings.ToUpper(string(args[2])) != "SAMPLES" || len(args) < 4 {
+				return proto.NewError("ERR syntax error")
+			}
+			if _, err := strconv.Atoi(string(args[3])); err != nil {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+		}
 		// Estimate memory usage - use key type size approximation
 		size, err := h.Db.MemoryUsage(key)
 		if err != nil {

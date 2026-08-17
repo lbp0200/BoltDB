@@ -53,6 +53,35 @@ func (h *Handler) TotalOutputBytes() int64 {
 	return total
 }
 
+// TotalInputBytes 返回所有连接累计读取的字节总数
+// （CumulativeLimitReader.Total 汇总，CLUSTER CALLS NetInputBytes 数据源）。
+func (h *Handler) TotalInputBytes() int64 {
+	h.connsMu.RLock()
+	defer h.connsMu.RUnlock()
+	var total int64
+	for _, meta := range h.conns {
+		if meta.limitReader != nil {
+			total += meta.limitReader.Total()
+		}
+	}
+	return total
+}
+
+// TotalCommandsProcessed 返回所有命令累计执行次数
+// （CLUSTER CALLS CommandsProcessed 数据源）。
+func (h *Handler) TotalCommandsProcessed() int64 {
+	if h.cmdCounters == nil {
+		return 0
+	}
+	h.cmdCountersMu.Lock()
+	defer h.cmdCountersMu.Unlock()
+	var total int64
+	for _, c := range h.cmdCounters {
+		total += c.Load()
+	}
+	return total
+}
+
 // incrementCmdCounter 按命令名称递增调用计数器。
 // 线程安全，计数器在首次访问时惰性初始化。
 func (h *Handler) incrementCmdCounter(cmd string) {

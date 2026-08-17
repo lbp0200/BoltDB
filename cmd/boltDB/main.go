@@ -350,6 +350,12 @@ func main() {
 		MaxInputBytes:     *maxInputBytesFlag,
 		Timeout:           time.Duration(*idleTimeoutFlag) * time.Second,
 	}
+	// SHUTDOWN 命令 → cancel() → ctx.Done() → ServeTCP 返回 → 走完整关闭序列
+	handler.OnShutdown = cancel
+	// CLUSTER CALLS 真实统计源：命令数 / 输入字节 / 输出字节
+	cluster.SetCallsStatsProvider(func() (int64, int64, int64) {
+		return handler.TotalCommandsProcessed(), handler.TotalInputBytes(), handler.TotalOutputBytes()
+	})
 
 	// 初始化 metrics 采集
 	metrics.BuildVersion = server.Version

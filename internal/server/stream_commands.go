@@ -374,6 +374,23 @@ func (h *Handler) handleXGROUP(state *connState, args [][]byte, remoteAddr strin
 		key := string(args[1])
 		group := string(args[2])
 		startID := string(args[3])
+		// 合法可选参数：MKSTREAM（stream 不存在时自动创建，store 层本就
+		// 总是自动创建，语义等价）与 ENTRIESREAD <n>（接受并忽略值）。
+		// 未知选项必须拒绝（此前被静默忽略）。
+		for i := 4; i < len(args); i++ {
+			opt := strings.ToUpper(string(args[i]))
+			switch opt {
+			case "MKSTREAM":
+				// accepted: store 层 XGroupCreate 总是自动创建 stream
+			case "ENTRIESREAD":
+				if i+1 >= len(args) {
+					return proto.NewError("ERR syntax error")
+				}
+				i++
+			default:
+				return proto.NewError("ERR syntax error")
+			}
+		}
 		h.markDirtyKeys(state, key)
 		err := h.Db.XGroupCreate(key, group, startID)
 		if err != nil {
@@ -430,6 +447,24 @@ func (h *Handler) handleXGROUP(state *connState, args [][]byte, remoteAddr strin
 			return wrapLogError(err)
 		}
 		return proto.NewInteger(removed)
+	case "CREATECONSUMER":
+		// XGROUP CREATECONSUMER key group consumer — 显式创建消费者，
+		// 返回 1 = 新建，0 = 已存在（Redis 语义）。
+		if len(args) < 4 {
+			return proto.NewError("ERR wrong number of arguments for 'XGROUP CREATECONSUMER' command")
+		}
+		key := string(args[1])
+		group := string(args[2])
+		consumer := string(args[3])
+		h.markDirtyKeys(state, key)
+		created, err := h.Db.XGroupCreateConsumer(key, group, consumer)
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return wrapLogError(err)
+		}
+		return proto.NewInteger(created)
 	default:
 		return proto.NewError("ERR syntax error")
 	}
@@ -612,6 +647,7 @@ func (h *Handler) handleXCLAIM(state *connState, args [][]byte, remoteAddr strin
 	}
 
 	justID := false
+	opts := store.XClaimOptions{MinIdleTime: minIdleTime}
 	ids := make([]string, 0, len(args)-4)
 	for i := 4; i < len(args); i++ {
 		opt := strings.ToUpper(string(args[i]))
@@ -619,8 +655,38 @@ func (h *Handler) handleXCLAIM(state *connState, args [][]byte, remoteAddr strin
 		case "JUSTID":
 			justID = true
 		case "FORCE":
-			// accepted; store path claims only existing PEL entries (FORCE no-op until extended)
-		case "IDLE", "TIME", "RETRYCOUNT", "LASTID":
+			opts.Force = true
+		case "IDLE":
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			v, err := strconv.ParseInt(string(args[i+1]), 10, 64)
+			if err != nil || v < 0 {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			opts.IdleMS = v
+			i++
+		case "TIME":
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			v, err := strconv.ParseInt(string(args[i+1]), 10, 64)
+			if err != nil || v < 0 {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			opts.TimeMS = v
+			i++
+		case "RETRYCOUNT":
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			v, err := strconv.ParseInt(string(args[i+1]), 10, 64)
+			if err != nil || v < 0 {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			opts.RetryCount = v
+			i++
+		case "LASTID":
 			// accept and skip value arg for protocol compatibility
 			if i+1 >= len(args) {
 				return proto.NewError("ERR syntax error")
@@ -635,7 +701,7 @@ func (h *Handler) handleXCLAIM(state *connState, args [][]byte, remoteAddr strin
 	}
 
 	h.markDirtyKeys(state, key)
-	claimed, err := h.Db.XClaim(key, group, consumer, minIdleTime, ids...)
+	claimed, err := h.Db.XClaim(key, group, consumer, opts, ids...)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -913,6 +979,10 @@ func (h *Handler) handleXINFO(state *connState, args [][]byte, remoteAddr string
 			[]byte(info.MaxDeletedID),
 			[]byte("entries-added"),
 			[]byte(strconv.FormatInt(info.Length, 10)),
+			// recorded-first-entry-id：stream 中首个 entry 的 ID
+			// （Redis 标准字段；与 max-deleted-entry-id 对应）
+			[]byte("recorded-first-entry-id"),
+			[]byte(info.FirstID),
 			[]byte("groups"),
 			[]byte(strconv.FormatInt(groupsCount, 10)),
 		}

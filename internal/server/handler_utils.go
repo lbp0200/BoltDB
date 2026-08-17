@@ -98,6 +98,15 @@ func (h *Handler) clientListRESP() proto.RESP {
 		} else if state.blocking.Load() {
 			flags = "b"
 		}
+		// CLIENT NOEVICT ON → Redis flags 增加 O（no-evict 模式）；
+		// N（无特殊标志）与 O 互斥，普通连接 noEvict 时显示 O。
+		if state.noEvict.Load() {
+			if flags == "N" {
+				flags = "O"
+			} else {
+				flags += "O"
+			}
+		}
 		if state.inTransaction {
 			multi = len(state.commands)
 		}
