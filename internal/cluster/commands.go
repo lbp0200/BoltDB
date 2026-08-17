@@ -6,7 +6,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/lbp0200/BoltDB/internal/logger"
@@ -746,12 +745,12 @@ func (cc *ClusterCommands) handleReset(args []string) (string, error) {
 	return "OK", nil
 }
 
-// clusterStats 用于存储集群调用统计
+// clusterStats 用于存储集群调用统计（保留供回退读取，真实统计由
+// SetCallsStatsProvider 注入的 provider 提供）。
 type clusterStats struct {
 	CommandsProcessed int64
 	NetInputBytes     int64
 	NetOutputBytes    int64
-	mu                sync.RWMutex
 }
 
 var globalClusterStats = &clusterStats{
@@ -760,20 +759,35 @@ var globalClusterStats = &clusterStats{
 	NetOutputBytes:    0,
 }
 
+// callsStatsProvider 由 server 层注入（SetCallsStatsProvider），返回本节点
+// 真实命令统计。nil 时 handleCalls 回退 globalClusterStats（恒 0，假实现）。
+var callsStatsProvider func() (processed int64, inputBytes int64, outputBytes int64)
+
+// SetCallsStatsProvider 注册真实统计源。server 层在启动时注入
+// （TotalCommandsProcessed / TotalInputBytes / TotalOutputBytes），
+// 使 CLUSTER CALLS 返回本节点实际处理的命令与字节量。
+func SetCallsStatsProvider(fn func() (int64, int64, int64)) {
+	callsStatsProvider = fn
+}
+
 // handleCalls 处理CLUSTER CALLS命令
 func (cc *ClusterCommands) handleCalls(args []string) ([]interface{}, error) {
 	cc.cluster.mu.RLock()
 	defer cc.cluster.mu.RUnlock()
 
-	globalClusterStats.mu.RLock()
-	defer globalClusterStats.mu.RUnlock()
+	processed := globalClusterStats.CommandsProcessed
+	inputBytes := globalClusterStats.NetInputBytes
+	outputBytes := globalClusterStats.NetOutputBytes
+	if callsStatsProvider != nil {
+		processed, inputBytes, outputBytes = callsStatsProvider()
+	}
 
 	result := make([]interface{}, 0, 4*len(cc.cluster.Nodes))
 	for _, node := range cc.cluster.Nodes {
 		result = append(result, node.ID)
-		result = append(result, globalClusterStats.CommandsProcessed)
-		result = append(result, globalClusterStats.NetInputBytes)
-		result = append(result, globalClusterStats.NetOutputBytes)
+		result = append(result, processed)
+		result = append(result, inputBytes)
+		result = append(result, outputBytes)
 	}
 
 	return result, nil
@@ -781,23 +795,21 @@ func (cc *ClusterCommands) handleCalls(args []string) ([]interface{}, error) {
 
 // handleTotalKeys 处理CLUSTER TOTALKEYS命令
 func (cc *ClusterCommands) handleTotalKeys(args []string) (int64, error) {
-	if len(args) < 1 {
+	// Redis 7.4+ 语法：CLUSTER TOTALKEYS（无参数），返回数据库键总数。
+	if len(args) != 0 {
 		return 0, fmt.Errorf("ERR wrong number of arguments for 'CLUSTER TOTALKEYS' command")
 	}
-
-	slot, err := strconv.ParseUint(args[0], 10, 32)
+	// 复用 IterateRawKeys 全量遍历（与 COUNTKEYSINSLOT/GETKEYSINSLOT
+	// 同一迭代器路径），统计用户键数量。
+	var total int64
+	err := cc.cluster.Store.IterateRawKeys(func(rawKey string) bool {
+		total++
+		return true
+	})
 	if err != nil {
-		return 0, fmt.Errorf("ERR invalid slot number")
+		return 0, err
 	}
-
-	if slot >= uint64(SlotCount) {
-		return 0, fmt.Errorf("ERR slot out of range")
-	}
-
-	// 简化实现：返回0
-	// 实际需要扫描整个数据库，统计属于该槽位的键数量
-	// 由于BoltDB/BadgerDB的键不存储槽位信息，这里无法准确统计
-	return 0, nil
+	return total, nil
 }
 
 // handleBumpEpoch 处理CLUSTER BUMPEPOCH命令

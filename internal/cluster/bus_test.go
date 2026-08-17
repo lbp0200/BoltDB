@@ -501,6 +501,15 @@ func TestApplyGossipPayloadFailRecoveryDirect(t *testing.T) {
 	}
 	assert.Equal(t, 1, len(cluster.usurpedSlots["peer2"]))
 
+	// 回归：usurp 路径必须同步 node.Slots 字段（CLUSTER NODES 显示与
+	// BuildGossipPayload 广播都基于它；2026-08-06 曾观察到接管方行
+	// 不显示新槽位，AddSlotRange 同步后修复）。
+	assert.True(t, cluster.Myself.HasSlot(1000))
+	assert.True(t, cluster.Myself.HasSlot(1500))
+	assert.True(t, cluster.Myself.HasSlot(2000))
+	nodesOut := strings.Join(cluster.GetClusterNodes(), "\n")
+	assert.True(t, strings.Contains(nodesOut, "1000-2000"))
+
 	// peer2 recovers: sends a PONG over the bus
 	aliveDirty := bus.handlePONG("peer2")
 	assert.True(t, aliveDirty)

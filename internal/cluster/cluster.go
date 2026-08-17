@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -429,8 +430,26 @@ func (c *Cluster) GetClusterSlots() [][]interface{} {
 			[]interface{}{host, int64(port), node.ID},
 		}
 
-		// 如果有replica，添加replica信息
-		// 这里简化处理，实际应该查找该节点的slave节点
+		// 追加该 master 的 replica 节点信息（Redis CLUSTER SLOTS 格式：
+		// [start, end, master, replica1, replica2, ...]）。
+		// 遍历节点表，找 masterID 指向该节点且带 slave 标志的从节点。
+		for _, candidate := range c.Nodes {
+			if candidate == node || candidate.ID == node.ID {
+				continue
+			}
+			if !candidate.IsSlave() || candidate.GetMasterID() != node.ID {
+				continue
+			}
+			rHost, rPortStr, err := candidate.GetHostPort()
+			if err != nil {
+				continue
+			}
+			rPort, err := strconv.Atoi(rPortStr)
+			if err != nil {
+				continue
+			}
+			slotInfo = append(slotInfo, []interface{}{rHost, int64(rPort), candidate.ID})
+		}
 
 		result = append(result, slotInfo)
 	}
@@ -460,23 +479,27 @@ func (c *Cluster) mergeSlotRanges() []SlotRange {
 }
 
 // mergeConsecutiveSlots 合并连续的槽位
+// 入参无需保证有序：内部先排序，避免调用方（如持久化恢复路径）传入
+// 乱序槽位时产生错误的非连续范围（原实现假设已排序）。
 func mergeConsecutiveSlots(slots []uint32) []SlotRange {
 	if len(slots) == 0 {
 		return nil
 	}
+	sorted := make([]uint32, len(slots))
+	copy(sorted, slots)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
 
-	// 排序槽位（这里假设已经排序，实际应该先排序）
 	ranges := []SlotRange{}
-	start := slots[0]
-	end := slots[0]
+	start := sorted[0]
+	end := sorted[0]
 
-	for i := 1; i < len(slots); i++ {
-		if slots[i] == end+1 {
-			end = slots[i]
+	for i := 1; i < len(sorted); i++ {
+		if sorted[i] == end+1 {
+			end = sorted[i]
 		} else {
 			ranges = append(ranges, SlotRange{Start: start, End: end})
-			start = slots[i]
-			end = slots[i]
+			start = sorted[i]
+			end = sorted[i]
 		}
 	}
 	ranges = append(ranges, SlotRange{Start: start, End: end})

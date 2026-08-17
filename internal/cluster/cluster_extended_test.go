@@ -160,6 +160,45 @@ func TestCluster_GetClusterSlots(t *testing.T) {
 	assert.Equal(t, 1, len(slots))
 }
 
+// TestCluster_GetClusterSlots_Replicas verifies CLUSTER SLOTS appends the
+// master's replica nodes in the Redis format [start, end, master, replica...].
+func TestCluster_GetClusterSlots_Replicas(t *testing.T) {
+	t.Parallel()
+	cluster, cleanup := setupTestCluster(t)
+	defer cleanup()
+
+	// Master owns slots 0-100：先清空默认的 Myself 全槽位，再全部分给 master
+	for i := uint32(0); i < SlotCount; i++ {
+		cluster.Slots[i] = nil
+	}
+	master := NewNode("master1", "127.0.0.1:7000")
+	master.AddSlotRange(0, 100)
+	cluster.AddNode(master)
+	for i := uint32(0); i <= 100; i++ {
+		cluster.AssignSlot(i, "master1")
+	}
+
+	// Replica of master1
+	replica := NewNode("replica1", "127.0.0.1:7001")
+	replica.SetRoleAsSlave("master1")
+	cluster.AddNode(replica)
+
+	slots := cluster.GetClusterSlots()
+	assert.Equal(t, 1, len(slots))
+	entry := slots[0]
+	// [start, end, master, replica...]
+	assert.Equal(t, int64(0), entry[0])
+	assert.Equal(t, int64(100), entry[1])
+	masterInfo, ok := entry[2].([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 3, len(masterInfo))
+	assert.Equal(t, "master1", masterInfo[2])
+	// Replica appended after master
+	replicaInfo, ok := entry[3].([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, "replica1", replicaInfo[2])
+}
+
 // TestCluster_GetMyself tests GetMyself
 func TestCluster_GetMyself(t *testing.T) {
 	t.Parallel()

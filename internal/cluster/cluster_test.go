@@ -42,6 +42,34 @@ func TestSlotCalculation(t *testing.T) {
 	assert.NotEqual(t, slot3, slot4)
 }
 
+// TestMergeConsecutiveSlotsUnsorted verifies mergeConsecutiveSlots sorts its
+// input internally, so out-of-order slot lists (e.g. from persistence restore
+// or map iteration) still merge into correct contiguous ranges.
+func TestMergeConsecutiveSlotsUnsorted(t *testing.T) {
+	t.Parallel()
+
+	// Unsorted input with gaps: {5, 1, 3, 2, 8, 9} → [1-3], [5-5], [8-9]
+	ranges := mergeConsecutiveSlots([]uint32{5, 1, 3, 2, 8, 9})
+	assert.Equal(t, 3, len(ranges))
+	assert.Equal(t, SlotRange{Start: 1, End: 3}, ranges[0])
+	assert.Equal(t, SlotRange{Start: 5, End: 5}, ranges[1])
+	assert.Equal(t, SlotRange{Start: 8, End: 9}, ranges[2])
+
+	// Fully contiguous unsorted input → single range
+	ranges = mergeConsecutiveSlots([]uint32{10, 8, 9, 7})
+	assert.Equal(t, 1, len(ranges))
+	assert.Equal(t, SlotRange{Start: 7, End: 10}, ranges[0])
+
+	// Single element
+	ranges = mergeConsecutiveSlots([]uint32{42})
+	assert.Equal(t, 1, len(ranges))
+	assert.Equal(t, SlotRange{Start: 42, End: 42}, ranges[0])
+
+	// Empty input
+	assert.Nil(t, mergeConsecutiveSlots(nil))
+	assert.Nil(t, mergeConsecutiveSlots([]uint32{}))
+}
+
 func TestClusterCreation(t *testing.T) {
 	t.Parallel()
 	cluster, cleanup := setupTestCluster(t)
@@ -644,13 +672,31 @@ func TestHandleCalls(t *testing.T) {
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
 
-	// Test CLUSTER CALLS
+	// 未注入 provider：回退 globalClusterStats（恒 0）
 	result, err := cmd.HandleCommand([]string{"CALLS"})
 	assert.NoError(t, err)
 	calls, ok := result.([]interface{})
 	assert.True(t, ok)
 	// Should have at least myself in the result
 	assert.Equal(t, 4, len(calls)) // 1 node × 4 fields (ID, CommandsProcessed, NetInputBytes, NetOutputBytes)
+	// 默认（无 provider）统计为 0
+	assert.Equal(t, int64(0), calls[1])
+	assert.Equal(t, int64(0), calls[2])
+	assert.Equal(t, int64(0), calls[3])
+
+	// 注入 provider：CLUSTER CALLS 应返回真实统计（不再恒 0）
+	SetCallsStatsProvider(func() (int64, int64, int64) {
+		return 42, 1024, 2048
+	})
+	defer SetCallsStatsProvider(nil)
+
+	result, err = cmd.HandleCommand([]string{"CALLS"})
+	assert.NoError(t, err)
+	calls, ok = result.([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, int64(42), calls[1])
+	assert.Equal(t, int64(1024), calls[2])
+	assert.Equal(t, int64(2048), calls[3])
 }
 
 func TestHandleTotalKeys(t *testing.T) {
@@ -659,21 +705,30 @@ func TestHandleTotalKeys(t *testing.T) {
 	defer cleanup()
 	cmd := NewClusterCommands(cluster)
 
-	// Test CLUSTER TOTALKEYS
-	result, err := cmd.HandleCommand([]string{"TOTALKEYS", "100"})
+	// 空库：TOTALKEYS 返回 0
+	result, err := cmd.HandleCommand([]string{"TOTALKEYS"})
 	assert.NoError(t, err)
 	keys, ok := result.(int64)
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), keys)
 
-	// Test with invalid arguments
-	_, err = cmd.HandleCommand([]string{"TOTALKEYS"})
+	// 写入 3 个 key（不同槽位）后应返回真实键数
+	store := cluster.Store
+	assert.NoError(t, store.Set("tk_a", "v1"))
+	assert.NoError(t, store.Set("tk_b", "v2"))
+	assert.NoError(t, store.Set("tk_c", "v3"))
+
+	result, err = cmd.HandleCommand([]string{"TOTALKEYS"})
+	assert.NoError(t, err)
+	keys, ok = result.(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(3), keys)
+
+	// 参数校验：TOTALKEYS 无参数（Redis 7.4+ 语法），带参报错
+	_, err = cmd.HandleCommand([]string{"TOTALKEYS", "100"})
 	assert.Error(t, err)
 
 	_, err = cmd.HandleCommand([]string{"TOTALKEYS", "abc"})
-	assert.Error(t, err)
-
-	_, err = cmd.HandleCommand([]string{"TOTALKEYS", "20000"})
 	assert.Error(t, err)
 }
 
