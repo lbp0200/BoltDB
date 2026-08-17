@@ -1064,6 +1064,76 @@ func TestExecuteCommand_XGROUP_CREATE_Coverage(t *testing.T) {
 	}
 }
 
+// TestExecuteCommand_XGROUP_CREATE_Options verifies XGROUP CREATE accepts the
+// legal MKSTREAM / ENTRIESREAD options and rejects unknown ones (previously
+// all trailing options were silently ignored).
+func TestExecuteCommand_XGROUP_CREATE_Options(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// MKSTREAM on a fresh stream is accepted (store auto-creates the stream)
+	resp := handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATE"), []byte("newstream"), []byte("grp"), []byte("$"), []byte("MKSTREAM")}, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+
+	// ENTRIESREAD with a value is accepted
+	resp = handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATE"), []byte("esstream"), []byte("grp2"), []byte("0"), []byte("ENTRIESREAD"), []byte("5")}, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+
+	// Unknown option must be rejected
+	resp = handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATE"), []byte("badstream"), []byte("grp3"), []byte("0"), []byte("BOGUS")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "syntax error"))
+
+	// ENTRIESREAD without value must be rejected
+	resp = handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATE"), []byte("badstream2"), []byte("grp4"), []byte("0"), []byte("ENTRIESREAD")}, "127.0.0.1:12345")
+	errResp, ok = resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "syntax error"))
+}
+
+// TestExecuteCommand_XGROUP_CREATECONSUMER tests XGROUP CREATECONSUMER:
+// creates a consumer explicitly, returns 1 on first create, 0 if exists.
+func TestExecuteCommand_XGROUP_CREATECONSUMER_Coverage(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Add an entry first
+	handler.executeCommand(state, "XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
+
+	// Create the group
+	resp := handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATE"), []byte("mystream"), []byte("mygroup"), []byte("0")}, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+
+	// First CREATECONSUMER returns 1 (newly created)
+	resp = handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATECONSUMER"), []byte("mystream"), []byte("mygroup"), []byte("consumer1")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// Second CREATECONSUMER with same consumer returns 0 (already exists)
+	resp = handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATECONSUMER"), []byte("mystream"), []byte("mygroup"), []byte("consumer1")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+
+	// Verify consumer visible via XINFO CONSUMERS
+	infoResp := handler.executeCommand(state, "XINFO", [][]byte{[]byte("CONSUMERS"), []byte("mystream"), []byte("mygroup")}, "127.0.0.1:12345")
+	infoArr, ok := infoResp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(infoArr.Elems))
+
+	// Wrong number of args → error
+	resp = handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATECONSUMER"), []byte("mystream"), []byte("mygroup")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "wrong number of arguments"))
+}
+
 // TestExecuteCommand_XDEL tests XDEL command
 func TestExecuteCommand_XDEL_Coverage(t *testing.T) {
 	t.Parallel()
@@ -1263,6 +1333,18 @@ func TestExecuteCommand_XINFO_STREAMS_Coverage(t *testing.T) {
 	// Format: [length, first-entry-id, last-entry-id, ...]
 	if len(arr.Args) > 0 {
 		assert.Equal(t, "length", string(arr.Args[0]))
+	}
+	// Verify recorded-first-entry-id field is present with the first entry ID
+	// (store 层 formatStreamID 把 "1" 规范化为 "1-0")
+	foundRecordedFirst := false
+	for i := 0; i+1 < len(arr.Args); i += 2 {
+		if string(arr.Args[i]) == "recorded-first-entry-id" {
+			assert.Equal(t, "1-0", string(arr.Args[i+1]))
+			foundRecordedFirst = true
+		}
+	}
+	if !foundRecordedFirst {
+		t.Error("XINFO STREAM should include recorded-first-entry-id")
 	}
 }
 

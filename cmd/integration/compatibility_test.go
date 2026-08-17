@@ -837,6 +837,46 @@ func TestCompatWrongTypeHashOpOnList(t *testing.T) {
 	}
 }
 
+func TestCompatWrongTypeStreamOpOnString(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	sharedClient.Set(ctx, "wt:stream", "value", 0)
+
+	_, err := sharedClient.XAdd(ctx, &redis.XAddArgs{
+		Stream: "wt:stream",
+		ID:     "*",
+		Values: map[string]interface{}{"field": "value"},
+	}).Result()
+	if err == nil {
+		t.Error("XADD on string should return WRONGTYPE error")
+	} else if !strings.Contains(err.Error(), "WRONGTYPE") {
+		t.Errorf("XADD on string got: %v (expected WRONGTYPE)", err)
+	}
+}
+
+func TestCompatWrongTypeGeoOpOnString(t *testing.T) {
+	setupTest(t)
+	defer teardownTest(t)
+
+	ctx := context.Background()
+
+	sharedClient.Set(ctx, "wt:geo", "value", 0)
+
+	_, err := sharedClient.GeoAdd(ctx, "wt:geo", &redis.GeoLocation{
+		Name:      "member",
+		Longitude: 13.361389,
+		Latitude:  38.115556,
+	}).Result()
+	if err == nil {
+		t.Error("GEOADD on string should return WRONGTYPE error")
+	} else if !strings.Contains(err.Error(), "WRONGTYPE") {
+		t.Errorf("GEOADD on string got: %v (expected WRONGTYPE)", err)
+	}
+}
+
 // ============================================================================
 // 6. NIL RESPONSE TESTS
 // ============================================================================

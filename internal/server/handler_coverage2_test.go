@@ -1,8 +1,11 @@
 package server
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/lbp0200/BoltDB/internal/store"
@@ -91,11 +94,38 @@ func TestExecuteCommand_CLIENT_TRACKING_Coverage(t *testing.T) {
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(state, "CLIENT", [][]byte{[]byte("TRACKING"), []byte("ON")}, "127.0.0.1:12345")
-	assert.Equal(t, proto.OK, resp)
+	// Default: tracking off, no redirect
+	assert.False(t, state.tracking.Load())
+	assert.Equal(t, int64(0), state.trackingRedirect.Load())
 
+	// ON with REDIRECT 42 — sets both the flag and the redirect target
+	resp := handler.executeCommand(state, "CLIENT", [][]byte{[]byte("TRACKING"), []byte("ON"), []byte("REDIRECT"), []byte("42")}, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+	assert.True(t, state.tracking.Load())
+	assert.Equal(t, int64(42), state.trackingRedirect.Load())
+
+	// GETREDIR reflects the redirect target
+	resp = handler.executeCommand(state, "CLIENT", [][]byte{[]byte("GETREDIR")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(42), int64(*integer))
+
+	// OFF clears tracking (redirect retained, matching Redis behavior)
 	resp = handler.executeCommand(state, "CLIENT", [][]byte{[]byte("TRACKING"), []byte("OFF")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
+	assert.False(t, state.tracking.Load())
+
+	// Invalid mode rejected
+	resp = handler.executeCommand(state, "CLIENT", [][]byte{[]byte("TRACKING"), []byte("MAYBE")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "syntax error"))
+
+	// Invalid REDIRECT value rejected
+	resp = handler.executeCommand(state, "CLIENT", [][]byte{[]byte("TRACKING"), []byte("ON"), []byte("REDIRECT"), []byte("abc")}, "127.0.0.1:12345")
+	errResp, ok = resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "not an integer"))
 }
 
 // TestExecuteCommand_BITFIELD_Coverage tests BITFIELD command
@@ -406,6 +436,28 @@ func TestExecuteCommand_MEMORY_USAGE_Coverage(t *testing.T) {
 	assert.True(t, memUsage > 0)
 	// Memory usage should be at least the size of key + value
 	assert.True(t, memUsage >= int64(len("memkey")+len("somevalue")))
+
+	// Optional SAMPLES count is accepted (no behavior change, exact estimate)
+	resp = handler.executeCommand(state, "MEMORY", [][]byte{[]byte("USAGE"), []byte("memkey"), []byte("SAMPLES"), []byte("5")}, "127.0.0.1:12345")
+	integer2, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, memUsage, int64(*integer2))
+
+	// Invalid SAMPLES forms are rejected
+	resp = handler.executeCommand(state, "MEMORY", [][]byte{[]byte("USAGE"), []byte("memkey"), []byte("SAMPLES")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "syntax error"))
+
+	resp = handler.executeCommand(state, "MEMORY", [][]byte{[]byte("USAGE"), []byte("memkey"), []byte("SAMPLES"), []byte("abc")}, "127.0.0.1:12345")
+	errResp, ok = resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "not an integer"))
+
+	resp = handler.executeCommand(state, "MEMORY", [][]byte{[]byte("USAGE"), []byte("memkey"), []byte("BOGUS")}, "127.0.0.1:12345")
+	errResp, ok = resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "syntax error"))
 }
 
 // TestExecuteCommand_ZRANGESTORE_Coverage tests ZRANGESTORE command
@@ -1564,6 +1616,78 @@ func TestExecuteCommand_SRANDMEMBER_Count_Coverage(t *testing.T) {
 	}
 }
 
+// TestSRandMemberRandomnessDistribution verifies SRANDMEMBER's randomness
+// actually covers the whole set over repeated draws (audit gap: only the
+// return-value range was checked, never the distribution). With 10 members
+// and 200 draws, the chance a member is never drawn is ~7e-10 — not flaky.
+func TestSRandMemberRandomnessDistribution(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	const members = 10
+	const draws = 200
+	for i := 0; i < members; i++ {
+		handler.Db.SAdd("sranddist", fmt.Sprintf("m%d", i))
+	}
+
+	seen := make(map[string]int, members)
+	for i := 0; i < draws; i++ {
+		resp := handler.executeCommand(state, "SRANDMEMBER", [][]byte{[]byte("sranddist")}, "127.0.0.1:12345")
+		bs, ok := resp.(*proto.BulkString)
+		assert.True(t, ok)
+		seen[string(*bs)]++
+	}
+
+	for i := 0; i < members; i++ {
+		want := fmt.Sprintf("m%d", i)
+		if seen[want] == 0 {
+			t.Errorf("SRANDMEMBER never drew member %s over %d draws (distribution biased)", want, draws)
+		}
+	}
+	// Single-member draws must never return a member outside the set
+	for m := range seen {
+		exists, _ := handler.Db.SIsMember("sranddist", m)
+		assert.True(t, exists)
+	}
+}
+
+// TestHRandFieldRandomnessDistribution verifies HRANDFIELD's randomness
+// covers the whole hash over repeated draws (audit gap: only return-value
+// range checked, never distribution). Same non-flaky sizing as the set test.
+func TestHRandFieldRandomnessDistribution(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	const fields = 10
+	const draws = 200
+	args := [][]byte{[]byte("hranddist")}
+	for i := 0; i < fields; i++ {
+		args = append(args, []byte(fmt.Sprintf("f%d", i)), []byte(fmt.Sprintf("v%d", i)))
+	}
+	handler.executeCommand(state, "HSET", args, "127.0.0.1:12345")
+
+	seen := make(map[string]int, fields)
+	for i := 0; i < draws; i++ {
+		resp := handler.executeCommand(state, "HRANDFIELD", [][]byte{[]byte("hranddist")}, "127.0.0.1:12345")
+		arr, ok := resp.(*proto.Array)
+		assert.True(t, ok)
+		assert.Equal(t, 1, len(arr.Args))
+		seen[string(arr.Args[0])]++
+	}
+
+	for i := 0; i < fields; i++ {
+		want := fmt.Sprintf("f%d", i)
+		if seen[want] == 0 {
+			t.Errorf("HRANDFIELD never drew field %s over %d draws (distribution biased)", want, draws)
+		}
+	}
+}
+
+
 // TestExecuteCommand_SMOVE_Coverage tests SMOVE command
 func TestExecuteCommand_SMOVE_Coverage(t *testing.T) {
 	t.Parallel()
@@ -2326,3 +2450,210 @@ func TestExecuteCommand_UNWATCH_Coverage(t *testing.T) {
 	resp := handler.executeCommand(state, "UNWATCH", nil, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 }
+
+// TestExecuteCommand_EXEC_UnsupportedQueued verifies EXEC surfaces the
+// per-command error when a queued command is not supported inside a
+// transaction (executeQueuedCommand default branch).
+func TestExecuteCommand_EXEC_UnsupportedQueued(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "MULTI", nil, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+
+	// Unknown commands are queued inside MULTI (handler_dispatch default branch)
+	queued := handler.executeCommand(state, "FOOBAR", [][]byte{[]byte("x")}, "127.0.0.1:12345")
+	queuedStr, ok := queued.(*proto.SimpleString)
+	assert.True(t, ok)
+	assert.Equal(t, "QUEUED", string(*queuedStr))
+
+	execResp := handler.executeCommand(state, "EXEC", nil, "127.0.0.1:12345")
+	arr, ok := execResp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(arr.Elems))
+	errResp, ok := arr.Elems[0].(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "not supported in transaction"))
+}
+
+// TestClientPause_PauseUnpause verifies CLIENT PAUSE sets the pause window
+// and CLIENT UNPAUSE clears it, including argument validation.
+func TestClientPause_PauseUnpause(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+	state.ctx = context.Background()
+
+	resp := handler.executeCommand(state, "CLIENT", [][]byte{[]byte("PAUSE"), []byte("500")}, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+	if handler.pauseUntil.Load() <= 0 {
+		t.Errorf("pauseUntil should be set after PAUSE")
+	}
+
+	resp = handler.executeCommand(state, "CLIENT", [][]byte{[]byte("UNPAUSE")}, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+	assert.Equal(t, int64(0), handler.pauseUntil.Load())
+
+	// Argument validation: missing timeout and non-integer timeout
+	resp = handler.executeCommand(state, "CLIENT", [][]byte{[]byte("PAUSE")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "wrong number of arguments"))
+
+	resp = handler.executeCommand(state, "CLIENT", [][]byte{[]byte("PAUSE"), []byte("abc")}, "127.0.0.1:12345")
+	errResp, ok = resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "not an integer"))
+}
+
+// TestClientPause_BlocksCommands verifies that during a pause window,
+// non-exempt commands block until the pause expires, while exempt commands
+// (PING/CLIENT) are served immediately.
+func TestClientPause_BlocksCommands(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+	state.ctx = context.Background()
+
+	// Pause for 400ms
+	resp := handler.executeCommand(state, "CLIENT", [][]byte{[]byte("PAUSE"), []byte("400")}, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+
+	// Exempt command (PING) must NOT block during pause
+	start := time.Now()
+	resp = handler.executeCommand(state, "PING", nil, "127.0.0.1:12345")
+	elapsedPing := time.Since(start)
+	assert.Equal(t, proto.NewSimpleString("PONG"), resp)
+	if elapsedPing >= 200*time.Millisecond {
+		t.Errorf("PING should not block during pause, took %v", elapsedPing)
+	}
+
+	// Non-exempt command (SET) must block until the pause expires
+	start = time.Now()
+	resp = handler.executeCommand(state, "SET", [][]byte{[]byte("k"), []byte("v")}, "127.0.0.1:12345")
+	elapsedSet := time.Since(start)
+	assert.Equal(t, proto.OK, resp)
+	if elapsedSet < 350*time.Millisecond {
+		t.Errorf("SET should block ~400ms during pause, took %v", elapsedSet)
+	}
+}
+
+// TestClientPause_ShutdownExempt verifies SHUTDOWN is exempt from the pause
+// window: it must execute immediately (not blocked by CLIENT PAUSE), so the
+// server can be gracefully stopped even while clients are paused.
+func TestClientPause_ShutdownExempt(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+	state.ctx = context.Background()
+
+	// Pause for a long window (5s)
+	resp := handler.executeCommand(state, "CLIENT", [][]byte{[]byte("PAUSE"), []byte("5000")}, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+
+	triggered := false
+	handler.OnShutdown = func() { triggered = true }
+
+	// SHUTDOWN must NOT block during the pause window
+	start := time.Now()
+	resp = handler.executeCommand(state, "SHUTDOWN", nil, "127.0.0.1:12345")
+	elapsed := time.Since(start)
+	assert.Equal(t, proto.OK, resp)
+	assert.True(t, triggered)
+	if elapsed >= 500*time.Millisecond {
+		t.Errorf("SHUTDOWN should be exempt from pause window, took %v", elapsed)
+	}
+}
+
+// TestClientPause_UnpauseReleases verifies CLIENT UNPAUSE releases blocked
+// commands immediately instead of waiting for the timeout.
+func TestClientPause_UnpauseReleases(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+	state.ctx = context.Background()
+
+	// Pause for 5s (long window)
+	resp := handler.executeCommand(state, "CLIENT", [][]byte{[]byte("PAUSE"), []byte("5000")}, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.executeCommand(state, "GET", [][]byte{[]byte("k")}, "127.0.0.1:12345")
+	}()
+
+	// Let the GET goroutine enter the pause wait, then unpause
+	time.Sleep(50 * time.Millisecond)
+	start := time.Now()
+	resp = handler.executeCommand(state, "CLIENT", [][]byte{[]byte("UNPAUSE")}, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+
+	select {
+	case <-done:
+		elapsed := time.Since(start)
+		if elapsed >= 2*time.Second {
+			t.Errorf("GET should be released by UNPAUSE promptly, took %v", elapsed)
+		}
+	case <-time.After(6 * time.Second):
+		t.Fatal("GET blocked after CLIENT UNPAUSE")
+	}
+}
+
+// TestShutdown_TriggersOnShutdown verifies SHUTDOWN calls the injected
+// OnShutdown hook (main wires it to cancel(), which makes ServeTCP return
+// and main run the full shutdown sequence), and validates its arguments.
+func TestShutdown_TriggersOnShutdown(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+	state.ctx = context.Background()
+
+	triggered := false
+	handler.OnShutdown = func() { triggered = true }
+
+	// Plain SHUTDOWN triggers the hook
+	resp := handler.executeCommand(state, "SHUTDOWN", nil, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+	assert.True(t, triggered)
+
+	// Valid options are accepted
+	triggered = false
+	resp = handler.executeCommand(state, "SHUTDOWN", [][]byte{[]byte("NOSAVE")}, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+	assert.True(t, triggered)
+
+	triggered = false
+	resp = handler.executeCommand(state, "SHUTDOWN", [][]byte{[]byte("SAVE"), []byte("NOW")}, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+	assert.True(t, triggered)
+
+	// Unknown option is rejected and does NOT trigger the hook
+	triggered = false
+	resp = handler.executeCommand(state, "SHUTDOWN", [][]byte{[]byte("BOGUS")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "Unknown option"))
+	assert.False(t, triggered)
+}
+
+// TestShutdown_NilHookIsSafe verifies SHUTDOWN is a no-op-safe OK when the
+// hook is not wired (unit-test environment), never panicking.
+func TestShutdown_NilHookIsSafe(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+	state.ctx = context.Background()
+
+	resp := handler.executeCommand(state, "SHUTDOWN", nil, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+}
+

@@ -39,6 +39,54 @@ func TestExecuteCommand_OBJECT_REFCOUNT_Coverage(t *testing.T) {
 	assert.Equal(t, int64(1), int64(*integer))
 }
 
+// TestExecuteCommand_OBJECT_FREQ_Coverage tests OBJECT FREQ: always 0 for an
+// existing key (BoltDB has no LFU), nil for a non-existent key — consistent
+// with the other OBJECT subcommands (REFCOUNT/ENCODING/IDLETIME).
+func TestExecuteCommand_OBJECT_FREQ_Coverage(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Non-existent key → nil (RESP2 empty bulk, RESP3 null)
+	resp := handler.executeCommand(state, "OBJECT", [][]byte{[]byte("FREQ"), []byte("freq_nonexist")}, "127.0.0.1:12345")
+	bulk, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	// NewBulkString(nil) 返回非 nil 指针、值为 nil
+	assert.Equal(t, proto.BulkString(nil), *bulk)
+
+	// Existing key → 0 (no LFU support)
+	handler.executeCommand(state, "SET", [][]byte{[]byte("freq_key"), []byte("v")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(state, "OBJECT", [][]byte{[]byte("FREQ"), []byte("freq_key")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+}
+
+// TestExecuteCommand_OBJECT_IDLETIME_Coverage tests OBJECT IDLETIME: 0 for an
+// existing key (BadgerDB tracks no access time), nil for a non-existent key —
+// consistent with the other OBJECT subcommands (REFCOUNT/ENCODING/FREQ).
+func TestExecuteCommand_OBJECT_IDLETIME_Coverage(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Non-existent key → nil (RESP2 empty bulk, RESP3 null)
+	resp := handler.executeCommand(state, "OBJECT", [][]byte{[]byte("IDLETIME"), []byte("idle_nonexist")}, "127.0.0.1:12345")
+	bulk, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	// NewBulkString(nil) 返回非 nil 指针、值为 nil
+	assert.Equal(t, proto.BulkString(nil), *bulk)
+
+	// Existing key → 0 (no access-time tracking)
+	handler.executeCommand(state, "SET", [][]byte{[]byte("idle_key"), []byte("v")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(state, "OBJECT", [][]byte{[]byte("IDLETIME"), []byte("idle_key")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+}
+
 // TestExecuteCommand_CLIENT_NOEVICT2_Coverage tests CLIENT NOEVICT command
 func TestExecuteCommand_CLIENT_NOEVICT2_Coverage(t *testing.T) {
 	t.Parallel()
@@ -46,13 +94,18 @@ func TestExecuteCommand_CLIENT_NOEVICT2_Coverage(t *testing.T) {
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	// CLIENT NOEVICT ON
+	// Default: noevict off
+	assert.False(t, state.noEvict.Load())
+
+	// CLIENT NOEVICT ON — must set the noEvict flag
 	resp := handler.executeCommand(state, "CLIENT", [][]byte{[]byte("NOEVICT"), []byte("ON")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
+	assert.True(t, state.noEvict.Load())
 
-	// CLIENT NOEVICT OFF
+	// CLIENT NOEVICT OFF — must clear the flag
 	resp = handler.executeCommand(state, "CLIENT", [][]byte{[]byte("NOEVICT"), []byte("OFF")}, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
+	assert.False(t, state.noEvict.Load())
 }
 
 // TestExecuteCommand_CLIENT_NOEVICT_Error_Coverage tests CLIENT NOEVICT with invalid args
@@ -151,4 +204,92 @@ func TestExecuteCommand_RANDOMKEY_Coverage2(t *testing.T) {
 	bs, ok := resp.(*proto.BulkString)
 	assert.True(t, ok)
 	assert.True(t, string(*bs) == "key1" || string(*bs) == "key2")
+}
+
+// TestExecuteCommand_CLIENT_SETINFO_Coverage verifies CLIENT SETINFO stores
+// LIB-NAME/LIB-VER on the connection (previously a no-op that returned OK
+// without persisting anything), visible in CLIENT INFO output.
+func TestExecuteCommand_CLIENT_SETINFO_Coverage(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Invalid option rejected
+	resp := handler.executeCommand(state, "CLIENT", [][]byte{[]byte("SETINFO"), []byte("BOGUS"), []byte("x")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "syntax error"))
+
+	// LIB-NAME stored
+	resp = handler.executeCommand(state, "CLIENT", [][]byte{[]byte("SETINFO"), []byte("LIB-NAME"), []byte("go-redis")}, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+	assert.Equal(t, "go-redis", state.clientInfo.LibName)
+
+	// LIB-VER stored
+	resp = handler.executeCommand(state, "CLIENT", [][]byte{[]byte("SETINFO"), []byte("LIB-VER"), []byte("9.17.2")}, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+	assert.Equal(t, "9.17.2", state.clientInfo.LibVer)
+
+	// CLIENT INFO shows both values
+	resp = handler.executeCommand(state, "CLIENT", [][]byte{[]byte("INFO")}, "127.0.0.1:12345")
+	info, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*info), "lib-name=go-redis"))
+	assert.True(t, strings.Contains(string(*info), "lib-ver=9.17.2"))
+}
+
+// TestExecuteCommand_BITFIELD_RO_Coverage tests BITFIELD_RO (read-only
+// variant, GET-only): reads succeed, non-GET operations are rejected.
+func TestExecuteCommand_BITFIELD_RO_Coverage(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// SET a bit value first via BITFIELD
+	resp := handler.executeCommand(state, "BITFIELD", [][]byte{[]byte("bfro"), []byte("SET"), []byte("u8"), []byte("0"), []byte("65")}, "127.0.0.1:12345")
+	assert.NotNil(t, resp)
+
+	// BITFIELD_RO GET returns the stored value (single op → Integer)
+	resp = handler.executeCommand(state, "BITFIELD_RO", [][]byte{[]byte("bfro"), []byte("GET"), []byte("u8"), []byte("0")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(65), int64(*integer))
+
+	// Non-GET operation must be rejected
+	resp = handler.executeCommand(state, "BITFIELD_RO", [][]byte{[]byte("bfro"), []byte("SET"), []byte("u8"), []byte("0"), []byte("1")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "only supports the GET"))
+}
+
+// TestExecuteCommand_TS_REVRANGE_Coverage tests TS.REVRANGE (reverse range):
+// returns timestamps in descending order, COUNT caps the result.
+func TestExecuteCommand_TS_REVRANGE_Coverage(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Add three points at increasing timestamps
+	handler.executeCommand(state, "TS.ADD", [][]byte{[]byte("tsrev"), []byte("100"), []byte("1.0")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "TS.ADD", [][]byte{[]byte("tsrev"), []byte("200"), []byte("2.0")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "TS.ADD", [][]byte{[]byte("tsrev"), []byte("300"), []byte("3.0")}, "127.0.0.1:12345")
+
+	// Full reverse range: [300, 200, 100]
+	resp := handler.executeCommand(state, "TS.REVRANGE", [][]byte{[]byte("tsrev"), []byte("-"), []byte("+")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 6, len(arr.Args)) // 3 points × (timestamp, value)
+	assert.Equal(t, "300", string(arr.Args[0]))
+	assert.Equal(t, "200", string(arr.Args[2]))
+	assert.Equal(t, "100", string(arr.Args[4]))
+
+	// COUNT 1 caps the result to one point
+	resp = handler.executeCommand(state, "TS.REVRANGE", [][]byte{[]byte("tsrev"), []byte("-"), []byte("+"), []byte("COUNT"), []byte("1")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(arr.Args))
+	assert.Equal(t, "300", string(arr.Args[0]))
 }

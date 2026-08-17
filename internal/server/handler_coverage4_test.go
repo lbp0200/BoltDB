@@ -122,6 +122,32 @@ func TestClientListRESP_Subscribed_Coverage(t *testing.T) {
 	assert.True(t, strings.Contains(string(*bs), "flags=P"))
 }
 
+func TestClientListRESP_NoEvict_Coverage(t *testing.T) {
+	t.Parallel()
+
+	// 普通连接 + NOEVICT ON → flags=O（Redis 语义：N 与 O 互斥）
+	state := &connState{}
+	state.noEvict.Store(true)
+	handler := setupHandlerWithConns(t, []*connState{state})
+	defer handler.Db.Close()
+
+	resp := handler.clientListRESP()
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*bs), "flags=O"))
+
+	// Subscriber + NOEVICT ON → flags=PO（组合标志）
+	state2 := &connState{subscriber: store.NewSubscriber("test2")}
+	state2.noEvict.Store(true)
+	handler2 := setupHandlerWithConns(t, []*connState{state2})
+	defer handler2.Db.Close()
+
+	resp2 := handler2.clientListRESP()
+	bs2, ok := resp2.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*bs2), "flags=PO"))
+}
+
 func TestClientListRESP_InTransaction_Coverage(t *testing.T) {
 	t.Parallel()
 

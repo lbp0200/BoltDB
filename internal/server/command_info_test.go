@@ -495,3 +495,101 @@ func TestCommandInfoKeyPositionsConsistency(t *testing.T) {
 		}
 	}
 }
+
+func TestHandleCommandDocsExisting(t *testing.T) {
+	t.Parallel()
+	resp := handleCommand([][]byte{[]byte("DOCS"), []byte("GET"), []byte("SET")})
+	na, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	// 每命令 2 个元素：[name, doc]
+	assert.Equal(t, 4, len(na.Elems))
+
+	getName, ok := na.Elems[0].(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "GET", string(*getName))
+
+	// doc 为 [field, value, ...] 数组，包含 arity 字段
+	doc, ok := na.Elems[1].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.True(t, len(doc.Elems) >= 2)
+	// 校验 field 名称出现在 doc 中
+	foundArity := false
+	for i := 0; i+1 < len(doc.Elems); i += 2 {
+		field, ok := doc.Elems[i].(*proto.BulkString)
+		if ok && string(*field) == "arity" {
+			foundArity = true
+		}
+	}
+	assert.True(t, foundArity)
+}
+
+func TestHandleCommandDocsUnknownSkipped(t *testing.T) {
+	t.Parallel()
+	resp := handleCommand([][]byte{[]byte("DOCS"), []byte("UNKNOWNCMD")})
+	na, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	// 未知命令被跳过，返回空数组
+	assert.Equal(t, 0, len(na.Elems))
+}
+
+func TestHandleCommandDocsAll(t *testing.T) {
+	t.Parallel()
+	resp := handleCommand([][]byte{[]byte("DOCS")})
+	na, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	// 所有命令 × 2（name + doc）
+	assert.Equal(t, 2*len(commandRegistry), len(na.Elems))
+}
+
+func TestHandleCommandList(t *testing.T) {
+	t.Parallel()
+	resp := handleCommand([][]byte{[]byte("LIST")})
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	// 所有命令名
+	assert.Equal(t, len(commandRegistry), len(arr.Args))
+}
+
+func TestHandleCommandHelp(t *testing.T) {
+	t.Parallel()
+	resp := handleCommand([][]byte{[]byte("HELP")})
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	// 帮助文本含子命令说明
+	joined := ""
+	for _, a := range arr.Args {
+		joined += string(a) + "\n"
+	}
+	assert.True(t, strings.Contains(joined, "GETKEYS"))
+	assert.True(t, strings.Contains(joined, "LIST"))
+}
+
+func TestHandleCommandGetKeys(t *testing.T) {
+	t.Parallel()
+	// DEL k1 k2 k3 → 3 个 key
+	resp := handleCommand([][]byte{[]byte("GETKEYS"), []byte("DEL"), []byte("k1"), []byte("k2"), []byte("k3")})
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 3, len(arr.Args))
+	assert.Equal(t, "k1", string(arr.Args[0]))
+	assert.Equal(t, "k3", string(arr.Args[2]))
+
+	// SET k v → 1 个 key
+	resp = handleCommand([][]byte{[]byte("GETKEYS"), []byte("SET"), []byte("mykey"), []byte("myval")})
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(arr.Args))
+	assert.Equal(t, "mykey", string(arr.Args[0]))
+
+	// PING 无 key → 报错
+	resp = handleCommand([][]byte{[]byte("GETKEYS"), []byte("PING")})
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "no key arguments"))
+
+	// 未知命令 → 报错
+	resp = handleCommand([][]byte{[]byte("GETKEYS"), []byte("NOSUCHCMD"), []byte("x")})
+	errResp, ok = resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "Invalid command"))
+}
