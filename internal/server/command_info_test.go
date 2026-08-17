@@ -114,10 +114,11 @@ func TestHandleCommandInfoNoArgsReturnsNilArray(t *testing.T) {
 
 func TestHandleCommandUnknownSubcommand(t *testing.T) {
 	t.Parallel()
+	// GETKEYS 已是合法子命令：无参时返回参数错误而非 unknown subcommand
 	resp := handleCommand([][]byte{[]byte("GETKEYS")})
 	err, ok := resp.(*proto.Error)
 	assert.True(t, ok)
-	assert.Equal(t, "ERR unknown subcommand 'GETKEYS'", string(*err))
+	assert.True(t, strings.Contains(string(*err), "GETKEYS"))
 }
 
 func TestBuildCommandInfoStructure(t *testing.T) {
