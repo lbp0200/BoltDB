@@ -34,10 +34,13 @@
   - 使用 ZSTD 压缩算法，比 Snappy 压缩率更高
   - 值：0=无压缩, 1=Snappy, 2=ZSTD
 
-### 1.5 索引缓存
+### 1.5 索引/块缓存
 - **IndexCacheSize**: 100MB
   - 索引缓存大小，提高读取性能
   - 默认 0（禁用），启用后可以显著提升读取性能
+- **BlockCacheSize**: 128MB
+  - 数据块缓存大小（badger 默认 256MB，显式调小以降低每节点固定内存占用）
+  - 读密集场景可调大，配合 GOMEMLIMIT 7 层 OOM 防护
 
 ### 1.6 垃圾回收
 - **NumGoroutines**: 8

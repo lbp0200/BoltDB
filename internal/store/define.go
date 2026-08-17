@@ -456,8 +456,11 @@ func NewBotreonStoreWithCompression(path string, compressionType CompressionType
 	// BadgerDB v4 使用 CompressionType，值为 0=无压缩, 1=Snappy, 2=ZSTD
 	opts.Compression = 2 // 使用 ZSTD 压缩（比 Snappy 更好）
 
-	// 5. 索引缓存配置
+	// 5. 索引/块缓存配置
 	opts.IndexCacheSize = 100 * 1024 * 1024 // 100MB 索引缓存（默认 0，禁用）
+	// 显式配置数据块缓存：badger 默认 256MB/节点，显式调小到 128MB 以降低
+	// 每节点固定内存占用（配合 GOMEMLIMIT 7 层 OOM 防护）；读密集场景可调大。
+	opts.BlockCacheSize = 128 * 1024 * 1024 // 128MB 数据块缓存
 
 	// 6. 减少同步频率（提高性能，但降低持久性）
 	// opts.SyncWrites = false // 默认 false，异步写入提高性能
