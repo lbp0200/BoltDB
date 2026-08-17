@@ -125,8 +125,11 @@ func (mc *MasterConnection) ReadResponse() (proto.RESP, error) {
 	case '-': // Error
 		return proto.NewError(string(line[1:])), nil
 	case ':': // Integer
-		// 简化处理，实际应该解析整数
-		return proto.NewSimpleString(string(line[1:])), nil
+		n, err := strconv.ParseInt(string(line[1:]), 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid integer response: %s", string(line[1:]))
+		}
+		return proto.NewInteger(n), nil
 	case '$': // Bulk String
 		// 解析长度
 		lengthStr := string(line[1:])

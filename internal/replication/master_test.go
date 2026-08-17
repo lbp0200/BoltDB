@@ -279,10 +279,29 @@ func TestMasterConnection_ReadResponse_Integer(t *testing.T) {
 	if err != nil {
 		t.Errorf("ReadResponse failed: %v", err)
 	}
-	// Integer response becomes SimpleString in our implementation
-	// so it will be "+1000\r\n"
-	if resp.String() != "+1000\r\n" {
-		t.Errorf("expected +1000\\r\\n, got %s", resp.String())
+	// Integer response must be parsed as an Integer, not a SimpleString
+	intResp, ok := resp.(*proto.Integer)
+	if !ok {
+		t.Fatalf("expected *proto.Integer for ':1000', got %T", resp)
+	}
+	if int64(*intResp) != 1000 {
+		t.Errorf("expected integer 1000, got %d", int64(*intResp))
+	}
+}
+
+func TestMasterConnection_ReadResponse_IntegerInvalid(t *testing.T) {
+	t.Parallel()
+	mock := newMockMasterConn()
+	mock.readBuffer = []byte(":notanumber\r\n")
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   mock,
+		Reader: bufio.NewReader(mock),
+		Writer: bufio.NewWriter(mock),
+		stopCh: make(chan struct{}),
+	}
+	if _, err := mc.ReadResponse(); err == nil {
+		t.Error("expected error for invalid integer response, got nil")
 	}
 }
 
