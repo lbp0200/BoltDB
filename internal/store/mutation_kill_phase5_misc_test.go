@@ -166,6 +166,60 @@ func TestGetValueByPathEmptyString(t *testing.T) {
 	assert.Equal(t, root, val)
 }
 
+func TestGetValueByPathArrayIndex(t *testing.T) {
+	t.Parallel()
+	root := map[string]interface{}{
+		"arr": []interface{}{float64(10), float64(20), float64(30)},
+	}
+	// 正索引
+	val, err := getValueByPath(root, "$.arr[1]")
+	assert.NoError(t, err)
+	assert.Equal(t, float64(20), val)
+	// 根级数组索引
+	rootArr := []interface{}{"x", "y"}
+	val, err = getValueByPath(rootArr, "$[0]")
+	assert.NoError(t, err)
+	assert.Equal(t, "x", val)
+	// 负索引（从末尾数）
+	val, err = getValueByPath(root, "$.arr[-1]")
+	assert.NoError(t, err)
+	assert.Equal(t, float64(30), val)
+}
+
+func TestGetValueByPathArrayFieldThenIndex(t *testing.T) {
+	t.Parallel()
+	// 混合路径：数组元素内再取字段
+	root := map[string]interface{}{
+		"list": []interface{}{
+			map[string]interface{}{"name": "first"},
+			map[string]interface{}{"name": "second"},
+		},
+	}
+	val, err := getValueByPath(root, "$.list[1].name")
+	assert.NoError(t, err)
+	assert.Equal(t, "second", val)
+}
+
+func TestGetValueByPathArrayErrors(t *testing.T) {
+	t.Parallel()
+	root := map[string]interface{}{
+		"arr": []interface{}{float64(1)},
+	}
+	// 越界索引
+	_, err := getValueByPath(root, "$.arr[5]")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "out of range")
+	// 负索引越界
+	_, err = getValueByPath(root, "$.arr[-5]")
+	assert.Error(t, err)
+	// 对非数组用下标
+	_, err = getValueByPath(root, "$.arr[0][1]")
+	assert.Error(t, err)
+	// 未闭合的 [
+	_, err = getValueByPath(root, "$.arr[0")
+	assert.Error(t, err)
+}
+
 // ================== lcs.go (6 mutants) ==================
 
 func TestComputeLCSNoCommon(t *testing.T) {

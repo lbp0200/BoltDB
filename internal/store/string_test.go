@@ -687,6 +687,35 @@ func TestBitFieldDebug(t *testing.T) {
 	assert.Equal(t, int64(-128), got4)
 }
 
+// TestBitFieldNegativeOffset 测试 BITFIELD 负偏移（Redis 语义：
+// -1 = 最后一个 bit，-8 = 最后一个 byte）。
+func TestBitFieldNegativeOffset(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	// 字符串 "AB" = 0x41 0x42（65, 66）
+	err := store.Set("negbit", "AB")
+	assert.NoError(t, err)
+
+	// 负偏移读最后一个字节：-8 bit 起读 u8 → 66 (0x42)
+	res, err := store.BitField("negbit", []string{"GET", "u8", "-8"})
+	assert.NoError(t, err)
+	got, ok := res[0].(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(66), got)
+
+	// 负偏移 SET：改最后一个字节为 0x43 ('C') → 字符串变 "AC"
+	_, err = store.BitField("negbit", []string{"SET", "u8", "-8", "67"})
+	assert.NoError(t, err)
+	val, err := store.Get("negbit")
+	assert.NoError(t, err)
+	assert.Equal(t, "AC", val)
+
+	// 负偏移超出字符串范围 → 报错
+	_, err = store.BitField("negbit", []string{"GET", "u8", "-100"})
+	assert.Error(t, err)
+}
+
 // TestBitField 测试 BITFIELD 命令
 func TestBitField(t *testing.T) {
 	t.Parallel()

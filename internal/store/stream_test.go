@@ -370,9 +370,78 @@ func TestStreamXClaim(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Claim for another consumer
-	claimed, err := store.XClaim("mystream", "mygroup", "consumer2", 0, "1000000000000-0")
+	claimed, err := store.XClaim("mystream", "mygroup", "consumer2", XClaimOptions{}, "1000000000000-0")
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(claimed))
+}
+
+// TestStreamXClaimForce verifies XClaim with force=true claims ids that are
+// NOT in the PEL (Redis XCLAIM FORCE semantics) — previously a no-op that
+// only claimed existing PEL entries.
+func TestStreamXClaimForce(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	// Add entries
+	_, err := store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+	assert.NoError(t, err)
+	_, err = store.XAdd("mystream", StreamXAddOptions{}, "1000000000001-0", map[string]string{"field2": "value2"})
+	assert.NoError(t, err)
+
+	// Create group WITHOUT reading (PEL is empty)
+	err = store.XGroupCreate("mystream", "mygroup", "0")
+	assert.NoError(t, err)
+
+	// Without FORCE: id not in PEL → not claimed
+	claimed, err := store.XClaim("mystream", "mygroup", "consumer1", XClaimOptions{}, "1000000000000-0")
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(claimed))
+
+	// With FORCE: id not in PEL → claimed and added to PEL
+	claimed, err = store.XClaim("mystream", "mygroup", "consumer1", XClaimOptions{Force: true}, "1000000000000-0")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(claimed))
+	assert.Equal(t, "1000000000000-0", claimed[0])
+
+	// Now it exists in PEL: a normal claim also works
+	claimed, err = store.XClaim("mystream", "mygroup", "consumer2", XClaimOptions{}, "1000000000000-0")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(claimed))
+}
+
+// TestStreamXClaimOptions verifies XCLAIM IDLE / RETRYCOUNT options take
+// effect on the claimed PEL entry (LastDelivery backdated / DeliveryCount set).
+func TestStreamXClaimOptions(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	_, err := store.XAdd("mystream", StreamXAddOptions{}, "1000000000000-0", map[string]string{"field1": "value1"})
+	assert.NoError(t, err)
+	err = store.XGroupCreate("mystream", "mygroup", "0")
+	assert.NoError(t, err)
+	_, err = store.XReadGroup(nil, "mygroup", "consumer1", 10, 0, "mystream", ">")
+	assert.NoError(t, err)
+
+	// Claim with RETRYCOUNT=5 and IDLE=60000: DeliveryCount set to 5,
+	// LastDelivery backdated by 60s.
+	_, err = store.XClaim("mystream", "mygroup", "consumer2", XClaimOptions{
+		RetryCount: 5,
+		IdleMS:     60000,
+	}, "1000000000000-0")
+	assert.NoError(t, err)
+
+	pending, err := store.XPending("mystream", "mygroup")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(pending))
+	entry := pending[0]
+	assert.Equal(t, "consumer2", entry.Consumer)
+	assert.Equal(t, int64(5), entry.DeliveryCount)
+	// LastDelivery ≈ now-60000 (allow ±5s clock skew)
+	now := time.Now().UnixNano() / int64(time.Millisecond)
+	backdated := now - entry.LastDelivery
+	if backdated < 55000 || backdated > 65000 {
+		t.Errorf("expected LastDelivery backdated ~60s, actual delta=%dms", backdated)
+	}
 }
 
 // TestStreamXTrim tests XTrim function

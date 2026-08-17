@@ -373,3 +373,74 @@ func TestTSAddWrongType(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "ts", keyType)
 }
+
+// TestTSAddRule_Persisted verifies TS.CREATERULE actually persists the rule
+// (previously a stub that returned nil without storing anything), and that
+// TSGetRule can read it back with the normalized aggregator.
+func TestTSAddRule_Persisted(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+
+	// Lowercase aggregator is normalized to uppercase on store
+	err := s.TSAddRule("ts_src", "ts_dst", "avg", 60000)
+	assert.NoError(t, err)
+
+	agg, dur, found, err := s.TSGetRule("ts_src", "ts_dst")
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "AVG", agg)
+	assert.Equal(t, int64(60000), dur)
+
+	// Duplicate rule on the same dest must fail (Redis semantics)
+	err = s.TSAddRule("ts_src", "ts_dst", "sum", 60000)
+	assert.Error(t, err)
+}
+
+// TestTSAddRule_InvalidArgs verifies aggregator and bucket-duration validation.
+func TestTSAddRule_InvalidArgs(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+
+	// Unknown aggregator
+	err := s.TSAddRule("src", "dst", "bogus", 1000)
+	assert.Error(t, err)
+
+	// Non-positive bucket duration
+	err = s.TSAddRule("src", "dst", "SUM", 0)
+	assert.Error(t, err)
+	err = s.TSAddRule("src", "dst", "SUM", -5)
+	assert.Error(t, err)
+
+	// Nothing should have been persisted
+	_, _, found, err := s.TSGetRule("src", "dst")
+	assert.NoError(t, err)
+	assert.False(t, found)
+}
+
+// TestTSDelRule_Removes verifies TS.DELETERULE removes a persisted rule,
+// and deleting a non-existent rule is a silent no-op.
+func TestTSDelRule_Removes(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+
+	assert.NoError(t, s.TSAddRule("src", "dst", "SUM", 60000))
+	_, _, found, err := s.TSGetRule("src", "dst")
+	assert.NoError(t, err)
+	assert.True(t, found)
+
+	assert.NoError(t, s.TSDelRule("src", "dst", "SUM", 60000))
+	_, _, found, err = s.TSGetRule("src", "dst")
+	assert.NoError(t, err)
+	assert.False(t, found)
+
+	// Re-creating after delete succeeds
+	assert.NoError(t, s.TSAddRule("src", "dst", "MIN", 30000))
+	agg, dur, found, err := s.TSGetRule("src", "dst")
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "MIN", agg)
+	assert.Equal(t, int64(30000), dur)
+
+	// Deleting a non-existent rule is a no-op, not an error
+	assert.NoError(t, s.TSDelRule("nope", "nope2", "SUM", 60000))
+}
