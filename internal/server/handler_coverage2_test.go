@@ -1687,7 +1687,6 @@ func TestHRandFieldRandomnessDistribution(t *testing.T) {
 	}
 }
 
-
 // TestExecuteCommand_SMOVE_Coverage tests SMOVE command
 func TestExecuteCommand_SMOVE_Coverage(t *testing.T) {
 	t.Parallel()
@@ -2656,4 +2655,3 @@ func TestShutdown_NilHookIsSafe(t *testing.T) {
 	resp := handler.executeCommand(state, "SHUTDOWN", nil, "127.0.0.1:12345")
 	assert.Equal(t, proto.OK, resp)
 }
-

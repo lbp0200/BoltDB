@@ -266,7 +266,7 @@ func TestBacklogWAL_Truncate_ConcurrentAppend(t *testing.T) {
 
 	const total = 400
 	cmd := []byte("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n") // 27 bytes
-	var progress atomic.Int64                                // bytes appended so far
+	var progress atomic.Int64                                  // bytes appended so far
 	done := make(chan struct{})
 
 	var wg sync.WaitGroup
