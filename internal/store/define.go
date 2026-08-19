@@ -270,7 +270,11 @@ func (s *BotreonStore) Check() error {
 		case strings.HasPrefix(k, string(prefixKeyTimeSeriesBytes)):
 			// TS:<keyname>:<suffix>，keyname 可以包含冒号
 			// 已知后缀: :meta, :data:<timestamp>
+			// TS:rule:<src>:<dst> 是聚合规则元数据，不需要 TYPE_ 键
 			rest := strings.TrimPrefix(k, string(prefixKeyTimeSeriesBytes))
+			if strings.HasPrefix(rest, "rule:") {
+				return "" // 跳过规则键，不参与一致性检查
+			}
 			// 匹配 :meta 和 :data: 前缀
 			for _, suffix := range []string{":meta", ":data:"} {
 				if idx := strings.Index(rest, suffix); idx >= 0 {
