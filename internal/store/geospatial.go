@@ -128,7 +128,20 @@ func geoHashToCoordKey(key string, hash uint64) []byte {
 }
 
 // GeoAdd adds geographic locations to a sorted set
+// GeoAddOptions 携带 GEOADD 的可选参数（Redis 语义）。
+// NX: 仅添加不更新；XX: 仅更新不添加；CH: 返回添加+更新总数（默认仅返回新增数）。
+type GeoAddOptions struct {
+	NX bool
+	XX bool
+	CH bool
+}
+
 func (s *BotreonStore) GeoAdd(key string, members []GeoMember) (int64, error) {
+	return s.GeoAddWithOptions(key, GeoAddOptions{}, members)
+}
+
+// GeoAddWithOptions 实现带选项的 GEOADD（NX/XX/CH）。
+func (s *BotreonStore) GeoAddWithOptions(key string, opts GeoAddOptions, members []GeoMember) (int64, error) {
 	var added int64
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		added = 0 // reset each attempt; stale value must not survive conflict retry
@@ -177,6 +190,7 @@ func (s *BotreonStore) GeoAdd(key string, members []GeoMember) (int64, error) {
 			oldScoreKey []byte
 			oldHash     uint64
 			exists      bool
+			skip        bool // NX/XX 过滤：该成员不写入
 		}, len(members))
 
 		for i, m := range members {
@@ -201,6 +215,16 @@ func (s *BotreonStore) GeoAdd(key string, members []GeoMember) (int64, error) {
 				return err
 			}
 
+			// NX: 仅添加不更新；XX: 仅更新不添加
+			if opts.NX && ops[i].exists {
+				ops[i].skip = true
+				continue
+			}
+			if opts.XX && !ops[i].exists {
+				ops[i].skip = true
+				continue
+			}
+
 			score := encodeScore(float64(hash))
 			ops[i].indexKey = sortedSetKeyIndex(key, float64(hash), m.Member, 0)
 			ops[i].coordKey = geoIndexKey(key, m.Member)
@@ -211,7 +235,7 @@ func (s *BotreonStore) GeoAdd(key string, members []GeoMember) (int64, error) {
 		// Calculate new count
 		newCount := count
 		for i := range ops {
-			if !ops[i].exists {
+			if !ops[i].exists && !ops[i].skip {
 				newCount++
 			}
 		}
@@ -225,6 +249,9 @@ func (s *BotreonStore) GeoAdd(key string, members []GeoMember) (int64, error) {
 
 		// Execute operations
 		for i, op := range ops {
+			if op.skip {
+				continue
+			}
 			// Delete old index entry if exists
 			if op.exists {
 				oldIndexKey := sortedSetKeyIndex(key, float64(op.oldHash), members[i].Member, 0)
@@ -254,9 +281,13 @@ func (s *BotreonStore) GeoAdd(key string, members []GeoMember) (int64, error) {
 			if err := txn.Set(hashKey, []byte(members[i].Member)); err != nil {
 				return err
 			}
+
+			// added 计数：CH 时含更新，否则仅计新增
+			if opts.CH || !op.exists {
+				added++
+			}
 		}
 
-		added = newCount - count
 		return nil
 	}, 20)
 

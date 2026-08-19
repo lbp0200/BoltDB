@@ -319,7 +319,16 @@ func (h *Handler) handleSINTERCARD(state *connState, args [][]byte, remoteAddr s
 	for i := 0; i < numkeys; i++ {
 		sinterKeys[i] = string(args[i+1])
 	}
-	count, err := h.Db.SInterCard(sinterKeys...)
+	// 可选 LIMIT n：统计到该值即提前停止（Redis 语义）
+	var limit int64
+	if numkeys+2 < len(args) && strings.ToUpper(string(args[numkeys+1])) == "LIMIT" {
+		l, err := strconv.ParseInt(string(args[numkeys+2]), 10, 64)
+		if err != nil || l < 0 {
+			return proto.NewError("ERR value is not an integer or out of range")
+		}
+		limit = l
+	}
+	count, err := h.Db.SInterCardWithLimit(limit, sinterKeys...)
 	if err != nil {
 		return wrapStoreError(err)
 	}

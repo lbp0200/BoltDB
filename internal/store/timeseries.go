@@ -44,6 +44,7 @@ type TSCreateOptions struct {
 // TSAddOptions contains options for TS.ADD
 type TSAddOptions struct {
 	OnDuplicate string // Policy for duplicate samples (block, skip, update)
+	Retention   int64  // Retention time in milliseconds (0 = keep current)
 }
 
 // parseTimestamp parses a timestamp string to int64 milliseconds
@@ -243,6 +244,9 @@ func (s *BotreonStore) TSAdd(key string, timestamp int64, value float64, opts TS
 
 		// Update metadata
 		meta.TotalSamples++
+		if opts.Retention > 0 {
+			meta.Retention = opts.Retention
+		}
 		if meta.FirstTimestamp == 0 || timestamp < meta.FirstTimestamp {
 			meta.FirstTimestamp = timestamp
 		}
@@ -746,7 +750,7 @@ func (s *BotreonStore) TSQueryIndex(filters []string) ([]string, error) {
 }
 
 // TSIncrBy increments the value of the sample with the maximum existing timestamp
-func (s *BotreonStore) TSIncrBy(key string, timestamp int64, value float64) (int64, error) {
+func (s *BotreonStore) TSIncrBy(key string, timestamp int64, value float64, opts TSAddOptions) (int64, error) {
 	// Get current value at timestamp, or the last value if timestamp is "*"
 	var ts int64
 	var currentVal float64
@@ -804,7 +808,7 @@ func (s *BotreonStore) TSIncrBy(key string, timestamp int64, value float64) (int
 	}
 
 	newVal := currentVal + value
-	return s.TSAdd(key, ts, newVal, TSAddOptions{})
+	return s.TSAdd(key, ts, newVal, opts)
 }
 
 // tsRuleKey returns the key for a compaction rule metadata entry.

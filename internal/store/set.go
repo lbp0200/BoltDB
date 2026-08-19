@@ -935,6 +935,12 @@ func (s *BotreonStore) SMIsMember(key string, members ...string) ([]int64, error
 
 // SInterCard 实现 Redis SINTERCARD 命令，返回多个集合的交集基数
 func (s *BotreonStore) SInterCard(keys ...string) (int64, error) {
+	return s.SInterCardWithLimit(0, keys...)
+}
+
+// SInterCardWithLimit 返回交集基数；limit > 0 时统计到该值即提前停止
+// （Redis SINTERCARD ... LIMIT n 语义）。
+func (s *BotreonStore) SInterCardWithLimit(limit int64, keys ...string) (int64, error) {
 	var count int64
 	err := s.db.View(func(txn *badger.Txn) error {
 		if len(keys) == 0 {
@@ -966,6 +972,10 @@ func (s *BotreonStore) SInterCard(keys ...string) (int64, error) {
 			}
 			if inAll {
 				count++
+				// LIMIT：达到上限即停止（Redis 语义）
+				if limit > 0 && count >= limit {
+					break
+				}
 			}
 		}
 		return nil

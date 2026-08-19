@@ -757,6 +757,29 @@ func TestExecuteCommand_COPY_Coverage(t *testing.T) {
 	assert.Equal(t, "value", val)
 }
 
+// TestExecuteCommand_COPY_DB0 verifies COPY with explicit DB 0 is accepted
+// (single-DB server; previously any DB option was rejected).
+func TestExecuteCommand_COPY_DB0_Coverage(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.Db.Set("sourcekey", "value")
+
+	// COPY src dst DB 0 → accepted (DB 0 = default)
+	resp := handler.executeCommand(state, "COPY", [][]byte{[]byte("sourcekey"), []byte("destkey"), []byte("DB"), []byte("0")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// COPY src dst DB 1 → rejected (cross-DB unsupported)
+	resp = handler.executeCommand(state, "COPY", [][]byte{[]byte("sourcekey"), []byte("destkey2"), []byte("DB"), []byte("1")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "DB option not supported"))
+}
+
 // TestExecuteCommand_TYPE tests TYPE command
 func TestExecuteCommand_TYPE_Coverage(t *testing.T) {
 	t.Parallel()
@@ -930,6 +953,29 @@ func TestExecuteCommand_XADD_Coverage(t *testing.T) {
 	lenResp := handler.executeCommand(state, "XLEN", [][]byte{[]byte("mystream")}, "127.0.0.1:12345")
 	lenInt, _ := lenResp.(*proto.Integer)
 	assert.Equal(t, int64(1), int64(*lenInt))
+}
+
+// TestExecuteCommand_XADD_MAXLEN verifies XADD MAXLEN trims the stream
+// (previously the MAXLEN option was never parsed — the parser required
+// options to start with '-', so XADD ... MAXLEN n ... failed with
+// "invalid stream ID: MAXLEN").
+func TestExecuteCommand_XADD_MAXLEN_Coverage(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Add 3 entries with MAXLEN 2
+	for i := 0; i < 3; i++ {
+		resp := handler.executeCommand(state, "XADD", [][]byte{[]byte("maxstream"), []byte("MAXLEN"), []byte("2"), []byte("*"), []byte("f"), []byte("v")}, "127.0.0.1:12345")
+		assert.NotNil(t, resp)
+	}
+
+	// Stream must be trimmed to 2
+	lenResp := handler.executeCommand(state, "XLEN", [][]byte{[]byte("maxstream")}, "127.0.0.1:12345")
+	lenInt, ok := lenResp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(2), int64(*lenInt))
 }
 
 // TestExecuteCommand_XLEN tests XLEN command
@@ -1188,6 +1234,45 @@ func TestExecuteCommand_GEOADD_Coverage(t *testing.T) {
 	}
 }
 
+// TestExecuteCommand_GEOADD_Options verifies GEOADD NX/XX/CH options
+// (previously options were parsed as longitude and rejected).
+func TestExecuteCommand_GEOADD_Options_Coverage(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Base add
+	resp := handler.executeCommand(state, "GEOADD", [][]byte{[]byte("g"), []byte("-122.4"), []byte("37.7"), []byte("m1")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// NX on existing member → 0
+	resp = handler.executeCommand(state, "GEOADD", [][]byte{[]byte("g"), []byte("NX"), []byte("-122.5"), []byte("37.8"), []byte("m1")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+
+	// XX on existing member → 0 (updated but no new member)
+	resp = handler.executeCommand(state, "GEOADD", [][]byte{[]byte("g"), []byte("XX"), []byte("-122.6"), []byte("37.9"), []byte("m1")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+
+	// CH + XX on existing member → 1 (changed count includes updates)
+	resp = handler.executeCommand(state, "GEOADD", [][]byte{[]byte("g"), []byte("CH"), []byte("XX"), []byte("-122.7"), []byte("38.0"), []byte("m1")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// NX + XX mutually exclusive → error
+	resp = handler.executeCommand(state, "GEOADD", [][]byte{[]byte("g"), []byte("NX"), []byte("XX"), []byte("-122.4"), []byte("37.7"), []byte("m2")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "not compatible"))
+}
+
 // TestExecuteCommand_GEODIST tests GEODIST command
 func TestExecuteCommand_GEODIST_Coverage(t *testing.T) {
 	t.Parallel()
@@ -1405,6 +1490,45 @@ func TestExecuteCommand_XACK_Coverage(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, int64(0), int64(countVal))
 	}
+}
+
+// TestExecuteCommand_XPENDING_IDLE tests the XPENDING extended form with the
+// IDLE min-idle-time filter (Redis syntax: XPENDING key group [IDLE ms] start end count).
+func TestExecuteCommand_XPENDING_IDLE_Coverage(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Add entries and create group + pending
+	handler.executeCommand(state, "XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("f"), []byte("v1")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "XADD", [][]byte{[]byte("mystream"), []byte("2"), []byte("f"), []byte("v2")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATE"), []byte("mystream"), []byte("mygroup"), []byte("0")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "XREADGROUP", [][]byte{[]byte("GROUP"), []byte("mygroup"), []byte("consumer1"), []byte("COUNT"), []byte("10"), []byte("STREAMS"), []byte("mystream"), []byte(">")}, "127.0.0.1:12345")
+
+	// Extended form without IDLE: returns 2 entries
+	resp := handler.executeCommand(state, "XPENDING", [][]byte{[]byte("mystream"), []byte("mygroup"), []byte("-"), []byte("+"), []byte("10")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(arr.Elems))
+
+	// Extended form with a huge IDLE filter: entries are fresh (< 10^9 ms), so 0 match
+	resp = handler.executeCommand(state, "XPENDING", [][]byte{[]byte("mystream"), []byte("mygroup"), []byte("IDLE"), []byte("1000000000"), []byte("-"), []byte("+"), []byte("10")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(arr.Elems))
+
+	// Extended form with IDLE 0: all entries match
+	resp = handler.executeCommand(state, "XPENDING", [][]byte{[]byte("mystream"), []byte("mygroup"), []byte("IDLE"), []byte("0"), []byte("-"), []byte("+"), []byte("10")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(arr.Elems))
+
+	// Invalid IDLE value rejected
+	resp = handler.executeCommand(state, "XPENDING", [][]byte{[]byte("mystream"), []byte("mygroup"), []byte("IDLE"), []byte("abc"), []byte("-"), []byte("+"), []byte("10")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "not an integer"))
 }
 
 // TestExecuteCommand_LPOS tests LPOS command
@@ -1802,6 +1926,67 @@ func TestExecuteCommand_ZADD_Coverage(t *testing.T) {
 	assert.Equal(t, int64(1), int64(*integer))
 }
 
+// TestExecuteCommand_ZADD_Options verifies ZADD NX/XX/GT/LT/CH options
+// (previously options were parsed as scores and rejected).
+func TestExecuteCommand_ZADD_Options_Coverage(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Base add
+	resp := handler.executeCommand(state, "ZADD", [][]byte{[]byte("oz"), []byte("1"), []byte("m1")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// NX on existing member → 0 (not added)
+	resp = handler.executeCommand(state, "ZADD", [][]byte{[]byte("oz"), []byte("NX"), []byte("2"), []byte("m1")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+
+	// XX on existing member → 0 (updated but no NEW member; Redis default count)
+	resp = handler.executeCommand(state, "ZADD", [][]byte{[]byte("oz"), []byte("XX"), []byte("3"), []byte("m1")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+	// Score must actually be updated to 3
+	scoreResp := handler.executeCommand(state, "ZSCORE", [][]byte{[]byte("oz"), []byte("m1")}, "127.0.0.1:12345")
+	scoreBs, ok := scoreResp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "3", string(*scoreBs))
+
+	// GT: 3 -> 2 不满足（新分数不大于旧分数）→ 0
+	resp = handler.executeCommand(state, "ZADD", [][]byte{[]byte("oz"), []byte("GT"), []byte("2"), []byte("m1")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+
+	// LT: 3 -> 2 满足 → 0 (updated but no NEW member)
+	resp = handler.executeCommand(state, "ZADD", [][]byte{[]byte("oz"), []byte("LT"), []byte("2"), []byte("m1")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+	// Score must actually be updated to 2
+	scoreResp = handler.executeCommand(state, "ZSCORE", [][]byte{[]byte("oz"), []byte("m1")}, "127.0.0.1:12345")
+	scoreBs, ok = scoreResp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "2", string(*scoreBs))
+
+	// CH: 更新已存在成员 → 1（变更计数含更新）
+	resp = handler.executeCommand(state, "ZADD", [][]byte{[]byte("oz"), []byte("CH"), []byte("5"), []byte("m1")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// NX + XX 互斥 → 报错
+	resp = handler.executeCommand(state, "ZADD", [][]byte{[]byte("oz"), []byte("NX"), []byte("XX"), []byte("1"), []byte("m1")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "not compatible"))
+}
+
 // TestExecuteCommand_ZREM tests ZREM command
 func TestExecuteCommand_ZREM_Coverage(t *testing.T) {
 	t.Parallel()
@@ -2197,4 +2382,131 @@ func TestExecuteQueuedCommand(t *testing.T) {
 			tt.validate(t, resp)
 		})
 	}
+}
+
+// TestExecuteCommand_HGETALL_Order verifies HGETALL returns fields in
+// stable sorted order (previously map iteration order was non-deterministic).
+func TestExecuteCommand_HGETALL_Order_Coverage(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "HSET", [][]byte{[]byte("h"), []byte("zebra"), []byte("1"), []byte("apple"), []byte("2"), []byte("mango"), []byte("3")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand(state, "HGETALL", [][]byte{[]byte("h")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	// 6 elements: [apple, 2, mango, 3, zebra, 1] (sorted field order)
+	assert.Equal(t, 6, len(arr.Args))
+	assert.Equal(t, "apple", string(arr.Args[0]))
+	assert.Equal(t, "mango", string(arr.Args[2]))
+	assert.Equal(t, "zebra", string(arr.Args[4]))
+}
+
+// TestExecuteCommand_BITCOUNT_BIT verifies BITCOUNT with the BIT unit counts
+// bits in a bit range (previously the BYTE/BIT unit option was rejected).
+func TestExecuteCommand_BITCOUNT_BIT_Coverage(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// "A" = 0x41 = 01000001 → 2 bits set (bit 1 and bit 6)
+	handler.Db.Set("bc", "A")
+
+	// BITCOUNT bc 0 7 BIT → all 8 bits of byte 0 → 2
+	resp := handler.executeCommand(state, "BITCOUNT", [][]byte{[]byte("bc"), []byte("0"), []byte("7"), []byte("BIT")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(2), int64(*integer))
+
+	// BITCOUNT bc 1 1 BIT → only bit 1 (0x41 bit1 = 1) → 1
+	resp = handler.executeCommand(state, "BITCOUNT", [][]byte{[]byte("bc"), []byte("1"), []byte("1"), []byte("BIT")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// Invalid unit → error
+	resp = handler.executeCommand(state, "BITCOUNT", [][]byte{[]byte("bc"), []byte("0"), []byte("7"), []byte("BOGUS")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "syntax error"))
+}
+
+// TestExecuteCommand_BITPOS_BIT verifies BITPOS with the BIT unit searches a
+// bit range (previously the BYTE/BIT unit option was rejected).
+func TestExecuteCommand_BITPOS_BIT_Coverage(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// "A" = 0x41 = 01000001 → bit 1 and bit 6 set
+	handler.Db.Set("bp", "A")
+
+	// BITPOS bp 1 0 7 BIT → first set bit at position 1
+	resp := handler.executeCommand(state, "BITPOS", [][]byte{[]byte("bp"), []byte("1"), []byte("0"), []byte("7"), []byte("BIT")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// BITPOS bp 1 0 0 BIT → only bit 0 (0x41 bit0 = 0) → not found (-1)
+	resp = handler.executeCommand(state, "BITPOS", [][]byte{[]byte("bp"), []byte("1"), []byte("0"), []byte("0"), []byte("BIT")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(-1), int64(*integer))
+
+	// Invalid unit → error
+	resp = handler.executeCommand(state, "BITPOS", [][]byte{[]byte("bp"), []byte("1"), []byte("0"), []byte("7"), []byte("BOGUS")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "syntax error"))
+}
+
+// TestExecuteCommand_EXPIRE_Conditions verifies EXPIRE NX/XX/GT/LT options
+// (previously they were ignored).
+func TestExecuteCommand_EXPIRE_Conditions_Coverage(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.Db.Set("k", "v")
+
+	// EXPIRE k 100 NX → no TTL yet, must set → 1
+	resp := handler.executeCommand(state, "EXPIRE", [][]byte{[]byte("k"), []byte("100"), []byte("NX")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// EXPIRE k 90 NX → already has TTL → 0
+	resp = handler.executeCommand(state, "EXPIRE", [][]byte{[]byte("k"), []byte("90"), []byte("NX")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+
+	// EXPIRE k 90 LT → 90 < 100 → must shorten → 1
+	resp = handler.executeCommand(state, "EXPIRE", [][]byte{[]byte("k"), []byte("90"), []byte("LT")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// EXPIRE k 200 GT → 200 > 90 → must extend → 1
+	resp = handler.executeCommand(state, "EXPIRE", [][]byte{[]byte("k"), []byte("200"), []byte("GT")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// EXPIRE k 50 GT → 50 < 200 → not longer → 0
+	resp = handler.executeCommand(state, "EXPIRE", [][]byte{[]byte("k"), []byte("50"), []byte("GT")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+
+	// Invalid option → error
+	resp = handler.executeCommand(state, "EXPIRE", [][]byte{[]byte("k"), []byte("100"), []byte("BOGUS")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "unsupported option"))
 }

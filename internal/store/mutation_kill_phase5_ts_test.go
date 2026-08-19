@@ -338,7 +338,7 @@ func TestTSIncrByNewTimestamp(t *testing.T) {
 	s.TSCreate("tsi_nt", TSCreateOptions{})
 	s.TSAdd("tsi_nt", 1000, 10.0, TSAddOptions{})
 
-	ts, err := s.TSIncrBy("tsi_nt", 2000, 5.0)
+	ts, err := s.TSIncrBy("tsi_nt", 2000, 5.0, TSAddOptions{})
 	assert.NoError(t, err)
 	assert.Equal(t, int64(2000), ts)
 
@@ -356,7 +356,7 @@ func TestTSIncrByExistingTimestamp(t *testing.T) {
 	s.TSCreate("tsi_et", TSCreateOptions{})
 	s.TSAdd("tsi_et", 1000, 10.0, TSAddOptions{})
 
-	ts, err := s.TSIncrBy("tsi_et", 1000, 5.0)
+	ts, err := s.TSIncrBy("tsi_et", 1000, 5.0, TSAddOptions{})
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1000), ts)
 
@@ -375,7 +375,7 @@ func TestTSIncrByZeroTimestamp(t *testing.T) {
 	s.TSAdd("tsi_zt", 5000, 10.0, TSAddOptions{})
 
 	// timestamp=0 should use last timestamp
-	ts, err := s.TSIncrBy("tsi_zt", 0, 3.0)
+	ts, err := s.TSIncrBy("tsi_zt", 0, 3.0, TSAddOptions{})
 	assert.NoError(t, err)
 	assert.Equal(t, int64(5000), ts)
 }
@@ -388,7 +388,7 @@ func TestTSIncrByMinusOneTimestamp(t *testing.T) {
 	s.TSAdd("tsi_mt", 5000, 10.0, TSAddOptions{})
 
 	// timestamp=-1 should use last timestamp
-	ts, err := s.TSIncrBy("tsi_mt", -1, 3.0)
+	ts, err := s.TSIncrBy("tsi_mt", -1, 3.0, TSAddOptions{})
 	assert.NoError(t, err)
 	assert.Equal(t, int64(5000), ts)
 }
@@ -401,7 +401,7 @@ func TestTSIncrByNoExistingValAtTimestamp(t *testing.T) {
 	s.TSAdd("tsi_ne", 1000, 10.0, TSAddOptions{})
 
 	// Increment at a new timestamp (not matching existing)
-	ts, err := s.TSIncrBy("tsi_ne", 3000, 7.0)
+	ts, err := s.TSIncrBy("tsi_ne", 3000, 7.0, TSAddOptions{})
 	assert.NoError(t, err)
 	assert.Equal(t, int64(3000), ts)
 }

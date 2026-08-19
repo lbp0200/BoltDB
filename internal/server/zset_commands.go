@@ -209,8 +209,47 @@ func (h *Handler) handleZADD(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'ZADD' command")
 	}
 	key := string(args[0])
+	var opts store.ZAddOptions
 	members := make([]store.ZSetMember, 0)
-	for i := 1; i < len(args); i += 2 {
+
+	// Parse options: NX XX GT LT CH INCR (only one of NX/XX, GT/LT allowed)
+	i := 1
+parseOpts:
+	for i < len(args)-1 {
+		switch strings.ToUpper(string(args[i])) {
+		case "NX":
+			opts.NX = true
+			i++
+		case "XX":
+			opts.XX = true
+			i++
+		case "GT":
+			opts.GT = true
+			i++
+		case "LT":
+			opts.LT = true
+			i++
+		case "CH":
+			opts.CH = true
+			i++
+		case "INCR":
+			opts.INCR = true
+			i++
+		default:
+			break parseOpts
+		}
+	}
+	if opts.NX && opts.XX {
+		return proto.NewError("ERR XX and NX options at the same time are not compatible")
+	}
+	if opts.GT && opts.LT {
+		return proto.NewError("ERR GT, LT, and/or NX options at the same time are not compatible")
+	}
+	if opts.INCR && len(args)-i > 2 {
+		return proto.NewError("ERR INCR option supports a single increment-element pair")
+	}
+
+	for ; i < len(args); i += 2 {
 		if i+1 >= len(args) {
 			break
 		}
@@ -221,11 +260,29 @@ func (h *Handler) handleZADD(state *connState, args [][]byte, remoteAddr string)
 		member := string(args[i+1])
 		members = append(members, store.ZSetMember{Member: member, Score: score})
 	}
+	if len(members) == 0 {
+		return proto.NewError("ERR wrong number of arguments for 'ZADD' command")
+	}
+
 	h.markDirtyKeys(state, key)
-	if err := h.Db.ZAdd(key, members); err != nil {
+	changed, err := h.Db.ZAddWithOptions(key, opts, members)
+	if err != nil {
 		return wrapStoreError(err)
 	}
-	return proto.NewInteger(int64(len(members)))
+	// INCR 模式返回新 score（BulkString），其余返回变更计数
+	if opts.INCR {
+		if changed == 0 {
+			// 未变更（NX 命中或 XX 不命中）：返回 nil
+			return proto.NewBulkString(nil)
+		}
+		// 读取实际 score（INCR 只有一个成员）
+		score, _, sErr := h.Db.ZScore(key, members[0].Member)
+		if sErr != nil {
+			return wrapStoreError(sErr)
+		}
+		return proto.NewBulkString([]byte(strconv.FormatFloat(score, 'f', -1, 64)))
+	}
+	return proto.NewInteger(changed)
 }
 
 // handleZREM 实现 ZREM 命令

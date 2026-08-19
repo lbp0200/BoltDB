@@ -1,6 +1,7 @@
 package store
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/zeebo/assert"
@@ -794,6 +795,60 @@ func TestBitFieldOverflow(t *testing.T) {
 	got, ok := result[0].(int64)
 	assert.True(t, ok)
 	assert.Equal(t, int64(98), got) // byte 1 = 'b' = 0x62 = 98
+}
+
+// TestBitFieldOverflowModes verifies BITFIELD OVERFLOW WRAP/SAT/FAIL modes
+// control INCRBY overflow behavior (previously only WRAP was supported and
+// OVERFLOW was not parsed at all).
+func TestBitFieldOverflowModes(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	// u8 最大 255：SAT 模式溢出饱和到 255
+	res, err := store.BitField("sat_key", []string{
+		"OVERFLOW", "SAT", "SET", "u8", "0", "250", "INCRBY", "u8", "0", "10",
+	})
+	assert.NoError(t, err)
+	got, ok := res[0].(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), got) // SET 返回旧值（key 不存在 → 0）
+	got, ok = res[1].(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(255), got) // SAT 饱和到 255，不回绕
+
+	// u8 最小 0：SAT 模式负溢出饱和到 0
+	res, err = store.BitField("sat_key2", []string{
+		"OVERFLOW", "SAT", "SET", "u8", "0", "5", "INCRBY", "u8", "0", "-10",
+	})
+	assert.NoError(t, err)
+	got, ok = res[1].(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), got) // SAT 饱和到 0
+
+	// FAIL 模式：溢出报错
+	_, err = store.BitField("fail_key", []string{
+		"OVERFLOW", "FAIL", "SET", "u8", "0", "250", "INCRBY", "u8", "0", "10",
+	})
+	assert.Error(t, err)
+	if err != nil && !strings.Contains(err.Error(), "overflow") {
+		t.Errorf("expected overflow error, got: %v", err)
+	}
+
+	// WRAP 模式（默认/显式）：回绕
+	res, err = store.BitField("wrap_key", []string{
+		"OVERFLOW", "WRAP", "SET", "u8", "0", "250", "INCRBY", "u8", "0", "10",
+	})
+	assert.NoError(t, err)
+	got, ok = res[1].(int64)
+	assert.True(t, ok)
+	assert.Equal(t, int64(4), got) // 250+10=260 → 260%256=4
+
+	// 非法 OVERFLOW 模式报错
+	_, err = store.BitField("bad_key", []string{"OVERFLOW", "BOGUS", "SET", "u8", "0", "1"})
+	assert.Error(t, err)
+	if err != nil && !strings.Contains(err.Error(), "invalid OVERFLOW mode") {
+		t.Errorf("expected invalid OVERFLOW mode error, got: %v", err)
+	}
 }
 
 // TestSetWrongType tests that SET returns ErrWrongType when key exists with different type

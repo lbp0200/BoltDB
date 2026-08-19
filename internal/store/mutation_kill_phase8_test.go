@@ -388,7 +388,7 @@ func TestTSIncrByNoExistingTS(t *testing.T) {
 	s.TSAdd("tsi_ne", 1000, 10.0, TSAddOptions{})
 
 	// Increment at non-existing timestamp (2000 doesn't exist)
-	ts, err := s.TSIncrBy("tsi_ne", 2000, 5.0)
+	ts, err := s.TSIncrBy("tsi_ne", 2000, 5.0, TSAddOptions{})
 	assert.NoError(t, err)
 	assert.Equal(t, int64(2000), ts)
 }

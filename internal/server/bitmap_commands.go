@@ -53,9 +53,17 @@ func (h *Handler) handleBITCOUNT(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'BITCOUNT' command")
 	}
 	key := string(args[0])
-	// BITCOUNT key [start end]
+	// BITCOUNT key [start end [BYTE | BIT]]
+	// 检查 BITCOUNT key BYTE|BIT（缺少 start/end）→ 语法错误
+	if len(args) == 2 {
+		u := strings.ToUpper(string(args[1]))
+		if u == "BYTE" || u == "BIT" {
+			return proto.NewError("ERR syntax error")
+		}
+	}
 	start := 0
 	end := -1
+	unit := "BYTE"
 	if len(args) >= 3 {
 		s, err := strconv.Atoi(string(args[1]))
 		if err != nil {
@@ -68,7 +76,15 @@ func (h *Handler) handleBITCOUNT(state *connState, args [][]byte, remoteAddr str
 		}
 		end = e
 	}
-	count, err := h.Db.BitCount(key, start, end)
+	// 可选 BYTE/BIT 单位（Redis 7 语义）
+	if len(args) >= 4 {
+		u := strings.ToUpper(string(args[3]))
+		if u != "BYTE" && u != "BIT" {
+			return proto.NewError("ERR syntax error")
+		}
+		unit = u
+	}
+	count, err := h.Db.BitCountWithUnit(key, start, end, unit)
 	if err != nil {
 		return wrapStoreError(err)
 	}
@@ -197,6 +213,7 @@ func (h *Handler) handleBITPOS(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR value is not an integer or out of range")
 	}
 	start, end := 0, -1
+	unit := "BYTE"
 	if len(args) >= 3 {
 		start, err = strconv.Atoi(string(args[2]))
 		if err != nil {
@@ -209,7 +226,15 @@ func (h *Handler) handleBITPOS(state *connState, args [][]byte, remoteAddr strin
 			return proto.NewError("ERR value is not an integer or out of range")
 		}
 	}
-	pos, err := h.Db.BitPos(key, bit, start, end)
+	// 可选 BYTE/BIT 单位（Redis 7 语义）
+	if len(args) >= 5 {
+		u := strings.ToUpper(string(args[4]))
+		if u != "BYTE" && u != "BIT" {
+			return proto.NewError("ERR syntax error")
+		}
+		unit = u
+	}
+	pos, err := h.Db.BitPosWithUnit(key, bit, start, end, unit)
 	if err != nil {
 		return wrapStoreError(err)
 	}

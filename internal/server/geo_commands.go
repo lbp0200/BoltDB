@@ -16,8 +16,32 @@ func (h *Handler) handleGEOADD(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'GEOADD' command")
 	}
 	key := string(args[0])
+	var opts store.GeoAddOptions
 	members := make([]store.GeoMember, 0)
-	for i := 1; i+2 < len(args); i += 3 {
+
+	// Parse options: NX XX CH (before the lon/lat/member triples)
+	i := 1
+parseOpts:
+	for i < len(args)-2 {
+		switch strings.ToUpper(string(args[i])) {
+		case "NX":
+			opts.NX = true
+			i++
+		case "XX":
+			opts.XX = true
+			i++
+		case "CH":
+			opts.CH = true
+			i++
+		default:
+			break parseOpts
+		}
+	}
+	if opts.NX && opts.XX {
+		return proto.NewError("ERR XX and NX options at the same time are not compatible")
+	}
+
+	for ; i+2 < len(args); i += 3 {
 		lon, err1 := strconv.ParseFloat(string(args[i]), 64)
 		lat, err2 := strconv.ParseFloat(string(args[i+1]), 64)
 		if err1 != nil || err2 != nil {
@@ -30,7 +54,7 @@ func (h *Handler) handleGEOADD(state *connState, args [][]byte, remoteAddr strin
 		})
 	}
 	h.markDirtyKeys(state, key)
-	added, err := h.Db.GeoAdd(key, members)
+	added, err := h.Db.GeoAddWithOptions(key, opts, members)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -269,15 +293,19 @@ func (h *Handler) handleGEOSEARCH(state *connState, args [][]byte, remoteAddr st
 		unit = string(args[i+2])
 		i += 3
 	} else if strings.ToUpper(string(args[i])) == "BYBOX" {
-		if i+2 >= len(args) {
+		if i+3 >= len(args) {
 			return proto.NewError("ERR syntax error")
 		}
 		width, err := strconv.ParseFloat(string(args[i+1]), 64)
 		if err != nil {
 			return proto.NewError("ERR value is not a valid float")
 		}
+		_, err = strconv.ParseFloat(string(args[i+2]), 64) // height (currently treated as circle radius)
+		if err != nil {
+			return proto.NewError("ERR value is not a valid float")
+		}
 		unit = string(args[i+3])
-		radius = width / 2
+		radius = width / 2 // TODO: implement proper rectangular bounding box
 		i += 4
 	} else {
 		return proto.NewError("ERR syntax error")

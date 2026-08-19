@@ -972,11 +972,11 @@ func TestSortedSetBoundary_ZaddBasic(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
 
-	// ZADD to update member - BoltDB returns len(members) (behavioral difference from Redis)
+	// ZADD to update existing member - without CH, returns 0 (only new elements counted)
 	resp = handler.executeCommand(state, "ZADD", [][]byte{[]byte("zset_key"), []byte("3.0"), []byte("member1")}, "127.0.0.1:12345")
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.Equal(t, int64(1), int64(*integer))
+	assert.Equal(t, int64(0), int64(*integer))
 }
 
 // TestSortedSetBoundary_ZremBasic tests ZREM removes existing members

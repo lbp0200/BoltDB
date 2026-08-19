@@ -11,6 +11,9 @@ import (
 	"github.com/dgraph-io/badger/v4"
 )
 
+// ErrStreamNotFound 表示 stream 不存在（XADD NOMKSTREAM 语义）
+var ErrStreamNotFound = errors.New("the stream does not exist")
+
 const (
 	prefixStream  = "stream:"
 	streamMeta    = ":meta"
@@ -65,6 +68,7 @@ type StreamXAddOptions struct {
 	MaxLen       int64
 	MaxLenApprox int64
 	MinID        string
+	NoMkStream   bool // NOMKSTREAM：stream 不存在时不创建（Redis 语义）
 }
 
 // parseStreamID parses a stream ID string to (timestamp, sequence)

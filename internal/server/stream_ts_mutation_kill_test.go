@@ -327,16 +327,52 @@ func TestXREADGROUP_InvalidBlock(t *testing.T) {
 	assert.True(t, strings.Contains(string(*errResp), "not an integer"))
 }
 
-func TestXREADGROUP_InvalidNoAck(t *testing.T) {
+func TestXREADGROUP_NOACK_NotInPEL(t *testing.T) {
 	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(state, "XREADGROUP", [][]byte{[]byte("GROUP"), []byte("g"), []byte("c"), []byte("NOACK"), []byte("STREAMS"), []byte("k"), []byte(">")}, "127.0.0.1:12345")
-	// NOACK is not supported — returns syntax error
-	errResp, ok := resp.(*proto.Error)
+	// Add entries and create group
+	handler.executeCommand(state, "XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("f"), []byte("v1")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATE"), []byte("mystream"), []byte("mygroup"), []byte("0")}, "127.0.0.1:12345")
+
+	// NOACK read: message is delivered but NOT added to the PEL
+	resp := handler.executeCommand(state, "XREADGROUP", [][]byte{[]byte("GROUP"), []byte("mygroup"), []byte("c1"), []byte("NOACK"), []byte("STREAMS"), []byte("mystream"), []byte(">")}, "127.0.0.1:12345")
+	assert.NotNil(t, resp)
+
+	// XPENDING summary must show 0 pending (message was auto-acked)
+	resp = handler.executeCommand(state, "XPENDING", [][]byte{[]byte("mystream"), []byte("mygroup")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, strings.Contains(string(*errResp), "syntax error"))
+	if len(arr.Elems) >= 1 {
+		countVal, ok := arr.Elems[0].(proto.Integer)
+		assert.True(t, ok)
+		assert.Equal(t, int64(0), int64(countVal))
+	}
+}
+
+func TestXREADGROUP_NoNoAck_InPEL(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Add entries and create group
+	handler.executeCommand(state, "XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("f"), []byte("v1")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATE"), []byte("mystream"), []byte("mygroup"), []byte("0")}, "127.0.0.1:12345")
+
+	// Normal read: message stays in the PEL
+	resp := handler.executeCommand(state, "XREADGROUP", [][]byte{[]byte("GROUP"), []byte("mygroup"), []byte("c1"), []byte("STREAMS"), []byte("mystream"), []byte(">")}, "127.0.0.1:12345")
+	assert.NotNil(t, resp)
+
+	// XPENDING summary must show 1 pending
+	resp = handler.executeCommand(state, "XPENDING", [][]byte{[]byte("mystream"), []byte("mygroup")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	if len(arr.Elems) >= 1 {
+		countVal, ok := arr.Elems[0].(proto.Integer)
+		assert.True(t, ok)
+		assert.Equal(t, int64(1), int64(countVal))
+	}
 }
 
 // ---------- XPENDING ----------

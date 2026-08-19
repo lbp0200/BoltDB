@@ -27,17 +27,94 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 		if len(args) >= 3 {
 			key := string(args[1])
 			value := string(args[2])
-			if len(args) > 3 {
-				opt := strings.ToUpper(string(args[3]))
-				if opt == "EX" && len(args) >= 5 {
-					if sec, err := strconv.ParseInt(string(args[4]), 10, 64); err == nil {
-						return s.SetWithTTL(key, value, time.Duration(sec)*time.Second)
+			// Parse all options (EX/PX/EXAT/PXAT/NX/XX/GET/KEEPTTL)
+			var ttlDuration time.Duration
+			var hasExpiry bool
+			var nx, xx, keepTTL bool
+			i := 3
+			for i < len(args) {
+				opt := strings.ToUpper(string(args[i]))
+				switch opt {
+				case "EX":
+					if i+1 < len(args) {
+						if sec, err := strconv.ParseInt(string(args[i+1]), 10, 64); err == nil {
+							ttlDuration = time.Duration(sec) * time.Second
+							hasExpiry = true
+						}
 					}
-				} else if opt == "PX" && len(args) >= 5 {
-					if ms, err := strconv.ParseInt(string(args[4]), 10, 64); err == nil {
-						return s.SetWithTTL(key, value, time.Duration(ms)*time.Millisecond)
+					i += 2
+				case "PX":
+					if i+1 < len(args) {
+						if ms, err := strconv.ParseInt(string(args[i+1]), 10, 64); err == nil {
+							ttlDuration = time.Duration(ms) * time.Millisecond
+							hasExpiry = true
+						}
 					}
+					i += 2
+				case "EXAT":
+					if i+1 < len(args) {
+						if ts, err := strconv.ParseInt(string(args[i+1]), 10, 64); err == nil {
+							ttlDuration = time.Until(time.Unix(ts, 0))
+							if ttlDuration < 0 {
+								ttlDuration = 0
+							}
+							hasExpiry = true
+						}
+					}
+					i += 2
+				case "PXAT":
+					if i+1 < len(args) {
+						if ts, err := strconv.ParseInt(string(args[i+1]), 10, 64); err == nil {
+							ttlDuration = time.Until(time.UnixMilli(ts))
+							if ttlDuration < 0 {
+								ttlDuration = 0
+							}
+							hasExpiry = true
+						}
+					}
+					i += 2
+				case "NX":
+					nx = true
+					i++
+				case "XX":
+					xx = true
+					i++
+				case "GET":
+					i++ // return value discarded in replication replay
+				case "KEEPTTL":
+					keepTTL = true
+					i++
+				default:
+					i++
 				}
+			}
+			// NX/XX condition check
+			if nx || xx {
+				exists, err := s.Exists(key)
+				if err != nil {
+					return err
+				}
+				if nx && exists {
+					return nil
+				}
+				if xx && !exists {
+					return nil
+				}
+			}
+			// KEEPTTL: preserve existing TTL
+			if keepTTL && !hasExpiry {
+				ttl, err := s.TTL(key)
+				if err != nil {
+					return err
+				}
+				if ttl > 0 {
+					ttlDuration = time.Duration(ttl) * time.Second
+					hasExpiry = true
+				}
+			}
+			// SET with optional TTL
+			if hasExpiry {
+				return s.SetWithTTL(key, value, ttlDuration)
 			}
 			return s.Set(key, value)
 		}
@@ -134,6 +211,26 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 							return nil
 						}
 						_, eErr := s.PExpire(key, int64(millis))
+						return eErr
+					}
+					return nil
+				case "EXAT":
+					if ts, pErr := strconv.ParseInt(string(args[3]), 10, 64); pErr == nil {
+						_, gErr := s.Get(key)
+						if gErr != nil {
+							return nil
+						}
+						_, eErr := s.ExpireAt(key, ts)
+						return eErr
+					}
+					return nil
+				case "PXAT":
+					if ts, pErr := strconv.ParseInt(string(args[3]), 10, 64); pErr == nil {
+						_, gErr := s.Get(key)
+						if gErr != nil {
+							return nil
+						}
+						_, eErr := s.PExpireAt(key, ts)
 						return eErr
 					}
 					return nil
@@ -571,8 +668,36 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 	case "ZADD":
 		if len(args) >= 4 {
 			key := string(args[1])
-			members := make([]ZSetMember, 0, (len(args)-2)/2)
-			for i := 2; i+1 < len(args); i += 2 {
+			var opts ZAddOptions
+			i := 2
+			// Parse options: NX XX GT LT CH INCR
+		parseZAddOpts:
+			for i < len(args)-1 {
+				switch strings.ToUpper(string(args[i])) {
+				case "NX":
+					opts.NX = true
+					i++
+				case "XX":
+					opts.XX = true
+					i++
+				case "GT":
+					opts.GT = true
+					i++
+				case "LT":
+					opts.LT = true
+					i++
+				case "CH":
+					opts.CH = true
+					i++
+				case "INCR":
+					opts.INCR = true
+					i++
+				default:
+					break parseZAddOpts
+				}
+			}
+			members := make([]ZSetMember, 0, (len(args)-i)/2)
+			for ; i+1 < len(args); i += 2 {
 				if score, err := strconv.ParseFloat(string(args[i]), 64); err == nil {
 					members = append(members, ZSetMember{
 						Member: string(args[i+1]),
@@ -581,7 +706,8 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 				}
 			}
 			if len(members) > 0 {
-				return s.ZAdd(key, members)
+				_, err := s.ZAddWithOptions(key, opts, members)
+				return err
 			}
 			return nil
 		}
@@ -710,10 +836,32 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 		}
 
 	case "GEOADD":
-		if len(args) >= 5 && (len(args)-2)%3 == 0 {
+		if len(args) >= 5 {
 			key := string(args[1])
-			members := make([]GeoMember, 0, (len(args)-2)/3)
-			for i := 2; i+2 < len(args); i += 3 {
+			var gOpts GeoAddOptions
+			i := 2
+			// 跳过 NX/XX/CH 选项（选项不能当 lon/lat 解析）
+		parseGeoOpts:
+			for i < len(args)-2 {
+				switch strings.ToUpper(string(args[i])) {
+				case "NX":
+					gOpts.NX = true
+					i++
+				case "XX":
+					gOpts.XX = true
+					i++
+				case "CH":
+					gOpts.CH = true
+					i++
+				default:
+					break parseGeoOpts
+				}
+			}
+			if gOpts.NX && gOpts.XX {
+				return fmt.Errorf("ERR XX and NX options at the same time are not compatible")
+			}
+			members := make([]GeoMember, 0, (len(args)-i)/3)
+			for ; i+2 < len(args); i += 3 {
 				lon, _ := strconv.ParseFloat(string(args[i]), 64)
 				lat, _ := strconv.ParseFloat(string(args[i+1]), 64)
 				members = append(members, GeoMember{
@@ -722,19 +870,42 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 					Lat:    lat,
 				})
 			}
-			_, err := s.GeoAdd(key, members)
+			_, err := s.GeoAddWithOptions(key, gOpts, members)
 			return err
 		}
 
 	case "XADD":
 		if len(args) >= 4 {
 			key := string(args[1])
-			id := string(args[2])
+			var opts StreamXAddOptions
+			i := 2
+			// 跳过 MAXLEN/MINID/NOMKSTREAM 选项（master 端裁剪语义需同步，
+			// 且选项不能被误当 field/value 写入）
+		parseXAddOpts:
+			for i < len(args)-2 {
+				switch strings.ToUpper(string(args[i])) {
+				case "MAXLEN":
+					if v, parseErr := strconv.ParseInt(string(args[i+1]), 10, 64); parseErr == nil {
+						opts.MaxLen = v
+					}
+					i += 2
+				case "MINID":
+					opts.MinID = string(args[i+1])
+					i += 2
+				case "NOMKSTREAM":
+					opts.NoMkStream = true
+					i++
+				default:
+					break parseXAddOpts
+				}
+			}
+			id := string(args[i])
+			i++
 			fields := make(map[string]string)
-			for i := 3; i+1 < len(args); i += 2 {
+			for ; i+1 < len(args); i += 2 {
 				fields[string(args[i])] = string(args[i+1])
 			}
-			_, err := s.XAdd(key, StreamXAddOptions{}, id, fields)
+			_, err := s.XAdd(key, opts, id, fields)
 			return err
 		}
 
@@ -939,25 +1110,50 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			group := string(args[2])
 			consumer := string(args[3])
 			minIdleTime, _ := strconv.ParseInt(string(args[4]), 10, 64)
+			var opts XClaimOptions
+			opts.MinIdleTime = minIdleTime
 			ids := make([]string, 0, len(args)-5)
 			for i := 5; i < len(args); i++ {
 				tok := strings.ToUpper(string(args[i]))
-				// Skip Redis options so JUSTID/FORCE do not look like message IDs
 				switch tok {
-				case "JUSTID", "FORCE":
-					continue
-				case "IDLE", "TIME", "RETRYCOUNT", "LASTID":
+				case "JUSTID":
+					// JUSTID affects response format only, not store behavior
+				case "FORCE":
+					opts.Force = true
+				case "IDLE":
 					if i+1 < len(args) {
+						if v, pErr := strconv.ParseInt(string(args[i+1]), 10, 64); pErr == nil {
+							opts.IdleMS = v
+						}
 						i++
 					}
-					continue
+				case "TIME":
+					if i+1 < len(args) {
+						if v, pErr := strconv.ParseInt(string(args[i+1]), 10, 64); pErr == nil {
+							opts.TimeMS = v
+						}
+						i++
+					}
+				case "RETRYCOUNT":
+					if i+1 < len(args) {
+						if v, pErr := strconv.ParseInt(string(args[i+1]), 10, 64); pErr == nil {
+							opts.RetryCount = v
+						}
+						i++
+					}
+				case "LASTID":
+					if i+1 < len(args) {
+						opts.LastID = string(args[i+1])
+						i++
+					}
+				default:
+					ids = append(ids, string(args[i]))
 				}
-				ids = append(ids, string(args[i]))
 			}
 			if len(ids) == 0 {
 				return nil
 			}
-			_, err := s.XClaim(key, group, consumer, XClaimOptions{MinIdleTime: minIdleTime}, ids...)
+			_, err := s.XClaim(key, group, consumer, opts, ids...)
 			return err
 		}
 
@@ -966,6 +1162,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 		// Format: XREADGROUP [COUNT n] [BLOCK ms] GROUP group consumer STREAMS key [key ...] id [id ...]
 		var count int64
 		var group, consumer string
+		noAck := false
 		i := 1
 		for i < len(args) {
 			tok := strings.ToUpper(string(args[i]))
@@ -982,6 +1179,10 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 					return nil
 				}
 				i += 2
+			case "NOACK":
+				// NOACK：读取后立即确认，消息不留在 PEL（与 master 一致）
+				noAck = true
+				i++
 			case "GROUP":
 				if i+2 >= len(args) {
 					return nil
@@ -1001,8 +1202,28 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 					keys[j] = string(args[i+j])
 				}
 				// IDs (including ">") are ignored for delivery cursor — store uses LastDeliveredID
-				_, err := s.XReadGroup(ctx, group, consumer, count, -1, keys...)
-				return err
+				results, err := s.XReadGroup(ctx, group, consumer, count, -1, keys...)
+				if err != nil {
+					return err
+				}
+				// NOACK：master 端消息不在 PEL，replica 需同步确认
+				if noAck {
+					for _, result := range results {
+						for streamKey, entries := range result {
+							if len(entries) == 0 {
+								continue
+							}
+							ids := make([]string, len(entries))
+							for i, e := range entries {
+								ids[i] = e.ID
+							}
+							if _, err := s.XAck(streamKey, group, ids...); err != nil {
+								return err
+							}
+						}
+					}
+				}
+				return nil
 			default:
 				i++
 			}
@@ -1041,6 +1262,14 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 					group := string(args[3])
 					consumer := string(args[4])
 					_, err := s.XGroupDelConsumer(key, group, consumer)
+					return err
+				}
+			case "CREATECONSUMER":
+				if len(args) >= 5 {
+					key := string(args[2])
+					group := string(args[3])
+					consumer := string(args[4])
+					_, err := s.XGroupCreateConsumer(key, group, consumer)
 					return err
 				}
 			default:
@@ -1457,10 +1686,28 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 				return fmt.Errorf("invalid TS.ADD value %q: %w", args[3], valueErr)
 			}
 			opts := TSAddOptions{}
-			if len(args) > 4 {
-				opt := strings.ToUpper(string(args[4]))
-				if opt == "ON_DUPLICATE" && len(args) > 5 {
-					opts.OnDuplicate = string(args[5])
+			i := 4
+			for i < len(args) {
+				opt := strings.ToUpper(string(args[i]))
+				switch opt {
+				case "ON_DUPLICATE":
+					if i+1 < len(args) {
+						opts.OnDuplicate = string(args[i+1])
+						i += 2
+					} else {
+						i++
+					}
+				case "RETENTION":
+					if i+1 < len(args) {
+						if r, rErr := strconv.ParseInt(string(args[i+1]), 10, 64); rErr == nil {
+							opts.Retention = r
+						}
+						i += 2
+					} else {
+						i++
+					}
+				default:
+					i++
 				}
 			}
 			_, tsErr := s.TSAdd(key, timestamp, value, opts)
@@ -1510,14 +1757,43 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 				return fmt.Errorf("invalid TS.INCRBY value %q: %w", args[2], valueErr)
 			}
 			var timestamp int64
-			if len(args) >= 5 && strings.ToUpper(string(args[3])) == "TIMESTAMP" {
-				var parseErr error
-				timestamp, parseErr = strconv.ParseInt(string(args[4]), 10, 64)
-				if parseErr != nil {
-					return fmt.Errorf("invalid TS.INCRBY timestamp %q: %w", args[4], parseErr)
+			opts := TSAddOptions{}
+			i := 3
+			for i < len(args) {
+				opt := strings.ToUpper(string(args[i]))
+				switch opt {
+				case "TIMESTAMP":
+					if i+1 < len(args) {
+						var parseErr error
+						timestamp, parseErr = strconv.ParseInt(string(args[i+1]), 10, 64)
+						if parseErr != nil {
+							return fmt.Errorf("invalid TS.INCRBY timestamp %q: %w", args[i+1], parseErr)
+						}
+						i += 2
+					} else {
+						i++
+					}
+				case "ON_DUPLICATE":
+					if i+1 < len(args) {
+						opts.OnDuplicate = string(args[i+1])
+						i += 2
+					} else {
+						i++
+					}
+				case "RETENTION":
+					if i+1 < len(args) {
+						if r, rErr := strconv.ParseInt(string(args[i+1]), 10, 64); rErr == nil {
+							opts.Retention = r
+						}
+						i += 2
+					} else {
+						i++
+					}
+				default:
+					i++
 				}
 			}
-			_, err := s.TSIncrBy(key, timestamp, value)
+			_, err := s.TSIncrBy(key, timestamp, value, opts)
 			return err
 		}
 
@@ -1769,6 +2045,29 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 					}
 				case "JUSTID":
 					opts.JustID = true
+				case "IDLE":
+					if i+1 < len(args) {
+						if v, parseErr := strconv.ParseInt(string(args[i+1]), 10, 64); parseErr == nil {
+							opts.IdleMS = v
+						}
+						i++
+					}
+				case "TIME":
+					if i+1 < len(args) {
+						if v, parseErr := strconv.ParseInt(string(args[i+1]), 10, 64); parseErr == nil {
+							opts.TimeMS = v
+						}
+						i++
+					}
+				case "RETRYCOUNT":
+					if i+1 < len(args) {
+						if v, parseErr := strconv.ParseInt(string(args[i+1]), 10, 64); parseErr == nil {
+							opts.RetryCount = v
+						}
+						i++
+					}
+				case "FORCE":
+					opts.Force = true
 				}
 			}
 			_, err := s.XAutoClaim(key, group, consumer, minIdleTime, start, opts)
@@ -1786,6 +2085,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 		var alpha bool
 		var destKey string
 		var byPattern string
+		var getPatterns []string
 		i := 2
 		for i < len(args) {
 			opt := strings.ToUpper(string(args[i]))
@@ -1793,6 +2093,13 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			case "BY":
 				if i+1 < len(args) {
 					byPattern = string(args[i+1])
+					i += 2
+				} else {
+					i++
+				}
+			case "GET":
+				if i+1 < len(args) {
+					getPatterns = append(getPatterns, string(args[i+1]))
 					i += 2
 				} else {
 					i++
@@ -1959,6 +2266,28 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 		}
 		if count >= 0 && int64(len(values)) > count {
 			values = values[:count]
+		}
+
+		// 应用 GET patterns（Redis 语义：对每个元素依次应用所有 pattern，
+		// 即 pattern 为内层循环；# 表示取排序值本身）
+		if len(getPatterns) > 0 {
+			finalValues := make([]string, 0, len(values)*len(getPatterns))
+			for _, val := range values {
+				for _, pattern := range getPatterns {
+					if pattern == "#" {
+						finalValues = append(finalValues, val)
+						continue
+					}
+					targetKey := strings.Replace(pattern, "*", val, 1)
+					targetVal, gErr := s.Get(targetKey)
+					if gErr != nil {
+						logger.Logger.Warn().Err(gErr).Str("key", targetKey).Msg("SORT GET: failed to get target key")
+						targetVal = ""
+					}
+					finalValues = append(finalValues, targetVal)
+				}
+			}
+			values = finalValues
 		}
 
 		// STORE — 存为 list

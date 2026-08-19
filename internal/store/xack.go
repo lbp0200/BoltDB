@@ -214,12 +214,14 @@ func (s *BotreonStore) XPending(key, group string) ([]StreamPendingEntry, error)
 // IdleMS: 认领后把 LastDelivery 设为 now-IdleMS（XCLAIM IDLE），0 = 用 now。
 // TimeMS: 认领后把 LastDelivery 设为绝对时间戳 TimeMS（XCLAIM TIME），0 = 用 now。
 // RetryCount: 认领后把 DeliveryCount 设为该值（XCLAIM RETRYCOUNT），0 = 递增。
+// LastID: 认领后把组的 LastDeliveredID 设为该值（XCLAIM LASTID），空 = 不修改。
 type XClaimOptions struct {
 	MinIdleTime int64
 	Force       bool
 	IdleMS      int64
 	TimeMS      int64
 	RetryCount  int64
+	LastID      string
 }
 
 // XClaim claims pending messages.
@@ -278,6 +280,11 @@ func (s *BotreonStore) XClaim(key, group, consumer string, opts XClaimOptions, i
 				}
 				claimed = append(claimed, id)
 			}
+		}
+
+		// XCLAIM LASTID <id>：设置组的 last-delivered ID（Redis 语义）
+		if opts.LastID != "" {
+			groupData.LastDeliveredID = opts.LastID
 		}
 
 		data, err := json.Marshal(groupData)

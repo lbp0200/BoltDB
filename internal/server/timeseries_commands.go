@@ -75,10 +75,28 @@ func (h *Handler) handleTS_ADD(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR invalid value")
 	}
 	opts := store.TSAddOptions{}
-	if len(args) > 3 {
-		opt := strings.ToUpper(string(args[3]))
-		if opt == "ON_DUPLICATE" && len(args) > 4 {
-			opts.OnDuplicate = string(args[4])
+	i := 3
+	for i < len(args) {
+		opt := strings.ToUpper(string(args[i]))
+		switch opt {
+		case "ON_DUPLICATE":
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			opts.OnDuplicate = string(args[i+1])
+			i += 2
+		case "RETENTION":
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			r, err := strconv.ParseInt(string(args[i+1]), 10, 64)
+			if err != nil || r < 0 {
+				return proto.NewError("ERR invalid RETENTION value")
+			}
+			opts.Retention = r
+			i += 2
+		default:
+			return proto.NewError(fmt.Sprintf("ERR unsupported option '%s'", string(args[i])))
 		}
 	}
 	h.markDirtyKeys(state, key)
@@ -479,17 +497,42 @@ func (h *Handler) handleTS_INCRBY(state *connState, args [][]byte, remoteAddr st
 		return proto.NewError("ERR invalid value")
 	}
 	var timestamp int64
-	if len(args) > 2 {
-		opt := strings.ToUpper(string(args[2]))
-		if opt == "TIMESTAMP" && len(args) > 3 {
-			timestamp, err = strconv.ParseInt(string(args[3]), 10, 64)
+	opts := store.TSAddOptions{}
+	i := 2
+	for i < len(args) {
+		opt := strings.ToUpper(string(args[i]))
+		switch opt {
+		case "TIMESTAMP":
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			timestamp, err = strconv.ParseInt(string(args[i+1]), 10, 64)
 			if err != nil {
 				return proto.NewError("ERR invalid timestamp")
 			}
+			i += 2
+		case "ON_DUPLICATE":
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			opts.OnDuplicate = string(args[i+1])
+			i += 2
+		case "RETENTION":
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			r, rErr := strconv.ParseInt(string(args[i+1]), 10, 64)
+			if rErr != nil || r < 0 {
+				return proto.NewError("ERR invalid RETENTION value")
+			}
+			opts.Retention = r
+			i += 2
+		default:
+			return proto.NewError(fmt.Sprintf("ERR unsupported option '%s'", string(args[i])))
 		}
 	}
 	h.markDirtyKeys(state, key)
-	ts, err := h.Db.TSIncrBy(key, timestamp, value)
+	ts, err := h.Db.TSIncrBy(key, timestamp, value, opts)
 	if err != nil {
 		if errors.Is(err, store.ErrKeyNotFound) {
 			return proto.NewError("ERR the key does not exist")

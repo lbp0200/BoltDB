@@ -48,6 +48,10 @@ func (s *BotreonStore) XAdd(key string, opts StreamXAddOptions, id string, field
 		} else if !errors.Is(typeErr, badger.ErrKeyNotFound) {
 			return typeErr
 		}
+		// NOMKSTREAM：stream 不存在时不创建（Redis 语义报错）
+		if errors.Is(typeErr, badger.ErrKeyNotFound) && opts.NoMkStream {
+			return ErrStreamNotFound
+		}
 		if err := txn.Set(typeKey, []byte(KeyTypeStream)); err != nil {
 			logger.Logger.Error().Err(err).Str("key", key).Msg("XAdd: Failed to set type")
 			return err

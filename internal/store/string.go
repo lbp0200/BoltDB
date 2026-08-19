@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -672,6 +673,12 @@ func (s *BotreonStore) SetBit(key string, offset int, value int) (int, error) {
 
 // BitCount 实现 Redis BITCOUNT 命令，计算字符串中1的位数
 func (s *BotreonStore) BitCount(key string, start, end int) (int, error) {
+	return s.BitCountWithUnit(key, start, end, "BYTE")
+}
+
+// BitCountWithUnit 实现 BITCOUNT 的 BYTE/BIT 单位（Redis 7 语义）：
+// BYTE 时 start/end 是字节索引；BIT 时是位索引（统计该位范围内的置位数）。
+func (s *BotreonStore) BitCountWithUnit(key string, start, end int, unit string) (int, error) {
 	var count int
 	err := s.db.View(func(txn *badger.Txn) error {
 		data, err := s.getStringBytes(txn, key)
@@ -681,7 +688,32 @@ func (s *BotreonStore) BitCount(key string, start, end int) (int, error) {
 		if len(data) == 0 {
 			return nil
 		}
-		// 处理负数索引
+		// BIT 单位：把位索引转换为字节索引（按 8 位对齐）
+		if strings.ToUpper(unit) == "BIT" {
+			if start < 0 {
+				start = len(data)*8 + start
+			}
+			if end < 0 {
+				end = len(data)*8 + end
+			}
+			if start < 0 {
+				start = 0
+			}
+			if end >= len(data)*8 {
+				end = len(data)*8 - 1
+			}
+			if start > end {
+				return nil
+			}
+			// 逐位统计
+			for bit := start; bit <= end; bit++ {
+				if (data[bit/8] & (1 << (7 - uint(bit%8)))) != 0 {
+					count++
+				}
+			}
+			return nil
+		}
+		// BYTE 单位（默认）：处理负数索引
 		if start < 0 {
 			start = len(data) + start
 			if start < 0 {
@@ -801,6 +833,12 @@ func (s *BotreonStore) BitOp(op string, destKey string, keys ...string) (int, er
 
 // BitPos 实现 Redis BITPOS 命令，查找第一个设置或清除的位
 func (s *BotreonStore) BitPos(key string, bit int, start, end int) (int, error) {
+	return s.BitPosWithUnit(key, bit, start, end, "BYTE")
+}
+
+// BitPosWithUnit 实现 BITPOS 的 BYTE/BIT 单位（Redis 7 语义）：
+// BYTE 时 start/end 是字节索引；BIT 时是位索引，返回位索引位置。
+func (s *BotreonStore) BitPosWithUnit(key string, bit int, start, end int, unit string) (int, error) {
 	pos := -1
 	err := s.db.View(func(txn *badger.Txn) error {
 		data, err := s.getStringBytes(txn, key)
@@ -815,7 +853,46 @@ func (s *BotreonStore) BitPos(key string, bit int, start, end int) (int, error) 
 			}
 			return nil
 		}
-		// 处理负数索引
+		// BIT 单位：start/end 是位索引，负数按位长度换算
+		if strings.ToUpper(unit) == "BIT" {
+			if start < 0 {
+				start = len(data)*8 + start
+				if start < 0 {
+					start = 0
+				}
+			}
+			if end < 0 {
+				end = len(data)*8 + end
+				if end < 0 {
+					end = -1
+				}
+			}
+			if start >= len(data)*8 {
+				pos = -1
+				return nil
+			}
+			if end >= len(data)*8 {
+				end = len(data)*8 - 1
+			}
+			if start > end {
+				pos = -1
+				return nil
+			}
+			// 逐位查找（返回位索引）
+			for bitOffset := start; bitOffset <= end; bitOffset++ {
+				currentBit := 0
+				if (data[bitOffset/8] & (1 << (7 - uint(bitOffset%8)))) != 0 {
+					currentBit = 1
+				}
+				if currentBit == bit {
+					pos = bitOffset
+					return nil
+				}
+			}
+			pos = -1
+			return nil
+		}
+		// BYTE 单位（默认）：处理负数索引
 		if start < 0 {
 			start = len(data) + start
 			if start < 0 {
@@ -919,12 +996,30 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 		bits     int
 		offset   int64
 		value    int64
+		overflow string // "WRAP" (default), "SAT", "FAIL"
 	}
 
 	ops := make([]operation, 0, len(operations))
+	overflow := "WRAP" // Redis 默认 WRAP
 	for i := 0; i < len(operations); {
 		opName := operations[i]
 		i++
+
+		// OVERFLOW <WRAP|SAT|FAIL> 选项：作用于其后的 INCRBY 操作
+		if strings.ToUpper(opName) == "OVERFLOW" {
+			if i >= len(operations) {
+				return nil, fmt.Errorf("BITFIELD: missing OVERFLOW mode")
+			}
+			mode := strings.ToUpper(operations[i])
+			i++
+			switch mode {
+			case "WRAP", "SAT", "FAIL":
+				overflow = mode
+			default:
+				return nil, fmt.Errorf("BITFIELD: invalid OVERFLOW mode: %s", mode)
+			}
+			continue
+		}
 
 		if i >= len(operations) {
 			return nil, fmt.Errorf("BITFIELD: missing arguments for %s", opName)
@@ -970,6 +1065,7 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 			bits:     bits,
 			offset:   offset,
 			value:    value,
+			overflow: overflow,
 		})
 	}
 
@@ -1056,46 +1152,136 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 				resultValue = extractedValue
 				results = append(results, resultValue)
 			case "INCRBY":
-				// Calculate new value with overflow handling
-				// Default overflow mode is WRAP (wrap around)
-				newValue := extractedValue + op.value
-
-				// For WRAP mode (default), wrap around
+				// Calculate new value with overflow handling.
+				// Use subtraction-based detection to avoid Go int64 silent wrap.
 				if op.isSigned {
-					// Signed wrap around (modulo 2^N)
-					bits := op.bits
-					if bits < 64 {
-						mod := int64(1) << uint(bits)
-						newValue = newValue % mod
-						if newValue >= int64(1)<<uint(bits-1) {
-							newValue -= mod
+					// 有符号范围 [-(2^(bits-1)), 2^(bits-1)-1]
+					minVal := int64(-(1 << uint(op.bits-1)))
+					maxVal := int64((1 << uint(op.bits-1)) - 1)
+					overflowed := false
+					if op.value > 0 && extractedValue > maxVal-op.value {
+						overflowed = true
+					} else if op.value < 0 && extractedValue < minVal-op.value {
+						overflowed = true
+					}
+					newValue := extractedValue + op.value
+					if overflowed {
+						switch op.overflow {
+						case "FAIL":
+							return fmt.Errorf("BITFIELD: overflow detected")
+						case "SAT":
+							if op.value > 0 {
+								newValue = maxVal
+							} else {
+								newValue = minVal
+							}
+						default: // WRAP
+							if op.bits < 64 {
+								mod := int64(1) << uint(op.bits)
+								newValue = newValue % mod
+								if newValue >= int64(1)<<uint(op.bits-1) {
+									newValue -= mod
+								}
+							}
 						}
 					}
-					// For 64-bit, Go's int64 already wraps
+					// Write new value to data (LSB first)
+					for j := 0; j < op.bits; j++ {
+						currentBitOffset := bitOffset + int64(j)
+						currentByteIndex := int(currentBitOffset) / 8
+						currentBitIndex := uint(currentBitOffset) % 8
+						bitValue := (newValue >> uint(j)) & 1
+						if bitValue == 1 {
+							data[currentByteIndex] |= (1 << currentBitIndex)
+						} else {
+							data[currentByteIndex] &^= (1 << currentBitIndex)
+						}
+					}
+					results = append(results, newValue)
 				} else {
-					maxVal := int64(1)<<uint(op.bits) - 1
-					// For unsigned, wrap around naturally (modulo behavior)
-					if newValue > maxVal {
-						newValue = newValue % (maxVal + 1)
-					} else if newValue < 0 {
-						// For negative values, wrap to positive
-						newValue = (maxVal + 1) - ((-newValue - 1) % (maxVal + 1))
-					}
-				}
-
-				// Write new value to data (LSB first)
-				for j := 0; j < op.bits; j++ {
-					currentBitOffset := bitOffset + int64(j)
-					currentByteIndex := int(currentBitOffset) / 8
-					currentBitIndex := uint(currentBitOffset) % 8
-					bitValue := (newValue >> uint(j)) & 1
-					if bitValue == 1 {
-						data[currentByteIndex] |= (1 << currentBitIndex)
+					// 无符号范围 [0, 2^bits-1]
+					if op.bits == 64 {
+						// u64: use uint64 arithmetic to avoid int64(1)<<64 overflow
+						uOld := uint64(extractedValue)
+						uInc := uint64(op.value)
+						uNew := uOld + uInc
+						// Detect overflow for both positive and negative increments
+						overflowed := false
+						if op.value > 0 {
+							overflowed = uNew < uOld // carry-out
+						} else if op.value < 0 {
+							overflowed = uNew > uOld // borrow (underflow)
+						}
+						if overflowed {
+							switch op.overflow {
+							case "FAIL":
+								return fmt.Errorf("BITFIELD: overflow detected")
+							case "SAT":
+								if op.value > 0 {
+									uNew = math.MaxUint64
+								} else {
+									uNew = 0
+								}
+							default: // WRAP: unsigned wrap is the natural result
+							}
+						}
+						newValue := int64(uNew)
+						for j := 0; j < op.bits; j++ {
+							currentBitOffset := bitOffset + int64(j)
+							currentByteIndex := int(currentBitOffset) / 8
+							currentBitIndex := uint(currentBitOffset) % 8
+							bitValue := (newValue >> uint(j)) & 1
+							if bitValue == 1 {
+								data[currentByteIndex] |= (1 << currentBitIndex)
+							} else {
+								data[currentByteIndex] &^= (1 << currentBitIndex)
+							}
+						}
+						results = append(results, newValue)
 					} else {
-						data[currentByteIndex] &^= (1 << currentBitIndex)
+						// bits < 64: safe to use int64
+						maxVal := int64((1 << uint(op.bits)) - 1)
+						newValue := extractedValue + op.value
+						overflowed := false
+						if op.value > 0 && extractedValue > maxVal-op.value {
+							overflowed = true
+						} else if op.value < 0 && extractedValue < 0-op.value {
+							overflowed = true
+						}
+						if overflowed {
+							switch op.overflow {
+							case "FAIL":
+								return fmt.Errorf("BITFIELD: overflow detected")
+							case "SAT":
+								if op.value > 0 {
+									newValue = maxVal
+								} else {
+									newValue = 0
+								}
+							default: // WRAP
+								mod := int64(1) << uint(op.bits)
+								newValue = newValue % mod
+								if newValue < 0 {
+									newValue += mod
+								}
+							}
+						}
+						// Write new value to data (LSB first)
+						for j := 0; j < op.bits; j++ {
+							currentBitOffset := bitOffset + int64(j)
+							currentByteIndex := int(currentBitOffset) / 8
+							currentBitIndex := uint(currentBitOffset) % 8
+							bitValue := (newValue >> uint(j)) & 1
+							if bitValue == 1 {
+								data[currentByteIndex] |= (1 << currentBitIndex)
+							} else {
+								data[currentByteIndex] &^= (1 << currentBitIndex)
+							}
+						}
+						results = append(results, newValue)
 					}
 				}
-				results = append(results, newValue)
+				continue // INCRBY write-back already handled above
 			}
 
 			// Update TTL if needed (compute remaining TTL before any deletion)

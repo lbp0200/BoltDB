@@ -23,11 +23,15 @@ func (h *Handler) handleXADD(state *connState, args [][]byte, remoteAddr string)
 	var id string
 	var fields = make(map[string]string)
 
-	// Parse options
+	// Parse options (MAXLEN / MINID / NOMKSTREAM 在 ID 之前；未知 token 即 ID/字段名)
 	i := 1
-	for i < len(args)-2 && string(args[i])[0] == '-' {
+parseOptions:
+	for i < len(args)-2 {
 		opt := strings.ToUpper(string(args[i]))
 		switch opt {
+		case "NOMKSTREAM":
+			opts.NoMkStream = true
+			i++
 		case "MAXLEN":
 			if i+1 >= len(args)-2 {
 				return proto.NewError("ERR syntax error")
@@ -45,20 +49,14 @@ func (h *Handler) handleXADD(state *connState, args [][]byte, remoteAddr string)
 			opts.MinID = string(args[i+1])
 			i += 2
 		default:
-			return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
+			break parseOptions
 		}
 	}
 
-	// ID or field name
+	// ID (e.g. "*" or explicit "1234567890-0")
 	idPos := i
 	id = string(args[i])
-	if id == "*" || (len(id) > 0 && id[0] == '-') {
-		// It's the ID (* or an option), skip it
-		i++
-	} else {
-		// It's the ID
-		i++
-	}
+	i++
 
 	// Remaining args are field-value pairs
 	for i < len(args) {
@@ -475,6 +473,7 @@ func (h *Handler) handleXREADGROUP(state *connState, args [][]byte, remoteAddr s
 	var count int64 = 0
 	var block int64 = -1
 	var group, consumer string
+	noAck := false
 
 	// Find GROUP keyword first
 	groupIdx := -1
@@ -553,6 +552,10 @@ func (h *Handler) handleXREADGROUP(state *connState, args [][]byte, remoteAddr s
 			}
 			block = b
 			i += 2
+		case "NOACK":
+			// NOACK：读取后立即确认，消息不留在 PEL（Redis 语义）
+			noAck = true
+			i++
 		default:
 			return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
 		}
@@ -594,6 +597,24 @@ func (h *Handler) handleXREADGROUP(state *connState, args [][]byte, remoteAddr s
 	// PEL / LastDeliveredID mutations must reach replicas (live XCLAIM/XACK)
 	for _, k := range streamKeys {
 		h.markDirtyKeys(state, k)
+	}
+
+	// NOACK：读取后立即确认，消息不留在 PEL（Redis 语义）
+	if noAck {
+		for _, result := range results {
+			for streamKey, entries := range result {
+				if len(entries) == 0 {
+					continue
+				}
+				ids := make([]string, len(entries))
+				for i, e := range entries {
+					ids[i] = e.ID
+				}
+				if _, err := h.Db.XAck(streamKey, group, ids...); err != nil {
+					return wrapLogError(err)
+				}
+			}
+		}
 	}
 
 	// Format response - XREADGROUP returns [[stream, [[entry1], [entry2], ...]], ...]
@@ -687,10 +708,10 @@ func (h *Handler) handleXCLAIM(state *connState, args [][]byte, remoteAddr strin
 			opts.RetryCount = v
 			i++
 		case "LASTID":
-			// accept and skip value arg for protocol compatibility
 			if i+1 >= len(args) {
 				return proto.NewError("ERR syntax error")
 			}
+			opts.LastID = string(args[i+1])
 			i++
 		default:
 			ids = append(ids, string(args[i]))
@@ -784,6 +805,39 @@ func (h *Handler) handleXAUTOCLAIM(state *connState, args [][]byte, remoteAddr s
 		case "JUSTID":
 			opts.JustID = true
 			i++
+		case "IDLE":
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			v, err := strconv.ParseInt(string(args[i+1]), 10, 64)
+			if err != nil || v < 0 {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			opts.IdleMS = v
+			i += 2
+		case "TIME":
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			v, err := strconv.ParseInt(string(args[i+1]), 10, 64)
+			if err != nil || v < 0 {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			opts.TimeMS = v
+			i += 2
+		case "RETRYCOUNT":
+			if i+1 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			v, err := strconv.ParseInt(string(args[i+1]), 10, 64)
+			if err != nil || v < 0 {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			opts.RetryCount = v
+			i += 2
+		case "FORCE":
+			opts.Force = true
+			i++
 		default:
 			return proto.NewError("ERR syntax error")
 		}
@@ -849,17 +903,31 @@ func (h *Handler) handleXPENDING(state *connState, args [][]byte, remoteAddr str
 		return wrapLogError(err)
 	}
 
-	// Extended form: start end count [consumer]
+	// Extended form: [IDLE min-idle-time] start end count [consumer]
 	if len(args) >= 5 {
+		var minIdleTime int64
+		idx := 2
+		// Redis 语法：XPENDING key group [IDLE <min-idle-time>] start end count
+		if strings.ToUpper(string(args[2])) == "IDLE" {
+			if len(args) < 7 {
+				return proto.NewError("ERR syntax error")
+			}
+			v, err := strconv.ParseInt(string(args[3]), 10, 64)
+			if err != nil || v < 0 {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			minIdleTime = v
+			idx = 4
+		}
 		// start/end filters: "-" / "+" or explicit IDs (lexicographic stream IDs work for range)
-		start, end := string(args[2]), string(args[3])
-		limit, err := strconv.ParseInt(string(args[4]), 10, 64)
+		start, end := string(args[idx]), string(args[idx+1])
+		limit, err := strconv.ParseInt(string(args[idx+2]), 10, 64)
 		if err != nil {
 			return proto.NewError("ERR value is not an integer")
 		}
 		var filterConsumer string
-		if len(args) >= 6 {
-			filterConsumer = string(args[5])
+		if len(args) >= idx+4 {
+			filterConsumer = string(args[idx+3])
 		}
 		now := time.Now().UnixNano() / int64(time.Millisecond)
 		out := make([]proto.RESP, 0)
@@ -876,6 +944,9 @@ func (h *Handler) handleXPENDING(state *connState, args [][]byte, remoteAddr str
 			idle := now - e.LastDelivery
 			if idle < 0 {
 				idle = 0
+			}
+			if minIdleTime > 0 && idle < minIdleTime {
+				continue
 			}
 			out = append(out, &proto.NestedArray{Elems: []proto.RESP{
 				proto.NewBulkString([]byte(e.ID)),

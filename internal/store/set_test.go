@@ -637,6 +637,27 @@ func TestSInterCard(t *testing.T) {
 	assert.Equal(t, uint64(0), count)
 }
 
+// TestSInterCardLimit verifies SInterCardWithLimit stops counting at the
+// limit (previously the SINTERCARD LIMIT option was ignored).
+func TestSInterCardLimit(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	// Create sets with 3 common members
+	store.SAdd("set1", "a", "b", "c")
+	store.SAdd("set2", "b", "c", "d")
+
+	// Without limit: full intersection cardinality
+	count, err := store.SInterCardWithLimit(0, "set1", "set2")
+	assert.NoError(t, err)
+	assert.Equal(t, uint64(2), count)
+
+	// With limit 1: stops at 1
+	count, err = store.SInterCardWithLimit(1, "set1", "set2")
+	assert.NoError(t, err)
+	assert.Equal(t, uint64(1), count)
+}
+
 // TestSScan 测试 SSCAN 命令
 func TestSScan(t *testing.T) {
 	t.Parallel()

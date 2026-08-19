@@ -294,6 +294,38 @@ func (h *Handler) handleEXPIRE(state *connState, args [][]byte, remoteAddr strin
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
 	}
+	// 可选 NX/XX/GT/LT 条件（Redis 7 语义）
+	if len(args) >= 3 {
+		cond := strings.ToUpper(string(args[2]))
+		switch cond {
+		case "NX", "XX", "GT", "LT":
+			// 条件判断：基于当前 TTL（-1 = 无过期时间）
+			curTTL, ttlErr := h.Db.TTL(key)
+			if ttlErr != nil {
+				return wrapStoreError(ttlErr)
+			}
+			switch cond {
+			case "NX":
+				if curTTL != -1 {
+					return proto.NewInteger(0) // 已有过期时间，不设置
+				}
+			case "XX":
+				if curTTL == -1 {
+					return proto.NewInteger(0) // 无过期时间，不设置
+				}
+			case "GT":
+				if int64(seconds) <= curTTL {
+					return proto.NewInteger(0) // 新 TTL 不晚于当前
+				}
+			case "LT":
+				if curTTL != -1 && int64(seconds) >= curTTL {
+					return proto.NewInteger(0) // 新 TTL 不早于当前
+				}
+			}
+		default:
+			return proto.NewError(fmt.Sprintf("ERR unsupported option '%s'", string(args[2])))
+		}
+	}
 	h.markDirtyKeys(state, key)
 	success, err := h.Db.Expire(key, seconds)
 	if err != nil {
@@ -481,8 +513,8 @@ func (h *Handler) handleCOPY(state *connState, args [][]byte, remoteAddr string)
 			return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
 		}
 	}
-	// 不支持跨数据库COPY
-	if db != 0 {
+	// 单 DB 服务器：DB 0 合法（显式指定默认库），>0 不支持
+	if db > 0 {
 		return proto.NewError("ERR DB option not supported")
 	}
 	// 获取源键类型

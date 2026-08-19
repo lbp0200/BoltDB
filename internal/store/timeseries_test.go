@@ -444,3 +444,42 @@ func TestTSDelRule_Removes(t *testing.T) {
 	// Deleting a non-existent rule is a no-op, not an error
 	assert.NoError(t, s.TSDelRule("nope", "nope2", "SUM", 60000))
 }
+
+// TestTSAddRetention verifies TS.ADD RETENTION sets the series retention
+// (previously the RETENTION option was ignored on TS.ADD).
+func TestTSAddRetention(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	now := time.Now().UnixNano() / int64(time.Millisecond)
+	// TS.ADD with RETENTION 3600000 (1h)
+	ts, err := store.TSAdd("ret_ts", now, 25.5, TSAddOptions{Retention: 3600000})
+	assert.NoError(t, err)
+	assert.NotEqual(t, int64(0), ts)
+
+	// Verify retention persisted via TSInfo
+	info, err := store.TSInfo("ret_ts")
+	assert.NoError(t, err)
+	assert.NotNil(t, info)
+	assert.Equal(t, int64(3600000), info.RetentionTime)
+}
+
+// TestTSIncrByOnDuplicate verifies TS.INCRBY ON_DUPLICATE block rejects
+// duplicate timestamps (previously ON_DUPLICATE was ignored on TS.INCRBY).
+func TestTSIncrByOnDuplicate(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	now := time.Now().UnixNano() / int64(time.Millisecond)
+	// Create the series with a sample
+	_, err := store.TSAdd("inc_dup", now, 10.0, TSAddOptions{})
+	assert.NoError(t, err)
+
+	// Increment at the same timestamp with ON_DUPLICATE block → error
+	_, err = store.TSIncrBy("inc_dup", now, 5.0, TSAddOptions{OnDuplicate: "block"})
+	assert.Error(t, err)
+
+	// Increment at the same timestamp without block → works (default update)
+	_, err = store.TSIncrBy("inc_dup", now, 5.0, TSAddOptions{})
+	assert.NoError(t, err)
+}

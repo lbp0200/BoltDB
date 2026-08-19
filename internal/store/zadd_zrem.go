@@ -29,6 +29,194 @@ func (s *BotreonStore) ZAdd(zSetName string, members []ZSetMember) error {
 	return err
 }
 
+// ZAddOptions 携带 ZADD 的可选参数（Redis 语义）。
+// NX: 仅当成员不存在时添加；XX: 仅当成员已存在时更新。
+// GT: 仅当新 score 大于旧 score 时更新；LT: 仅当新 score 小于旧 score 时更新。
+// CH: 返回添加+更新总数（默认仅返回新增数）。
+// INCR: 按增量模式（score = 旧 score + 传入值），一次只能有一个成员。
+type ZAddOptions struct {
+	NX   bool
+	XX   bool
+	GT   bool
+	LT   bool
+	CH   bool
+	INCR bool
+}
+
+// ZAddWithOptions 实现带选项的 ZADD（NX/XX/GT/LT/CH/INCR）。
+// 返回变更计数：默认新增数；CH 时含更新数；INCR 时返回新 score（int64 语义）。
+func (s *BotreonStore) ZAddWithOptions(zSetName string, opts ZAddOptions, members []ZSetMember) (int64, error) {
+	if err := s.checkErrorInjector("ZAdd"); err != nil {
+		return 0, err
+	}
+	if len(members) == 0 {
+		s.markZSetDirty(zSetName)
+		return 0, nil
+	}
+	var changed int64
+	var addedNewMember bool
+	err := s.retryUpdate(func(txn *badger.Txn) error {
+		var err error
+		changed, addedNewMember, err = zAddMembersInTxnOpts(txn, zSetName, opts, members)
+		return err
+	}, 20)
+	if err == nil && addedNewMember {
+		s.notifyBlockingZPop(zSetName)
+	}
+	s.markZSetDirty(zSetName)
+	return changed, err
+}
+
+// zAddMembersInTxnOpts adds/updates members with NX/XX/GT/LT/CH/INCR handling
+// inside an open update transaction.
+func zAddMembersInTxnOpts(txn *badger.Txn, zSetName string, opts ZAddOptions, members []ZSetMember) (int64, bool, error) {
+	if len(members) == 0 {
+		return 0, false, nil
+	}
+
+	badgerTypeKey := TypeOfKeyGet(zSetName)
+	item, err := txn.Get(badgerTypeKey)
+	if err == nil {
+		val, err := item.ValueCopy(nil)
+		if err != nil {
+			return 0, false, err
+		}
+		keyType := string(val)
+		if keyType != "" && keyType != KeyTypeSortedSet {
+			return 0, false, ErrWrongType
+		}
+	} else if !errors.Is(err, badger.ErrKeyNotFound) {
+		return 0, false, err
+	}
+
+	if err := txn.Set(badgerTypeKey, []byte(KeyTypeSortedSet)); err != nil {
+		logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to set type key")
+		return 0, false, err
+	}
+
+	metaKey := sortedSetKeyMeta(zSetName)
+	var meta ZSetsMetaValue
+	item, err = txn.Get(metaKey)
+	if err == nil {
+		err = item.Value(func(val []byte) error {
+			meta, err = decodeMeta(val)
+			return err
+		})
+		if err != nil {
+			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to decode meta")
+			return 0, false, err
+		}
+	} else if !errors.Is(err, badger.ErrKeyNotFound) {
+		logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to get meta")
+		return 0, false, err
+	}
+
+	meta.Version++
+
+	type operation struct {
+		dataKey     []byte
+		indexKey    []byte
+		oldIndexKey []byte
+		score       []byte
+	}
+	ops := make([]operation, 0, len(members))
+	var changed int64
+	var addedCount int64
+
+	for _, m := range members {
+		member := m.Member
+		score := m.Score
+		dataKey := sortedSetKeyMember(zSetName, member)
+
+		var oldScore float64
+		var oldVersion uint32
+		exists := false
+		item, err = txn.Get(dataKey)
+		if err == nil {
+			var oldDataVal []byte
+			err = item.Value(func(val []byte) error {
+				oldDataVal = val
+				return nil
+			})
+			if err != nil {
+				logger.Logger.Error().Err(err).Str("zset_name", zSetName).Str("member", member).Msg("ZAdd: Failed to get old score")
+				return 0, false, err
+			}
+			oldScore, oldVersion = decodeDataValue(oldDataVal)
+			exists = true
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Str("member", member).Msg("ZAdd: Failed to check member")
+			return 0, false, err
+		}
+
+		// NX: 只添加不更新；XX: 只更新不添加
+		if opts.NX && exists {
+			continue
+		}
+		if opts.XX && !exists {
+			continue
+		}
+		// GT/LT: 仅当新分数满足条件时更新（只对已存在成员生效）
+		if exists {
+			if opts.GT && score <= oldScore {
+				continue
+			}
+			if opts.LT && score >= oldScore {
+				continue
+			}
+		}
+		// INCR: 新分数 = 旧分数 + 传入值
+		if opts.INCR {
+			if exists {
+				score = oldScore + m.Score
+			}
+		}
+
+		op := operation{
+			dataKey:  dataKey,
+			indexKey: sortedSetKeyIndex(zSetName, score, member, meta.Version),
+			score:    encodeDataValue(score, meta.Version),
+		}
+		if exists {
+			op.oldIndexKey = sortedSetKeyIndex(zSetName, oldScore, member, oldVersion)
+		}
+		ops = append(ops, op)
+		changed++
+		if !exists {
+			addedCount++
+		}
+	}
+
+	meta.Card += addedCount
+	if err := txn.Set(metaKey, encodeMeta(meta)); err != nil {
+		logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to set meta")
+		return 0, false, err
+	}
+
+	for _, op := range ops {
+		if op.oldIndexKey != nil {
+			if err := txn.Delete(op.oldIndexKey); err != nil {
+				logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to delete old index")
+				return 0, false, err
+			}
+		}
+		if err := txn.Set(op.dataKey, op.score); err != nil {
+			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to set member score")
+			return 0, false, err
+		}
+		if err := txn.Set(op.indexKey, []byte{1}); err != nil {
+			logger.Logger.Error().Err(err).Str("zset_name", zSetName).Msg("ZAdd: Failed to set index")
+			return 0, false, err
+		}
+	}
+
+	// CH: 返回添加+更新总数；默认仅返回新增数
+	if !opts.CH {
+		changed = addedCount
+	}
+	return changed, addedCount > 0, nil
+}
+
 // zAddMembersInTxn adds or updates members inside an open update transaction.
 func zAddMembersInTxn(txn *badger.Txn, zSetName string, members []ZSetMember) (bool, error) {
 	if len(members) == 0 {

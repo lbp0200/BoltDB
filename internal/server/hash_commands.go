@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -105,8 +106,15 @@ func (h *Handler) handleHGETALL(state *connState, args [][]byte, remoteAddr stri
 		return &proto.Array{Args: [][]byte{}}
 	}
 	results := make([][]byte, 0, len(data)*2)
-	for field, value := range data {
-		results = append(results, []byte(field), value)
+	// 稳定字段顺序：map 遍历无序，客户端比较数组需要确定性输出
+	// （与 XCLAIM "stable field order" 惯例一致）
+	fields := make([]string, 0, len(data))
+	for field := range data {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+	for _, field := range fields {
+		results = append(results, []byte(field), data[field])
 	}
 	return &proto.Array{Args: results}
 }
@@ -336,19 +344,30 @@ func (h *Handler) handleHRANDMEMBER(state *connState, args [][]byte, remoteAddr 
 	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 		return resp
 	}
-	count := 0
+	count := 1 // default: return 1 field when no count specified
 	withValues := false
+	countSpecified := false
 	if len(args) >= 2 {
-		c, err := strconv.Atoi(string(args[1]))
-		if err != nil {
-			return proto.NewError("ERR value is not an integer or out of range")
+		// Check if args[1] is WITHVALUES (no count)
+		if strings.EqualFold(string(args[1]), "WITHVALUES") {
+			withValues = true
+		} else {
+			c, err := strconv.Atoi(string(args[1]))
+			if err != nil {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			count = c
+			countSpecified = true
 		}
-		count = c
 	}
 	for i := 2; i < len(args); i++ {
 		if strings.EqualFold(string(args[i]), "WITHVALUES") {
 			withValues = true
 		}
+	}
+	// HRANDFIELD key 0 → empty array (Redis semantics)
+	if countSpecified && count == 0 {
+		return &proto.Array{Args: [][]byte{}}
 	}
 	entries, err := h.Db.HRandMember(key, count)
 	if err != nil {
@@ -358,7 +377,7 @@ func (h *Handler) handleHRANDMEMBER(state *connState, args [][]byte, remoteAddr 
 		return wrapLogError(err)
 	}
 	if len(entries) == 0 {
-		if count == 0 {
+		if !countSpecified {
 			if state.respVersion == 3 {
 				return &proto.Null{}
 			}
@@ -366,10 +385,10 @@ func (h *Handler) handleHRANDMEMBER(state *connState, args [][]byte, remoteAddr 
 		}
 		return &proto.Array{Args: [][]byte{}}
 	}
-	if count == 0 && !withValues {
+	if !countSpecified && !withValues {
 		return proto.NewBulkString([]byte(entries[0].Field))
 	}
-	if count == 0 && withValues {
+	if !countSpecified && withValues {
 		return &proto.Array{Args: [][]byte{
 			[]byte(entries[0].Field),
 			entries[0].Value,
