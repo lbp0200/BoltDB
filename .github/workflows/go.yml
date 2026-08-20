@@ -457,7 +457,14 @@ jobs:
           cache: true
 
       - name: Install benchstat
-        run: go install golang.org/x/perf/cmd/benchstat@latest
+        run: |
+          # Retry up to 3 times — GHA 间歇性网络超时
+          for i in 1 2 3; do
+            go install golang.org/x/perf/cmd/benchstat@latest && break
+            echo "Attempt $i failed, retrying in 5s..."
+            sleep 5
+          done
+          which benchstat || echo "::warning::benchstat not installed, benchmark checks will be skipped"
 
       - name: Proto benchmark regression check
         run: ./scripts/guard_bench.sh proto

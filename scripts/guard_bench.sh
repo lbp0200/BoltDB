@@ -13,6 +13,12 @@
 
 set -euo pipefail
 
+# 检查 benchstat 是否可用
+if ! command -v benchstat &>/dev/null; then
+  echo "::warning::benchstat not found, skipping benchmark regression check"
+  exit 0
+fi
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TESTDATA="$REPO_ROOT/testdata"
 THRESHOLD="${GUARD_THRESHOLD:-10}"
