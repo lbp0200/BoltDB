@@ -1911,3 +1911,545 @@ func TestWriteCommandLSet(t *testing.T) {
 	assert.Equal(t, "x", vals[0])
 	assert.Equal(t, "b", vals[1])
 }
+
+// TestWriteCommandAppend verifies the replication replay path applies
+// APPEND on the replica.
+func TestWriteCommandAppend(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	err := store.Set("k", "foo")
+	assert.NoError(t, err)
+
+	// Replay: APPEND k bar
+	err = WriteCommand(store, [][]byte{
+		[]byte("APPEND"), []byte("k"), []byte("bar"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	val, err := store.Get("k")
+	assert.NoError(t, err)
+	assert.Equal(t, "foobar", val)
+}
+
+// TestWriteCommandGetSet verifies the replication replay path applies
+// GETSET (set new value, return old) on the replica.
+func TestWriteCommandGetSet(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	err := store.Set("k", "old")
+	assert.NoError(t, err)
+
+	// Replay: GETSET k new
+	err = WriteCommand(store, [][]byte{
+		[]byte("GETSET"), []byte("k"), []byte("new"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	// Value must be updated (return value not needed on replay)
+	val, err := store.Get("k")
+	assert.NoError(t, err)
+	assert.Equal(t, "new", val)
+}
+
+// TestWriteCommandSetRange verifies the replication replay path applies
+// SETRANGE (overwrite substring at offset) on the replica.
+func TestWriteCommandSetRange(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	err := store.Set("k", "Hello World")
+	assert.NoError(t, err)
+
+	// Replay: SETRANGE k 6 Redis (overwrite at offset 6)
+	err = WriteCommand(store, [][]byte{
+		[]byte("SETRANGE"), []byte("k"), []byte("6"), []byte("Redis"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	val, err := store.Get("k")
+	assert.NoError(t, err)
+	assert.Equal(t, "Hello Redis", val)
+}
+
+// TestWriteCommandIncrByFloat verifies the replication replay path applies
+// INCRBYFLOAT on the replica.
+func TestWriteCommandIncrByFloat(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	err := store.Set("k", "10.5")
+	assert.NoError(t, err)
+
+	// Replay: INCRBYFLOAT k 0.5
+	err = WriteCommand(store, [][]byte{
+		[]byte("INCRBYFLOAT"), []byte("k"), []byte("0.5"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	val, err := store.Get("k")
+	assert.NoError(t, err)
+	assert.Equal(t, "11", val)
+}
+
+// TestWriteCommandMSet verifies the replication replay path applies
+// MSET (multi-set) on the replica.
+func TestWriteCommandMSet(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	// Replay: MSET k1 v1 k2 v2
+	err := WriteCommand(store, [][]byte{
+		[]byte("MSET"), []byte("k1"), []byte("v1"), []byte("k2"), []byte("v2"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	v1, err := store.Get("k1")
+	assert.NoError(t, err)
+	assert.Equal(t, "v1", v1)
+	v2, err := store.Get("k2")
+	assert.NoError(t, err)
+	assert.Equal(t, "v2", v2)
+}
+
+// TestWriteCommandPFAdd verifies the replication replay path applies
+// PFADD on the replica.
+func TestWriteCommandPFAdd(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	// Replay: PFADD hll a b c
+	err := WriteCommand(store, [][]byte{
+		[]byte("PFADD"), []byte("hll"), []byte("a"), []byte("b"), []byte("c"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	count, err := store.PFCount("hll")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), count)
+}
+
+// TestWriteCommandGeoAdd verifies the replication replay path applies
+// GEOADD on the replica.
+func TestWriteCommandGeoAdd(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	// Replay: GEOADD geo 13.361389 38.115556 Palermo
+	err := WriteCommand(store, [][]byte{
+		[]byte("GEOADD"), []byte("geo"), []byte("13.361389"), []byte("38.115556"), []byte("Palermo"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	// Member must exist and resolve to a position
+	pos, err := store.GeoPos("geo", "Palermo")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(pos))
+	if len(pos) == 1 {
+		assert.True(t, pos[0][0] > 0)
+	}
+}
+
+// TestWriteCommandHSet verifies the replication replay path applies
+// HSET on the replica.
+func TestWriteCommandHSet(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	// Replay: HSET h f1 v1 f2 v2
+	err := WriteCommand(store, [][]byte{
+		[]byte("HSET"), []byte("h"), []byte("f1"), []byte("v1"), []byte("f2"), []byte("v2"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	v1, err := store.HGet("h", "f1")
+	assert.NoError(t, err)
+	assert.Equal(t, "v1", string(v1))
+	v2, err := store.HGet("h", "f2")
+	assert.NoError(t, err)
+	assert.Equal(t, "v2", string(v2))
+}
+
+// TestWriteCommandHDel verifies the replication replay path applies
+// HDEL on the replica.
+func TestWriteCommandHDel(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	err := store.HSet("h", "f1", "v1")
+	assert.NoError(t, err)
+	err = store.HSet("h", "f2", "v2")
+	assert.NoError(t, err)
+
+	// Replay: HDEL h f1
+	err = WriteCommand(store, [][]byte{
+		[]byte("HDEL"), []byte("h"), []byte("f1"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	// f1 deleted, f2 remains
+	_, err = store.HGet("h", "f1")
+	assert.Error(t, err)
+	v2, err := store.HGet("h", "f2")
+	assert.NoError(t, err)
+	assert.Equal(t, "v2", string(v2))
+}
+
+// TestWriteCommandHSetNx verifies the replication replay path applies
+// HSETNX (set field if absent) on the replica.
+func TestWriteCommandHSetNx(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	// Replay: HSETNX h f1 v1 (field absent → sets)
+	err := WriteCommand(store, [][]byte{
+		[]byte("HSETNX"), []byte("h"), []byte("f1"), []byte("v1"),
+	}, context.Background())
+	assert.NoError(t, err)
+	v, err := store.HGet("h", "f1")
+	assert.NoError(t, err)
+	assert.Equal(t, "v1", string(v))
+
+	// Replay: HSETNX h f1 v2 (field exists → must NOT overwrite)
+	err = WriteCommand(store, [][]byte{
+		[]byte("HSETNX"), []byte("h"), []byte("f1"), []byte("v2"),
+	}, context.Background())
+	assert.NoError(t, err)
+	v, err = store.HGet("h", "f1")
+	assert.NoError(t, err)
+	assert.Equal(t, "v1", string(v))
+}
+
+// TestWriteCommandHIncrBy verifies the replication replay path applies
+// HINCRBY (increment hash field) on the replica.
+func TestWriteCommandHIncrBy(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	err := store.HSet("h", "count", "10")
+	assert.NoError(t, err)
+
+	// Replay: HINCRBY h count 5
+	err = WriteCommand(store, [][]byte{
+		[]byte("HINCRBY"), []byte("h"), []byte("count"), []byte("5"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	v, err := store.HGet("h", "count")
+	assert.NoError(t, err)
+	assert.Equal(t, "15", string(v))
+}
+
+// TestWriteCommandHMSet verifies the replication replay path applies
+// HMSET (multi-field set) on the replica.
+func TestWriteCommandHMSet(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	// Replay: HMSET h f1 v1 f2 v2
+	err := WriteCommand(store, [][]byte{
+		[]byte("HMSET"), []byte("h"), []byte("f1"), []byte("v1"), []byte("f2"), []byte("v2"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	v1, err := store.HGet("h", "f1")
+	assert.NoError(t, err)
+	assert.Equal(t, "v1", string(v1))
+	v2, err := store.HGet("h", "f2")
+	assert.NoError(t, err)
+	assert.Equal(t, "v2", string(v2))
+}
+
+// TestWriteCommandHIncrByFloat verifies the replication replay path applies
+// HINCRBYFLOAT (float increment of hash field) on the replica.
+func TestWriteCommandHIncrByFloat(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	err := store.HSet("h", "score", "10.5")
+	assert.NoError(t, err)
+
+	// Replay: HINCRBYFLOAT h score 0.25
+	err = WriteCommand(store, [][]byte{
+		[]byte("HINCRBYFLOAT"), []byte("h"), []byte("score"), []byte("0.25"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	v, err := store.HGet("h", "score")
+	assert.NoError(t, err)
+	assert.Equal(t, "10.75", string(v))
+}
+
+// TestWriteCommandSetEx verifies the replication replay path applies
+// SETEX (set with expiry) on the replica.
+func TestWriteCommandSetEx(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	// Replay: SETEX k 100 v (set value + TTL 100s)
+	err := WriteCommand(store, [][]byte{
+		[]byte("SETEX"), []byte("k"), []byte("100"), []byte("v"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	val, err := store.Get("k")
+	assert.NoError(t, err)
+	assert.Equal(t, "v", val)
+
+	// TTL must be set (~100s)
+	ttl, err := store.TTL("k")
+	assert.NoError(t, err)
+	if ttl <= 0 || ttl > 100 {
+		t.Errorf("expected TTL ~100s after SETEX replay, got %v", ttl)
+	}
+}
+
+// TestWriteCommandPSetEx verifies the replication replay path applies
+// PSETEX (set with expiry in millis) on the replica.
+func TestWriteCommandPSetEx(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	// Replay: PSETEX k 100000 v (set value + TTL 100s in ms)
+	err := WriteCommand(store, [][]byte{
+		[]byte("PSETEX"), []byte("k"), []byte("100000"), []byte("v"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	val, err := store.Get("k")
+	assert.NoError(t, err)
+	assert.Equal(t, "v", val)
+
+	// TTL must be set (~100s)
+	ttl, err := store.TTL("k")
+	assert.NoError(t, err)
+	if ttl <= 0 || ttl > 100 {
+		t.Errorf("expected TTL ~100s after PSETEX replay, got %v", ttl)
+	}
+}
+
+// TestWriteCommandRename verifies the replication replay path applies
+// RENAME on the replica.
+func TestWriteCommandRename(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	err := store.Set("k1", "v1")
+	assert.NoError(t, err)
+
+	// Replay: RENAME k1 k2
+	err = WriteCommand(store, [][]byte{
+		[]byte("RENAME"), []byte("k1"), []byte("k2"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	// k1 gone, k2 has value
+	exists, err := store.Exists("k1")
+	assert.NoError(t, err)
+	assert.False(t, exists)
+	val, err := store.Get("k2")
+	assert.NoError(t, err)
+	assert.Equal(t, "v1", val)
+}
+
+// TestWriteCommandDel verifies the replication replay path applies
+// DEL on the replica.
+func TestWriteCommandDel(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	err := store.Set("k1", "v1")
+	assert.NoError(t, err)
+	err = store.Set("k2", "v2")
+	assert.NoError(t, err)
+
+	// Replay: DEL k1 k2
+	err = WriteCommand(store, [][]byte{
+		[]byte("DEL"), []byte("k1"), []byte("k2"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	exists1, err := store.Exists("k1")
+	assert.NoError(t, err)
+	assert.False(t, exists1)
+	exists2, err := store.Exists("k2")
+	assert.NoError(t, err)
+	assert.False(t, exists2)
+}
+
+// TestWriteCommandSetBit verifies the replication replay path applies
+// SETBIT on the replica.
+func TestWriteCommandSetBit(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	err := store.Set("bk", "\x00")
+	assert.NoError(t, err)
+
+	// Replay: SETBIT bk 0 1 (set bit 0 → 0x80 = 128)
+	err = WriteCommand(store, [][]byte{
+		[]byte("SETBIT"), []byte("bk"), []byte("0"), []byte("1"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	val, err := store.Get("bk")
+	assert.NoError(t, err)
+	assert.Equal(t, "\x80", val)
+}
+
+// TestWriteCommandExpire verifies the replication replay path applies
+// EXPIRE on the replica.
+func TestWriteCommandExpire(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	err := store.Set("k", "v")
+	assert.NoError(t, err)
+
+	// Replay: EXPIRE k 100
+	err = WriteCommand(store, [][]byte{
+		[]byte("EXPIRE"), []byte("k"), []byte("100"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	// TTL must be set (~100s)
+	ttl, err := store.TTL("k")
+	assert.NoError(t, err)
+	if ttl <= 0 || ttl > 100 {
+		t.Errorf("expected TTL ~100s after EXPIRE replay, got %v", ttl)
+	}
+}
+
+// TestWriteCommandPersist verifies the replication replay path applies
+// PERSIST (remove TTL) on the replica.
+func TestWriteCommandPersist(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	err := store.SetWithTTL("k", "v", 100*time.Second)
+	assert.NoError(t, err)
+	ttl, err := store.TTL("k")
+	assert.NoError(t, err)
+	if ttl <= 0 {
+		t.Fatalf("expected TTL set, got %v", ttl)
+	}
+
+	// Replay: PERSIST k
+	err = WriteCommand(store, [][]byte{
+		[]byte("PERSIST"), []byte("k"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	// TTL must be removed
+	ttl, err = store.TTL("k")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(-1), ttl)
+}
+
+// TestWriteCommandRPopLPush verifies the replication replay path applies
+// RPOPLPUSH (pop right from src, push left to dst) on the replica.
+func TestWriteCommandRPopLPush(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	_, err := store.RPush("src", "a", "b")
+	assert.NoError(t, err)
+
+	// Replay: RPOPLPUSH src dst
+	err = WriteCommand(store, [][]byte{
+		[]byte("RPOPLPUSH"), []byte("src"), []byte("dst"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	// Rightmost of src moved to left of dst
+	srcVals, err := store.LRange("src", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(srcVals))
+	assert.Equal(t, "a", srcVals[0])
+
+	dstVals, err := store.LRange("dst", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(dstVals))
+	assert.Equal(t, "b", dstVals[0])
+}
+
+// TestWriteCommandLMove verifies the replication replay path applies
+// LMOVE on the replica.
+func TestWriteCommandLMove(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	_, err := store.RPush("src", "a", "b")
+	assert.NoError(t, err)
+
+	// Replay: LMOVE src dst LEFT RIGHT
+	err = WriteCommand(store, [][]byte{
+		[]byte("LMOVE"), []byte("src"), []byte("dst"), []byte("LEFT"), []byte("RIGHT"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	// Leftmost of src moved to right of dst
+	srcVals, err := store.LRange("src", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(srcVals))
+	assert.Equal(t, "b", srcVals[0])
+
+	dstVals, err := store.LRange("dst", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(dstVals))
+	assert.Equal(t, "a", dstVals[0])
+}
+
+// TestWriteCommandXDel verifies the replication replay path applies
+// XDEL (delete stream entries) on the replica.
+func TestWriteCommandXDel(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	id1, err := store.XAdd("s", StreamXAddOptions{}, "1-1", map[string]string{"f": "v1"})
+	assert.NoError(t, err)
+	_, err = store.XAdd("s", StreamXAddOptions{}, "2-1", map[string]string{"f": "v2"})
+	assert.NoError(t, err)
+
+	// Replay: XDEL s 1-1
+	err = WriteCommand(store, [][]byte{
+		[]byte("XDEL"), []byte("s"), []byte(id1),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	// Only entry 2-1 remains
+	entries, err := store.XRange("s", "-", "+", -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(entries))
+	assert.Equal(t, "2-1", entries[0].ID)
+}
+
+// TestWriteCommandXAck verifies the replication replay path applies
+// XACK (acknowledge PEL entries) on the replica.
+func TestWriteCommandXAck(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	id, err := store.XAdd("s", StreamXAddOptions{}, "1-1", map[string]string{"f": "v"})
+	assert.NoError(t, err)
+	err = store.XGroupCreate("s", "g", "0")
+	assert.NoError(t, err)
+	// Read to populate the PEL
+	_, err = store.XReadGroup(nil, "g", "c1", 10, 0, "s", ">")
+	assert.NoError(t, err)
+	pending, err := store.XPending("s", "g")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(pending))
+
+	// Replay: XACK s g 1-1
+	err = WriteCommand(store, [][]byte{
+		[]byte("XACK"), []byte("s"), []byte("g"), []byte(id),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	// PEL must be empty after ack
+	pending, err = store.XPending("s", "g")
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(pending))
+}

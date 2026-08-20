@@ -32,7 +32,10 @@ case "$TARGET" in
     CLEAN=false ;;
   store)
     PKG="$REPO_ROOT/internal/store"
-    PATTERN="BenchmarkStringSet|BenchmarkStringGet|BenchmarkStringMGet|BenchmarkZAdd_|BenchmarkZRange_|BenchmarkZRank_"
+    # 100K 档（ZAdd/ZRange/ZRank_100K）不纳入 CI 门禁：单档 preload 耗时高，
+    # 且无基线会触发 benchstat 缺项报错；需要时手动在远程跑（见 bench_test.go 注释）。
+    # 注意 -bench 是子串匹配，必须用 $ 锚定尾，否则 "100" 会误匹配 "100K"。
+    PATTERN="BenchmarkStringSet|BenchmarkStringGet|BenchmarkStringMGet|BenchmarkZAdd_(100|1K|10K)$|BenchmarkZRange_(100|1K|10K)$|BenchmarkZRank_(100|1K|10K)$"
     BASELINE="$TESTDATA/bench_baseline_store.txt"
     CLEAN=true ;;
   server)

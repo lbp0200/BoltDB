@@ -21,7 +21,7 @@
 | Lua 脚本（EVAL/SCRIPT）技术分析 | 已完成，确认不实现，见 [lua-scripting.md](lua-scripting.md) |
 | 收购审查 A–D（第一阶段） | 19/19 项全部完成 |
 | 收购审查 E–F（第二阶段） | 14/14 项全部完成（含 E3 方案B ✅） |
-| 竞争对手算法缺陷修复 | 五轮审查 17/17 项完成（16 已修复 ✅，1 待 benchmark ⏳） |
+| 竞争对手算法缺陷修复 | 五轮审查 17/17 项全部完成 ✅（ZRANK/ZRANGE 基准数据见下方） |
 | RANDOMKEY 蓄水池采样 | O(2n) → O(n) 单次遍历 |
 | 256GB 数据测试（机械盘） | 2026-07-27 完成：256GB 净数据 / 262K keys × 1MB / 77.7 MB/s avg / 磁盘放大 1.3x / 0 数据损坏 |
 | 生产就绪评估 | 2026-07-27 完成：见[生产就绪评估](#生产就绪评估)章节 |
@@ -32,6 +32,29 @@
 | Backlog resize 热更新 | 已完成 ✅（CONFIG SET `backlog-size`）|
 | 58 个跳过测试审计 | 已完成 ✅（51 远程通过，4 个 nil pointer 已修，3 个 resource 保留）|
 | v8.51.1 自动发版验证 | 2026-08-04 完成：CI 门禁修复后自动发版成功（metrics 版本注入修复 + guard_bench.sh `-run '^$'` + GHA flaky skip），2.16 集群滚动升级 v8.34.0 → v8.51.1 |
+
+---
+
+## ZRANK/ZRANGE 基准数据（2026-08-20，五轮审查遗留项关闭）
+
+> d7a8b2d 决策"ZRANK 跳表暂不实施，用基准测试替代"（100/1K/10K/100K 四档）。本次补齐 100K 档并记录基线。
+> 环境：远程 192.168.1.251（8 核 Linux），`-benchmem -count=3`（100K 档 `-count=1`），ZRank 取最坏成员（末位）。
+> 注：ZRank 测量为稳态（热缓存）路径——首次查询的缓存重建成本（O(n log n)）被 N≈15M 次迭代摊销，不在表内体现。
+
+| 基准 | 100 | 1K | 10K | 100K |
+|------|-----|----|-----|------|
+| ZAdd（追加新成员） | ~68 µs | ~68 µs | ~68 µs | ~69 µs |
+| ZRange(0,-1) 全量 | ~70 µs | ~561 µs | ~7.3 ms | ~79 ms |
+| ZRank（最坏成员，热缓存） | ~139 ns | ~131 ns | ~139 ns | ~141 ns |
+
+**结论**：
+- ZRank 的 in-memory rank cache 在各规模下均为 O(1)（100→100K 仅 135ns→139ns），无需引入跳表
+- ZRange 全量读取为 O(n) 线性（100K → ~80 ms / 17.8 MB 分配），大集合建议客户端分页
+- ZAdd 单成员追加各规模基本持平（66-74 µs），瓶颈在单条写事务而非集合规模
+
+**实现说明**：
+- `preloadZSet` 改为按 1000 成员分批 ZAdd（单次 100K 成员 ZAdd 超 badger 单请求事务上限 "Txn is too big to fit into one request"）
+- `guard_bench.sh` store pattern 改为 `BenchmarkZ(Add|Range|Rank)_(100|1K|10K)$`（`$` 锚定——`-bench` 是子串匹配，不加锚点 `100` 会误匹配 `100K`）；100K 档不纳入 CI 门禁（preload 耗时高 + 无基线触发 benchstat 缺项），手动跑：`bash scripts/remote-test.sh -bench='BenchmarkZ.*_100K' -benchmem ./internal/store/`
 
 ---
 

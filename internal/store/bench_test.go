@@ -53,17 +53,26 @@ func BenchmarkZAdd(b *testing.B) {
 }
 
 // preloadZSet populates a zset with n members for benchmark setup.
+// Batches 1000 members per ZAdd: a single 100K-member ZAdd exceeds badger's
+// per-request txn size limit ("Txn is too big to fit into one request").
 func preloadZSet(b *testing.B, store *BotreonStore, key string, n int) {
 	b.Helper()
-	members := make([]ZSetMember, n)
-	for i := 0; i < n; i++ {
-		members[i] = ZSetMember{
-			Member: fmt.Sprintf("member-%d", i),
-			Score:  float64(i),
+	const batch = 1000
+	for start := 0; start < n; start += batch {
+		end := start + batch
+		if end > n {
+			end = n
 		}
-	}
-	if err := store.ZAdd(key, members); err != nil {
-		b.Fatalf("failed to preload zset: %v", err)
+		members := make([]ZSetMember, end-start)
+		for i := start; i < end; i++ {
+			members[i-start] = ZSetMember{
+				Member: fmt.Sprintf("member-%d", i),
+				Score:  float64(i),
+			}
+		}
+		if err := store.ZAdd(key, members); err != nil {
+			b.Fatalf("failed to preload zset: %v", err)
+		}
 	}
 }
 
@@ -80,6 +89,14 @@ func BenchmarkZAdd_1K(b *testing.B) {
 // BenchmarkZAdd_10K benchmarks ZAdd on a 10K-entry sorted set.
 func BenchmarkZAdd_10K(b *testing.B) {
 	benchmarkZAddSized(b, 10000)
+}
+
+// BenchmarkZAdd_100K benchmarks ZAdd on a 100K-entry sorted set.
+// Not in the CI guard pattern (too slow for Tier A); run manually:
+//
+//	bash scripts/remote-test.sh -bench=BenchmarkZAdd_100K -benchmem ./internal/store/
+func BenchmarkZAdd_100K(b *testing.B) {
+	benchmarkZAddSized(b, 100000)
 }
 
 func benchmarkZAddSized(b *testing.B, size int) {
@@ -108,6 +125,14 @@ func BenchmarkZRange_10K(b *testing.B) {
 	benchmarkZRangeSized(b, 10000)
 }
 
+// BenchmarkZRange_100K benchmarks ZRange on a 100K-entry sorted set.
+// Not in the CI guard pattern (too slow for Tier A); run manually:
+//
+//	bash scripts/remote-test.sh -bench=BenchmarkZRange_100K -benchmem ./internal/store/
+func BenchmarkZRange_100K(b *testing.B) {
+	benchmarkZRangeSized(b, 100000)
+}
+
 func benchmarkZRangeSized(b *testing.B, size int) {
 	store := setupTestStoreBenchmark(b)
 	preloadZSet(b, store, "zset", size)
@@ -131,6 +156,14 @@ func BenchmarkZRank_1K(b *testing.B) {
 // BenchmarkZRank_10K benchmarks ZRank on a 10K-entry sorted set.
 func BenchmarkZRank_10K(b *testing.B) {
 	benchmarkZRankSized(b, 10000)
+}
+
+// BenchmarkZRank_100K benchmarks ZRank on a 100K-entry sorted set.
+// Not in the CI guard pattern (too slow for Tier A); run manually:
+//
+//	bash scripts/remote-test.sh -bench=BenchmarkZRank_100K -benchmem ./internal/store/
+func BenchmarkZRank_100K(b *testing.B) {
+	benchmarkZRankSized(b, 100000)
 }
 
 func benchmarkZRankSized(b *testing.B, size int) {

@@ -7,7 +7,7 @@ This directory stores benchmark baseline data used by `scripts/guard_bench.sh` f
 | File | Source Package | Benchmarks | Baseline Frequency |
 |------|---------------|------------|--------------------|
 | `bench_baseline_proto.txt` | `internal/proto` | RESP protocol parsing | Update on protocol changes |
-| `bench_baseline_store.txt` | `internal/store` | String (Set/Get/MGet), ZSet (ZAdd/ZRange/ZRank at 100/1K/10K) | Update on storage engine changes |
+| `bench_baseline_store.txt` | `internal/store` | String (Set/Get/MGet), ZSet (ZAdd/ZRange/ZRank at 100/1K/10K; 100K excluded from CI guard, run manually) | Update on storage engine changes |
 | `bench_baseline_server.txt` | `internal/server` | Command execution (PING/SET/GET/INCR/DEL/MGET/Pipeline), ParseScore, ResponseTypes | Update on handler dispatch changes |
 
 ## Updating Baselines
