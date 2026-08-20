@@ -173,7 +173,7 @@ jobs:
         # ShutdownRace 跳过说明: [GHA: resource] 关闭竞争测试，GHA 慢 runner 上 goroutine 跟踪易波动。
         run: |
           go test -race -timeout 600s \
-            -skip 'TestRegression(L0Collapse|ReplicationThrash|ReplicationThrashFullresync|PsyncReconnectNoLoss|DuplicateWindowMeasurement|SnapshotFullresyncOffset|SnapshotConsistency|FailoverOscillation|LiveXClaimPEL|LiveXAutoClaimPEL|ConcurrentFullresyncWriteStorm|LiveNonIdempotentWrites|CanonicalExpireOnExistingKey|WriteDeadlineStorm|BacklogExhaustion|SplitBrainConvergence|RetryStorm|ShutdownRace)' \
+            -skip 'TestRegression(L0Collapse|ReplicationThrash|ReplicationThrashFullresync|PsyncReconnectNoLoss|DuplicateWindowMeasurement|SnapshotFullresyncOffset|SnapshotConsistency|FailoverOscillation|LiveXClaimPEL|LiveXAutoClaimPEL|ConcurrentFullresyncWriteStorm|LiveNonIdempotentWrites|CanonicalExpireOnExistingKey|WriteDeadlineStorm|BacklogExhaustion|SplitBrainConvergence|RetryStorm|ShutdownRace|FullresyncBacklogWrap)' \
             -count=1 ./cmd/integration/regressions/
 
       - name: Mixed cluster tests
