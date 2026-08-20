@@ -36,20 +36,13 @@ jobs:
         run: go build ./...
 
       - name: Test with coverage
-        # 以下测试在 GHA runner (2C7G) 上因资源不足时序 flaky，远程 Linux 上均可通过
-        # （bash scripts/remote-test.sh -race -short ./internal/... 验证），见 v8.51.1 发版 CI 失败记录。
-        # TestRESP3Shape_LPosMissingReturnsNull / TestSORTOrdering_GET — [GHA: resource] 时序断言
-        # TestHashBoundary_HrandfieldWithValues / TestStringBoundary_DecrOverflow / TestServerSortedSetCommands3 — [GHA: resource]
-        # TestXAUTOCLAIM_NoArgs — [GHA: resource] stream mutation kill 时序断言
-        # TestServerTransactionCommands / TestIncrBoundary_NegativeToPositive /
-        # TestGeoMutationKill_GeoSearchFromMemberMissingArgs — [GHA: resource] 时序断言
-        # TestRESPShape_WrongType / TestRESPShape_GetNonExistent — [GHA: resource] 时序断言
-        # TestClusterError_ClusterDisabledSlots — [GHA: resource] 时序断言
-        # -parallel=2: GHA 2C7G 上每个测试独立 BadgerDB (后台 compaction goroutine),
-        #   4 路并行 + -race 导致资源超订 → 时序断言随机失败（远程 8 核无此问题）
+        # GHA runner (2C7G) 资源有限：每个测试创建独立 BadgerDB（后台 compaction goroutine），
+        # -race 额外开销 ~2x，-parallel=2 仍会导致 CPU 竞争 → 时序断言随机失败。
+        # 远程 8 核 Linux 无此问题（remote-test.sh -race -short 验证）。
+        # -parallel=1: 完全消除并行测试间的资源竞争，代价是 CI 慢 ~30s。
         env:
           GOMEMLIMIT: 4GiB
-        run: go test -race -timeout 180s -short -p=2 -parallel=2 -coverprofile=coverage.out -covermode=atomic -skip 'TestRESP3Shape_LPosMissingReturnsNull|TestSORTOrdering_GET|TestHashBoundary_HrandfieldWithValues|TestStringBoundary_DecrOverflow|TestServerSortedSetCommands3|TestXAUTOCLAIM_NoArgs|TestServerTransactionCommands|TestIncrBoundary_NegativeToPositive|TestGeoMutationKill|TestRESPShape_WrongType|TestRESPShape_GetNonExistent|TestClusterError_ClusterDisabledSlots' ./internal/... ./cmd/boltDB/... 2>&1
+        run: go test -race -timeout 180s -short -p=1 -parallel=1 -coverprofile=coverage.out -covermode=atomic -skip 'TestRESP3Shape_LPosMissingReturnsNull|TestSORTOrdering_GET|TestHashBoundary_HrandfieldWithValues|TestStringBoundary_DecrOverflow|TestServerSortedSetCommands3|TestXAUTOCLAIM_NoArgs|TestServerTransactionCommands|TestIncrBoundary_NegativeToPositive|TestGeoMutationKill|TestRESPShape_WrongType|TestRESPShape_GetNonExistent|TestClusterError_ClusterDisabledSlots' ./internal/... ./cmd/boltDB/... 2>&1
 
       - name: Upload coverage
         if: always()
