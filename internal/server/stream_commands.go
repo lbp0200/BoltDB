@@ -698,6 +698,9 @@ func (h *Handler) handleXCLAIM(state *connState, args [][]byte, remoteAddr strin
 	if err != nil {
 		return proto.NewError("ERR value is not an integer")
 	}
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 
 	justID := false
 	opts := store.XClaimOptions{MinIdleTime: minIdleTime}
@@ -789,9 +792,6 @@ func (h *Handler) handleXCLAIM(state *connState, args [][]byte, remoteAddr strin
 		keys := make([]string, 0, len(entry.Fields))
 		for k := range entry.Fields {
 			keys = append(keys, k)
-			if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-				return resp
-			}
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
