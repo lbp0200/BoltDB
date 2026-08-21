@@ -89,6 +89,8 @@ func (s *BotreonStore) Type(key string) (string, error) {
 			keyType = "json"
 		case KeyTypeTimeSeries:
 			keyType = "ts"
+		case KeyTypeStream:
+			keyType = "stream"
 		default:
 			keyType = "none"
 		}

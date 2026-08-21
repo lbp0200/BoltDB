@@ -404,6 +404,13 @@ func TestCommandCompleteness_Key(t *testing.T) {
 		sharedClient.Set(ctx, p+"t1", "v", 0)
 		r, _ := doAny(t, ctx, "TYPE", p+"t1")
 		assert.Equal(t, "string", r)
+
+		// Stream type must return "stream"
+		do(t, ctx, "XADD", p+"t_stream", "*", "f", "v")
+		r, _ = doAny(t, ctx, "TYPE", p+"t_stream")
+		assert.Equal(t, "stream", r)
+		// Clean up stream to avoid consistency check failure
+		do(t, ctx, "DEL", p+"t_stream")
 	})
 
 	// --- KEYS ---
