@@ -1141,12 +1141,17 @@ func (h *Handler) handleXINFO(state *connState, args [][]byte, remoteAddr string
 			return wrapLogError(err)
 		}
 		var response []proto.RESP
+		now := time.Now().UnixMilli()
 		for _, c := range consumers {
+			idle := now - c.LastSeen
+			if idle < 0 {
+				idle = 0
+			}
 			consumerInfo := []proto.RESP{
 				proto.NewBulkString([]byte("name")),
 				proto.NewBulkString([]byte(c.Name)),
-				proto.NewBulkString([]byte("seen")),
-				proto.NewBulkString([]byte(strconv.FormatInt(c.LastSeen, 10))),
+				proto.NewBulkString([]byte("idle")),
+				proto.NewBulkString([]byte(strconv.FormatInt(idle, 10))),
 			}
 			response = append(response, &proto.NestedArray{Elems: consumerInfo})
 		}
