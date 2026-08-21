@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -10,6 +11,14 @@ import (
 
 	"github.com/lbp0200/BoltDB/internal/logger"
 )
+
+// isMissingKeyErr reports whether a Get error means the key does not exist.
+// GETDEL/GETEX replicate a missing key as a nil reply (Redis semantics), so a
+// missing key must NOT be treated as a replication failure — only genuine
+// storage errors propagate.
+func isMissingKeyErr(err error) bool {
+	return errors.Is(err, ErrKeyNotFound)
+}
 
 // WriteCommand executes a write command directly against the store.
 // Used by replication (executeReplicatedCommand) and can be shared
@@ -194,6 +203,10 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			key := string(args[1])
 			_, gErr := s.Get(key)
 			if gErr != nil {
+				if isMissingKeyErr(gErr) {
+					// 目标 key 不存在：GETDEL 返回 nil，复制命令静默成功（与主站一致）
+					return nil
+				}
 				return gErr
 			}
 			_, dErr := s.Del(key)
@@ -209,6 +222,9 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 					if seconds, pErr := strconv.Atoi(string(args[3])); pErr == nil {
 						_, gErr := s.Get(key)
 						if gErr != nil {
+							if isMissingKeyErr(gErr) {
+								return nil
+							}
 							return gErr
 						}
 						_, eErr := s.Expire(key, seconds)
@@ -219,6 +235,9 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 					if millis, pErr := strconv.Atoi(string(args[3])); pErr == nil {
 						_, gErr := s.Get(key)
 						if gErr != nil {
+							if isMissingKeyErr(gErr) {
+								return nil
+							}
 							return gErr
 						}
 						_, eErr := s.PExpire(key, int64(millis))
@@ -229,6 +248,9 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 					if ts, pErr := strconv.ParseInt(string(args[3]), 10, 64); pErr == nil {
 						_, gErr := s.Get(key)
 						if gErr != nil {
+							if isMissingKeyErr(gErr) {
+								return nil
+							}
 							return gErr
 						}
 						_, eErr := s.ExpireAt(key, ts)
@@ -239,6 +261,9 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 					if ts, pErr := strconv.ParseInt(string(args[3]), 10, 64); pErr == nil {
 						_, gErr := s.Get(key)
 						if gErr != nil {
+							if isMissingKeyErr(gErr) {
+								return nil
+							}
 							return gErr
 						}
 						_, eErr := s.PExpireAt(key, ts)
@@ -250,6 +275,9 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			if len(args) >= 3 && strings.ToUpper(string(args[2])) == "PERSIST" {
 				_, gErr := s.Get(key)
 				if gErr != nil {
+					if isMissingKeyErr(gErr) {
+						return nil
+					}
 					return gErr
 				}
 				_, pErr := s.Persist(key)
@@ -258,6 +286,9 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			// No option: just a GET
 			_, gErr := s.Get(key)
 			if gErr != nil {
+				if isMissingKeyErr(gErr) {
+					return nil
+				}
 				return gErr
 			}
 		}

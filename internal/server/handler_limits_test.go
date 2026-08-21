@@ -1,7 +1,6 @@
 package server
 
 import (
-	"os"
 	"testing"
 	"time"
 
@@ -88,11 +87,18 @@ func TestIdleTimeout_ZeroDefault(t *testing.T) {
 
 // TestAUTH_TimingAttackResistance 验证密码比较使用 constant-time compare，
 // 防止时序侧信道攻击。正确密码和错误密码的比较时间应一致。
+//
+// 注意：本测试通过 t.Setenv("BOLTDB_PASSWORD", ...) 配置认证密码，而认证检查
+// 在 handler_dispatch.go 入口用 os.Getenv 读取。若本测试 t.Parallel() 并行执行，
+// env 设置会污染同一进程内所有并行测试——它们会因读到非空密码且未认证而返回
+// NOAUTH Authentication required. 错误，导致其它命令测试随机失败。
+// 因此这里必须保持【不带】t.Parallel()，让本测试在串行阶段独占运行，
+// env 副作用只影响自身，不会泄漏到其它并行测试。
+// 用 t.Setenv 而非 os.Setenv，是因为 t.Setenv 在并行测试中会直接 panic 拦截
+// （而非静默污染），若未来有人误加回 t.Parallel()，能立刻让测试失败而非掩盖问题。
 func TestAUTH_TimingAttackResistance(t *testing.T) {
-	t.Parallel()
-
-	os.Setenv("BOLTDB_PASSWORD", "correct-password-12345")
-	defer os.Unsetenv("BOLTDB_PASSWORD")
+	t.Setenv("BOLTDB_PASSWORD", "correct-password-12345")
+	// t.Setenv 在测试结束时自动清除，无需手动 Unsetenv
 
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()

@@ -32,6 +32,8 @@
 | Backlog resize 热更新 | 已完成 ✅（CONFIG SET `backlog-size`）|
 | 58 个跳过测试审计 | 已完成 ✅（51 远程通过，4 个 nil pointer 已修，3 个 resource 保留）|
 | v8.51.1 自动发版验证 | 2026-08-04 完成：CI 门禁修复后自动发版成功（metrics 版本注入修复 + guard_bench.sh `-run '^$'` + GHA flaky skip），2.16 集群滚动升级 v8.34.0 → v8.51.1 |
+| server 包并行测试 env 污染 | 已完成 ✅（2026-08-21）：`TestAUTH_TimingAttackResistance` 用 `t.Parallel()`+`os.Setenv("BOLTDB_PASSWORD")`，命令入口 `handler_dispatch.go:59` 用 `os.Getenv` 做 NOAUTH 检查，并行窗口内其它命令测试随机返回 NOAUTH 错误（`-race` 检不出、失败数随 `-parallel` 递增）。修复：去掉该测试 `t.Parallel()`（Go 串行阶段独占运行，env 不泄漏）。`internal/server` 并行测试 5 连 0 失败，远程 `-race` 通过 |
+| 复制 GETDEL/GETEX 缺失 key 回归 | 已完成 ✅（2026-08-21）：e575113 把 `write_command.go` 的 GETDEL/GETEX 缺失 key 处理由 `return nil` 误改为 `return gErr`，导致 `TestExecuteReplicatedCommand_GETDEL/GETEX_NonExistent` 失败。修复：新增 `isMissingKeyErr`（`errors.Is(err, ErrKeyNotFound)`），缺失 key 静默返回 nil（符合 Redis 语义），真实存储错误仍传播。远程 `-race` 全包通过 |
 
 ---
 
