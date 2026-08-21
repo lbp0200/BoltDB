@@ -126,6 +126,16 @@ func TestCommandCompleteness_String(t *testing.T) {
 		assert.Equal(t, "OK", r)
 		exists, _ = sharedClient.Exists(ctx, p+"spxat_past").Result()
 		assert.Equal(t, int64(0), exists)
+
+		// SET EX 0: must error (invalid expire time — positive integer required)
+		_, err := doAny(t, ctx, "SET", p+"sex0", "v", "EX", "0")
+		assert.Error(t, err)
+		assert.True(t, strings.Contains(err.Error(), "invalid expire time"))
+
+		// SET PX 0: must error
+		_, err = doAny(t, ctx, "SET", p+"spx0", "v", "PX", "0")
+		assert.Error(t, err)
+		assert.True(t, strings.Contains(err.Error(), "invalid expire time"))
 	})
 
 	// --- GETDEL ---

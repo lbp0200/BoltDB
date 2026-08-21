@@ -524,7 +524,7 @@ func parseSetOptions(opts [][]byte) (ttl time.Duration, nx, xx, get, keepTTL boo
 			if parseErr != nil {
 				return 0, false, false, false, false, fmt.Errorf("value is not an integer or out of range")
 			}
-			if sec < 0 {
+			if sec <= 0 {
 				return 0, false, false, false, false, fmt.Errorf("invalid expire time in 'set' command")
 			}
 			ttl = time.Duration(sec) * time.Second
@@ -537,7 +537,7 @@ func parseSetOptions(opts [][]byte) (ttl time.Duration, nx, xx, get, keepTTL boo
 			if parseErr != nil {
 				return 0, false, false, false, false, fmt.Errorf("value is not an integer or out of range")
 			}
-			if ms < 0 {
+			if ms <= 0 {
 				return 0, false, false, false, false, fmt.Errorf("invalid expire time in 'set' command")
 			}
 			ttl = time.Duration(ms) * time.Millisecond
