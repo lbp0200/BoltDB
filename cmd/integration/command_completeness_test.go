@@ -66,6 +66,56 @@ func TestCommandCompleteness_String(t *testing.T) {
 		assert.Equal(t, "hello", val)
 	})
 
+	// --- SET options (NX/XX/GET/EX/PX/KEEPTTL) ---
+	t.Run("SET_options", func(t *testing.T) {
+		p := keyPrefix(t)
+
+		// SET NX: key does not exist → set
+		r, _ := doAny(t, ctx, "SET", p+"snx", "v1", "NX")
+		assert.Equal(t, "OK", r)
+
+		// SET NX: key exists → nil
+		r, _ = doAny(t, ctx, "SET", p+"snx", "v2", "NX")
+		assert.Nil(t, r)
+
+		// SET XX: key exists → update
+		sharedClient.Set(ctx, p+"sxx", "orig", 0)
+		r, _ = doAny(t, ctx, "SET", p+"sxx", "v1", "XX")
+		assert.Equal(t, "OK", r)
+
+		// SET XX: key does not exist → nil
+		r, _ = doAny(t, ctx, "SET", p+"sxx_nope", "v2", "XX")
+		assert.Nil(t, r)
+
+		// SET GET: return old value
+		r, _ = doAny(t, ctx, "SET", p+"sget", "old", "GET")
+		assert.Nil(t, r) // no prior value
+		r, _ = doAny(t, ctx, "SET", p+"sget", "new", "GET")
+		assert.Equal(t, "old", r)
+		val, _ := sharedClient.Get(ctx, p+"sget").Result()
+		assert.Equal(t, "new", val)
+
+		// SET EX: seconds-based TTL
+		r, _ = doAny(t, ctx, "SET", p+"sex", "val", "EX", "60")
+		assert.Equal(t, "OK", r)
+		ttl, _ := sharedClient.TTL(ctx, p+"sex").Result()
+		assert.True(t, ttl > 0 && ttl <= 60*time.Second)
+
+		// SET PX: ms-based TTL
+		r, _ = doAny(t, ctx, "SET", p+"spx", "val", "PX", "60000")
+		assert.Equal(t, "OK", r)
+		pttl, _ := sharedClient.PTTL(ctx, p+"spx").Result()
+		assert.True(t, pttl > 0 && pttl <= 60000*time.Millisecond)
+
+		// SET KEEPTTL: preserve existing TTL
+		sharedClient.Set(ctx, p+"skeep", "orig", 0)
+		sharedClient.Expire(ctx, p+"skeep", 3600*time.Second)
+		r, _ = doAny(t, ctx, "SET", p+"skeep", "new", "KEEPTTL")
+		assert.Equal(t, "OK", r)
+		ttl, _ = sharedClient.TTL(ctx, p+"skeep").Result()
+		assert.True(t, ttl > 0) // TTL preserved
+	})
+
 	// --- GETDEL ---
 	t.Run("GETDEL", func(t *testing.T) {
 		sharedClient.Set(ctx, p+"gd1", "val", 0)
