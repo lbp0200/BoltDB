@@ -75,6 +75,12 @@ func (h *Handler) handleCONFIG(state *connState, args [][]byte, remoteAddr strin
 				return proto.NewError(fmt.Sprintf("ERR invalid backlog-size: %s", err))
 			}
 			h.Replication.SetBacklogSize(size)
+		case "save", "appendonly", "maxmemory", "maxmemory-policy",
+			"slowlog-log-slower-than", "slowlog-max-len":
+			// Known no-op configs: accepted for client compatibility
+			// (redis-py, redis-cli send these during init)
+		default:
+			return proto.NewError(fmt.Sprintf("ERR unsupported config parameter: %s", param))
 		}
 		return proto.OK
 	case "REWRITE":

@@ -2210,8 +2210,14 @@ func TestCommandCompleteness_Server(t *testing.T) {
 	t.Run("CONFIG_SET", func(t *testing.T) {
 		r, _ := doAny(t, ctx, "CONFIG", "SET", "slowlog-log-slower-than", "10000")
 		assert.Equal(t, "OK", r)
-		// Restore
-		do(t, ctx, "CONFIG", "SET", "slowlog-log-slower-than", "10000")
+
+		// Supported no-op: maxmemory (accepted for client compat)
+		r, _ = doAny(t, ctx, "CONFIG", "SET", "maxmemory", "0")
+		assert.Equal(t, "OK", r)
+
+		// Unknown parameter must return error
+		_, err := doAny(t, ctx, "CONFIG", "SET", "totally-unknown-param", "42")
+		assert.Error(t, err)
 	})
 
 	// --- SLOWLOG ---
