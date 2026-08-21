@@ -171,6 +171,38 @@ ever called Truncate.
 
 ---
 
+## e322b7c — Rejected Conditional EXPIRE/PEXPIRE Propagated as PEXPIREAT
+
+**Date:** Aug 2026
+
+**Summary:** When a conditional `EXPIRE`/`PEXPIRE` (with `NX`/`XX`/`GT`/`LT`)
+was REJECTED on the master (e.g. `EXPIRE k 200 NX` on a key that already has
+a TTL → returns 0, master TTL unchanged), the master still propagated the
+canonicalized `PEXPIREAT k <absoluteMS>` to the replica, forcing the rejected
+absolute expiry onto the replica and causing a TTL drift (master kept 100s,
+slave jumped to 200s).
+
+**Root cause:** `processRequest` (handler_core.go) canonicalizes `EXPIRE`/
+`PEXPIRE` to `PEXPIREAT` for deterministic replay *inside the propagation
+block*, dropping the `NX`/`XX`/`GT`/`LT` condition. The gate
+`!isErrorResponse(resp)` treated a returned integer `0` as "propagate this
+write", so a rejected conditional write (master side did not change TTL) was
+still replayed unconditionally on the replica as `PEXPIREAT`.
+
+**Fix:** For `EXPIRE`/`PEXPIRE` only, propagation is now additionally gated on
+`isPositiveIntegerResp(resp)` — i.e. the command must have returned `1`
+(master actually wrote a TTL). A returned `0` means no TTL was written, so
+nothing is propagated, keeping the replica consistent with the master.
+Added `isPositiveIntegerResp` helper in replication_helper.go.
+
+**Regression guards:**
+- `TestRegressionCanonicalExpireConditionRejected` (new — reproduces the drift:
+  NX rejected → slave TTL must stay consistent with master)
+- Existing `TestRegressionCanonicalExpire` / `TestRegressionCanonicalExpireOnExistingKey`
+  still pass (successful EXPIRE still propagates)
+
+---
+
 ## Summary
 
 | Commit | Date | Scope | Problem |
@@ -181,3 +213,4 @@ ever called Truncate.
 | `c2dd4c7` | May 2026 | Test | Deflake goroutine leak test |
 | `df46325` | Jun 2026 | Multi-fix | CLIENT KILL leak, write deadline, backoff reset |
 | `f250ad3` | Aug 2026 | Backlog WAL | Never truncated — unbounded growth, multi-GB startup replay |
+| `e322b7c` | Aug 2026 | Replication | Rejected conditional EXPIRE/PEXPIRE propagated as PEXPIREAT (slave TTL drift) |
