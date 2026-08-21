@@ -39,6 +39,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			// Parse all options (EX/PX/EXAT/PXAT/NX/XX/GET/KEEPTTL)
 			var ttlDuration time.Duration
 			var hasExpiry bool
+			var immediateExpire bool
 			var nx, xx, keepTTL bool
 			i := 3
 			for i < len(args) {
@@ -65,9 +66,10 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 						if ts, err := strconv.ParseInt(string(args[i+1]), 10, 64); err == nil {
 							ttlDuration = time.Until(time.Unix(ts, 0))
 							if ttlDuration < 0 {
-								ttlDuration = 0
+								immediateExpire = true
+							} else {
+								hasExpiry = true
 							}
-							hasExpiry = true
 						}
 					}
 					i += 2
@@ -76,9 +78,10 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 						if ts, err := strconv.ParseInt(string(args[i+1]), 10, 64); err == nil {
 							ttlDuration = time.Until(time.UnixMilli(ts))
 							if ttlDuration < 0 {
-								ttlDuration = 0
+								immediateExpire = true
+							} else {
+								hasExpiry = true
 							}
-							hasExpiry = true
 						}
 					}
 					i += 2
@@ -122,6 +125,15 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 				}
 			}
 			// SET with optional TTL
+			if immediateExpire {
+				// Past EXAT/PXAT: master expired this key immediately.
+				// Set durably then expire to match master behavior.
+				if err := s.Set(key, value); err != nil {
+					return err
+				}
+				_, err := s.ExpireAt(key, 1)
+				return err
+			}
 			if hasExpiry {
 				return s.SetWithTTL(key, value, ttlDuration)
 			}
