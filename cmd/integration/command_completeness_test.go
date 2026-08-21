@@ -452,6 +452,70 @@ func TestCommandCompleteness_Key(t *testing.T) {
 		do(t, ctx, "PEXPIREAT", p+"exp4", futureMs)
 	})
 
+	// --- EXPIRE options (NX/XX/GT/LT) ---
+	t.Run("EXPIRE_options", func(t *testing.T) {
+		p := keyPrefix(t)
+
+		// NX: key without TTL → set
+		sharedClient.Set(ctx, p+"nx1", "v", 0)
+		r, _ := doAny(t, ctx, "EXPIRE", p+"nx1", "60", "NX")
+		assert.Equal(t, int64(1), r)
+		ttl, _ := sharedClient.TTL(ctx, p+"nx1").Result()
+		assert.True(t, ttl > 0 && ttl <= 60*time.Second)
+
+		// NX: key already has TTL → 0
+		r, _ = doAny(t, ctx, "EXPIRE", p+"nx1", "120", "NX")
+		assert.Equal(t, int64(0), r)
+
+		// XX: key without TTL → 0
+		sharedClient.Set(ctx, p+"xx1", "v", 0)
+		r, _ = doAny(t, ctx, "EXPIRE", p+"xx1", "60", "XX")
+		assert.Equal(t, int64(0), r)
+
+		// XX: key with TTL → update
+		sharedClient.Expire(ctx, p+"xx1", 30*time.Second)
+		r, _ = doAny(t, ctx, "EXPIRE", p+"xx1", "60", "XX")
+		assert.Equal(t, int64(1), r)
+
+		// GT: bigger than current TTL → update
+		sharedClient.Set(ctx, p+"gt1", "v", 0)
+		sharedClient.Expire(ctx, p+"gt1", 10*time.Second)
+		r, _ = doAny(t, ctx, "EXPIRE", p+"gt1", "60", "GT")
+		assert.Equal(t, int64(1), r)
+
+		// GT: smaller than current TTL → 0
+		r, _ = doAny(t, ctx, "EXPIRE", p+"gt1", "30", "GT")
+		assert.Equal(t, int64(0), r)
+
+		// GT: key without TTL → 0 (infinite TTL > any finite)
+		sharedClient.Set(ctx, p+"gt2", "v", 0)
+		r, _ = doAny(t, ctx, "EXPIRE", p+"gt2", "60", "GT")
+		assert.Equal(t, int64(0), r)
+		ttl, _ = sharedClient.TTL(ctx, p+"gt2").Result()
+		assert.Equal(t, time.Duration(-1), ttl)
+
+		// LT: smaller than current → update
+		sharedClient.Set(ctx, p+"lt1", "v", 0)
+		ok, _ := sharedClient.Expire(ctx, p+"lt1", 60*time.Second).Result()
+		assert.True(t, ok)
+		r, _ = doAny(t, ctx, "EXPIRE", p+"lt1", "30", "LT")
+		assert.Equal(t, int64(1), r)
+
+		// LT: bigger than current → 0
+		r, _ = doAny(t, ctx, "EXPIRE", p+"lt1", "90", "LT")
+		assert.Equal(t, int64(0), r)
+
+		// LT: key without TTL → 1 (infinite > any finite, so nothing is bigger)
+		sharedClient.Set(ctx, p+"lt2", "v", 0)
+		r, _ = doAny(t, ctx, "EXPIRE", p+"lt2", "60", "LT")
+		assert.Equal(t, int64(1), r)
+
+		// Invalid option → error
+		_, err := doAny(t, ctx, "EXPIRE", p+"err", "60", "BOGUS")
+		assert.Error(t, err)
+		assert.True(t, strings.Contains(err.Error(), "unsupported option"))
+	})
+
 	// --- TTL / PTTL ---
 	t.Run("TTL_PTTL", func(t *testing.T) {
 		sharedClient.Set(ctx, p+"ttl", "v", 0)
