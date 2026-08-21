@@ -552,9 +552,12 @@ func parseSetOptions(opts [][]byte) (ttl time.Duration, nx, xx, get, keepTTL boo
 			}
 			remaining := ts - time.Now().Unix()
 			if remaining < 0 {
-				return 0, false, false, false, false, fmt.Errorf("invalid expire time in 'set' command")
+				// Redis 语义：过去时间戳也是合法值，key 立即过期。
+				// 使用极小正 TTL 使 key 在写入后立即过期删除。
+				ttl = 1 * time.Nanosecond
+			} else {
+				ttl = time.Duration(remaining) * time.Second
 			}
-			ttl = time.Duration(remaining) * time.Second
 		case "PXAT":
 			i++
 			if i >= len(opts) {
@@ -566,9 +569,11 @@ func parseSetOptions(opts [][]byte) (ttl time.Duration, nx, xx, get, keepTTL boo
 			}
 			remaining := ts - time.Now().UnixMilli()
 			if remaining < 0 {
-				return 0, false, false, false, false, fmt.Errorf("invalid expire time in 'set' command")
+				// Redis 语义：过去时间戳也是合法值，key 立即过期。
+				ttl = 1 * time.Nanosecond
+			} else {
+				ttl = time.Duration(remaining) * time.Millisecond
 			}
-			ttl = time.Duration(remaining) * time.Millisecond
 		default:
 			return 0, false, false, false, false, fmt.Errorf("syntax error")
 		}
@@ -615,8 +620,19 @@ func (h *Handler) setKeyWithOpts(state *connState, key, value string, ttl time.D
 			}
 		}
 	} else if ttl > 0 {
-		if err := h.Db.SetWithTTL(key, value, ttl); err != nil {
-			return wrapStoreError(err)
+		if ttl < time.Second {
+			// 极短 TTL（如过去 EXAT/PXAT 的 1ns），BadgerDB 秒级存储无法保留。
+			// 先写入值，再设过去过期时间戳强制立即过期。
+			if err := h.Db.Set(key, value); err != nil {
+				return wrapStoreError(err)
+			}
+			if _, err := h.Db.ExpireAt(key, 1); err != nil {
+				return wrapLogError(err)
+			}
+		} else {
+			if err := h.Db.SetWithTTL(key, value, ttl); err != nil {
+				return wrapStoreError(err)
+			}
 		}
 	} else {
 		if err := h.Db.Set(key, value); err != nil {

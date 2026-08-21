@@ -114,6 +114,18 @@ func TestCommandCompleteness_String(t *testing.T) {
 		assert.Equal(t, "OK", r)
 		ttl, _ = sharedClient.TTL(ctx, p+"skeep").Result()
 		assert.True(t, ttl > 0) // TTL preserved
+
+		// SET EXAT <past>: must return OK, key must be gone (immediate expiry)
+		r, _ = doAny(t, ctx, "SET", p+"sexat_past", "v", "EXAT", "1000000")
+		assert.Equal(t, "OK", r)
+		exists, _ := sharedClient.Exists(ctx, p+"sexat_past").Result()
+		assert.Equal(t, int64(0), exists)
+
+		// SET PXAT <past>: same behavior
+		r, _ = doAny(t, ctx, "SET", p+"spxat_past", "v", "PXAT", "1000000")
+		assert.Equal(t, "OK", r)
+		exists, _ = sharedClient.Exists(ctx, p+"spxat_past").Result()
+		assert.Equal(t, int64(0), exists)
 	})
 
 	// --- GETDEL ---
