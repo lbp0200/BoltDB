@@ -539,8 +539,10 @@ func (s *BotreonStore) ObjectEncoding(key string) (string, error) {
 		return "hashtable", nil // 哈希表使用 hashtable 编码
 	case KeyTypeSet:
 		return "hashtable", nil // 集合使用 hashtable 编码
-	case "zset":
-		return "ziplist", nil // 有序集合（如果小）使用 ziplist，否则 skiplist
+	case KeyTypeSortedSet:
+		return "skiplist", nil // 有序集合使用 skiplist 编码
+	case KeyTypeStream:
+		return "stream", nil // 流使用 stream 编码
 	default:
 		return "", nil
 	}
