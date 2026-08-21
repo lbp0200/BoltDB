@@ -577,6 +577,12 @@ func (h *Handler) handleCOPY(state *connState, args [][]byte, remoteAddr string)
 	if !copied {
 		return proto.NewError("ERR copy failed")
 	}
+	// Preserve source key's TTL on the destination (Redis compat)
+	srcTTL, ttlErr := h.Db.TTL(srcKey)
+	if ttlErr == nil && srcTTL > 0 {
+		// srcTTL is in seconds; set the same expiry on dstKey
+		_, _ = h.Db.Expire(dstKey, int(srcTTL))
+	}
 	return proto.NewInteger(1)
 }
 

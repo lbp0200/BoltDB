@@ -457,6 +457,13 @@ func TestCommandCompleteness_Key(t *testing.T) {
 		assert.Equal(t, int64(1), r)
 		val, _ = sharedClient.Get(ctx, p+"cp_dst2").Result()
 		assert.Equal(t, "val", val)
+
+		// COPY must preserve source key's TTL on destination
+		sharedClient.Set(ctx, p+"cp_ttl_src", "ttlval", 3600*time.Second)
+		r, _ = doAny(t, ctx, "COPY", p+"cp_ttl_src", p+"cp_ttl_dst")
+		assert.Equal(t, int64(1), r)
+		ttlDst := sharedClient.TTL(ctx, p+"cp_ttl_dst").Val()
+		assert.True(t, ttlDst > 0 && ttlDst <= 3600*time.Second)
 	})
 
 	// --- SWAPDB ---
