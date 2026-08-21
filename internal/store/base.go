@@ -167,11 +167,13 @@ func (s *BotreonStore) ExpireAt(key string, timestamp int64) (bool, error) {
 	now := time.Now().Unix()
 	ttl := timestamp - now
 	if ttl <= 0 {
-		// 时间戳已过期，删除键
-		if _, err := s.Del(key); err != nil {
+		// Redis 语义：past 时间戳立即删除键，key 存在返回 true(1)，不存在返回 false(0)
+		deleted, err := s.Del(key)
+		if err != nil {
 			logger.Logger.Warn().Err(err).Str("key", key).Msg("ExpireAt: error deleting expired key")
+			return false, err
 		}
-		return false, nil
+		return deleted > 0, nil
 	}
 	return s.Expire(key, int(ttl))
 }
@@ -247,11 +249,13 @@ func (s *BotreonStore) PExpireAt(key string, timestampMillis int64) (bool, error
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 	ttl := timestampMillis - now
 	if ttl <= 0 {
-		// 时间戳已过期，删除键
-		if _, err := s.Del(key); err != nil {
+		// Redis 语义：past 毫秒时间戳立即删除键，key 存在返回 true(1)，不存在返回 false(0)
+		deleted, err := s.Del(key)
+		if err != nil {
 			logger.Logger.Warn().Err(err).Str("key", key).Msg("PExpireAt: error deleting expired key")
+			return false, err
 		}
-		return false, nil
+		return deleted > 0, nil
 	}
 	return s.PExpire(key, ttl)
 }

@@ -485,7 +485,7 @@ func TestExpireAtInPast(t *testing.T) {
 	mustSet(t, s, "ea_past", "val")
 	result, err := s.ExpireAt("ea_past", time.Now().Unix()-10)
 	assert.NoError(t, err)
-	assert.Equal(t, false, result)
+	assert.Equal(t, true, result)
 
 	exists, _ := s.Exists("ea_past")
 	assert.Equal(t, false, exists)
@@ -499,7 +499,7 @@ func TestPExpireAtInPast(t *testing.T) {
 	mustSet(t, s, "pea_past", "val")
 	result, err := s.PExpireAt("pea_past", time.Now().UnixMilli()-10000)
 	assert.NoError(t, err)
-	assert.Equal(t, false, result)
+	assert.Equal(t, true, result)
 }
 
 // ---------- ObjectEncoding ----------

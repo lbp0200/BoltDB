@@ -569,10 +569,10 @@ func TestExpireAtZeroTimestamp(t *testing.T) {
 	s := setupTestStore(t)
 
 	s.Set("eat_zero", "v")
-	// ExpireAt with 0 = past timestamp → deletes key, returns false
+	// ExpireAt with 0 = past timestamp → deletes key, returns true (key existed)
 	result, err := s.ExpireAt("eat_zero", 0)
 	assert.NoError(t, err)
-	assert.False(t, result)
+	assert.True(t, result)
 	exists, err := s.Exists("eat_zero")
 	assert.NoError(t, err)
 	assert.False(t, exists)
@@ -747,7 +747,7 @@ func TestExpireAtPastDeletesKey(t *testing.T) {
 	s.Set("eat_past", "v")
 	result, err := s.ExpireAt("eat_past", 1) // epoch 1 = 1970
 	assert.NoError(t, err)
-	assert.False(t, result) // past timestamp → returns false
+	assert.True(t, result) // past timestamp → deletes key, returns true (key existed)
 	exists, err := s.Exists("eat_past")
 	assert.NoError(t, err)
 	assert.False(t, exists)
@@ -761,7 +761,7 @@ func TestPExpireAtPastDeletesKey(t *testing.T) {
 	s.Set("peat_past", "v")
 	result, err := s.PExpireAt("peat_past", 1) // 1ms since epoch
 	assert.NoError(t, err)
-	assert.False(t, result) // past timestamp → returns false
+	assert.True(t, result) // past timestamp → deletes key, returns true (key existed)
 	exists, err := s.Exists("peat_past")
 	assert.NoError(t, err)
 	assert.False(t, exists)
