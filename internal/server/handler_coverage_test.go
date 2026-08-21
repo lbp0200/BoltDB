@@ -2509,4 +2509,21 @@ func TestExecuteCommand_EXPIRE_Conditions_Coverage(t *testing.T) {
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "unsupported option"))
+
+	// GT on a key WITHOUT TTL → must NOT set (Redis: no-TTL key has infinite TTL,
+	// GT requires a larger expiry, so any finite TTL is rejected → 0)
+	handler.Db.Set("k2", "v2")
+	resp = handler.executeCommand(state, "EXPIRE", [][]byte{[]byte("k2"), []byte("100"), []byte("GT")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+	ttlVal, _ := handler.Db.TTL("k2")
+	assert.Equal(t, int64(-1), ttlVal) // still no TTL
+
+	// LT on a key WITHOUT TTL → must set (Redis: infinite TTL is greater than any
+	// finite, so LT rejects nothing → 1)
+	resp = handler.executeCommand(state, "EXPIRE", [][]byte{[]byte("k2"), []byte("100"), []byte("LT")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
 }

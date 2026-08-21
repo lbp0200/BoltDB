@@ -323,8 +323,10 @@ func (h *Handler) handleEXPIRE(state *connState, args [][]byte, remoteAddr strin
 					return proto.NewInteger(0) // 无过期时间，不设置
 				}
 			case "GT":
-				if int64(seconds) <= curTTL {
-					return proto.NewInteger(0) // 新 TTL 不晚于当前
+				// Redis 语义：key 无 TTL（curTTL==-1）视为无限 TTL，
+				// GT 要求新 TTL 大于当前，任何有限 TTL 都不大于无限 → 不设置。
+				if curTTL == -1 || int64(seconds) <= curTTL {
+					return proto.NewInteger(0) // key 无 TTL 或新 TTL 不晚于当前，不设置
 				}
 			case "LT":
 				if curTTL != -1 && int64(seconds) >= curTTL {
