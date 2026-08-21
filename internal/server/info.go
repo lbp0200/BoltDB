@@ -58,7 +58,11 @@ func (h *Handler) buildInfoResponse(section string) string {
 				builder.WriteString("master_repl_offset:" + strconv.FormatInt(h.Replication.GetMasterReplOffset(), 10) + "\n")
 				builder.WriteString("second_repl_offset:-1\n")
 				builder.WriteString("repl_backlog_active:1\n")
-				builder.WriteString("repl_backlog_size:1048576\n")
+				backlogSize := replication.DefaultBacklogSize
+				if h.Replication.GetBacklog() != nil {
+					backlogSize = h.Replication.GetBacklog().GetSize()
+				}
+				builder.WriteString("repl_backlog_size:" + strconv.FormatInt(backlogSize, 10) + "\n")
 				builder.WriteString("repl_backlog_first_byte_offset:0\n")
 				builder.WriteString("repl_backlog_histlen:0\n")
 
@@ -145,7 +149,11 @@ func (h *Handler) buildInfoResponse(section string) string {
 		builder.WriteString("used_memory_human:" + formatBytes(m.Alloc) + "\n")
 		builder.WriteString("used_memory_rss:" + strconv.FormatUint(m.Sys, 10) + "\n")
 		builder.WriteString("used_memory_rss_human:" + formatBytes(m.Sys) + "\n")
-		builder.WriteString("mem_fragmentation_ratio:" + strconv.FormatFloat(float64(m.Sys)/float64(m.Alloc), 'f', 2, 64) + "\n")
+		var fragRatio float64
+		if m.Alloc > 0 {
+			fragRatio = float64(m.Sys) / float64(m.Alloc)
+		}
+		builder.WriteString("mem_fragmentation_ratio:" + strconv.FormatFloat(fragRatio, 'f', 2, 64) + "\n")
 		builder.WriteString("maxmemory:0\n")
 		builder.WriteString("maxmemory_human:0B\n")
 		builder.WriteString("maxmemory_policy:noeviction\n")
