@@ -1082,6 +1082,59 @@ func TestCommandCompleteness_SortedSet(t *testing.T) {
 		assert.Equal(t, int64(3), n)
 	})
 
+	// --- ZADD Options (NX/XX/GT/LT/CH) ---
+	t.Run("ZADD_options", func(t *testing.T) {
+		p := keyPrefix(t)
+
+		// ZADD NX: new member → added
+		n, _ := doAny(t, ctx, "ZADD", p+"znx1", "NX", "1", "a")
+		assert.Equal(t, int64(1), n)
+
+		// ZADD NX: existing member → not updated
+		n, _ = doAny(t, ctx, "ZADD", p+"znx1", "NX", "99", "a")
+		assert.Equal(t, int64(0), n)
+		score, _ := sharedClient.ZScore(ctx, p+"znx1", "a").Result()
+		assert.Equal(t, 1.0, score)
+
+		// ZADD XX: update existing member
+		sharedClient.ZAdd(ctx, p+"zxx1", redis.Z{Score: 1, Member: "a"})
+		n, _ = doAny(t, ctx, "ZADD", p+"zxx1", "XX", "99", "a")
+		assert.Equal(t, int64(0), n) // XX returns 0 (no new members added, only updated)
+		score, _ = sharedClient.ZScore(ctx, p+"zxx1", "a").Result()
+		assert.Equal(t, 99.0, score)
+
+		// ZADD XX: non-existing member → not added
+		n, _ = doAny(t, ctx, "ZADD", p+"zxx1", "XX", "1", "newbie")
+		assert.Equal(t, int64(0), n)
+		exists, _ := sharedClient.Exists(ctx, p+"zxx1").Result()
+		assert.Equal(t, int64(1), exists) // key exists but newbie not there
+
+		// ZADD GT: score > current → update
+		sharedClient.ZAdd(ctx, p+"zgt1", redis.Z{Score: 5, Member: "x"})
+		n, _ = doAny(t, ctx, "ZADD", p+"zgt1", "GT", "10", "x")
+		assert.Equal(t, int64(0), n) // default returns # new members (0)
+		score, _ = sharedClient.ZScore(ctx, p+"zgt1", "x").Result()
+		assert.Equal(t, 10.0, score)
+
+		// ZADD GT: score < current → no update
+		n, _ = doAny(t, ctx, "ZADD", p+"zgt1", "GT", "1", "x")
+		assert.Equal(t, int64(0), n)
+		score, _ = sharedClient.ZScore(ctx, p+"zgt1", "x").Result()
+		assert.Equal(t, 10.0, score) // unchanged
+
+		// ZADD LT: score < current → update
+		sharedClient.ZAdd(ctx, p+"zlt1", redis.Z{Score: 5, Member: "y"})
+		n, _ = doAny(t, ctx, "ZADD", p+"zlt1", "LT", "1", "y")
+		assert.Equal(t, int64(0), n)
+		score, _ = sharedClient.ZScore(ctx, p+"zlt1", "y").Result()
+		assert.Equal(t, 1.0, score)
+
+		// ZADD CH: return # changed (new+updated) instead of # new
+		sharedClient.ZAdd(ctx, p+"zch1", redis.Z{Score: 1, Member: "a"}, redis.Z{Score: 2, Member: "b"})
+		n, _ = doAny(t, ctx, "ZADD", p+"zch1", "CH", "99", "a", "3", "c")
+		assert.Equal(t, int64(2), n) // a updated + c added = 2 changes
+	})
+
 	// --- ZREM ---
 	t.Run("ZREM", func(t *testing.T) {
 		sharedClient.ZAdd(ctx, p+"zr", redis.Z{Score: 1, Member: "a"}, redis.Z{Score: 2, Member: "b"})
