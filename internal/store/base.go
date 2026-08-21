@@ -91,6 +91,8 @@ func (s *BotreonStore) Type(key string) (string, error) {
 			keyType = "ts"
 		case KeyTypeStream:
 			keyType = "stream"
+		case KeyTypeHyperLogLog:
+			keyType = "string" // HyperLogLog 内部存储为 string
 		default:
 			keyType = "none"
 		}
