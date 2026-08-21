@@ -267,3 +267,56 @@ func makeTestValues(n int) []string {
 	}
 	return vals
 }
+
+func TestBoundary_LargeStream100K(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping 100K stream test in short mode")
+	}
+	s := setupBoundaryStore(t)
+	const n = 100000
+
+	// Insert 100K entries using batch XAdd
+	for i := 0; i < n; i += insertBatchSize {
+		end := i + insertBatchSize
+		if end > n {
+			end = n
+		}
+		for j := i; j < end; j++ {
+			id := fmt.Sprintf("%d-%d", j/1000, j%1000)
+			fields := map[string]string{
+				"seq":   fmt.Sprintf("%d", j),
+				"data":  fmt.Sprintf("payload:%d", j),
+			}
+			if _, err := s.XAdd("bigstream", StreamXAddOptions{}, id, fields); err != nil {
+				t.Fatalf("XAdd %d failed: %v", j, err)
+			}
+		}
+	}
+
+	// Verify length
+	length, err := s.XLen("bigstream")
+	if err != nil {
+		t.Fatalf("XLen failed: %v", err)
+	}
+	if length != n {
+		t.Fatalf("XLen: got %d, want %d", length, n)
+	}
+
+	// Verify range query returns all entries
+	entries, err := s.XRange("bigstream", "-", "+", int64(n))
+	if err != nil {
+		t.Fatalf("XRange failed: %v", err)
+	}
+	if len(entries) != n {
+		t.Fatalf("XRange count: got %d, want %d", len(entries), n)
+	}
+
+	// Verify first and last entry
+	if entries[0].ID == "" {
+		t.Fatal("first entry has empty ID")
+	}
+	if entries[len(entries)-1].ID == "" {
+		t.Fatal("last entry has empty ID")
+	}
+}
