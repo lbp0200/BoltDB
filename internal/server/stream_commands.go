@@ -1123,6 +1123,8 @@ func (h *Handler) handleXINFO(state *connState, args [][]byte, remoteAddr string
 				proto.NewBulkString([]byte(strconv.Itoa(len(g.Consumers)))),
 				proto.NewBulkString([]byte("pending")),
 				proto.NewBulkString([]byte(strconv.Itoa(len(g.Pending)))),
+				proto.NewBulkString([]byte("last-delivered-id")),
+				proto.NewBulkString([]byte(g.LastDeliveredID)),
 			}
 			response = append(response, &proto.NestedArray{Elems: groupInfo})
 		}
