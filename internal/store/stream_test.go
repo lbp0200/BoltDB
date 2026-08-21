@@ -1151,6 +1151,36 @@ func TestWriteCommandSetOptions(t *testing.T) {
 	}
 }
 
+// TestWriteCommandSetExatPast verifies the replication replay path correctly
+// handles SET with past EXAT/PXAT timestamps: key must be written then
+// immediately expire (not survive permanently).
+func TestWriteCommandSetExatPast(t *testing.T) {
+	t.Parallel()
+	store := setupTestStore(t)
+
+	pastSec := time.Now().Unix() - 3600
+	err := WriteCommand(store, [][]byte{
+		[]byte("SET"), []byte("k1"), []byte("val1"), []byte("EXAT"), []byte(strconv.FormatInt(pastSec, 10)),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	// key should not be found — it expired immediately
+	val, err := store.Get("k1")
+	assert.Error(t, err) // ErrKeyNotFound
+	assert.Equal(t, "", val)
+
+	// Same for past PXAT (milliseconds)
+	pastMs := time.Now().UnixMilli() - 3600000
+	err = WriteCommand(store, [][]byte{
+		[]byte("SET"), []byte("k2"), []byte("val2"), []byte("PXAT"), []byte(strconv.FormatInt(pastMs, 10)),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	val, err = store.Get("k2")
+	assert.Error(t, err)
+	assert.Equal(t, "", val)
+}
+
 // TestStreamXAddNoMkStream verifies XADD NOMKSTREAM refuses to create a
 // missing stream (previously NOMKSTREAM was accepted but ignored).
 func TestStreamXAddNoMkStream(t *testing.T) {
