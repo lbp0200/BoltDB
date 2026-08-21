@@ -66,7 +66,7 @@ func init() {
 		{name: "EXEC", arity: 1, flags: []commandFlag{flagNoscript, flagReadonly}},
 		{name: "EXISTS", arity: -2, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: -1, step: 1},
 		{name: "EXPIRETIME", arity: 2, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
-		{name: "EXPIRE", arity: 3, flags: []commandFlag{flagWrite}, firstKey: 1, lastKey: 1, step: 1},
+		{name: "EXPIRE", arity: -3, flags: []commandFlag{flagWrite}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "EXPIREAT", arity: 3, flags: []commandFlag{flagWrite}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "FLUSHALL", arity: -1, flags: []commandFlag{flagWrite, flagAdmin}},
 		{name: "FLUSHDB", arity: -1, flags: []commandFlag{flagWrite, flagAdmin}},
