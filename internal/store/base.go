@@ -545,6 +545,8 @@ func (s *BotreonStore) ObjectEncoding(key string) (string, error) {
 		return "skiplist", nil // 有序集合使用 skiplist 编码
 	case KeyTypeStream:
 		return "stream", nil // 流使用 stream 编码
+	case KeyTypeHyperLogLog:
+		return "string", nil // HyperLogLog 内部使用 string 编码
 	default:
 		return "", nil
 	}
