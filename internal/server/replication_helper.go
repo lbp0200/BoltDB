@@ -138,6 +138,21 @@ func isErrorResponse(resp proto.RESP) bool {
 	}
 }
 
+// isPositiveIntegerResp reports whether resp is a RESP integer reply with value
+// 1 (a "successfully wrote" signal). Conditional EXPIRE/PEXPIRE (NX/XX/GT/LT)
+// return 0 when the condition rejects the write; in that case the master did
+// NOT set a TTL and must not propagate the canonicalized PEXPIREAT (which would
+// force the rejected absolute expiry onto the replica).
+func isPositiveIntegerResp(resp proto.RESP) bool {
+	if resp == nil {
+		return false
+	}
+	if intResp, ok := resp.(*proto.Integer); ok {
+		return int64(*intResp) == 1
+	}
+	return false
+}
+
 // getWriteCommandSet 返回写命令集合（与 isWriteCommand 相同）
 func getWriteCommandSet() map[string]bool {
 	return map[string]bool{

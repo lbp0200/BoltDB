@@ -672,8 +672,15 @@ func (h *Handler) processRequest(req *proto.Array, reader *bufio.Reader, remoteA
 			}
 		}
 	}
-	if h.Replication != nil && h.Replication.IsMaster() && isWriteCommand(cmd) &&
-		shouldPropagateCommand(cmd) && !isErrorResponse(resp) {
+	shouldProp := isWriteCommand(cmd) && shouldPropagateCommand(cmd) && !isErrorResponse(resp)
+	// 条件 EXPIRE/PEXPIRE（含 NX/XX/GT/LT）可能被拒绝（返回 0，master 上未写 TTL）。
+	// 此时规范化传播的 PEXPIREAT 会把一个 master 从未设置的绝对过期时间强加到
+	// slave，造成主从不一致。因此仅当命令真正返回 1（master 上确实设置了 TTL）
+	// 时传播；返回 0 表示未写，不做任何传播。
+	if cmd == "EXPIRE" || cmd == "PEXPIRE" {
+		shouldProp = shouldProp && isPositiveIntegerResp(resp)
+	}
+	if h.Replication != nil && h.Replication.IsMaster() && shouldProp {
 		h.Replication.PropagateCommand(propagateArgs)
 	}
 
