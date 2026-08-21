@@ -15,6 +15,9 @@ func (h *Handler) handleSADD(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'SADD' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	members := make([]string, len(args)-1)
 	for i := 1; i < len(args); i++ {
 		members[i-1] = string(args[i])
@@ -34,6 +37,9 @@ func (h *Handler) handleSREM(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'SREM' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	members := make([]string, len(args)-1)
 	for i := 1; i < len(args); i++ {
 		members[i-1] = string(args[i])
@@ -56,6 +62,9 @@ func (h *Handler) handleSCARD(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'SCARD' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	count, err := h.Db.SCard(key)
 	if errors.Is(err, store.ErrWrongType) {
 		return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -73,6 +82,9 @@ func (h *Handler) handleSISMEMBER(state *connState, args [][]byte, remoteAddr st
 		return proto.NewError("ERR wrong number of arguments for 'SISMEMBER' command")
 	}
 	key, member := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	exists, err := h.Db.SIsMember(key, member)
 	if errors.Is(err, store.ErrWrongType) {
 		return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -89,6 +101,9 @@ func (h *Handler) handleSMEMBERS(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'SMEMBERS' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	members, err := h.Db.SMembers(key)
 	if errors.Is(err, store.ErrWrongType) {
 		return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -109,6 +124,9 @@ func (h *Handler) handleSPOP(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'SPOP' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 
 	if len(args) >= 2 {
 		count, err := strconv.Atoi(string(args[1]))
@@ -163,6 +181,9 @@ func (h *Handler) handleSPOP(state *connState, args [][]byte, remoteAddr string)
 // handleSRANDMEMBER 实现 SRANDMEMBER 命令
 func (h *Handler) handleSRANDMEMBER(state *connState, args [][]byte, remoteAddr string) proto.RESP {
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	if len(args) == 1 {
 		// SRANDMEMBER key - return single member
 		member, err := h.Db.SRandMember(key)
@@ -199,6 +220,9 @@ func (h *Handler) handleSMOVE(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'SMOVE' command")
 	}
 	source, destination, member := string(args[0]), string(args[1]), string(args[2])
+	if resp := h.checkAndHandleMultiKeyRedirect([]string{source, destination}); resp != nil {
+		return resp
+	}
 	success, err := h.Db.SMove(source, destination, member)
 	if err != nil {
 		return wrapStoreError(err)
@@ -212,11 +236,17 @@ func (h *Handler) handleSINTER(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'SINTER' command")
 	}
 	keys := make([]string, len(args))
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i, arg := range args {
 		keys[i] = string(arg)
 	}
 	members, err := h.Db.SInter(keys...)
 	if err != nil {
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
 		return &proto.Array{Args: [][]byte{}}
 	}
 	results := make([][]byte, len(members))
@@ -232,11 +262,17 @@ func (h *Handler) handleSUNION(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'SUNION' command")
 	}
 	keys := make([]string, len(args))
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i, arg := range args {
 		keys[i] = string(arg)
 	}
 	members, err := h.Db.SUnion(keys...)
 	if err != nil {
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
 		return &proto.Array{Args: [][]byte{}}
 	}
 	results := make([][]byte, len(members))
@@ -252,11 +288,17 @@ func (h *Handler) handleSDIFF(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'SDIFF' command")
 	}
 	keys := make([]string, len(args))
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i, arg := range args {
 		keys[i] = string(arg)
 	}
 	members, err := h.Db.SDiff(keys...)
 	if err != nil {
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
 		return &proto.Array{Args: [][]byte{}}
 	}
 	results := make([][]byte, len(members))
@@ -273,6 +315,9 @@ func (h *Handler) handleSINTERSTORE(state *connState, args [][]byte, remoteAddr 
 	}
 	destination := string(args[0])
 	keys := make([]string, len(args)-1)
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i := 1; i < len(args); i++ {
 		keys[i-1] = string(args[i])
 	}
@@ -291,6 +336,9 @@ func (h *Handler) handleSMISMEMBER(state *connState, args [][]byte, remoteAddr s
 		return proto.NewError("ERR wrong number of arguments for 'SMISMEMBER' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	members := make([]string, len(args)-1)
 	for i := 1; i < len(args); i++ {
 		members[i-1] = string(args[i])
@@ -319,6 +367,9 @@ func (h *Handler) handleSINTERCARD(state *connState, args [][]byte, remoteAddr s
 	for i := 0; i < numkeys; i++ {
 		sinterKeys[i] = string(args[i+1])
 	}
+	if resp := h.checkAndHandleMultiKeyRedirect(sinterKeys); resp != nil {
+		return resp
+	}
 	// 可选 LIMIT n：统计到该值即提前停止（Redis 语义）
 	var limit int64
 	if numkeys+2 < len(args) && strings.ToUpper(string(args[numkeys+1])) == "LIMIT" {
@@ -342,6 +393,9 @@ func (h *Handler) handleSUNIONSTORE(state *connState, args [][]byte, remoteAddr 
 	}
 	destination := string(args[0])
 	keys := make([]string, len(args)-1)
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i := 1; i < len(args); i++ {
 		keys[i-1] = string(args[i])
 	}
@@ -361,6 +415,9 @@ func (h *Handler) handleSDIFFSTORE(state *connState, args [][]byte, remoteAddr s
 	}
 	destination := string(args[0])
 	keys := make([]string, len(args)-1)
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i := 1; i < len(args); i++ {
 		keys[i-1] = string(args[i])
 	}
@@ -380,6 +437,9 @@ func (h *Handler) handleSSCAN(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'SSCAN' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	cursor, err := strconv.ParseUint(string(args[1]), 10, 64)
 	if err != nil {
 		return proto.NewError("ERR value is not an integer")
@@ -427,6 +487,9 @@ func (h *Handler) handleHSCAN(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'HSCAN' command")
 	}
 	hscanKey := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, hscanKey); resp != nil {
+		return resp
+	}
 	hscanCursor, err := strconv.ParseUint(string(args[1]), 10, 64)
 	if err != nil {
 		return proto.NewError("ERR value is not an integer")

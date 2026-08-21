@@ -23,6 +23,9 @@ func (h *Handler) handleZINTER(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR syntax error")
 	}
 	keys := make([]string, numKeys)
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[1+i])
 	}
@@ -99,6 +102,9 @@ func (h *Handler) handleZINTERCARD(state *connState, args [][]byte, remoteAddr s
 		return proto.NewError("ERR wrong number of arguments for 'ZINTERCARD' command")
 	}
 	keys := make([]string, numKeys)
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[1+i])
 	}
@@ -141,6 +147,9 @@ func (h *Handler) handleZUNION(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR syntax error")
 	}
 	keys := make([]string, numKeys)
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[1+i])
 	}
@@ -209,6 +218,9 @@ func (h *Handler) handleZADD(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'ZADD' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	var opts store.ZAddOptions
 	members := make([]store.ZSetMember, 0)
 
@@ -291,6 +303,9 @@ func (h *Handler) handleZREM(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'ZREM' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	h.markDirtyKeys(state, key)
 	count := 0
 	for i := 1; i < len(args); i++ {
@@ -316,6 +331,9 @@ func (h *Handler) handleZREMRANGEBYRANK(state *connState, args [][]byte, remoteA
 		return proto.NewError("ERR wrong number of arguments for 'ZREMRANGEBYRANK' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	start, err := strconv.ParseInt(string(args[1]), 10, 64)
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
@@ -338,6 +356,9 @@ func (h *Handler) handleZREMRANGEBYSCORE(state *connState, args [][]byte, remote
 		return proto.NewError("ERR wrong number of arguments for 'ZREMRANGEBYSCORE' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	min, minExclusive, err := parseScoreExclusive(string(args[1]))
 	if err != nil {
 		return proto.NewError("ERR value is not a valid float")
@@ -360,6 +381,9 @@ func (h *Handler) handleZPOPMAX(state *connState, args [][]byte, remoteAddr stri
 		return proto.NewError("ERR wrong number of arguments for 'ZPOPMAX' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	count := 1
 	if len(args) >= 2 {
 		c, err := strconv.Atoi(string(args[1]))
@@ -387,6 +411,9 @@ func (h *Handler) handleZPOPMIN(state *connState, args [][]byte, remoteAddr stri
 		return proto.NewError("ERR wrong number of arguments for 'ZPOPMIN' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	count := 1
 	if len(args) >= 2 {
 		c, err := strconv.Atoi(string(args[1]))
@@ -414,6 +441,9 @@ func (h *Handler) handleBZPOPMAX(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'BZPOPMAX' command")
 	}
 	keys := make([]string, len(args)-1)
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i := 0; i < len(args)-1; i++ {
 		keys[i] = string(args[i])
 	}
@@ -442,6 +472,9 @@ func (h *Handler) handleBZPOPMIN(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'BZPOPMIN' command")
 	}
 	keys := make([]string, len(args)-1)
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i := 0; i < len(args)-1; i++ {
 		keys[i] = string(args[i])
 	}
@@ -470,6 +503,9 @@ func (h *Handler) handleZCARD(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'ZCARD' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	count, err := h.Db.ZCard(key)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -486,6 +522,9 @@ func (h *Handler) handleZSCORE(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'ZSCORE' command")
 	}
 	key, member := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	score, exists, err := h.Db.ZScore(key, member)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -509,6 +548,9 @@ func (h *Handler) handleZRANK(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'ZRANK' command")
 	}
 	key, member := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	rank, err := h.Db.ZRank(key, member)
 	if err != nil {
 		return wrapStoreError(err)
@@ -529,6 +571,9 @@ func (h *Handler) handleZREVRANK(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'ZREVRANK' command")
 	}
 	key, member := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	rank, err := h.Db.ZRevRank(key, member)
 	if err != nil {
 		return wrapStoreError(err)
@@ -548,6 +593,9 @@ func (h *Handler) handleZCOUNT(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'ZCOUNT' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	minScore, err := strconv.ParseFloat(string(args[1]), 64)
 	if err != nil {
 		return proto.NewError("ERR value is not a valid float")
@@ -572,6 +620,9 @@ func (h *Handler) handleZMSCORE(state *connState, args [][]byte, remoteAddr stri
 		return proto.NewError("ERR wrong number of arguments for 'ZMSCORE' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	members := make([]string, len(args)-1)
 	for i := 1; i < len(args); i++ {
 		members[i-1] = string(args[i])
@@ -611,6 +662,9 @@ func (h *Handler) handleZRANGE(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'ZRANGE' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	start, err := strconv.ParseInt(string(args[1]), 10, 64)
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
@@ -652,6 +706,9 @@ func (h *Handler) handleZREVRANGE(state *connState, args [][]byte, remoteAddr st
 		return proto.NewError("ERR wrong number of arguments for 'ZREVRANGE' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	start, err := strconv.ParseInt(string(args[1]), 10, 64)
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
@@ -693,6 +750,9 @@ func (h *Handler) handleZRANGEBYSCORE(state *connState, args [][]byte, remoteAdd
 		return proto.NewError("ERR wrong number of arguments for 'ZRANGEBYSCORE' command")
 	}
 	zsetName := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, zsetName); resp != nil {
+		return resp
+	}
 	minScore, minExclusive, err := parseScoreExclusive(string(args[1]))
 	if err != nil {
 		return proto.NewError("ERR value is not a valid float")
@@ -751,6 +811,9 @@ func (h *Handler) handleZREVRANGEBYSCORE(state *connState, args [][]byte, remote
 		return proto.NewError("ERR wrong number of arguments for 'ZREVRANGEBYSCORE' command")
 	}
 	zsetName := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, zsetName); resp != nil {
+		return resp
+	}
 	maxScore, maxExclusive, err := parseScoreExclusive(string(args[1]))
 	if err != nil {
 		return proto.NewError("ERR value is not a valid float")
@@ -809,6 +872,9 @@ func (h *Handler) handleZINCRBY(state *connState, args [][]byte, remoteAddr stri
 		return proto.NewError("ERR wrong number of arguments for 'ZINCRBY' command")
 	}
 	key, member := string(args[0]), string(args[2])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	delta, err := strconv.ParseFloat(string(args[1]), 64)
 	if err != nil {
 		return proto.NewError("ERR value is not a valid float")
@@ -893,6 +959,9 @@ func (h *Handler) handleZMPOP(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR syntax error")
 	}
 	keys := make([]string, numKeys)
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[1+i])
 	}
@@ -946,6 +1015,9 @@ func (h *Handler) handleBZMPOP(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR syntax error")
 	}
 	keys := make([]string, numKeys)
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[2+i])
 	}
@@ -998,6 +1070,9 @@ func (h *Handler) handleZUNIONSTORE(state *connState, args [][]byte, remoteAddr 
 		return proto.NewError("ERR value is not an integer")
 	}
 	keys := make([]string, numKeys)
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[2+i])
 	}
@@ -1054,6 +1129,9 @@ func (h *Handler) handleZINTERSTORE(state *connState, args [][]byte, remoteAddr 
 		return proto.NewError("ERR value is not an integer")
 	}
 	keys := make([]string, numKeys)
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[2+i])
 	}
@@ -1112,6 +1190,9 @@ func (h *Handler) handleZDIFFSTORE(state *connState, args [][]byte, remoteAddr s
 		return proto.NewError("ERR syntax error")
 	}
 	keys := make([]string, numKeys)
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[2+i])
 	}
@@ -1136,6 +1217,9 @@ func (h *Handler) handleZDIFF(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR syntax error")
 	}
 	keys := make([]string, numKeys)
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[1+i])
 	}
@@ -1176,6 +1260,9 @@ func (h *Handler) handleZLEXCOUNT(state *connState, args [][]byte, remoteAddr st
 		return proto.NewError("ERR wrong number of arguments for 'ZLEXCOUNT' command")
 	}
 	zSetName := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, zSetName); resp != nil {
+		return resp
+	}
 	min := string(args[1])
 	max := string(args[2])
 	count, err := h.Db.ZLexCount(zSetName, min, max)
@@ -1192,6 +1279,9 @@ func (h *Handler) handleZRANGEBYLEX(state *connState, args [][]byte, remoteAddr 
 		return proto.NewError("ERR wrong number of arguments for 'ZRANGEBYLEX' command")
 	}
 	zSetName := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, zSetName); resp != nil {
+		return resp
+	}
 	min := string(args[1])
 	max := string(args[2])
 	offset := 0
@@ -1232,6 +1322,9 @@ func (h *Handler) handleZREVRANGEBYLEX(state *connState, args [][]byte, remoteAd
 		return proto.NewError("ERR wrong number of arguments for 'ZREVRANGEBYLEX' command")
 	}
 	zSetName := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, zSetName); resp != nil {
+		return resp
+	}
 	max := string(args[1])
 	min := string(args[2])
 	offset := 0
@@ -1272,6 +1365,9 @@ func (h *Handler) handleZREMRANGEBYLEX(state *connState, args [][]byte, remoteAd
 		return proto.NewError("ERR wrong number of arguments for 'ZREMRANGEBYLEX' command")
 	}
 	zSetName := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, zSetName); resp != nil {
+		return resp
+	}
 	min := string(args[1])
 	max := string(args[2])
 	h.markDirtyKeys(state, zSetName)
@@ -1289,6 +1385,9 @@ func (h *Handler) handleZSCAN(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'ZSCAN' command")
 	}
 	zSetName := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, zSetName); resp != nil {
+		return resp
+	}
 	cursor, err := strconv.ParseUint(string(args[1]), 10, 64)
 	if err != nil {
 		return proto.NewError("ERR value is not an integer")
@@ -1336,6 +1435,9 @@ func (h *Handler) handleZRANGESTORE(state *connState, args [][]byte, remoteAddr 
 		return proto.NewError("ERR wrong number of arguments for 'ZRANGESTORE' command")
 	}
 	dstKey := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, dstKey); resp != nil {
+		return resp
+	}
 	srcKey := string(args[1])
 	min := string(args[2])
 	max := string(args[3])
@@ -1453,6 +1555,7 @@ func (h *Handler) handleZRANGESTORE(state *connState, args [][]byte, remoteAddr 
 	}
 
 	// Delete destination if it exists
+	h.markDirtyKeys(state, dstKey)
 	if _, err := h.Db.Del(dstKey); err != nil {
 		return wrapStoreError(err)
 	}

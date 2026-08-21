@@ -14,6 +14,9 @@ func (h *Handler) handleSETBIT(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'SETBIT' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	offset, err := strconv.ParseUint(string(args[1]), 10, 64)
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
@@ -36,6 +39,9 @@ func (h *Handler) handleGETBIT(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'GETBIT' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	offset, err := strconv.ParseUint(string(args[1]), 10, 64)
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
@@ -53,6 +59,9 @@ func (h *Handler) handleBITCOUNT(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'BITCOUNT' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	// BITCOUNT key [start end [BYTE | BIT]]
 	// 检查 BITCOUNT key BYTE|BIT（缺少 start/end）→ 语法错误
 	if len(args) == 2 {
@@ -111,6 +120,10 @@ func (h *Handler) handleBITOP(state *connState, args [][]byte, remoteAddr string
 	if operation == "NOT" && len(sourceKeys) != 1 {
 		return proto.NewError("ERR BITOP NOT must be called with exactly one source key")
 	}
+	allKeys := append([]string{destKey}, sourceKeys...)
+	if resp := h.checkAndHandleMultiKeyRedirect(allKeys); resp != nil {
+		return resp
+	}
 	h.markDirtyKeys(state, destKey)
 	length, err := h.Db.BitOp(operation, destKey, sourceKeys...)
 	if err != nil {
@@ -126,6 +139,9 @@ func (h *Handler) handleBITFIELD(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'BITFIELD' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	operations := make([]string, 0, len(args)-1)
 	for i := 1; i < len(args); i++ {
 		operations = append(operations, string(args[i]))
@@ -164,6 +180,9 @@ func (h *Handler) handleBITFIELD_RO(state *connState, args [][]byte, remoteAddr 
 		return proto.NewError("ERR wrong number of arguments for 'BITFIELD_RO' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	// Validate that all operations are GET
 	operations := make([]string, 0, len(args)-1)
 	for i := 1; i < len(args); i++ {
@@ -208,6 +227,9 @@ func (h *Handler) handleBITPOS(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'BITPOS' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	bit, err := strconv.Atoi(string(args[1]))
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
@@ -248,6 +270,9 @@ func (h *Handler) handleBITLEN(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'BITLEN' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	length, err := h.Db.BitLen(key)
 	if err != nil {
 		return wrapStoreError(err)

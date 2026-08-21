@@ -14,6 +14,9 @@ func (h *Handler) handleJSON_SET(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'JSON.SET' command")
 	}
 	key, path := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	value := string(args[2])
 	nx, xx := false, false
 	// Parse optional NX/XX arguments
@@ -43,6 +46,9 @@ func (h *Handler) handleJSON_GET(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'JSON.GET' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	paths := make([]string, 0)
 	for i := 1; i < len(args); i++ {
 		paths = append(paths, string(args[i]))
@@ -77,6 +83,9 @@ func (h *Handler) handleJSON_DEL(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'JSON.DEL' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	paths := make([]string, 0)
 	for i := 1; i < len(args); i++ {
 		paths = append(paths, string(args[i]))
@@ -98,6 +107,9 @@ func (h *Handler) handleJSON_TYPE(state *connState, args [][]byte, remoteAddr st
 		return proto.NewError("ERR wrong number of arguments for 'JSON.TYPE' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	path := "$"
 	if len(args) >= 2 {
 		path = string(args[1])
@@ -127,6 +139,9 @@ func (h *Handler) handleJSON_MGET(state *connState, args [][]byte, remoteAddr st
 	keys := make([]string, 0)
 	for i := 0; i < len(args)-1; i++ {
 		keys = append(keys, string(args[i]))
+		if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+			return resp
+		}
 	}
 	result, err := h.Db.JSONMGet(path, keys...)
 	if err != nil {
@@ -152,6 +167,9 @@ func (h *Handler) handleJSON_ARRAPPEND(state *connState, args [][]byte, remoteAd
 		return proto.NewError("ERR wrong number of arguments for 'JSON.ARRAPPEND' command")
 	}
 	key, path := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	values := make([]string, 0)
 	for i := 2; i < len(args); i++ {
 		values = append(values, string(args[i]))
@@ -173,6 +191,9 @@ func (h *Handler) handleJSON_ARRLEN(state *connState, args [][]byte, remoteAddr 
 		return proto.NewError("ERR wrong number of arguments for 'JSON.ARRLEN' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	path := "$"
 	if len(args) >= 2 {
 		path = string(args[1])
@@ -193,6 +214,9 @@ func (h *Handler) handleJSON_OBJKEYS(state *connState, args [][]byte, remoteAddr
 		return proto.NewError("ERR wrong number of arguments for 'JSON.OBJKEYS' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	path := "$"
 	if len(args) >= 2 {
 		path = string(args[1])
@@ -217,6 +241,9 @@ func (h *Handler) handleJSON_NUMINCRBY(state *connState, args [][]byte, remoteAd
 		return proto.NewError("ERR wrong number of arguments for 'JSON.NUMINCRBY' command")
 	}
 	key, path := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	increment, err := strconv.ParseFloat(string(args[2]), 64)
 	if err != nil {
 		return proto.NewError("ERR increment must be a valid number")
@@ -238,6 +265,9 @@ func (h *Handler) handleJSON_NUMMULTBY(state *connState, args [][]byte, remoteAd
 		return proto.NewError("ERR wrong number of arguments for 'JSON.NUMMULTBY' command")
 	}
 	key, path := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	multiplier, err := strconv.ParseFloat(string(args[2]), 64)
 	if err != nil {
 		return proto.NewError("ERR multiplier must be a valid number")
@@ -259,6 +289,9 @@ func (h *Handler) handleJSON_CLEAR(state *connState, args [][]byte, remoteAddr s
 		return proto.NewError("ERR wrong number of arguments for 'JSON.CLEAR' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	path := "$"
 	if len(args) >= 2 {
 		path = string(args[1])
@@ -284,6 +317,9 @@ func (h *Handler) handleJSON_DEBUG(state *connState, args [][]byte, remoteAddr s
 		return proto.NewError("ERR syntax error")
 	}
 	key := string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	path := "$"
 	if len(args) >= 3 {
 		path = string(args[2])

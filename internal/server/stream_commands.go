@@ -19,6 +19,9 @@ func (h *Handler) handleXADD(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'XADD' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	var opts store.StreamXAddOptions
 	var id string
 	var fields = make(map[string]string)
@@ -89,6 +92,9 @@ func (h *Handler) handleXLEN(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'XLEN' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	length, err := h.Db.XLen(key)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -147,6 +153,9 @@ func (h *Handler) handleXREAD(state *connState, args [][]byte, remoteAddr string
 	for j := 0; j < numStreams; j++ {
 		streamKeys[j] = string(args[i+j*2])
 		streamIDs[j] = string(args[i+j*2+1])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(streamKeys); resp != nil {
+		return resp
 	}
 
 	// Combine keys and IDs
@@ -209,6 +218,9 @@ func (h *Handler) handleXRANGE(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'XRANGE' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	start := string(args[1])
 	stop := string(args[2])
 	count := int64(0)
@@ -268,6 +280,9 @@ func (h *Handler) handleXREVRANGE(state *connState, args [][]byte, remoteAddr st
 		return proto.NewError("ERR wrong number of arguments for 'XREVRANGE' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	start := string(args[1])
 	stop := string(args[2])
 	count := int64(0)
@@ -324,6 +339,9 @@ func (h *Handler) handleXDEL(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'XDEL' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	ids := make([]string, len(args)-1)
 	for i := 1; i < len(args); i++ {
 		ids[i-1] = string(args[i])
@@ -345,6 +363,9 @@ func (h *Handler) handleXACK(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'XACK' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	group := string(args[1])
 	ids := make([]string, len(args)-2)
 	for i := 2; i < len(args); i++ {
@@ -363,6 +384,14 @@ func (h *Handler) handleXGROUP(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'XGROUP' command")
 	}
 	subcommand := strings.ToUpper(string(args[0]))
+
+	// All XGROUP subcommands access the stream key at args[1]
+	if len(args) >= 2 {
+		key := string(args[1])
+		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+			return resp
+		}
+	}
 
 	switch subcommand {
 	case "CREATE":
@@ -579,6 +608,9 @@ func (h *Handler) handleXREADGROUP(state *connState, args [][]byte, remoteAddr s
 		streamKeys[j] = string(args[i+j*2])
 		streamIDs[j] = string(args[i+j*2+1])
 	}
+	if resp := h.checkAndHandleMultiKeyRedirect(streamKeys); resp != nil {
+		return resp
+	}
 
 	if block >= 0 {
 		state.blocking.Store(true)
@@ -757,6 +789,9 @@ func (h *Handler) handleXCLAIM(state *connState, args [][]byte, remoteAddr strin
 		keys := make([]string, 0, len(entry.Fields))
 		for k := range entry.Fields {
 			keys = append(keys, k)
+			if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+				return resp
+			}
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
@@ -778,6 +813,9 @@ func (h *Handler) handleXAUTOCLAIM(state *connState, args [][]byte, remoteAddr s
 		return proto.NewError("ERR wrong number of arguments for 'XAUTOCLAIM' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	group := string(args[1])
 	consumer := string(args[2])
 	minIdleTime, err := strconv.ParseInt(string(args[3]), 10, 64)
@@ -894,6 +932,9 @@ func (h *Handler) handleXPENDING(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'XPENDING' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	group := string(args[1])
 	entries, err := h.Db.XPending(key, group)
 	if err != nil {
@@ -1026,6 +1067,9 @@ func (h *Handler) handleXINFO(state *connState, args [][]byte, remoteAddr string
 			return proto.NewError("ERR wrong number of arguments for 'XINFO STREAM' command")
 		}
 		key := string(args[1])
+		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+			return resp
+		}
 		info, err := h.Db.XInfo(key)
 		if err != nil {
 			if errors.Is(err, store.ErrWrongType) {
@@ -1118,6 +1162,9 @@ func (h *Handler) handleXTRIM(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'XTRIM' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	var maxLen int64 = 0
 	var minID string
 
@@ -1192,6 +1239,9 @@ func (h *Handler) handleXACKDEL(state *connState, args [][]byte, remoteAddr stri
 		return proto.NewError("ERR wrong number of arguments for 'XACKDEL' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	group := string(args[1])
 
 	// Parse optional mode: KEEPREF | DELREF | ACKED
@@ -1320,6 +1370,9 @@ func (h *Handler) handleXDELEX(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'XDELEX' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	ids := make([]string, len(args)-1)
 	for i := 1; i < len(args); i++ {
 		ids[i-1] = string(args[i])
@@ -1342,6 +1395,9 @@ func (h *Handler) handleXNACK(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'XNACK' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	group := string(args[1])
 	consumer := string(args[2])
 	ids := make([]string, len(args)-3)
@@ -1366,6 +1422,9 @@ func (h *Handler) handleXSETID(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'XSETID' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	lastID := string(args[1])
 
 	// Parse optional arguments

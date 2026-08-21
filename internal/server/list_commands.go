@@ -16,6 +16,9 @@ func (h *Handler) handleLPUSH(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'LPUSH' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	values := make([]string, len(args)-1)
 	for i := 1; i < len(args); i++ {
 		values[i-1] = string(args[i])
@@ -38,6 +41,9 @@ func (h *Handler) handleRPUSH(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'RPUSH' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	values := make([]string, len(args)-1)
 	for i := 1; i < len(args); i++ {
 		values[i-1] = string(args[i])
@@ -60,6 +66,9 @@ func (h *Handler) handleLPOP(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'LPOP' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	value, err := h.Db.LPop(key)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -85,6 +94,9 @@ func (h *Handler) handleRPOP(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'RPOP' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	value, err := h.Db.RPop(key)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -110,6 +122,9 @@ func (h *Handler) handleLLEN(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'LLEN' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	length, err := h.Db.LLen(key)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -127,6 +142,9 @@ func (h *Handler) handleLINDEX(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'LINDEX' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	index, err := strconv.ParseInt(string(args[1]), 10, 64)
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
@@ -156,6 +174,9 @@ func (h *Handler) handleLRANGE(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'LRANGE' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	start, err1 := strconv.ParseInt(string(args[1]), 10, 64)
 	stop, err2 := strconv.ParseInt(string(args[2]), 10, 64)
 	if err1 != nil || err2 != nil {
@@ -181,6 +202,9 @@ func (h *Handler) handleLSET(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'LSET' command")
 	}
 	key, value := string(args[0]), string(args[2])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	index, err := strconv.ParseInt(string(args[1]), 10, 64)
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
@@ -198,6 +222,9 @@ func (h *Handler) handleLTRIM(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'LTRIM' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	start, err1 := strconv.ParseInt(string(args[1]), 10, 64)
 	stop, err2 := strconv.ParseInt(string(args[2]), 10, 64)
 	if err1 != nil || err2 != nil {
@@ -216,6 +243,9 @@ func (h *Handler) handleLINSERT(state *connState, args [][]byte, remoteAddr stri
 		return proto.NewError("ERR wrong number of arguments for 'LINSERT' command")
 	}
 	key, pivot, value := string(args[0]), string(args[2]), string(args[3])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	where := strings.ToUpper(string(args[1]))
 	if where != "BEFORE" && where != "AFTER" {
 		return proto.NewError("ERR syntax error")
@@ -235,6 +265,9 @@ func (h *Handler) handleLPOS(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'LPOS' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	element := string(args[1])
 	rank := int64(0)
 	count := int64(0)
@@ -245,15 +278,24 @@ func (h *Handler) handleLPOS(state *connState, args [][]byte, remoteAddr string)
 	for i < len(args) {
 		opt := strings.ToUpper(string(args[i]))
 		if opt == "RANK" && i+1 < len(args) {
-			r, _ := strconv.ParseInt(string(args[i+1]), 10, 64)
+			r, err := strconv.ParseInt(string(args[i+1]), 10, 64)
+			if err != nil {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
 			rank = r
 			i += 2
 		} else if opt == "COUNT" && i+1 < len(args) {
-			c, _ := strconv.ParseInt(string(args[i+1]), 10, 64)
+			c, err := strconv.ParseInt(string(args[i+1]), 10, 64)
+			if err != nil {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
 			count = c
 			i += 2
 		} else if opt == "MAXLEN" && i+1 < len(args) {
-			m, _ := strconv.ParseInt(string(args[i+1]), 10, 64)
+			m, err := strconv.ParseInt(string(args[i+1]), 10, 64)
+			if err != nil {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
 			maxlen = m
 			i += 2
 		} else {
@@ -292,6 +334,9 @@ func (h *Handler) handleLREM(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'LREM' command")
 	}
 	key, value := string(args[0]), string(args[2])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	count, err := strconv.ParseInt(string(args[1]), 10, 64)
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
@@ -310,6 +355,9 @@ func (h *Handler) handleRPOPLPUSH(state *connState, args [][]byte, remoteAddr st
 		return proto.NewError("ERR wrong number of arguments for 'RPOPLPUSH' command")
 	}
 	source, destination := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleMultiKeyRedirect([]string{source, destination}); resp != nil {
+		return resp
+	}
 	h.markDirtyKeys(state, source, destination)
 	value, err := h.Db.RPopLPush(source, destination)
 	if err != nil {
@@ -337,6 +385,9 @@ func (h *Handler) handleLMOVE(state *connState, args [][]byte, remoteAddr string
 	}
 	source := string(args[0])
 	destination := string(args[1])
+	if resp := h.checkAndHandleMultiKeyRedirect([]string{source, destination}); resp != nil {
+		return resp
+	}
 	sourceDirection := strings.ToUpper(string(args[2]))
 	destinationDirection := strings.ToUpper(string(args[3]))
 	h.markDirtyKeys(state, source, destination)
@@ -360,6 +411,9 @@ func (h *Handler) handleBLMOVE(state *connState, args [][]byte, remoteAddr strin
 	}
 	source := string(args[0])
 	destination := string(args[1])
+	if resp := h.checkAndHandleMultiKeyRedirect([]string{source, destination}); resp != nil {
+		return resp
+	}
 	sourceDirection := strings.ToUpper(string(args[2]))
 	destinationDirection := strings.ToUpper(string(args[3]))
 	timeout, err := strconv.ParseFloat(string(args[4]), 64)
@@ -388,6 +442,9 @@ func (h *Handler) handleLPUSHX(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'LPUSHX' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	values := make([]string, len(args)-1)
 	for i := 1; i < len(args); i++ {
 		values[i-1] = string(args[i])
@@ -407,6 +464,9 @@ func (h *Handler) handleRPUSHX(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'RPUSHX' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	values := make([]string, len(args)-1)
 	for i := 1; i < len(args); i++ {
 		values[i-1] = string(args[i])
@@ -426,6 +486,9 @@ func (h *Handler) handleBLPOP(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'BLPOP' command")
 	}
 	keys := make([]string, len(args)-1)
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i := 0; i < len(args)-1; i++ {
 		keys[i] = string(args[i])
 	}
@@ -454,6 +517,9 @@ func (h *Handler) handleBRPOP(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'BRPOP' command")
 	}
 	keys := make([]string, len(args)-1)
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i := 0; i < len(args)-1; i++ {
 		keys[i] = string(args[i])
 	}
@@ -482,6 +548,9 @@ func (h *Handler) handleBRPOPLPUSH(state *connState, args [][]byte, remoteAddr s
 		return proto.NewError("ERR wrong number of arguments for 'BRPOPLPUSH' command")
 	}
 	source, destination := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleMultiKeyRedirect([]string{source, destination}); resp != nil {
+		return resp
+	}
 	timeout, err := strconv.Atoi(string(args[2]))
 	if err != nil {
 		return proto.NewError("ERR timeout is not an integer or out of range")
@@ -519,6 +588,9 @@ func (h *Handler) handleLMPOP(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR syntax error")
 	}
 	keys := make([]string, numKeys)
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[1+i])
 	}

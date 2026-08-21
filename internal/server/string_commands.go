@@ -19,6 +19,9 @@ func (h *Handler) handleLCS(state *connState, args [][]byte, remoteAddr string) 
 
 	key1 := string(args[0])
 	key2 := string(args[1])
+	if resp := h.checkAndHandleMultiKeyRedirect([]string{key1, key2}); resp != nil {
+		return resp
+	}
 
 	// Parse optional modifiers
 	withLen := false
@@ -370,6 +373,9 @@ func (h *Handler) handleSETEX(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'SETEX' command")
 	}
 	key, value := string(args[0]), string(args[2])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	seconds, err := strconv.Atoi(string(args[1]))
 	if err != nil {
 		return proto.NewError("ERR invalid integer")
@@ -391,6 +397,9 @@ func (h *Handler) handlePSETEX(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'PSETEX' command")
 	}
 	key, value := string(args[0]), string(args[2])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	milliseconds, err := strconv.ParseInt(string(args[1]), 10, 64)
 	if err != nil {
 		return proto.NewError("ERR invalid integer")
@@ -412,6 +421,9 @@ func (h *Handler) handleSETNX(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'SETNX' command")
 	}
 	key, value := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	h.markDirtyKeys(state, key)
 	success, err := h.Db.SetNX(key, value)
 	if err != nil {
@@ -426,6 +438,9 @@ func (h *Handler) handleGETSET(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'GETSET' command")
 	}
 	key, value := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	h.markDirtyKeys(state, key)
 	oldValue, err := h.Db.GetSet(key, value)
 	if err != nil {
@@ -537,6 +552,9 @@ func (h *Handler) handleGETRANGE(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'GETRANGE' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	start, err1 := strconv.Atoi(string(args[1]))
 	end, err2 := strconv.Atoi(string(args[2]))
 	if err1 != nil || err2 != nil {
@@ -544,6 +562,9 @@ func (h *Handler) handleGETRANGE(state *connState, args [][]byte, remoteAddr str
 	}
 	value, err := h.Db.GetRange(key, start, end)
 	if err != nil {
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
 		return proto.NewBulkString([]byte(""))
 	}
 	return proto.NewBulkString([]byte(value))
@@ -555,6 +576,9 @@ func (h *Handler) handleSETRANGE(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'SETRANGE' command")
 	}
 	key, value := string(args[0]), string(args[2])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	offset, err := strconv.Atoi(string(args[1]))
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")

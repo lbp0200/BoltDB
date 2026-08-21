@@ -17,6 +17,9 @@ func (h *Handler) handleHSET(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'HSET' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	h.markDirtyKeys(state, key)
 	count := 0
 	for i := 1; i < len(args); i += 2 {
@@ -41,6 +44,9 @@ func (h *Handler) handleHGET(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'HGET' command")
 	}
 	key, field := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	value, err := h.Db.HGet(key, field)
 	if errors.Is(err, store.ErrWrongType) {
 		return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -60,6 +66,9 @@ func (h *Handler) handleHDEL(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'HDEL' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	fields := make([]string, len(args)-1)
 	for i := 1; i < len(args); i++ {
 		fields[i-1] = string(args[i])
@@ -81,6 +90,9 @@ func (h *Handler) handleHLEN(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'HLEN' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	length, err := h.Db.HLen(key)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -98,6 +110,9 @@ func (h *Handler) handleHGETALL(state *connState, args [][]byte, remoteAddr stri
 		return proto.NewError("ERR wrong number of arguments for 'HGETALL' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	data, err := h.Db.HGetAll(key)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -125,6 +140,9 @@ func (h *Handler) handleHEXISTS(state *connState, args [][]byte, remoteAddr stri
 		return proto.NewError("ERR wrong number of arguments for 'HEXISTS' command")
 	}
 	key, field := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	exists, err := h.Db.HExists(key, field)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -141,6 +159,9 @@ func (h *Handler) handleHKEYS(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'HKEYS' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	keys, err := h.Db.HKeys(key)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -161,6 +182,9 @@ func (h *Handler) handleHVALS(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'HVALS' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	values, err := h.Db.HVals(key)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -179,6 +203,9 @@ func (h *Handler) handleHMSET(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'HMSET' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	h.markDirtyKeys(state, key)
 	for i := 1; i < len(args); i += 2 {
 		if i+1 >= len(args) {
@@ -198,6 +225,9 @@ func (h *Handler) handleHMGET(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'HMGET' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	fields := make([]string, len(args)-1)
 	for i := 1; i < len(args); i++ {
 		fields[i-1] = string(args[i])
@@ -223,6 +253,9 @@ func (h *Handler) handleHSETNX(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'HSETNX' command")
 	}
 	key, field, value := string(args[0]), string(args[1]), string(args[2])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	h.markDirtyKeys(state, key)
 	success, err := h.Db.HSetNX(key, field, value)
 	if err != nil {
@@ -237,6 +270,9 @@ func (h *Handler) handleHINCRBY(state *connState, args [][]byte, remoteAddr stri
 		return proto.NewError("ERR wrong number of arguments for 'HINCRBY' command")
 	}
 	key, field := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	increment, err := strconv.ParseInt(string(args[2]), 10, 64)
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
@@ -255,6 +291,9 @@ func (h *Handler) handleHINCRBYFLOAT(state *connState, args [][]byte, remoteAddr
 		return proto.NewError("ERR wrong number of arguments for 'HINCRBYFLOAT' command")
 	}
 	key, field := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	increment, err := strconv.ParseFloat(string(args[2]), 64)
 	if err != nil {
 		return proto.NewError("ERR value is not a valid float")
@@ -273,6 +312,9 @@ func (h *Handler) handleHSTRLEN(state *connState, args [][]byte, remoteAddr stri
 		return proto.NewError("ERR wrong number of arguments for 'HSTRLEN' command")
 	}
 	key, field := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	length, err := h.Db.HStrLen(key, field)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -290,6 +332,9 @@ func (h *Handler) handleHRANDFIELD(state *connState, args [][]byte, remoteAddr s
 		return proto.NewError("ERR wrong number of arguments for 'HRANDFIELD' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	count := 1
 	withValues := false
 	// 解析可选参数: HRANDFIELD key [count [WITHVALUES]]

@@ -116,6 +116,9 @@ func (h *Handler) handleDUMP(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'DUMP' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	data, err := h.Db.Dump(key)
 	if err != nil {
 		if state.respVersion == 3 {
@@ -132,6 +135,9 @@ func (h *Handler) handleRESTORE(state *connState, args [][]byte, remoteAddr stri
 		return proto.NewError("ERR wrong number of arguments for 'RESTORE' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	// 解析 TTL（毫秒）
 	var ttl time.Duration = 0
 	replace := false
@@ -217,6 +223,9 @@ func (h *Handler) handleOBJECT(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'OBJECT' command")
 	}
 	key := string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 
 	switch subcommand {
 	case "REFCOUNT":
@@ -462,6 +471,9 @@ func (h *Handler) handleRENAME(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'RENAME' command")
 	}
 	key, newKey := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	h.markDirtyKeys(state, key, newKey)
 	if err := h.Db.Rename(key, newKey); err != nil {
 		return wrapStoreError(err)
@@ -475,6 +487,9 @@ func (h *Handler) handleRENAMENX(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'RENAMENX' command")
 	}
 	key, newKey := string(args[0]), string(args[1])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	h.markDirtyKeys(state, key, newKey)
 	success, err := h.Db.RenameNX(key, newKey)
 	if err != nil {
@@ -489,6 +504,9 @@ func (h *Handler) handleCOPY(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'COPY' command")
 	}
 	srcKey := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, srcKey); resp != nil {
+		return resp
+	}
 	dstKey := string(args[1])
 	replace := false
 	db := int(0)
@@ -577,6 +595,9 @@ func (h *Handler) handleTOUCH(state *connState, args [][]byte, remoteAddr string
 	count := int64(0)
 	for _, arg := range args {
 		key := string(arg)
+		if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+			return resp
+		}
 		exists, err := h.Db.Exists(key)
 		if err != nil {
 			return wrapStoreError(err)
@@ -621,6 +642,9 @@ func (h *Handler) handleKEYS(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'KEYS' command")
 	}
 	pattern := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, pattern); resp != nil {
+		return resp
+	}
 	keys, err := h.Db.Keys(pattern)
 	if err != nil {
 		return wrapStoreError(err)
@@ -682,6 +706,9 @@ func (h *Handler) handleSORT(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'SORT' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 
 	// Parse options
 	var offset, count int64 = 0, -1
@@ -746,6 +773,13 @@ func (h *Handler) handleSORT(state *connState, args [][]byte, remoteAddr string)
 	if err != nil {
 		return wrapStoreError(err)
 	}
+	// Redis: SORT on non-existent key returns empty array
+	if keyType == "none" {
+		if destKey != "" {
+			_, _ = h.Db.Del(destKey)
+		}
+		return &proto.Array{Args: [][]byte{}}
+	}
 	var values []string
 	var scores []float64
 
@@ -778,7 +812,7 @@ func (h *Handler) handleSORT(state *connState, args [][]byte, remoteAddr string)
 			scores = append(scores, m.Score)
 		}
 	default:
-		return proto.NewError("ERR Operation against a key holding the wrong kind of value")
+		return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
 
 	// Apply BY pattern - get weights from external keys

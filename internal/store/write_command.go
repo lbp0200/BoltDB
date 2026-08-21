@@ -151,7 +151,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			return err
 		}
 
-	case "MSET", "MSETNX":
+	case "MSET":
 		if len(args) >= 3 && (len(args)-1)%2 == 0 {
 			for i := 1; i < len(args); i += 2 {
 				if err := s.Set(string(args[i]), string(args[i+1])); err != nil {
@@ -159,6 +159,17 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 				}
 			}
 			return nil
+		}
+
+	case "MSETNX":
+		// MSETNX 是条件设置：所有 key 都不存在才设置（与 master 语义一致）
+		if len(args) >= 3 && (len(args)-1)%2 == 0 {
+			pairs := make([]string, 0, len(args)-1)
+			for i := 1; i < len(args); i++ {
+				pairs = append(pairs, string(args[i]))
+			}
+			_, err := s.MSetNX(pairs...)
+			return err
 		}
 
 	case "INCRBYFLOAT":
@@ -183,7 +194,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			key := string(args[1])
 			_, gErr := s.Get(key)
 			if gErr != nil {
-				return nil
+				return gErr
 			}
 			_, dErr := s.Del(key)
 			return dErr
@@ -198,7 +209,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 					if seconds, pErr := strconv.Atoi(string(args[3])); pErr == nil {
 						_, gErr := s.Get(key)
 						if gErr != nil {
-							return nil
+							return gErr
 						}
 						_, eErr := s.Expire(key, seconds)
 						return eErr
@@ -208,7 +219,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 					if millis, pErr := strconv.Atoi(string(args[3])); pErr == nil {
 						_, gErr := s.Get(key)
 						if gErr != nil {
-							return nil
+							return gErr
 						}
 						_, eErr := s.PExpire(key, int64(millis))
 						return eErr
@@ -218,7 +229,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 					if ts, pErr := strconv.ParseInt(string(args[3]), 10, 64); pErr == nil {
 						_, gErr := s.Get(key)
 						if gErr != nil {
-							return nil
+							return gErr
 						}
 						_, eErr := s.ExpireAt(key, ts)
 						return eErr
@@ -228,7 +239,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 					if ts, pErr := strconv.ParseInt(string(args[3]), 10, 64); pErr == nil {
 						_, gErr := s.Get(key)
 						if gErr != nil {
-							return nil
+							return gErr
 						}
 						_, eErr := s.PExpireAt(key, ts)
 						return eErr
@@ -239,7 +250,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			if len(args) >= 3 && strings.ToUpper(string(args[2])) == "PERSIST" {
 				_, gErr := s.Get(key)
 				if gErr != nil {
-					return nil
+					return gErr
 				}
 				_, pErr := s.Persist(key)
 				return pErr
@@ -247,7 +258,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			// No option: just a GET
 			_, gErr := s.Get(key)
 			if gErr != nil {
-				return nil
+				return gErr
 			}
 		}
 
@@ -564,6 +575,14 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 	case "SPOP":
 		if len(args) >= 2 {
 			key := string(args[1])
+			if len(args) >= 3 {
+				count, err := strconv.Atoi(string(args[2]))
+				if err != nil {
+					return err
+				}
+				_, err = s.SPopN(key, count)
+				return err
+			}
 			_, err := s.SPop(key)
 			return err
 		}
@@ -923,10 +942,45 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 	case "XTRIM":
 		if len(args) >= 3 {
 			key := string(args[1])
-			maxLen, _ := strconv.ParseInt(string(args[2]), 10, 64)
-			minID := ""
-			if len(args) >= 4 {
-				minID = string(args[3])
+			var maxLen int64
+			var minID string
+			i := 2
+			for i < len(args) {
+				opt := strings.ToUpper(string(args[i]))
+				switch opt {
+				case "MAXLEN":
+					if i+1 < len(args) {
+						next := strings.ToUpper(string(args[i+1]))
+						if next == "~" {
+							if i+2 < len(args) {
+								maxLen, _ = strconv.ParseInt(string(args[i+2]), 10, 64)
+							}
+							i += 3
+						} else {
+							maxLen, _ = strconv.ParseInt(string(args[i+1]), 10, 64)
+							i += 2
+						}
+					} else {
+						i++
+					}
+				case "MINID":
+					if i+1 < len(args) {
+						minID = string(args[i+1])
+						i += 2
+					} else {
+						i++
+					}
+				case "~":
+					if i+1 < len(args) {
+						maxLen, _ = strconv.ParseInt(string(args[i+1]), 10, 64)
+						i += 2
+					} else {
+						i++
+					}
+				default:
+					maxLen, _ = strconv.ParseInt(string(args[i]), 10, 64)
+					i++
+				}
 			}
 			_, err := s.XTrim(key, maxLen, minID)
 			return err

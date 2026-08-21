@@ -90,16 +90,16 @@ func TestSORTOrdering_SingleElement(t *testing.T) {
 	assert.Equal(t, "42", string(arr.Args[0]))
 }
 
-// TestSORTOrdering_EmptyList verifies SORT on non-existent key returns error.
+// TestSORTOrdering_EmptyList verifies SORT on non-existent key returns empty array.
 func TestSORTOrdering_EmptyList(t *testing.T) {
 	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	resp := handler.executeCommand(state, "SORT", [][]byte{[]byte("nonexistent")}, "127.0.0.1:12345")
-	errResp, ok := resp.(*proto.Error)
+	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, strings.Contains(string(*errResp), "ERR"))
+	assert.Equal(t, 0, len(arr.Args))
 }
 
 // TestSORTOrdering_StringKey verifies SORT on string key returns the single value.
@@ -315,7 +315,7 @@ func TestSORTOrdering_WrongType(t *testing.T) {
 	resp := handler.executeCommand(state, "SORT", [][]byte{[]byte("h")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
-	assert.True(t, strings.Contains(string(*errResp), "ERR"))
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
 }
 
 // TestSORTOrdering_BYWithNonExistentKey verifies SORT BY with non-existent weight keys

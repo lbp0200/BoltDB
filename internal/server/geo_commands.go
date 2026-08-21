@@ -16,6 +16,9 @@ func (h *Handler) handleGEOADD(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'GEOADD' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	var opts store.GeoAddOptions
 	members := make([]store.GeoMember, 0)
 
@@ -70,6 +73,9 @@ func (h *Handler) handleGEOPOS(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'GEOPOS' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	members := make([]string, len(args)-1)
 	for i := 1; i < len(args); i++ {
 		members[i-1] = string(args[i])
@@ -107,6 +113,9 @@ func (h *Handler) handleGEOHASH(state *connState, args [][]byte, remoteAddr stri
 		return proto.NewError("ERR wrong number of arguments for 'GEOHASH' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	members := make([]string, len(args)-1)
 	for i := 1; i < len(args); i++ {
 		members[i-1] = string(args[i])
@@ -131,6 +140,9 @@ func (h *Handler) handleGEODIST(state *connState, args [][]byte, remoteAddr stri
 		return proto.NewError("ERR wrong number of arguments for 'GEODIST' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	member1 := string(args[1])
 	member2 := string(args[2])
 	unit := "m"
@@ -153,6 +165,9 @@ func (h *Handler) handleGEORADIUS(state *connState, args [][]byte, remoteAddr st
 		return proto.NewError("ERR wrong number of arguments for 'GEORADIUS' command")
 	}
 	gKey := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, gKey); resp != nil {
+		return resp
+	}
 	gLon, err := strconv.ParseFloat(string(args[1]), 64)
 	if err != nil {
 		return proto.NewError("ERR value is not a valid float")
@@ -244,6 +259,9 @@ func (h *Handler) handleGEOSEARCH(state *connState, args [][]byte, remoteAddr st
 		return proto.NewError("ERR wrong number of arguments for 'GEOSEARCH' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	var centerLon, centerLat float64
 	var radius float64
 	var unit string
@@ -382,6 +400,9 @@ func (h *Handler) handleGEOSEARCHSTORE(state *connState, args [][]byte, remoteAd
 	}
 	dstKey := string(args[0])
 	srcKey := string(args[1])
+	if resp := h.checkAndHandleMultiKeyRedirect([]string{dstKey, srcKey}); resp != nil {
+		return resp
+	}
 
 	var centerLon, centerLat float64
 	var radius float64
@@ -452,7 +473,7 @@ func (h *Handler) handleGEOSEARCHSTORE(state *connState, args [][]byte, remoteAd
 			storeDist = true
 			i++
 		default:
-			i++
+			return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
 		}
 	}
 

@@ -165,9 +165,9 @@ func TestGeoMutationKill_GeoSearchStoreUnknownOption(t *testing.T) {
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	// GEOSEARCHSTORE with unknown option → silently ignored (default i++)
+	// GEOSEARCHSTORE with unknown option → syntax error (should not hang or infinite loop)
 	// Kills INCREMENT at geo_commands.go:427 (i++ in default case)
-	// If i++ is removed, infinite loop; if changed to i--, infinite loop
+	// Previously silently ignored; now returns error for consistency with GEOSEARCH
 	handler.executeCommand(state, "GEOADD", [][]byte{
 		[]byte("geo_src"), []byte("1.0"), []byte("2.0"), []byte("m1"),
 	}, "127.0.0.1:12345")
@@ -176,12 +176,12 @@ func TestGeoMutationKill_GeoSearchStoreUnknownOption(t *testing.T) {
 		[]byte("dst"), []byte("geo_src"),
 		[]byte("FROMLONLAT"), []byte("1.0"), []byte("2.0"),
 		[]byte("BYRADIUS"), []byte("100"), []byte("km"),
-		[]byte("STOREXYZ"), // unknown option — silently ignored
+		[]byte("STOREXYZ"), // unknown option → error
 	}, "127.0.0.1:12345")
-	// Should return Integer (not hang, not infinite loop)
-	intResp, ok := resp.(*proto.Integer)
+	// Should return Error (not hang, not infinite loop)
+	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
-	_ = intResp
+	assert.True(t, strings.Contains(string(*errResp), "ERR"))
 }
 
 func TestGeoMutationKill_GeoSearchInvalidFloat(t *testing.T) {

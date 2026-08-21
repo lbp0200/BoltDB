@@ -16,6 +16,9 @@ func (h *Handler) handleTS_CREATE(state *connState, args [][]byte, remoteAddr st
 		return proto.NewError("ERR wrong number of arguments for 'TS.CREATE' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	opts := store.TSCreateOptions{}
 	i := 1
 	for i < len(args) {
@@ -48,6 +51,7 @@ func (h *Handler) handleTS_CREATE(state *connState, args [][]byte, remoteAddr st
 		}
 		i++
 	}
+	h.markDirtyKeys(state, key)
 	if err := h.Db.TSCreate(key, opts); err != nil {
 		return wrapStoreError(err)
 	}
@@ -60,6 +64,9 @@ func (h *Handler) handleTS_ADD(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'TS.ADD' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	var timestamp int64
 	if string(args[1]) == "*" {
 		timestamp = time.Now().UnixNano() / int64(time.Millisecond)
@@ -116,6 +123,9 @@ func (h *Handler) handleTS_GET(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'TS.GET' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	dp, err := h.Db.TSGet(key)
 	if err != nil {
 		if errors.Is(err, store.ErrKeyNotFound) {
@@ -144,6 +154,9 @@ func (h *Handler) handleTS_RANGE(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'TS.RANGE' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	start := string(args[1])
 	stop := string(args[2])
 	count := int64(-1)
@@ -178,6 +191,9 @@ func (h *Handler) handleTS_DEL(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'TS.DEL' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	start := string(args[1])
 	stop := string(args[2])
 	h.markDirtyKeys(state, key)
@@ -197,6 +213,9 @@ func (h *Handler) handleTS_INFO(state *connState, args [][]byte, remoteAddr stri
 		return proto.NewError("ERR wrong number of arguments for 'TS.INFO' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	info, err := h.Db.TSInfo(key)
 	if err != nil {
 		if errors.Is(err, store.ErrKeyNotFound) {
@@ -230,6 +249,9 @@ func (h *Handler) handleTS_LEN(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'TS.LEN' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	length, err := h.Db.TSLen(key)
 	if err != nil {
 		if errors.Is(err, store.ErrKeyNotFound) {
@@ -253,6 +275,9 @@ func (h *Handler) handleTS_MGET(state *connState, args [][]byte, remoteAddr stri
 	}
 	filter := string(args[0])
 	keys := make([]string, len(args)-1)
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
 	for i := 1; i < len(args); i++ {
 		keys[i-1] = string(args[i])
 	}
@@ -282,6 +307,9 @@ func (h *Handler) handleTS_REVRANGE(state *connState, args [][]byte, remoteAddr 
 		return proto.NewError("ERR wrong number of arguments for 'TS.REVRANGE' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	start := string(args[1])
 	stop := string(args[2])
 	count := int64(-1)
@@ -455,6 +483,14 @@ func (h *Handler) handleTS_MADD(state *connState, args [][]byte, remoteAddr stri
 		return proto.NewError("ERR wrong number of arguments for 'TS.MADD' command")
 	}
 	results := make([]proto.RESP, len(args)/3)
+	// Collect all keys for cluster routing
+	maddKeys := make([]string, 0, len(args)/3)
+	for i := 0; i < len(args); i += 3 {
+		maddKeys = append(maddKeys, string(args[i]))
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(maddKeys); resp != nil {
+		return resp
+	}
 	for i := 0; i < len(args); i += 3 {
 		key := string(args[i])
 		var timestamp int64
@@ -492,6 +528,9 @@ func (h *Handler) handleTS_INCRBY(state *connState, args [][]byte, remoteAddr st
 		return proto.NewError("ERR wrong number of arguments for 'TS.INCRBY' command")
 	}
 	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
 	value, err := strconv.ParseFloat(string(args[1]), 64)
 	if err != nil {
 		return proto.NewError("ERR invalid value")
@@ -551,6 +590,9 @@ func (h *Handler) handleTS_CREATERULE(state *connState, args [][]byte, remoteAdd
 		return proto.NewError("ERR wrong number of arguments for 'TS.CREATERULE' command")
 	}
 	sourceKey := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, sourceKey); resp != nil {
+		return resp
+	}
 	destKey := string(args[1])
 	aggArg := strings.ToUpper(string(args[2]))
 	if aggArg != "AGGREGATION" {
@@ -563,7 +605,7 @@ func (h *Handler) handleTS_CREATERULE(state *connState, args [][]byte, remoteAdd
 	}
 	h.markDirtyKeys(state, sourceKey, destKey)
 	if err := h.Db.TSAddRule(sourceKey, destKey, aggregator, bucketDuration); err != nil {
-		return wrapLogError(err)
+		return wrapStoreError(err)
 	}
 	return proto.NewSimpleString("OK")
 }
@@ -574,6 +616,9 @@ func (h *Handler) handleTS_DELETERULE(state *connState, args [][]byte, remoteAdd
 		return proto.NewError("ERR wrong number of arguments for 'TS.DELETERULE' command")
 	}
 	sourceKey := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, sourceKey); resp != nil {
+		return resp
+	}
 	destKey := string(args[1])
 	aggArg := strings.ToUpper(string(args[2]))
 	if aggArg != "AGGREGATION" {
@@ -586,7 +631,7 @@ func (h *Handler) handleTS_DELETERULE(state *connState, args [][]byte, remoteAdd
 	}
 	h.markDirtyKeys(state, sourceKey, destKey)
 	if err := h.Db.TSDelRule(sourceKey, destKey, aggregator, bucketDuration); err != nil {
-		return wrapLogError(err)
+		return wrapStoreError(err)
 	}
 	return proto.NewSimpleString("OK")
 }
