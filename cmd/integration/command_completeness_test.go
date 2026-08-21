@@ -133,6 +133,19 @@ func TestCommandCompleteness_String(t *testing.T) {
 		assert.Equal(t, "val", r)
 		ttl, _ := sharedClient.TTL(ctx, p+"ge1").Result()
 		assert.True(t, ttl > 0 && ttl <= 100*time.Second)
+
+		// GETEX PERSIST: return value + remove TTL
+		r, _ = doAny(t, ctx, "GETEX", p+"ge1", "PERSIST")
+		assert.Equal(t, "val", r)
+		ttl, _ = sharedClient.TTL(ctx, p+"ge1").Result()
+		assert.Equal(t, time.Duration(-1), ttl)
+
+		// GETEX PX: ms-based TTL
+		sharedClient.Set(ctx, p+"ge2", "v2", 0)
+		r, _ = doAny(t, ctx, "GETEX", p+"ge2", "PX", "60000")
+		assert.Equal(t, "v2", r)
+		pttl, _ := sharedClient.PTTL(ctx, p+"ge2").Result()
+		assert.True(t, pttl > 0 && pttl <= 60000*time.Millisecond)
 	})
 
 	// --- SETEX ---
