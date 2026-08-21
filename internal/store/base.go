@@ -102,6 +102,16 @@ func (s *BotreonStore) Expire(key string, seconds int) (bool, error) {
 	if err := s.checkErrorInjector("Expire"); err != nil {
 		return false, err
 	}
+	if seconds <= 0 {
+		// Redis 语义：非正 TTL 立即删除键（EXPIRE key 0/负数）。
+		// 返回 Del 是否删除了 key：key 存在→true(1)，不存在→false(0)。
+		deleted, err := s.Del(key)
+		if err != nil {
+			logger.Logger.Warn().Err(err).Str("key", key).Msg("Expire: error deleting key with non-positive TTL")
+			return false, err
+		}
+		return deleted > 0, nil
+	}
 	success := false
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		typeKey := TypeOfKeyGet(key)
@@ -168,6 +178,16 @@ func (s *BotreonStore) ExpireAt(key string, timestamp int64) (bool, error) {
 
 // PEXPIRE 实现 Redis PEXPIRE 命令，设置键的过期时间（毫秒）
 func (s *BotreonStore) PExpire(key string, milliseconds int64) (bool, error) {
+	if milliseconds <= 0 {
+		// Redis 语义：非正 TTL 立即删除键（PEXPIRE key 0/负数）。
+		// 返回 Del 是否删除了 key：key 存在→true(1)，不存在→false(0)。
+		deleted, err := s.Del(key)
+		if err != nil {
+			logger.Logger.Warn().Err(err).Str("key", key).Msg("PExpire: error deleting key with non-positive TTL")
+			return false, err
+		}
+		return deleted > 0, nil
+	}
 	success := false
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		typeKey := TypeOfKeyGet(key)

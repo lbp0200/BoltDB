@@ -78,3 +78,65 @@ func mustSAdd(t *testing.T, store *BotreonStore, key string, members ...string) 
 	}
 	return n
 }
+
+// TestExpireNonPositiveTTLDeletes verifies Redis semantics: EXPIRE/PEXPIRE with a
+// non-positive TTL (0 or negative) must delete the key immediately instead of
+// setting a far-future expiry (regression: uint64 conversion of a negative TTL
+// produced a huge expiresAt, leaving the key alive forever).
+func TestExpireNonPositiveTTLDeletes(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		run  func(t *testing.T, s *BotreonStore, key string)
+	}{
+		{
+			name: "Expire-0",
+			run: func(t *testing.T, s *BotreonStore, key string) {
+				if _, err := s.Expire(key, 0); err != nil {
+					t.Fatalf("Expire 0: %v", err)
+				}
+			},
+		},
+		{
+			name: "Expire-negative",
+			run: func(t *testing.T, s *BotreonStore, key string) {
+				if _, err := s.Expire(key, -5); err != nil {
+					t.Fatalf("Expire -5: %v", err)
+				}
+			},
+		},
+		{
+			name: "PExpire-0",
+			run: func(t *testing.T, s *BotreonStore, key string) {
+				if _, err := s.PExpire(key, 0); err != nil {
+					t.Fatalf("PExpire 0: %v", err)
+				}
+			},
+		},
+		{
+			name: "PExpire-negative",
+			run: func(t *testing.T, s *BotreonStore, key string) {
+				if _, err := s.PExpire(key, -5000); err != nil {
+					t.Fatalf("PExpire -5000: %v", err)
+				}
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := setupTestStore(t)
+			key := "ttl_delete_" + tc.name
+			if err := s.Set(key, "v"); err != nil {
+				t.Fatalf("Set: %v", err)
+			}
+			tc.run(t, s, key)
+			exists, err := s.Exists(key)
+			if err != nil {
+				t.Fatalf("Exists: %v", err)
+			}
+			if exists {
+				t.Fatalf("%s: key still exists, Redis semantics require deletion", tc.name)
+			}
+		})
+	}
+}
