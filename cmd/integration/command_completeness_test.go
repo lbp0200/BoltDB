@@ -1403,6 +1403,33 @@ func TestCommandCompleteness_Geo(t *testing.T) {
 		assert.Equal(t, int64(2), r)
 	})
 
+	// --- GEOADD options (NX/XX/CH) ---
+	t.Run("GEOADD_options", func(t *testing.T) {
+		p := keyPrefix(t)
+
+		// GEOADD NX: new member → added
+		r, _ := doAny(t, ctx, "GEOADD", p+"gnx", "NX", "116.40", "39.90", "bj")
+		assert.Equal(t, int64(1), r)
+
+		// GEOADD NX: existing member → not updated
+		r, _ = doAny(t, ctx, "GEOADD", p+"gnx", "NX", "1.0", "1.0", "bj")
+		assert.Equal(t, int64(0), r)
+
+		// GEOADD XX: non-existing member → not added
+		r, _ = doAny(t, ctx, "GEOADD", p+"gxx", "XX", "116.40", "39.90", "sh")
+		assert.Equal(t, int64(0), r)
+
+		// GEOADD XX: existing member → update
+		doAny(t, ctx, "GEOADD", p+"gxx", "1.0", "1.0", "sh")
+		r, _ = doAny(t, ctx, "GEOADD", p+"gxx", "XX", "116.40", "39.90", "sh")
+		assert.Equal(t, int64(0), r) // update returns 0 (no new members)
+
+		// GEOADD CH: count changes (new + updated) instead of new only
+		doAny(t, ctx, "GEOADD", p+"gch", "1.0", "1.0", "a", "2.0", "2.0", "b")
+		r, _ = doAny(t, ctx, "GEOADD", p+"gch", "CH", "116.40", "39.90", "a", "3.0", "3.0", "c")
+		assert.Equal(t, int64(2), r) // a updated + c added = 2 changes
+	})
+
 	// --- GEOPOS ---
 	t.Run("GEOPOS", func(t *testing.T) {
 		r, _ := doAny(t, ctx, "GEOPOS", p+"geo", "beijing")
