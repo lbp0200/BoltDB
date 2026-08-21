@@ -269,7 +269,7 @@ func init() {
 		{name: "ZRANGE", arity: -4, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "ZRANGEBYLEX", arity: -4, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "ZRANGEBYSCORE", arity: -4, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
-		{name: "ZRANGESTORE", arity: -5, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: 2, step: 1},
+		{name: "ZRANGESTORE", arity: -4, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: 2, step: 1},
 		{name: "ZRANK", arity: 3, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "ZREM", arity: -3, flags: []commandFlag{flagWrite}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "ZREMRANGEBYLEX", arity: 4, flags: []commandFlag{flagWrite}, firstKey: 1, lastKey: 1, step: 1},
