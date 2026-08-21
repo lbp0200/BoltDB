@@ -177,6 +177,12 @@ func TestCommandCompleteness_String(t *testing.T) {
 		val, err := sharedClient.Get(ctx, p+"se1").Result()
 		assert.NoError(t, err)
 		assert.Equal(t, "val", val)
+
+		// SETEX with TTL <= 0 → error
+		_, err = doAny(t, ctx, "SETEX", p+"se1_invalid", "0", "val")
+		assert.Error(t, err)
+		_, err = doAny(t, ctx, "SETEX", p+"se1_invalid", "-1", "val")
+		assert.Error(t, err)
 	})
 
 	// --- PSETEX ---
@@ -189,6 +195,12 @@ func TestCommandCompleteness_String(t *testing.T) {
 		pttl, err := sharedClient.PTTL(ctx, p+"ps1").Result()
 		assert.NoError(t, err)
 		assert.True(t, pttl > 0 && pttl <= 60000*time.Millisecond)
+
+		// PSETEX with TTL <= 0 → error
+		_, err = doAny(t, ctx, "PSETEX", p+"ps1_invalid", "0", "val")
+		assert.Error(t, err)
+		_, err = doAny(t, ctx, "PSETEX", p+"ps1_invalid", "-1", "val")
+		assert.Error(t, err)
 	})
 
 	// --- SETNX ---
