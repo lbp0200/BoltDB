@@ -34,6 +34,9 @@ func (h *Handler) handleCLIENT(state *connState, args [][]byte, remoteAddr strin
 			return proto.NewError("ERR wrong number of arguments for 'CLIENT SETNAME' command")
 		}
 		name := string(args[1])
+		if len(name) > 128 {
+			return proto.NewError("ERR CLIENT NAME must not be longer than 128")
+		}
 		if state.clientInfo == nil {
 			state.clientInfo = &ClientInfo{}
 		}
