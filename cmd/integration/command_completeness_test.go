@@ -168,6 +168,16 @@ func TestCommandCompleteness_String(t *testing.T) {
 		assert.Equal(t, "v2", r)
 		pttl, _ := sharedClient.PTTL(ctx, p+"ge2").Result()
 		assert.True(t, pttl > 0 && pttl <= 60000*time.Millisecond)
+
+		// GETEX EX 0: must error
+		_, err := doAny(t, ctx, "GETEX", p+"ge2", "EX", "0")
+		assert.Error(t, err)
+		assert.True(t, strings.Contains(err.Error(), "invalid"))
+
+		// GETEX PX 0: must error
+		_, err = doAny(t, ctx, "GETEX", p+"ge2", "PX", "0")
+		assert.Error(t, err)
+		assert.True(t, strings.Contains(err.Error(), "invalid"))
 	})
 
 	// --- SETEX ---

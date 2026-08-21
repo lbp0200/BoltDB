@@ -329,11 +329,17 @@ func (h *Handler) handleGETEX(state *connState, args [][]byte, remoteAddr string
 			if err != nil {
 				return proto.NewError("ERR value is not an integer or out of range")
 			}
+			if s <= 0 {
+				return proto.NewError("ERR invalid expire time in 'getex' command")
+			}
 			gexSeconds = s
 		} else if opt == "PX" && len(args) > 2 {
 			s, err := strconv.Atoi(string(args[2]))
 			if err != nil {
 				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			if s <= 0 {
+				return proto.NewError("ERR invalid expire time in 'getex' command")
 			}
 			gexSeconds = s / 1000
 		} else if opt == "PERSIST" {
