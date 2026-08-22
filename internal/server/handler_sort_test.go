@@ -318,17 +318,18 @@ func TestSORTOrdering_WrongType(t *testing.T) {
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
 }
 
-// TestSORTOrdering_BYWithNonExistentKey verifies SORT BY with non-existent weight keys
-// returns an error (the Get for the weight key fails).
+// TestSORTOrdering_BYWithNonExistentKey verifies SORT BY with non-existent
+// weight keys does NOT error (Redis compat: weight = 0, see commit 0934f77).
+// Both elements get weight 0, so only membership (not order) is asserted.
 func TestSORTOrdering_BYWithNonExistentKey(t *testing.T) {
 	t.Parallel()
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
 	handler.executeCommand(state, "LPUSH", [][]byte{[]byte("lst"), []byte("x"), []byte("y")}, "127.0.0.1:12345")
-	// weight_x and weight_y do not exist; Get returns ErrKeyNotFound.
+	// weight_x and weight_y do not exist → weight = 0 for both, no error.
 	resp := handler.executeCommand(state, "SORT", [][]byte{[]byte("lst"), []byte("BY"), []byte("nonexist_*")}, "127.0.0.1:12345")
-	errResp, ok := resp.(*proto.Error)
+	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, strings.Contains(string(*errResp), "ERR"))
+	assert.Equal(t, 2, len(arr.Args))
 }

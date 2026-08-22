@@ -523,7 +523,7 @@ func TestObjectEncodingAllTypes(t *testing.T) {
 		{"obj_list", "quicklist"},
 		{"obj_hash", "hashtable"},
 		{"obj_set", "hashtable"},
-		{"obj_zset", "ziplist"},
+		{"obj_zset", "skiplist"}, // Redis 8+ reports skiplist for zsets (see a563653)
 	}
 
 	for _, tt := range tests {
