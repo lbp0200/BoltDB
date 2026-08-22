@@ -263,10 +263,11 @@ func (h *Handler) handleGEOSEARCH(state *connState, args [][]byte, remoteAddr st
 		return resp
 	}
 	var centerLon, centerLat float64
-	var radius float64
+	var radius, boxHeight float64
 	var unit string
 	var count int
 	var withDist, withHash, withCoord bool
+	searchByBox := false
 
 	i := 1
 	if strings.ToUpper(string(args[i])) == "FROMMEMBER" {
@@ -318,12 +319,18 @@ func (h *Handler) handleGEOSEARCH(state *connState, args [][]byte, remoteAddr st
 		if err != nil {
 			return proto.NewError("ERR value is not a valid float")
 		}
-		_, err = strconv.ParseFloat(string(args[i+2]), 64) // height (currently treated as circle radius)
+		height, err := strconv.ParseFloat(string(args[i+2]), 64)
 		if err != nil {
 			return proto.NewError("ERR value is not a valid float")
 		}
 		unit = string(args[i+3])
-		radius = width / 2 // TODO: implement proper rectangular bounding box
+		// Redis accepts 0 or non-positive width/height for BYBOX (empty result).
+		if width <= 0 || height <= 0 {
+			return &proto.Array{Args: [][]byte{}}
+		}
+		radius = width
+		boxHeight = height
+		searchByBox = true
 		i += 4
 	} else {
 		return proto.NewError("ERR syntax error")
@@ -358,8 +365,17 @@ func (h *Handler) handleGEOSEARCH(state *connState, args [][]byte, remoteAddr st
 		}
 	}
 
-	results, err := h.Db.GeoSearch(key, centerLon, centerLat, radius, unit, count, withDist, withHash, withCoord)
+	var results []store.GeoSearchResult
+	var err error
+	if searchByBox {
+		results, err = h.Db.GeoSearchBox(key, centerLon, centerLat, radius, boxHeight, unit, count, withDist, withHash, withCoord)
+	} else {
+		results, err = h.Db.GeoSearch(key, centerLon, centerLat, radius, unit, count, withDist, withHash, withCoord)
+	}
 	if err != nil {
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
 		return wrapStoreError(err)
 	}
 
@@ -405,10 +421,11 @@ func (h *Handler) handleGEOSEARCHSTORE(state *connState, args [][]byte, remoteAd
 	}
 
 	var centerLon, centerLat float64
-	var radius float64
+	var radius, boxHeight float64
 	var unit string
 	var count int
 	var storeDist bool
+	searchByBox := false
 
 	i := 2
 	if i < len(args) && strings.ToUpper(string(args[i])) == "FROMMEMBER" {
@@ -450,6 +467,27 @@ func (h *Handler) handleGEOSEARCHSTORE(state *connState, args [][]byte, remoteAd
 		}
 		unit = string(args[i+2])
 		i += 3
+	} else if strings.ToUpper(string(args[i])) == "BYBOX" {
+		if i+3 >= len(args) {
+			return proto.NewError("ERR syntax error")
+		}
+		width, err := strconv.ParseFloat(string(args[i+1]), 64)
+		if err != nil {
+			return proto.NewError("ERR value is not a valid float")
+		}
+		height, err := strconv.ParseFloat(string(args[i+2]), 64)
+		if err != nil {
+			return proto.NewError("ERR value is not a valid float")
+		}
+		unit = string(args[i+3])
+		// Redis accepts 0 or non-positive width/height for BYBOX (empty result).
+		if width <= 0 || height <= 0 {
+			return proto.NewInteger(0)
+		}
+		radius = width
+		boxHeight = height
+		searchByBox = true
+		i += 4
 	} else {
 		return proto.NewError("ERR syntax error")
 	}
@@ -478,8 +516,15 @@ func (h *Handler) handleGEOSEARCHSTORE(state *connState, args [][]byte, remoteAd
 	}
 
 	h.markDirtyKeys(state, dstKey)
-	stored, err := h.Db.GeoSearchStore(dstKey, srcKey, centerLon, centerLat, radius, unit, count, storeDist)
+	shape := "RADIUS"
+	if searchByBox {
+		shape = "BOX"
+	}
+	stored, err := h.Db.GeoSearchStore(dstKey, srcKey, centerLon, centerLat, radius, unit, count, storeDist, shape, boxHeight)
 	if err != nil {
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
 		return wrapStoreError(err)
 	}
 	return proto.NewInteger(stored)

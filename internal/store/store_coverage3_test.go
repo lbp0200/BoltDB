@@ -44,7 +44,7 @@ func TestGeoSearchStore_Coverage(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	n, err := s.GeoSearchStore("gsdst", "gssrc", 116.4, 39.9, 500, "km", 10, false)
+	n, err := s.GeoSearchStore("gsdst", "gssrc", 116.4, 39.9, 500, "km", 10, false, "RADIUS", 0)
 	assert.NoError(t, err)
 	assert.True(t, n > 0)
 	// GEOSEARCHSTORE dest is a zset (Redis semantics), not a geo key

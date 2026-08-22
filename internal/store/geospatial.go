@@ -577,20 +577,115 @@ func (s *BotreonStore) GeoRadius(key string, lon, lat, radius float64, unit stri
 	return results, err
 }
 
-// GeoSearch searches for members by various criteria
+// geoBoxInTxn searches geo members inside an axis-aligned bounding box
+// (Redis GEOSEARCH BYBOX semantics). The box is centered at (lon, lat) and
+// spans widthM × heightM meters; its edges stay axis-aligned in lon/lat space
+// (unlike a circle). A member is returned when its decoded coordinates fall
+// within [lat±halfLat] and its longitude is within halfLon of the center.
+//
+// The scan walks every zset index entry of the key and filters in memory:
+// the geohash score is not space-contiguous, so a score-range seek cannot
+// bound a rectangular box the way it can bound a circle.
+func geoBoxInTxn(s *BotreonStore, txn *badger.Txn, key string, lon, lat, widthM, heightM float64, unit string, count int, withDist, withHash, withCoord bool) ([]GeoSearchResult, error) {
+	if err := checkKeyType(txn, key, KeyTypeGeo); err != nil {
+		return nil, err
+	}
+
+	// Box edges in degrees. halfLon converts the width to degrees at the
+	// center latitude's meridian length (Redis normalizes to center lat).
+	halfLatDeg := (heightM / 2) / earthRadiusMeters * 180 / math.Pi
+	halfLonDeg := (widthM / 2) / (earthRadiusMeters * math.Cos(lat*math.Pi/180)) * 180 / math.Pi
+	minLat, maxLat := lat-halfLatDeg, lat+halfLatDeg
+
+	var results []GeoSearchResult
+	var scanCount int64
+	prefix := keyBadgerGet(prefixKeySortedSetBytes, []byte(key+sortedSetIndex))
+	opts := badger.DefaultIteratorOptions
+	opts.Prefix = prefix
+	opts.PrefetchValues = false
+	it := txn.NewIterator(opts)
+	defer it.Close()
+	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+		scanCount++
+		if err := s.checkScanBudget(scanCount); err != nil {
+			return nil, err
+		}
+		score, member, _, ok := parseZSetIndexKey(it.Item().Key(), prefix)
+		if !ok {
+			continue
+		}
+		memberLat, memberLon := DecodeGeoHash(uint64(score))
+		if memberLat < minLat || memberLat > maxLat {
+			continue
+		}
+		// Longitude via wrap-around distance: equivalent to the plain
+		// [lon±halfLon] interval when the box does not straddle the
+		// antimeridian, and correct when it does.
+		wrapDist := math.Abs(memberLon - lon)
+		if wrapDist > 180 {
+			wrapDist = 360 - wrapDist
+		}
+		if wrapDist > halfLonDeg {
+			continue
+		}
+		// WITHDIST: Redis reports distance from the box center (haversine).
+		dist := calculateDistance(lat, lon, memberLat, memberLon)
+		result := GeoSearchResult{
+			Member: member,
+			Lat:    memberLat,
+			Lon:    memberLon,
+		}
+		if withDist {
+			result.Dist = formatGeoDistance(dist, unit)
+		}
+		if withHash {
+			result.Hash = geoHashToString(uint64(score))
+		}
+		results = append(results, result)
+		if count > 0 && len(results) >= count {
+			break
+		}
+	}
+	return results, nil
+}
+
+// GeoSearch searches for members by various criteria.
 func (s *BotreonStore) GeoSearch(key string, centerLon, centerLat float64, radius float64, unit string, count int, withDist, withHash, withCoord bool) ([]GeoSearchResult, error) {
 	return s.GeoRadius(key, centerLon, centerLat, radius, unit, count, withDist, withHash, withCoord)
 }
 
-// GeoSearchStore searches and stores results to a destination key
-func (s *BotreonStore) GeoSearchStore(dstKey, srcKey string, centerLon, centerLat float64, radius float64, unit string, count int, storeDist bool) (int64, error) {
+// GeoSearchBox searches for members inside a BYBOX rectangle centered at
+// (centerLon, centerLat) with the given width/height in the given unit.
+func (s *BotreonStore) GeoSearchBox(key string, centerLon, centerLat, width, height float64, unit string, count int, withDist, withHash, withCoord bool) ([]GeoSearchResult, error) {
+	widthM := convertGeoRadiusToMeters(width, unit)
+	heightM := convertGeoRadiusToMeters(height, unit)
+	var results []GeoSearchResult
+	err := s.db.View(func(txn *badger.Txn) error {
+		var err error
+		results, err = geoBoxInTxn(s, txn, key, centerLon, centerLat, widthM, heightM, unit, count, withDist, withHash, withCoord)
+		return err
+	})
+	return results, err
+}
+
+// GeoSearchStore searches and stores results to a destination key.
+// shape selects the search geometry: "RADIUS" (circle) or "BOX" (BYBOX, where
+// radius carries the box width and boxHeight carries the box height).
+func (s *BotreonStore) GeoSearchStore(dstKey, srcKey string, centerLon, centerLat float64, radius float64, unit string, count int, storeDist bool, shape string, boxHeight float64) (int64, error) {
 	radiusM := convertGeoRadiusToMeters(radius, unit)
 	var added int64
 	var addedNewMember bool
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		added = 0
 		addedNewMember = false
-		results, err := geoRadiusInTxn(s, txn, srcKey, centerLon, centerLat, radiusM, unit, count, storeDist, false, false)
+		var results []GeoSearchResult
+		var err error
+		if shape == "BOX" {
+			heightM := convertGeoRadiusToMeters(boxHeight, unit)
+			results, err = geoBoxInTxn(s, txn, srcKey, centerLon, centerLat, radiusM, heightM, unit, count, storeDist, false, false)
+		} else {
+			results, err = geoRadiusInTxn(s, txn, srcKey, centerLon, centerLat, radiusM, unit, count, storeDist, false, false)
+		}
 		if err != nil {
 			return err
 		}

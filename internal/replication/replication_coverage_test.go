@@ -1087,7 +1087,67 @@ func TestExecuteReplicatedCommand_GEOSEARCHSTORE(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestExecuteReplicatedCommand_Unknown tests that unknown commands are silently ignored
+// TestExecuteReplicatedCommand_GEOSEARCHSTORE_Bybox verifies the BYBOX path
+// of replicated GEOSEARCHSTORE: the replica must apply the same rectangle
+// the master used (width AND height, not a width/2 circle fallback).
+//
+// Center (13.5, 38.0), box 100km × 5000km (halfLon ≈ 0.568°, halfLat ≈ 22.46°):
+//   Palermo  (13.361, 38.116) dlon 0.139° (~12km)    → INSIDE
+//   Catania  (15.087, 37.503) dlon 1.587° (~141km)   → OUTSIDE (exceeds half-width)
+//   FarNorth (13.5, 47.0)     dlat 9.0° (~1000km)    → INSIDE the box,
+//                                                   OUTSIDE a width/2 (50km) circle
+func TestExecuteReplicatedCommand_GEOSEARCHSTORE_Bybox(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.GeoAdd("src", []store.GeoMember{
+		{Member: "Palermo", Lon: 13.361389, Lat: 38.115556},
+		{Member: "Catania", Lon: 15.087269, Lat: 37.502669},
+		{Member: "FarNorth", Lon: 13.5, Lat: 47.0},
+	})
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("GEOSEARCHSTORE"), []byte("dst"), []byte("src"),
+		[]byte("FROMLONLAT"), []byte("13.5"), []byte("38"),
+		[]byte("BYBOX"), []byte("100"), []byte("5000"), []byte("km"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	members, err := testStore.ZRange("dst", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(members))
+	got := make(map[string]bool, len(members))
+	for _, m := range members {
+		got[m.Member] = true
+	}
+	assert.True(t, got["Palermo"])
+	assert.True(t, got["FarNorth"])
+	assert.False(t, got["Catania"])
+}
+
+// TestExecuteReplicatedCommand_GEOSEARCHSTORE_ByboxZeroWidth verifies that a
+// non-positive BYBOX width is a no-op (the master returned 0 without writing).
+func TestExecuteReplicatedCommand_GEOSEARCHSTORE_ByboxZeroWidth(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.GeoAdd("src", []store.GeoMember{
+		{Member: "Palermo", Lon: 13.361389, Lat: 38.115556},
+	})
+
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("GEOSEARCHSTORE"), []byte("dst"), []byte("src"),
+		[]byte("FROMLONLAT"), []byte("13.5"), []byte("38"),
+		[]byte("BYBOX"), []byte("0"), []byte("5000"), []byte("km"),
+	}, context.Background())
+	assert.NoError(t, err)
+
+	count, err := testStore.ZCard("dst")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), count)
+}
 func TestExecuteReplicatedCommand_Unknown(t *testing.T) {
 	t.Parallel()
 	testStore := setupTestStore(t)

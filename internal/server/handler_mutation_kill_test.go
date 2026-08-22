@@ -182,6 +182,206 @@ func TestGeoMutationKill_GeosearchBybox(t *testing.T) {
 	assert.Equal(t, 1, len(arr.Args))
 }
 
+// TestGeoSearchBybox_RectangularSemantics verifies true rectangle semantics
+// through the command handler: BYBOX must NOT degenerate to a width/2 circle
+// (see git history of the old `radius = width / 2` implementation).
+//
+// Dataset (center = SF, 37.7749°N, 122.4194°W) and box results:
+//   5000x1000 km → {SF, LA, East}
+//   2000x5000 km → {SF, LA, North, NW}
+//   1000x5000 km → {SF, LA, North, NW}
+//   10000x10000km → all points except Bali (13453km away)
+//   10x10 km     → {SF}
+// Every point is far from any box edge (margin ≫ geohash 26-bit decode
+// error), and both 5000x1000 and 1000x5000 have discriminating points:
+// a width/2-circle implementation returns the wrong set in both cases.
+func TestGeoSearchBybox_RectangularSemantics(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	geoAdd := func(lon, lat, member string) {
+		handler.executeCommand(state, "GEOADD", [][]byte{
+			[]byte("bybox"), []byte(lon), []byte(lat), []byte(member),
+		}, "127.0.0.1:12345")
+	}
+	geoAdd("-122.4194", "37.7749", "SF")
+	geoAdd("-118.2437", "34.0522", "LA")
+	geoAdd("-122.4194", "47.7749", "North") // 1113km north
+	geoAdd("-124.4194", "56.2749", "NW")     // 2065km away
+	geoAdd("-100.0", "37.7749", "East")      // 1968km east
+	geoAdd("-74.0060", "40.7128", "NYC")     // 4134km away
+	geoAdd("115.1390", "-8.8028", "Bali")    // 13453km away
+
+	search := func(width, height string) map[string]bool {
+		resp := handler.executeCommand(state, "GEOSEARCH", [][]byte{
+			[]byte("bybox"), []byte("FROMLONLAT"), []byte("-122.4194"), []byte("37.7749"),
+			[]byte("BYBOX"), []byte(width), []byte(height), []byte("km"),
+		}, "127.0.0.1:12345")
+		arr, ok := resp.(*proto.Array)
+		assert.True(t, ok)
+		names := make(map[string]bool, len(arr.Args))
+		for _, a := range arr.Args {
+			names[string(a)] = true
+		}
+		return names
+	}
+
+	// 5000km wide × 1000km tall: half-height ~500km. North (1113km north)
+	// is OUTSIDE the box but INSIDE a width/2 (2500km) circle — a width/2
+	// implementation would wrongly include it. East (1968km east) is inside
+	// the box.
+	names := search("5000", "1000")
+	assert.True(t, names["SF"])
+	assert.True(t, names["LA"])
+	assert.True(t, names["East"])
+	assert.False(t, names["North"])
+	assert.False(t, names["NW"])
+	assert.False(t, names["NYC"])
+	assert.False(t, names["Bali"])
+
+	// 2000km wide × 5000km tall: half-width ~1120km. North (1113km) and NW
+	// (2065km) are INSIDE the box but OUTSIDE a width/2 (1000km) circle —
+	// a width/2 implementation would wrongly exclude them.
+	names = search("2000", "5000")
+	assert.True(t, names["SF"])
+	assert.True(t, names["LA"])
+	assert.True(t, names["North"])
+	assert.True(t, names["NW"])
+	assert.False(t, names["East"])
+	assert.False(t, names["NYC"])
+	assert.False(t, names["Bali"])
+
+	// 1000km wide × 5000km tall: narrower width, same tall box.
+	names = search("1000", "5000")
+	assert.True(t, names["SF"])
+	assert.True(t, names["LA"])
+	assert.True(t, names["North"])
+	assert.True(t, names["NW"])
+	assert.False(t, names["East"])
+
+	// 10000km × 10000km: NYC (4134km) enters the box.
+	names = search("10000", "10000")
+	assert.True(t, names["SF"])
+	assert.True(t, names["LA"])
+	assert.True(t, names["North"])
+	assert.True(t, names["NW"])
+	assert.True(t, names["East"])
+	assert.True(t, names["NYC"])
+	assert.False(t, names["Bali"])
+
+	// 10km × 10km: only the center point.
+	names = search("10", "10")
+	assert.Equal(t, 1, len(names))
+	assert.True(t, names["SF"])
+
+	// Non-positive width or height → empty array (Redis accepts it).
+	resp := handler.executeCommand(state, "GEOSEARCH", [][]byte{
+		[]byte("bybox"), []byte("FROMLONLAT"), []byte("-122.4194"), []byte("37.7749"),
+		[]byte("BYBOX"), []byte("0"), []byte("1000"), []byte("km"),
+	}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(arr.Args))
+}
+
+// TestGeoSearchBybox_FromMemberAndOptions verifies FROMMEMBER + BYBOX and
+// the WITHDIST/WITHCOORD/COUNT option combination.
+func TestGeoSearchBybox_FromMemberAndOptions(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	geoAdd := func(lon, lat, member string) {
+		handler.executeCommand(state, "GEOADD", [][]byte{
+			[]byte("bybox_fm"), []byte(lon), []byte(lat), []byte(member),
+		}, "127.0.0.1:12345")
+	}
+	geoAdd("-122.4194", "37.7749", "SF")
+	geoAdd("-118.2437", "34.0522", "LA")
+	geoAdd("-122.4194", "47.7749", "North")
+
+	// FROMMEMBER SF + BYBOX 5000x1000km → {SF, LA, East-less set}; the box
+	// half-height is ~500km so North (1113km north) is excluded.
+	resp := handler.executeCommand(state, "GEOSEARCH", [][]byte{
+		[]byte("bybox_fm"), []byte("FROMMEMBER"), []byte("SF"),
+		[]byte("BYBOX"), []byte("5000"), []byte("1000"), []byte("km"),
+		[]byte("WITHDIST"), []byte("WITHCOORD"), []byte("COUNT"), []byte("10"),
+	}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(arr.Elems)) // SF, LA
+
+	found := make(map[string]*proto.NestedArray)
+	for _, e := range arr.Elems {
+		inner, ok := e.(*proto.NestedArray)
+		assert.True(t, ok)
+		member, ok := inner.Elems[0].(*proto.BulkString)
+		assert.True(t, ok) // first element is the member name
+		found[string(*member)] = inner
+	}
+	for _, inner := range found {
+		// [member, dist, [lon, lat]]
+		assert.True(t, len(inner.Elems) >= 3)
+		coord, ok := inner.Elems[len(inner.Elems)-1].(*proto.NestedArray)
+		assert.True(t, ok)
+		assert.Equal(t, 2, len(coord.Elems))
+	}
+	_, sfFound := found["SF"]
+	_, laFound := found["LA"]
+	assert.True(t, sfFound)
+	assert.True(t, laFound)
+}
+
+// TestGeoSearchStore_Bybox verifies the BYBOX path of GEOSEARCHSTORE,
+// including STOREDIST (score = distance from box center in the unit).
+func TestGeoSearchStore_Bybox(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	geoAdd := func(lon, lat, member string) {
+		handler.executeCommand(state, "GEOADD", [][]byte{
+			[]byte("bybox_src"), []byte(lon), []byte(lat), []byte(member),
+		}, "127.0.0.1:12345")
+	}
+	geoAdd("-122.4194", "37.7749", "SF")
+	geoAdd("-118.2437", "34.0522", "LA")
+	geoAdd("-122.4194", "47.7749", "North")
+	geoAdd("-124.4194", "56.2749", "NW")
+
+	// 1000km wide × 5000km tall → {SF, LA, North, NW}.
+	resp := handler.executeCommand(state, "GEOSEARCHSTORE", [][]byte{
+		[]byte("bybox_dst"), []byte("bybox_src"),
+		[]byte("FROMLONLAT"), []byte("-122.4194"), []byte("37.7749"),
+		[]byte("BYBOX"), []byte("1000"), []byte("5000"), []byte("km"),
+		[]byte("STOREDIST"),
+	}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(4), int64(*integer))
+
+	zresp := handler.executeCommand(state, "ZRANGE", [][]byte{
+		[]byte("bybox_dst"), []byte("0"), []byte("-1"), []byte("WITHSCORES"),
+	}, "127.0.0.1:12345")
+	zarr, ok := zresp.(*proto.Array)
+	assert.True(t, ok)
+	scores := make(map[string]float64)
+	for i := 0; i+1 < len(zarr.Args); i += 2 {
+		v, err := strconv.ParseFloat(string(zarr.Args[i+1]), 64)
+		assert.True(t, err == nil)
+		scores[string(zarr.Args[i])] = v
+	}
+	assert.Equal(t, 4, len(scores))
+	assert.True(t, scores["SF"] < 1.0) // ≈ 0 km
+	assert.True(t, scores["North"] > 1000.0 && scores["North"] < 1300.0) // ≈ 1113 km
+	assert.True(t, scores["NW"] > 1900.0 && scores["NW"] < 2300.0) // ≈ 2065 km
+	assert.True(t, scores["LA"] > 400.0 && scores["LA"] < 700.0) // ≈ 556 km
+}
+
 // TestGeoMutationKill_GeosearchstoreOptions 验证 GEOSEARCHSTORE 选项
 // 目标变异体: geo_commands.go:352-427 (STOREDIST, COUNT, option loop)
 func TestGeoMutationKill_GeosearchstoreOptions(t *testing.T) {

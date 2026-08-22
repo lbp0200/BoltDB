@@ -1494,7 +1494,7 @@ func TestDeterministicConflict_GeoSearchStoreWithSourceConflict(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, storeErr = s.GeoSearchStore("gss:dest", "gss:src", 116.4, 39.9, 500, "km", 10, false)
+		_, storeErr = s.GeoSearchStore("gss:dest", "gss:src", 116.4, 39.9, 500, "km", 10, false, "RADIUS", 0)
 	}()
 
 	for i := range writers {

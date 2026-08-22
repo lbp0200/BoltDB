@@ -1582,10 +1582,11 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			dstKey := string(args[1])
 			srcKey := string(args[2])
 			var centerLon, centerLat float64
-			var radius float64
+			var radius, boxHeight float64
 			var unit string
 			var count int
 			var storeDist bool
+			searchByBox := false
 			i := 3
 			if i < len(args) && strings.ToUpper(string(args[i])) == "FROMMEMBER" {
 				if i+1 >= len(args) {
@@ -1630,6 +1631,28 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 				}
 				unit = string(args[i+2])
 				i += 3
+			} else if strings.ToUpper(string(args[i])) == "BYBOX" {
+				if i+3 >= len(args) {
+					return nil
+				}
+				var parseErr error
+				width, parseErr := strconv.ParseFloat(string(args[i+1]), 64)
+				if parseErr != nil {
+					return fmt.Errorf("invalid GEO BYBOX width %q: %w", args[i+1], parseErr)
+				}
+				height, parseErr := strconv.ParseFloat(string(args[i+2]), 64)
+				if parseErr != nil {
+					return fmt.Errorf("invalid GEO BYBOX height %q: %w", args[i+2], parseErr)
+				}
+				unit = string(args[i+3])
+				// Non-positive width/height: master returned 0 without writing.
+				if width <= 0 || height <= 0 {
+					return nil
+				}
+				radius = width
+				boxHeight = height
+				searchByBox = true
+				i += 4
 			} else {
 				return nil
 			}
@@ -1655,7 +1678,11 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 					i++
 				}
 			}
-			_, gsErr := s.GeoSearchStore(dstKey, srcKey, centerLon, centerLat, radius, unit, count, storeDist)
+			shape := "RADIUS"
+			if searchByBox {
+				shape = "BOX"
+			}
+			_, gsErr := s.GeoSearchStore(dstKey, srcKey, centerLon, centerLat, radius, unit, count, storeDist, shape, boxHeight)
 			return gsErr
 		}
 
