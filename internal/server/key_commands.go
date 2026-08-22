@@ -830,7 +830,9 @@ func (h *Handler) handleSORT(state *connState, args [][]byte, remoteAddr string)
 			targetKey := strings.Replace(byPattern, "*", val, 1)
 			weightVal, err := h.Db.Get(targetKey)
 			if err != nil {
-				return wrapStoreError(err)
+				// Redis: BY key not found → weight = 0 (skip, don't error)
+				weights[idx] = 0
+				continue
 			}
 			if weightVal != "" {
 				if f, err := strconv.ParseFloat(weightVal, 64); err == nil {
@@ -915,7 +917,9 @@ func (h *Handler) handleSORT(state *connState, args [][]byte, remoteAddr string)
 				targetKey := strings.Replace(pattern, "*", val, 1)
 				targetVal, err := h.Db.Get(targetKey)
 				if err != nil {
-					return wrapStoreError(err)
+					// Redis: GET key not found → empty string (don't error)
+					finalValues = append(finalValues, "")
+					continue
 				}
 				finalValues = append(finalValues, targetVal)
 			}
