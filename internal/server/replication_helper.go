@@ -58,6 +58,7 @@ var allDispatchCommands = map[string]bool{
 	"REPLICAOF": true, "SLAVEOF": true, "REPLCONF": true, "INFO": true,
 	"SAVE": true, "BGSAVE": true, "BGREWRITEAOF": true, "LASTSAVE": true, "DBSIZE": true, "TIME": true,
 	"RESET": true, "WAITAOF": true,
+	"PSYNC": true, "SYNC": true,
 	"FLUSHDB": true, "FLUSHALL": true, "SELECT": true, "MOVE": true,
 	"WAIT": true, "SLOWLOG": true, "MEMORY": true, "MODULE": true,
 	"LOLWUT": true, "LATENCY": true, "READONLY": true, "READWRITE": true,

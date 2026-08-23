@@ -167,6 +167,8 @@ func init() {
 		{name: "PTTL", arity: 2, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "PUBLISH", arity: 3, flags: []commandFlag{flagPubSub, flagWrite}},
 		{name: "SPUBLISH", arity: 3, flags: []commandFlag{flagPubSub, flagWrite}, firstKey: 1, lastKey: 1, step: 1},
+		{name: "PSYNC", arity: -3, flags: []commandFlag{flagAdmin, flagNoscript}},
+		{name: "SYNC", arity: 1, flags: []commandFlag{flagAdmin, flagNoscript}},
 		{name: "PUBSUB", arity: -2, flags: []commandFlag{flagPubSub, flagReadonly}},
 		{name: "PUNSUBSCRIBE", arity: -1, flags: []commandFlag{flagPubSub, flagNoscript, flagReadonly}},
 		{name: "SUNSUBSCRIBE", arity: -1, flags: []commandFlag{flagPubSub, flagNoscript, flagReadonly}, firstKey: 1, lastKey: -1, step: 1},

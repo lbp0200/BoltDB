@@ -517,10 +517,10 @@ func TestExecuteCommand_LATENCY_HISTORY_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	resp := handler.executeCommand(state, "LATENCY", [][]byte{[]byte("HISTORY"), []byte("command")}, "127.0.0.1:12345")
-	// LATENCY HISTORY is not a valid subcommand — returns error
-	err, ok := resp.(*proto.Error)
+	// LATENCY HISTORY — no samples recorded, returns empty array
+	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, strings.Contains(string(*err), "unknown subcommand"))
+	assert.Equal(t, 0, len(arr.Args))
 }
 
 func TestExecuteCommand_MEMORY_STATS_Coverage(t *testing.T) {
@@ -530,8 +530,8 @@ func TestExecuteCommand_MEMORY_STATS_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	resp := handler.executeCommand(state, "MEMORY", [][]byte{[]byte("STATS")}, "127.0.0.1:12345")
-	// MEMORY STATS is not a valid subcommand — returns error
-	err, ok := resp.(*proto.Error)
+	// MEMORY STATS — flat key/value pairs (minimal shape)
+	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.True(t, strings.Contains(string(*err), "unknown subcommand"))
+	assert.True(t, len(arr.Args) >= 4)
 }

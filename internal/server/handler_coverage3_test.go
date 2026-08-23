@@ -775,3 +775,56 @@ func TestBGREWRITEAOF_Disabled(t *testing.T) {
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "rewriting disabled"))
 }
+
+// TestPSYNC_NotEnabled verifies PSYNC/SYNC error cleanly without replication.
+func TestPSYNC_NotEnabled(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "PSYNC", [][]byte{[]byte("?"), []byte("-1")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "replication not enabled"))
+
+	resp = handler.executeCommand(state, "SYNC", nil, "127.0.0.1:12345")
+	errResp, ok = resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "replication not enabled"))
+}
+
+// TestLatencySubcommands verifies the display-only LATENCY subcommands.
+func TestLatencySubcommands(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	for _, sub := range []string{"GRAPH", "HISTORY", "HISTOGRAM"} {
+		resp := handler.executeCommand(state, "LATENCY", [][]byte{[]byte(sub), []byte("command")}, "127.0.0.1:12345")
+		arr, ok := resp.(*proto.Array)
+		assert.True(t, ok)
+		assert.Equal(t, 0, len(arr.Args))
+	}
+}
+
+// TestMemorySubcommands verifies MEMORY STATS/MALLOC-STATS/PURGE shape.
+func TestMemorySubcommands(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "MEMORY", [][]byte{[]byte("STATS")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.True(t, len(arr.Args) >= 4)
+
+	resp = handler.executeCommand(state, "MEMORY", [][]byte{[]byte("MALLOC-STATS")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "", string(*bs))
+
+	resp = handler.executeCommand(state, "MEMORY", [][]byte{[]byte("PURGE")}, "127.0.0.1:12345")
+	ss, ok := resp.(*proto.SimpleString)
+	assert.True(t, ok)
+	assert.Equal(t, "OK", string(*ss))
+}

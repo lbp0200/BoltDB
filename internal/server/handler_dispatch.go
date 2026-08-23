@@ -594,6 +594,12 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	// 注意：PSYNC 命令由 processRequest 中的 handlePSyncWithRDB 特殊处理
 	// 这里不需要处理，master 节点会在收到 PSYNC 时直接发送 RDB 数据
 
+	case "PSYNC", "SYNC":
+		if h.Replication == nil {
+			return proto.NewError("ERR replication not enabled")
+		}
+		return proto.NewError("ERR PSYNC is handled by the replication layer")
+
 	case "REPLCONF":
 		return h.handleREPLCONF(state, args, remoteAddr)
 
@@ -707,6 +713,17 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				[]byte("- BoltDB uses BadgerDB for disk-based storage"),
 				[]byte("- Expected latency < 5ms for SSD, < 50ms for HDD"),
 			}}
+		case "GRAPH":
+			// LATENCY GRAPH <event> - ASCII graph; no samples recorded,
+			// return an empty graph (matches Redis with no data).
+			return &proto.Array{Args: [][]byte{}}
+		case "HISTORY":
+			// LATENCY HISTORY <event> - time series; no samples recorded.
+			return &proto.Array{Args: [][]byte{}}
+		case "HISTOGRAM":
+			// LATENCY HISTOGRAM [event ...] - latency percentiles map;
+			// no samples recorded, return empty array (RESP2 wire).
+			return &proto.Array{Args: [][]byte{}}
 		default:
 			return proto.NewError("ERR unknown subcommand for 'LATENCY'")
 		}

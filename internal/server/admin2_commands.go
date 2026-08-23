@@ -325,8 +325,38 @@ func (h *Handler) handleMEMORY(state *connState, args [][]byte, remoteAddr strin
 		return &proto.Array{Args: [][]byte{
 			[]byte("MEMORY USAGE key [SAMPLES count] - estimate memory usage of key"),
 			[]byte("MEMORY DOCTOR - reports memory usage details"),
+			[]byte("MEMORY STATS - returns memory usage statistics"),
+			[]byte("MEMORY MALLOC-STATS - returns malloc statistics"),
+			[]byte("MEMORY PURGE - attempts to purge dirty pages"),
 			[]byte("MEMORY HELP - shows this help message"),
 		}}
+	case "STATS":
+		// MEMORY STATS - flat key/value pairs; BadgerDB manages its own
+		// memory, so return the minimal shape clients expect. The trailing
+		// pairs (keys.bytes-per-key, dataset.bytes, peak.allocated,
+		// total.allocated) keep redis-py's dict parser happy.
+		return &proto.Array{Args: [][]byte{
+			[]byte("peak.allocated"), []byte("0"),
+			[]byte("total.allocated"), []byte("0"),
+			[]byte("startup.allocated"), []byte("0"),
+			[]byte("replication.backlog"), []byte("0"),
+			[]byte("clients.slaves"), []byte("0"),
+			[]byte("clients.normal"), []byte("0"),
+			[]byte("dataset.bytes"), []byte("0"),
+			[]byte("keys.count"), []byte("0"),
+			[]byte("keys.bytes-per-key"), []byte("0"),
+			[]byte("allocator.allocated"), []byte("0"),
+			[]byte("allocator.active"), []byte("0"),
+			[]byte("allocator.resident"), []byte("0"),
+			[]byte("fragmentation"), []byte("0"),
+		}}
+	case "MALLOC-STATS":
+		// MEMORY MALLOC-STATS - plain-text dump; empty (BadgerDB manages
+		// its own allocator).
+		return proto.NewBulkString([]byte(""))
+	case "PURGE":
+		// MEMORY PURGE - no-op; BadgerDB handles page reclamation itself.
+		return proto.OK
 	default:
 		return proto.NewError("ERR unknown subcommand for 'MEMORY'")
 	}
