@@ -35,6 +35,7 @@
 | server 包并行测试 env 污染 | 已完成 ✅（2026-08-21）：`TestAUTH_TimingAttackResistance` 用 `t.Parallel()`+`os.Setenv("BOLTDB_PASSWORD")`，命令入口 `handler_dispatch.go:59` 用 `os.Getenv` 做 NOAUTH 检查，并行窗口内其它命令测试随机返回 NOAUTH 错误（`-race` 检不出、失败数随 `-parallel` 递增）。修复：去掉该测试 `t.Parallel()`（Go 串行阶段独占运行，env 不泄漏）。`internal/server` 并行测试 5 连 0 失败，远程 `-race` 通过 |
 | 复制 GETDEL/GETEX 缺失 key 回归 | 已完成 ✅（2026-08-21）：e575113 把 `write_command.go` 的 GETDEL/GETEX 缺失 key 处理由 `return nil` 误改为 `return gErr`，导致 `TestExecuteReplicatedCommand_GETDEL/GETEX_NonExistent` 失败。修复：新增 `isMissingKeyErr`（`errors.Is(err, ErrKeyNotFound)`），缺失 key 静默返回 nil（符合 Redis 语义），真实存储错误仍传播。远程 `-race` 全包通过 |
 | GEOSEARCH BYBOX 矩形语义 | 已完成 ✅（2026-08-22）：原实现 `radius = width/2`（TODO 遗留）把 BYBOX 退化为圆——height 解析后被忽略、width 又少 2 倍，5000×1000km 盒实际是 2500km 圆（南北方向多收 2500km 内的点）。修复：`geoBoxInTxn` 真实矩形过滤（半宽按中心纬度子午线长度换算、经度用环越距离判定以正确跨 ±180°）；`GeoSearchStore` 增加 `shape/boxHeight` 参数；GEOSEARCHSTORE handler 与 `WriteCommand` 复制分支补 BYBOX 解析。三层 9 个新测试（store/handler/replication，每个盒含判别点），远程 `-race` 三包全绿（fab6735） |
+| 4 个无测试行为修复回归补全 | 已完成 ✅（2026-08-22/23）：四个行为修复改了运行时逻辑但没补配套测试——CLIENT SETNAME 128 字符上限（736a4f1）、CONFIG SET 未知参数报错（de9d5f8）、COPY 保留源 TTL（ddfc36e）、XINFO CONSUMERS 字段 `seen`→`idle`（13454f3，原覆盖只检查 NotNil 不验证字段名，客户端依赖 Redis 兼容的 `idle` 字段，回退会静默破坏）。补 5 个 handler 层回归测试（含边界值 + 负例 + 精确响应结构断言），本地三包全绿 + 远程 `-race` server 包通过（2b7a777 + 211d7f9） |
 
 ---
 
