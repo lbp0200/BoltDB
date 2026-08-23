@@ -503,10 +503,10 @@ func (h *Handler) handleBLPOP(state *connState, args [][]byte, remoteAddr string
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NilArray{}
+		return h.nilArrayOrNull(state)
 	}
 	if key == "" {
-		return proto.NilArray{}
+		return h.nilArrayOrNull(state)
 	}
 	return &proto.Array{Args: [][]byte{[]byte(key), []byte(value)}}
 }
@@ -534,12 +534,73 @@ func (h *Handler) handleBRPOP(state *connState, args [][]byte, remoteAddr string
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NilArray{}
+		return h.nilArrayOrNull(state)
 	}
 	if key == "" {
-		return proto.NilArray{}
+		return h.nilArrayOrNull(state)
 	}
 	return &proto.Array{Args: [][]byte{[]byte(key), []byte(value)}}
+}
+
+// handleBLMPOP 实现 BLMPOP 命令（Redis 7+）：阻塞式从多个 list 弹出。
+// BLMPOP timeout numkeys key [key ...] LEFT|RIGHT [COUNT count]
+func (h *Handler) handleBLMPOP(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 4 {
+		return proto.NewError("ERR wrong number of arguments for 'BLMPOP' command")
+	}
+	timeout, tErr := strconv.Atoi(string(args[0]))
+	if tErr != nil || timeout < 0 {
+		return proto.NewError("ERR timeout is not an integer or out of range")
+	}
+	numKeys, kErr := strconv.Atoi(string(args[1]))
+	if kErr != nil || numKeys < 1 || 2+numKeys >= len(args) {
+		return proto.NewError("ERR syntax error")
+	}
+	keys := make([]string, numKeys)
+	for i := 0; i < numKeys; i++ {
+		keys[i] = string(args[2+i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
+	}
+	direction := strings.ToUpper(string(args[2+numKeys]))
+	if direction != "LEFT" && direction != "RIGHT" {
+		return proto.NewError("ERR syntax error")
+	}
+	count := 1
+	if len(args) >= 4+numKeys {
+		if strings.ToUpper(string(args[3+numKeys])) == "COUNT" {
+			if len(args) < 5+numKeys {
+				return proto.NewError("ERR syntax error")
+			}
+			c, cErr := strconv.Atoi(string(args[4+numKeys]))
+			if cErr != nil || c < 1 {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			count = c
+		}
+	}
+	state.blocking.Store(true)
+	key, values, err := h.Db.BLMPopBlocking(state.ctx, keys, direction == "LEFT", count, timeout)
+	state.blocking.Store(false)
+	if err != nil {
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
+		return h.nilArrayOrNull(state)
+	}
+	if key == "" || len(values) == 0 {
+		return h.nilArrayOrNull(state)
+	}
+	// Redis 8 wire shape: [key, [v1, v2, ...]]
+	elemArgs := make([][]byte, 0, len(values))
+	for _, v := range values {
+		elemArgs = append(elemArgs, []byte(v))
+	}
+	return &proto.NestedArray{Elems: []proto.RESP{
+		proto.NewBulkString([]byte(key)),
+		&proto.Array{Args: elemArgs},
+	}}
 }
 
 // handleBRPOPLPUSH 实现 BRPOPLPUSH 命令
@@ -619,7 +680,7 @@ func (h *Handler) handleLMPOP(state *connState, args [][]byte, remoteAddr string
 		return wrapLogError(err)
 	}
 	if key == "" || len(elements) == 0 {
-		return proto.NilArray{}
+		return h.nilArrayOrNull(state)
 	}
 	elemArgs := make([][]byte, len(elements))
 	for i, e := range elements {

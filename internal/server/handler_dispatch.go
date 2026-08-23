@@ -348,6 +348,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 	case "BRPOPLPUSH":
 		return h.handleBRPOPLPUSH(state, args, remoteAddr)
+
+	case "BLMPOP":
+		return h.handleBLMPOP(state, args, remoteAddr)
 	case "HSET":
 		return h.handleHSET(state, args, remoteAddr)
 

@@ -1398,3 +1398,26 @@ func TestRESPShape_XREAD_MapVer3(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, 1, len(na.Elems))
 }
+
+// TestRESPShape_BLMPOP verifies BLMPOP returns [key, [v1, v2, ...]] (nested
+// array shape, Redis 8 wire format).
+func TestRESPShape_BLMPOP(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.Db.RPush("blm_shape", "a", "b")
+	resp := handler.executeCommand(state, "BLMPOP", [][]byte{[]byte("1"), []byte("1"), []byte("blm_shape"), []byte("LEFT"), []byte("COUNT"), []byte("2")}, "127.0.0.1:12345")
+	na := shapeNestedArray(t, resp, 2)
+	shapeBulkString(t, na.Elems[0], 1) // key
+	arr, ok := na.Elems[1].(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(arr.Args))
+	assert.Equal(t, "a", string(arr.Args[0]))
+	assert.Equal(t, "b", string(arr.Args[1]))
+
+	// Empty keys + timeout: nil array
+	resp = handler.executeCommand(state, "BLMPOP", [][]byte{[]byte("1"), []byte("1"), []byte("blm_shape_empty"), []byte("LEFT")}, "127.0.0.1:12345")
+	_, isNil := resp.(proto.NilArray)
+	assert.True(t, isNil)
+}

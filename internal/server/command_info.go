@@ -47,6 +47,7 @@ func init() {
 		{name: "BLMOVE", arity: 5, flags: []commandFlag{flagWrite, flagDenyOOM, flagNoscript}, firstKey: 1, lastKey: 2, step: 1},
 		{name: "BLPOP", arity: -3, flags: []commandFlag{flagWrite, flagDenyOOM, flagNoscript}, firstKey: 1, lastKey: -1, step: 1},
 		{name: "BRPOP", arity: -3, flags: []commandFlag{flagWrite, flagDenyOOM, flagNoscript}, firstKey: 1, lastKey: -1, step: 1},
+		{name: "BLMPOP", arity: -5, flags: []commandFlag{flagWrite, flagDenyOOM, flagNoscript}, firstKey: 2, lastKey: -1, step: 1},
 		{name: "BRPOPLPUSH", arity: 4, flags: []commandFlag{flagWrite, flagDenyOOM, flagNoscript}, firstKey: 1, lastKey: 2, step: 1},
 		{name: "BZPOPMAX", arity: -3, flags: []commandFlag{flagWrite, flagDenyOOM, flagNoscript}, firstKey: 1, lastKey: -1, step: 1},
 		{name: "BZPOPMIN", arity: -3, flags: []commandFlag{flagWrite, flagDenyOOM, flagNoscript}, firstKey: 1, lastKey: -1, step: 1},

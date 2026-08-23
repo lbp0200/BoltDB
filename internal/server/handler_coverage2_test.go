@@ -651,6 +651,71 @@ func TestExecuteCommand_BLPOP_Coverage(t *testing.T) {
 	assert.Equal(t, "value", string(arr.Args[1]))
 }
 
+// TestExecuteCommand_BLMPOP_Coverage tests BLMPOP: immediate pop across
+// multiple keys, COUNT, LEFT/RIGHT, WRONGTYPE, and blocking wake-up.
+func TestExecuteCommand_BLMPOP_Coverage(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Non-blocking immediate pop (keys have data)
+	handler.Db.RPush("blmpop_l1", "a", "b", "c")
+	resp := handler.executeCommand(state, "BLMPOP", [][]byte{[]byte("1"), []byte("1"), []byte("blmpop_l1"), []byte("LEFT"), []byte("COUNT"), []byte("2")}, "127.0.0.1:12345")
+	na, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(na.Elems))
+	assert.Equal(t, "blmpop_l1", string(*na.Elems[0].(*proto.BulkString)))
+	elems, ok := na.Elems[1].(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(elems.Args))
+	assert.Equal(t, "a", string(elems.Args[0]))
+	assert.Equal(t, "b", string(elems.Args[1]))
+
+	// RIGHT pops from the tail
+	resp = handler.executeCommand(state, "BLMPOP", [][]byte{[]byte("1"), []byte("1"), []byte("blmpop_l1"), []byte("RIGHT"), []byte("COUNT"), []byte("1")}, "127.0.0.1:12345")
+	na, ok = resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	elems, ok = na.Elems[1].(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, "c", string(elems.Args[0]))
+
+	// Second key used when the first is empty
+	handler.Db.RPush("blmpop_l2", "x")
+	resp = handler.executeCommand(state, "BLMPOP", [][]byte{[]byte("1"), []byte("2"), []byte("blmpop_l1"), []byte("blmpop_l2"), []byte("LEFT")}, "127.0.0.1:12345")
+	na, ok = resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, "blmpop_l2", string(*na.Elems[0].(*proto.BulkString)))
+
+	// Timeout on empty keys: nil array
+	resp = handler.executeCommand(state, "BLMPOP", [][]byte{[]byte("1"), []byte("1"), []byte("blmpop_empty"), []byte("LEFT")}, "127.0.0.1:12345")
+	_, isNil := resp.(proto.NilArray)
+	assert.True(t, isNil)
+
+	// WRONGTYPE on a string key
+	handler.Db.Set("blmpop_str", "v")
+	resp = handler.executeCommand(state, "BLMPOP", [][]byte{[]byte("1"), []byte("1"), []byte("blmpop_str"), []byte("LEFT")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+
+	// Blocking wake-up: a concurrent push unblocks the wait
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		time.Sleep(100 * time.Millisecond)
+		handler.Db.RPush("blmpop_wait", "woke")
+	}()
+	resp = handler.executeCommand(state, "BLMPOP", [][]byte{[]byte("5"), []byte("1"), []byte("blmpop_wait"), []byte("LEFT")}, "127.0.0.1:12345")
+	<-done
+	na, ok = resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, "blmpop_wait", string(*na.Elems[0].(*proto.BulkString)))
+	elems, ok = na.Elems[1].(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, "woke", string(elems.Args[0]))
+}
+
 // TestExecuteCommand_BRPOP_Coverage tests BRPOP command
 func TestExecuteCommand_BRPOP_Coverage(t *testing.T) {
 	t.Parallel()

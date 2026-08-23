@@ -210,3 +210,14 @@ func (h *Handler) markDirtyKeys(state *connState, keys ...string) {
 	}
 	h.watchMu.Unlock()
 }
+
+// nilArrayOrNull returns a nil array reply, or the RESP3 Null type ('_')
+// when the client negotiated protocol 3. redis-py 8's RESP3 parser turns
+// '*-1' into an empty list instead of None, so blocking-command timeouts
+// must use '_' to let clients detect the empty result correctly.
+func (h *Handler) nilArrayOrNull(state *connState) proto.RESP {
+	if state.respVersion == 3 {
+		return &proto.Null{}
+	}
+	return proto.NilArray{}
+}

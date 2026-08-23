@@ -458,10 +458,10 @@ func (h *Handler) handleBZPOPMAX(state *connState, args [][]byte, remoteAddr str
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NilArray{}
+		return h.nilArrayOrNull(state)
 	}
 	if key == "" {
-		return proto.NilArray{}
+		return h.nilArrayOrNull(state)
 	}
 	return &proto.Array{Args: [][]byte{[]byte(key), []byte(member.Member), []byte(fmt.Sprintf("%.10g", member.Score))}}
 }
@@ -489,10 +489,10 @@ func (h *Handler) handleBZPOPMIN(state *connState, args [][]byte, remoteAddr str
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NilArray{}
+		return h.nilArrayOrNull(state)
 	}
 	if key == "" {
-		return proto.NilArray{}
+		return h.nilArrayOrNull(state)
 	}
 	return &proto.Array{Args: [][]byte{[]byte(key), []byte(member.Member), []byte(fmt.Sprintf("%.10g", member.Score))}}
 }
@@ -1015,7 +1015,7 @@ func (h *Handler) handleZMPOP(state *connState, args [][]byte, remoteAddr string
 		return wrapLogError(err)
 	}
 	if key == "" || len(members) == 0 {
-		return proto.NilArray{}
+		return h.nilArrayOrNull(state)
 	}
 	result := make([][]byte, 0, 1+len(members)*2)
 	result = append(result, []byte(key))
@@ -1070,10 +1070,10 @@ func (h *Handler) handleBZMPOP(state *connState, args [][]byte, remoteAddr strin
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
-		return proto.NilArray{}
+		return h.nilArrayOrNull(state)
 	}
 	if key == "" || len(members) == 0 {
-		return proto.NilArray{}
+		return h.nilArrayOrNull(state)
 	}
 	result := make([][]byte, 0, 1+len(members)*2)
 	result = append(result, []byte(key))

@@ -35,6 +35,72 @@ func (s *BotreonStore) BRPOPLPUSH(source, destination string, timeout int) (stri
 	return s.RPopLPush(source, destination)
 }
 
+// BLMPopBlocking 实现 Redis BLMPOP 命令：阻塞式从多个 list 按序弹出元素。
+// 阻塞等待被唤醒时只弹出 1 个元素（Redis 语义：阻塞时 COUNT 被忽略）。
+func (s *BotreonStore) BLMPopBlocking(ctx context.Context, keys []string, fromLeft bool, count int, timeout int) (string, []string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	popOne := func(key string) (string, error) {
+		if fromLeft {
+			return s.LPop(key)
+		}
+		return s.RPop(key)
+	}
+
+	// 立即尝试：按序对每个 key 弹出最多 count 个
+	for _, key := range keys {
+		values := make([]string, 0, count)
+		for i := 0; i < count; i++ {
+			v, err := popOne(key)
+			if err != nil {
+				return "", nil, err
+			}
+			if v == "" {
+				break
+			}
+			values = append(values, v)
+		}
+		if len(values) > 0 {
+			return key, values, nil
+		}
+	}
+
+	// 阻塞等待：唤醒时只弹出 1 个（Redis 语义）
+	resultCh := make(chan BlockingResult, 1)
+	var timerCh <-chan time.Time
+	if timeout > 0 {
+		timer := time.NewTimer(time.Duration(timeout) * time.Second)
+		defer func() {
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+		}()
+		timerCh = timer.C
+	}
+
+	if key, value, ok := s.registerAndRecheck(keys, resultCh, popOne); ok {
+		return key, []string{value}, nil
+	}
+
+	select {
+	case result := <-resultCh:
+		return result.Key, []string{result.Value}, nil
+	case <-timerCh:
+		s.unregisterBlockingPop(resultCh, keys)
+		return "", nil, nil
+	case <-ctx.Done():
+		s.unregisterBlockingPop(resultCh, keys)
+		return "", nil, nil
+	case <-s.closeCh:
+		s.unregisterBlockingPop(resultCh, keys)
+		return "", nil, nil
+	}
+}
+
 // LMove 实现 Redis LMOVE 命令
 func (s *BotreonStore) LMove(source, destination, sourceDirection, destinationDirection string) (string, error) {
 	var fromLeft, toLeft bool
