@@ -468,6 +468,46 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			return nil
 		}
 
+	case "BLMPOP":
+		// Non-blocking equivalent: args = BLMPOP timeout numkeys key... LEFT|RIGHT [COUNT n]
+		if len(args) >= 4 {
+			numKeys, err := strconv.Atoi(string(args[2]))
+			if err != nil || numKeys < 1 || 3+numKeys > len(args) {
+				return fmt.Errorf("BLMPOP: invalid numkeys")
+			}
+			fromLeft := strings.ToUpper(string(args[3+numKeys])) != "RIGHT"
+			count := 1
+			if len(args) >= 5+numKeys && strings.ToUpper(string(args[4+numKeys])) == "COUNT" && len(args) >= 6+numKeys {
+				if c, err := strconv.Atoi(string(args[5+numKeys])); err == nil && c > 0 {
+					count = c
+				}
+			}
+			for i := 3; i < 3+numKeys; i++ {
+				key := string(args[i])
+				popped := 0
+				for j := 0; j < count; j++ {
+					var val string
+					var popErr error
+					if fromLeft {
+						val, popErr = s.LPop(key)
+					} else {
+						val, popErr = s.RPop(key)
+					}
+					if popErr != nil {
+						return fmt.Errorf("BLMPOP %s: %w", key, popErr)
+					}
+					if val == "" {
+						break
+					}
+					popped++
+				}
+				if popped > 0 {
+					return nil
+				}
+			}
+			return nil
+		}
+
 	case "BZPOPMAX":
 		if len(args) >= 2 {
 			for i := 1; i < len(args)-1; i++ {
@@ -1684,6 +1724,66 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			}
 			_, gsErr := s.GeoSearchStore(dstKey, srcKey, centerLon, centerLat, radius, unit, count, storeDist, shape, boxHeight)
 			return gsErr
+		}
+
+	case "GEORADIUS":
+		// Replicated in canonical form: GEORADIUS key lon lat radius unit
+		// [COUNT n] STORE|STOREDIST dst（master 在 geoRadiusCommon 显式传播）。
+		if len(args) >= 7 {
+			key := string(args[1])
+			lon, lonErr := strconv.ParseFloat(string(args[2]), 64)
+			if lonErr != nil {
+				return fmt.Errorf("invalid GEORADIUS longitude %q: %w", args[2], lonErr)
+			}
+			lat, latErr := strconv.ParseFloat(string(args[3]), 64)
+			if latErr != nil {
+				return fmt.Errorf("invalid GEORADIUS latitude %q: %w", args[3], latErr)
+			}
+			radius, radErr := strconv.ParseFloat(string(args[4]), 64)
+			if radErr != nil {
+				return fmt.Errorf("invalid GEORADIUS radius %q: %w", args[4], radErr)
+			}
+			unit := string(args[5])
+			count := 0
+			storeDist := false
+			var dstKey string
+			i := 6
+			for i < len(args) {
+				opt := strings.ToUpper(string(args[i]))
+				switch opt {
+				case "COUNT":
+					if i+1 >= len(args) {
+						return nil
+					}
+					c, cErr := strconv.Atoi(string(args[i+1]))
+					if cErr != nil {
+						return fmt.Errorf("invalid GEORADIUS COUNT %q: %w", args[i+1], cErr)
+					}
+					count = c
+					i += 2
+				case "STORE":
+					if i+1 >= len(args) {
+						return nil
+					}
+					dstKey = string(args[i+1])
+					storeDist = false
+					i += 2
+				case "STOREDIST":
+					if i+1 >= len(args) {
+						return nil
+					}
+					dstKey = string(args[i+1])
+					storeDist = true
+					i += 2
+				default:
+					return nil
+				}
+			}
+			if dstKey == "" {
+				return nil // read-only GEORADIUS should not be replicated
+			}
+			_, gErr := s.GeoSearchStore(dstKey, key, lon, lat, radius, unit, count, storeDist, "RADIUS", 0)
+			return gErr
 		}
 
 	// JSON commands

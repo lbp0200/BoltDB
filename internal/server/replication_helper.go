@@ -170,7 +170,7 @@ func getWriteCommandSet() map[string]bool {
 		"LSET": true, "LTRIM": true, "LINSERT": true, "LREM": true,
 		"RPOPLPUSH": true, "LPUSHX": true, "RPUSHX": true,
 		"LMOVE": true, "BLMOVE": true, "BRPOPLPUSH": true,
-		"BLPOP": true, "BRPOP": true,
+		"BLPOP": true, "BRPOP": true, "BLMPOP": true,
 		"HSET": true, "HDEL": true, "HMSET": true, "HSETNX": true,
 		"HINCRBY": true, "HINCRBYFLOAT": true,
 		"SADD": true, "SREM": true, "SMOVE": true, "SPOP": true,

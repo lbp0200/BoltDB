@@ -299,6 +299,25 @@ func (h *Handler) geoRadiusCommon(state *connState, key string, lon, lat, radius
 			}
 			return wrapLogError(err)
 		}
+		// GEORADIUS 是只读标志命令，通用传播不触发；这里按规范化命令
+		// （GEORADIUS key lon lat radius unit [COUNT n] STORE|STOREDIST dst）
+		// 显式传播，保证 replica 与 master 的 zset 结果一致。
+		if h.Replication != nil && h.Replication.IsMaster() {
+			propArgs := [][]byte{[]byte("GEORADIUS"), []byte(key),
+				[]byte(strconv.FormatFloat(lon, 'f', -1, 64)),
+				[]byte(strconv.FormatFloat(lat, 'f', -1, 64)),
+				[]byte(strconv.FormatFloat(radius, 'f', -1, 64)),
+				[]byte(unit)}
+			if count > 0 {
+				propArgs = append(propArgs, []byte("COUNT"), []byte(strconv.Itoa(count)))
+			}
+			if storeDist {
+				propArgs = append(propArgs, []byte("STOREDIST"), []byte(storeKey))
+			} else {
+				propArgs = append(propArgs, []byte("STORE"), []byte(storeKey))
+			}
+			h.Replication.PropagateCommand(propArgs)
+		}
 		return proto.NewInteger(added)
 	}
 

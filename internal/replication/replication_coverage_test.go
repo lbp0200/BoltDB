@@ -1148,6 +1148,77 @@ func TestExecuteReplicatedCommand_GEOSEARCHSTORE_ByboxZeroWidth(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), count)
 }
+
+// TestExecuteReplicatedCommand_BLMPOP tests executeReplicatedCommand for
+// BLMPOP: replica pops the same elements as the master (non-blocking
+// equivalent, LEFT/RIGHT + COUNT).
+func TestExecuteReplicatedCommand_BLMPOP(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.RPush("blm1", "a", "b", "c")
+	testStore.RPush("blm2", "x")
+
+	// LEFT COUNT 2 pops a,b from blm1
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("BLMPOP"), []byte("1"), []byte("2"), []byte("blm1"), []byte("blm2"), []byte("LEFT"), []byte("COUNT"), []byte("2"),
+	}, context.Background())
+	assert.NoError(t, err)
+	items, err := testStore.LRange("blm1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(items))
+	assert.Equal(t, "c", items[0])
+
+	// RIGHT pops the tail
+	err = executeReplicatedCommand(testStore, [][]byte{
+		[]byte("BLMPOP"), []byte("1"), []byte("2"), []byte("blm1"), []byte("blm2"), []byte("RIGHT"),
+	}, context.Background())
+	assert.NoError(t, err)
+	items, err = testStore.LRange("blm1", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(items))
+
+	// Second key used when the first is empty
+	err = executeReplicatedCommand(testStore, [][]byte{
+		[]byte("BLMPOP"), []byte("1"), []byte("2"), []byte("blm1"), []byte("blm2"), []byte("LEFT"),
+	}, context.Background())
+	assert.NoError(t, err)
+	items, err = testStore.LRange("blm2", 0, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(items))
+}
+
+// TestExecuteReplicatedCommand_GEORADIUSStore tests the canonical
+// GEORADIUS ... STORE/STOREDIST replication form.
+func TestExecuteReplicatedCommand_GEORADIUSStore(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	defer testStore.Close()
+
+	testStore.GeoAdd("grsrc", []store.GeoMember{
+		{Member: "Palermo", Lon: 13.361389, Lat: 38.115556},
+		{Member: "Catania", Lon: 15.087269, Lat: 37.502669},
+	})
+
+	// STORE: dst holds geohash scores
+	err := executeReplicatedCommand(testStore, [][]byte{
+		[]byte("GEORADIUS"), []byte("grsrc"), []byte("15"), []byte("37"), []byte("200"), []byte("km"), []byte("STORE"), []byte("grdst"),
+	}, context.Background())
+	assert.NoError(t, err)
+	count, err := testStore.ZCard("grdst")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), count)
+
+	// STOREDIST: dst2 holds km distances
+	err = executeReplicatedCommand(testStore, [][]byte{
+		[]byte("GEORADIUS"), []byte("grsrc"), []byte("15"), []byte("37"), []byte("200"), []byte("km"), []byte("COUNT"), []byte("1"), []byte("STOREDIST"), []byte("grdst2"),
+	}, context.Background())
+	assert.NoError(t, err)
+	count, err = testStore.ZCard("grdst2")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+}
 func TestExecuteReplicatedCommand_Unknown(t *testing.T) {
 	t.Parallel()
 	testStore := setupTestStore(t)

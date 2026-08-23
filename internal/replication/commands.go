@@ -11,6 +11,7 @@ var ReplicatedCommands = map[string]bool{
 	"BLMOVE":           true,
 	"BLPOP":            true,
 	"BRPOP":            true,
+	"BLMPOP":           true,
 	"BRPOPLPUSH":       true,
 	"BZMPOP":           true,
 	"BZPOPMAX":         true,
