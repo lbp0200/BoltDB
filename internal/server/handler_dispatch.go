@@ -193,7 +193,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	case "BITLEN":
 		return h.handleBITLEN(state, args, remoteAddr)
 
-	case "GETRANGE":
+	case "GETRANGE", "SUBSTR":
 		return h.handleGETRANGE(state, args, remoteAddr)
 
 	case "SETRANGE":
@@ -759,6 +759,15 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	case "GEORADIUS":
 		return h.handleGEORADIUS(state, args, remoteAddr)
 
+	case "GEORADIUS_RO":
+		return h.handleGEORADIUS_RO(state, args, remoteAddr)
+
+	case "GEORADIUSBYMEMBER":
+		return h.handleGEORADIUSBYMEMBER(state, args, remoteAddr)
+
+	case "GEORADIUSBYMEMBER_RO":
+		return h.handleGEORADIUSBYMEMBER_RO(state, args, remoteAddr)
+
 	case "GEOSEARCH":
 		return h.handleGEOSEARCH(state, args, remoteAddr)
 
@@ -826,6 +835,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	// ==================== SORT ====================
 	case "SORT":
 		return h.handleSORT(state, args, remoteAddr)
+
+	case "SORT_RO":
+		return h.handleSORT_RO(state, args, remoteAddr)
 	case "AUTH":
 		return h.handleAUTH(state, args, remoteAddr)
 	case "JSON.SET":

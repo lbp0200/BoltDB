@@ -164,58 +164,115 @@ func (h *Handler) handleGEORADIUS(state *connState, args [][]byte, remoteAddr st
 	if len(args) < 5 {
 		return proto.NewError("ERR wrong number of arguments for 'GEORADIUS' command")
 	}
-	gKey := string(args[0])
-	if resp := h.checkAndHandleRedirect(state, gKey); resp != nil {
+	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 		return resp
 	}
-	gLon, err := strconv.ParseFloat(string(args[1]), 64)
+	lon, err := strconv.ParseFloat(string(args[1]), 64)
 	if err != nil {
 		return proto.NewError("ERR value is not a valid float")
 	}
-	gLat, err := strconv.ParseFloat(string(args[2]), 64)
+	lat, err := strconv.ParseFloat(string(args[2]), 64)
 	if err != nil {
 		return proto.NewError("ERR value is not a valid float")
 	}
-	gRadius, err := strconv.ParseFloat(string(args[3]), 64)
+	radius, err := strconv.ParseFloat(string(args[3]), 64)
 	if err != nil {
 		return proto.NewError("ERR value is not a valid float")
 	}
-	gUnit := strings.ToLower(string(args[4]))
+	unit := strings.ToLower(string(args[4]))
+	return h.geoRadiusCommon(key, lon, lat, radius, unit, args[5:])
+}
 
-	var gCount int
-	var gWithDist, gWithHash, gWithCoord bool
+// handleGEORADIUSBYMEMBER 实现 GEORADIUSBYMEMBER 命令：以成员坐标为圆心搜索。
+func (h *Handler) handleGEORADIUSBYMEMBER(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 4 {
+		return proto.NewError("ERR wrong number of arguments for 'GEORADIUSBYMEMBER' command")
+	}
+	key := string(args[0])
+	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+		return resp
+	}
+	positions, err := h.Db.GeoPos(key, string(args[1]))
+	if err != nil {
+		if errors.Is(err, store.ErrWrongType) {
+			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
+		return wrapLogError(err)
+	}
+	if len(positions) == 0 || (positions[0][0] == 0 && positions[0][1] == 0) {
+		return proto.NewError("ERR could not decode query zset member")
+	}
+	radius, err := strconv.ParseFloat(string(args[2]), 64)
+	if err != nil {
+		return proto.NewError("ERR value is not a valid float")
+	}
+	unit := strings.ToLower(string(args[3]))
+	return h.geoRadiusCommon(key, positions[0][1], positions[0][0], radius, unit, args[4:])
+}
 
-	gI := 5
-	for gI < len(args) {
-		opt := strings.ToUpper(string(args[gI]))
+// hasGeoRadiusStoreOpt 报告选项里是否含 STORE/STOREDIST（_RO 变体禁止）。
+func hasGeoRadiusStoreOpt(opts [][]byte) bool {
+	for _, o := range opts {
+		switch strings.ToUpper(string(o)) {
+		case "STORE", "STOREDIST":
+			return true
+		}
+	}
+	return false
+}
+
+// handleGEORADIUS_RO 实现 GEORADIUS_RO 命令（只读变体，禁止 STORE）。
+func (h *Handler) handleGEORADIUS_RO(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) >= 6 && hasGeoRadiusStoreOpt(args[5:]) {
+		return proto.NewError("ERR syntax error")
+	}
+	return h.handleGEORADIUS(state, args, remoteAddr)
+}
+
+// handleGEORADIUSBYMEMBER_RO 实现 GEORADIUSBYMEMBER_RO 命令（只读变体，禁止 STORE）。
+func (h *Handler) handleGEORADIUSBYMEMBER_RO(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) > 4 && hasGeoRadiusStoreOpt(args[4:]) {
+		return proto.NewError("ERR syntax error")
+	}
+	return h.handleGEORADIUSBYMEMBER(state, args, remoteAddr)
+}
+
+// geoRadiusCommon 执行 GEORADIUS 系列的公共逻辑（选项解析 + 搜索 + 响应组装）。
+func (h *Handler) geoRadiusCommon(key string, lon, lat, radius float64, unit string, opts [][]byte) proto.RESP {
+	var count int
+	var withDist, withHash, withCoord bool
+	i := 0
+	for i < len(opts) {
+		opt := strings.ToUpper(string(opts[i]))
 		switch opt {
 		case "WITHCOORD":
-			gWithCoord = true
-			gI++
+			withCoord = true
+			i++
 		case "WITHDIST":
-			gWithDist = true
-			gI++
+			withDist = true
+			i++
 		case "WITHHASH":
-			gWithHash = true
-			gI++
+			withHash = true
+			i++
 		case "COUNT":
-			if gI+1 >= len(args) {
+			if i+1 >= len(opts) {
 				return proto.NewError("ERR syntax error")
 			}
-			c, err := strconv.Atoi(string(args[gI+1]))
+			c, err := strconv.Atoi(string(opts[i+1]))
 			if err != nil {
 				return proto.NewError("ERR value is not an integer")
 			}
-			gCount = c
-			gI += 2
+			count = c
+			i += 2
 		case "ASC", "DESC":
-			gI++
+			i++
 		default:
 			return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
 		}
 	}
 
-	gResults, err := h.Db.GeoRadius(gKey, gLon, gLat, gRadius, gUnit, gCount, gWithDist, gWithHash, gWithCoord)
+	results, err := h.Db.GeoRadius(key, lon, lat, radius, unit, count, withDist, withHash, withCoord)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -223,24 +280,24 @@ func (h *Handler) handleGEORADIUS(state *connState, args [][]byte, remoteAddr st
 		return wrapLogError(err)
 	}
 
-	if !gWithCoord && !gWithDist && !gWithHash {
-		gResp := make([][]byte, len(gResults))
-		for i, r := range gResults {
-			gResp[i] = []byte(r.Member)
+	if !withCoord && !withDist && !withHash {
+		resp := make([][]byte, len(results))
+		for i, r := range results {
+			resp[i] = []byte(r.Member)
 		}
-		return &proto.Array{Args: gResp}
+		return &proto.Array{Args: resp}
 	}
 
-	gResp := make([]proto.RESP, len(gResults))
-	for i, r := range gResults {
+	resp := make([]proto.RESP, len(results))
+	for i, r := range results {
 		elems := []proto.RESP{proto.NewBulkString([]byte(r.Member))}
-		if gWithDist {
+		if withDist {
 			elems = append(elems, proto.NewBulkString([]byte(fmt.Sprintf("%.4f", r.Dist))))
 		}
-		if gWithHash {
+		if withHash {
 			elems = append(elems, proto.NewBulkString([]byte(r.Hash)))
 		}
-		if gWithCoord {
+		if withCoord {
 			elems = append(elems, &proto.NestedArray{
 				Elems: []proto.RESP{
 					proto.NewBulkString([]byte(fmt.Sprintf("%.6f", r.Lon))),
@@ -248,9 +305,9 @@ func (h *Handler) handleGEORADIUS(state *connState, args [][]byte, remoteAddr st
 				},
 			})
 		}
-		gResp[i] = &proto.NestedArray{Elems: elems}
+		resp[i] = &proto.NestedArray{Elems: elems}
 	}
-	return &proto.NestedArray{Elems: gResp}
+	return &proto.NestedArray{Elems: resp}
 }
 
 // handleGEOSEARCH 实现 GEOSEARCH 命令

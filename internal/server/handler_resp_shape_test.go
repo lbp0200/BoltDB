@@ -21,6 +21,14 @@ func shapeNestedArray(t *testing.T, resp proto.RESP, minElems int) *proto.Nested
 	return na
 }
 
+func shapeArray(t *testing.T, resp proto.RESP, minElems int) *proto.Array {
+	t.Helper()
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.True(t, len(arr.Args) >= minElems)
+	return arr
+}
+
 func shapeBulkString(t *testing.T, resp proto.RESP, minLen int) string {
 	t.Helper()
 	bs, ok := resp.(*proto.BulkString)
@@ -165,6 +173,41 @@ func TestRESPShape_GEOSEARCH_WITHCOORD(t *testing.T) {
 	coord, ok := entry.Elems[1].(*proto.NestedArray)
 	assert.True(t, ok)
 	assert.Equal(t, 2, len(coord.Elems))
+}
+
+// TestRESPShape_GEORADIUSBYMEMBER verifies GEORADIUSBYMEMBER returns a flat
+// array of member names without modifiers (same shape as GEORADIUS).
+func TestRESPShape_GEORADIUSBYMEMBER(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "GEOADD", [][]byte{[]byte("grm"), []byte("-122.4194"), []byte("37.7749"), []byte("SF")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand(state, "GEORADIUSBYMEMBER", [][]byte{[]byte("grm"), []byte("SF"), []byte("100"), []byte("km")}, "127.0.0.1:12345")
+	arr := shapeArray(t, resp, 1)
+	assert.Equal(t, "SF", string(arr.Args[0]))
+}
+
+// TestRESPShape_GEORADIUS_RO verifies GEORADIUS_RO returns the same shapes as
+// GEORADIUS (flat array / nested array with modifiers).
+func TestRESPShape_GEORADIUS_RO(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "GEOADD", [][]byte{[]byte("gro"), []byte("-122.4194"), []byte("37.7749"), []byte("SF")}, "127.0.0.1:12345")
+
+	// Flat: array of bulk strings
+	resp := handler.executeCommand(state, "GEORADIUS_RO", [][]byte{[]byte("gro"), []byte("-122.4194"), []byte("37.7749"), []byte("100"), []byte("km")}, "127.0.0.1:12345")
+	shapeArray(t, resp, 1)
+
+	// WITHCOORD: nested array of [member, [lon, lat]]
+	resp = handler.executeCommand(state, "GEORADIUS_RO", [][]byte{[]byte("gro"), []byte("-122.4194"), []byte("37.7749"), []byte("100"), []byte("km"), []byte("WITHCOORD")}, "127.0.0.1:12345")
+	na := shapeNestedArray(t, resp, 1)
+	entry, ok := na.Elems[0].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(entry.Elems))
 }
 
 // TestRESPShape_GEORADIUS_WITHCOORD verifies GEORADIUS WITHCOORD returns [member, [lon, lat]]

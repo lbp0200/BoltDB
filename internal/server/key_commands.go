@@ -708,6 +708,16 @@ func (h *Handler) handleRANDOMKEY(state *connState, args [][]byte, remoteAddr st
 	// List命令
 }
 
+// handleSORT_RO 实现 SORT_RO 命令（只读变体，禁止 STORE 选项）。
+func (h *Handler) handleSORT_RO(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	for _, a := range args[1:] {
+		if strings.ToUpper(string(a)) == "STORE" {
+			return proto.NewError("ERR syntax error")
+		}
+	}
+	return h.handleSORT(state, args, remoteAddr)
+}
+
 // handleSORT 实现 SORT 命令
 func (h *Handler) handleSORT(state *connState, args [][]byte, remoteAddr string) proto.RESP {
 	if len(args) < 1 {

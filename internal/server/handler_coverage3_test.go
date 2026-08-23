@@ -423,3 +423,159 @@ func TestXINFO_CONSUMERS_IdleField(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, idleVal >= 0)
 }
+
+// TestXINFO_GROUPS_LastDeliveredID verifies commit 3423103: XINFO GROUPS
+// reports the exact "last-delivered-id" field (the group's delivery cursor).
+// The pre-fix response omitted it, breaking clients that read it.
+func TestXINFO_GROUPS_LastDeliveredID(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Add an entry, then create a group with an explicit delivery cursor "5"
+	handler.executeCommand(state, "XADD", [][]byte{[]byte("xinfg_stream"), []byte("1"), []byte("f"), []byte("v")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATE"), []byte("xinfg_stream"), []byte("xinfg_grp"), []byte("5")}, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+
+	// XINFO GROUPS must return the exact field/value pairs:
+	// [name, <group>, consumers, <n>, pending, <n>, last-delivered-id, <id>]
+	infoResp := handler.executeCommand(state, "XINFO", [][]byte{[]byte("GROUPS"), []byte("xinfg_stream")}, "127.0.0.1:12345")
+	arr, ok := infoResp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(arr.Elems))
+
+	groupArr, ok := arr.Elems[0].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 8, len(groupArr.Elems)) // 4 field/value pairs
+
+	fields := make(map[string]string)
+	for i := 0; i < len(groupArr.Elems); i += 2 {
+		key := string(*groupArr.Elems[i].(*proto.BulkString))
+		val := string(*groupArr.Elems[i+1].(*proto.BulkString))
+		fields[key] = val
+	}
+	assert.Equal(t, "xinfg_grp", fields["name"])
+	assert.Equal(t, "0", fields["consumers"])
+	assert.Equal(t, "0", fields["pending"])
+	assert.Equal(t, "5", fields["last-delivered-id"])
+}
+
+// =====================================================================
+// New commands: SUBSTR alias, GEORADIUSBYMEMBER, read-only variants
+// =====================================================================
+
+// TestSUBSTR_IsGetrangeAlias verifies SUBSTR behaves exactly like GETRANGE
+// (legacy Redis alias).
+func TestSUBSTR_IsGetrangeAlias(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "SET", [][]byte{[]byte("sub_key"), []byte("hello world")}, "127.0.0.1:12345")
+
+	// SUBSTR key 0 4 == GETRANGE key 0 4 == "hello"
+	resp := handler.executeCommand(state, "SUBSTR", [][]byte{[]byte("sub_key"), []byte("0"), []byte("4")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "hello", string(*bs))
+
+	// Negative indexes like GETRANGE
+	resp = handler.executeCommand(state, "SUBSTR", [][]byte{[]byte("sub_key"), []byte("-5"), []byte("-1")}, "127.0.0.1:12345")
+	bs, ok = resp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "world", string(*bs))
+}
+
+// TestGEORADIUSBYMEMBER verifies the command searches from a member's
+// coordinates: SF at (37.7749, -122.4194), LA ~556km south.
+func TestGEORADIUSBYMEMBER(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// GEOADD sf_member -122.4194 37.7749 SF, la_member -118.2437 34.0522 LA
+	resp := handler.executeCommand(state, "GEOADD", [][]byte{[]byte("geo_rm"), []byte("-122.4194"), []byte("37.7749"), []byte("SF"), []byte("-118.2437"), []byte("34.0522"), []byte("LA")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(2), int64(*integer))
+
+	// 100km from SF member: only SF
+	resp = handler.executeCommand(state, "GEORADIUSBYMEMBER", [][]byte{[]byte("geo_rm"), []byte("SF"), []byte("100"), []byte("km")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(arr.Args))
+	assert.Equal(t, "SF", string(arr.Args[0]))
+
+	// 700km from SF member: SF + LA
+	resp = handler.executeCommand(state, "GEORADIUSBYMEMBER", [][]byte{[]byte("geo_rm"), []byte("SF"), []byte("700"), []byte("km")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(arr.Args))
+
+	// WITHCOORD: verify SF's own coordinates round-trip
+	resp = handler.executeCommand(state, "GEORADIUSBYMEMBER", [][]byte{[]byte("geo_rm"), []byte("SF"), []byte("1"), []byte("km"), []byte("WITHCOORD")}, "127.0.0.1:12345")
+	withCoord, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(withCoord.Elems))
+
+	// Non-existent member: could not decode error
+	resp = handler.executeCommand(state, "GEORADIUSBYMEMBER", [][]byte{[]byte("geo_rm"), []byte("NOPE"), []byte("100"), []byte("km")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "could not decode query zset member"))
+}
+
+// TestGeoReadOnlyVariants verifies GEORADIUS_RO / GEORADIUSBYMEMBER_RO /
+// SORT_RO work and reject STORE with a syntax error (Redis semantics).
+func TestGeoReadOnlyVariants(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "GEOADD", [][]byte{[]byte("geo_ro"), []byte("-122.4194"), []byte("37.7749"), []byte("SF")}, "127.0.0.1:12345")
+
+	// GEORADIUS_RO: normal query works
+	resp := handler.executeCommand(state, "GEORADIUS_RO", [][]byte{[]byte("geo_ro"), []byte("-122.4194"), []byte("37.7749"), []byte("100"), []byte("km")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(arr.Args))
+	assert.Equal(t, "SF", string(arr.Args[0]))
+
+	// GEORADIUS_RO with STORE: syntax error
+	resp = handler.executeCommand(state, "GEORADIUS_RO", [][]byte{[]byte("geo_ro"), []byte("-122.4194"), []byte("37.7749"), []byte("100"), []byte("km"), []byte("STORE"), []byte("dst")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "syntax error"))
+
+	// GEORADIUSBYMEMBER_RO: normal query works
+	resp = handler.executeCommand(state, "GEORADIUSBYMEMBER_RO", [][]byte{[]byte("geo_ro"), []byte("SF"), []byte("100"), []byte("km")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(arr.Args))
+
+	// GEORADIUSBYMEMBER_RO with STOREDIST: syntax error
+	resp = handler.executeCommand(state, "GEORADIUSBYMEMBER_RO", [][]byte{[]byte("geo_ro"), []byte("SF"), []byte("100"), []byte("km"), []byte("STOREDIST"), []byte("dst")}, "127.0.0.1:12345")
+	errResp, ok = resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "syntax error"))
+
+	// SORT_RO: normal sort works
+	handler.executeCommand(state, "RPUSH", [][]byte{[]byte("sort_ro_list"), []byte("3"), []byte("1"), []byte("2")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(state, "SORT_RO", [][]byte{[]byte("sort_ro_list")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 3, len(arr.Args))
+	assert.Equal(t, "1", string(arr.Args[0]))
+
+	// SORT_RO with STORE: syntax error
+	resp = handler.executeCommand(state, "SORT_RO", [][]byte{[]byte("sort_ro_list"), []byte("STORE"), []byte("dst")}, "127.0.0.1:12345")
+	errResp, ok = resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "syntax error"))
+
+	// SORT_RO must not write: destination key stays absent
+	checkResp := handler.executeCommand(state, "EXISTS", [][]byte{[]byte("dst")}, "127.0.0.1:12345")
+	checkInt, ok := checkResp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*checkInt))
+}
