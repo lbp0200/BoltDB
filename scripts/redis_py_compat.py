@@ -191,6 +191,16 @@ def test_lists(r):
     check("BLPOP with data", (b"py:bldata", b"val1"), (key, val))
     r.delete("py:bldata")
 
+    # BLMPOP: multi-key blocking pop with COUNT and direction
+    r.rpush("py:blm1", "a", "b", "c")
+    res = r.blmpop(1, 1, "py:blm1", direction="LEFT", count=2)
+    check("BLMPOP LEFT count=2", [b"py:blm1", [b"a", b"b"]], res)
+    res = r.blmpop(1, 1, "py:blm1", direction="RIGHT")
+    check("BLMPOP RIGHT", [b"py:blm1", [b"c"]], res)
+    res = r.blmpop(1, 1, "py:blm_empty", direction="LEFT")
+    check("BLMPOP timeout", None, res)
+    r.delete("py:blm1")
+
 
 def test_hashes(r):
     section("HASHES")
@@ -342,6 +352,17 @@ def test_geo(r):
     dist = r.geodist("py:geo", "Palermo", "Catania")
     check("GEODIST", True, dist is not None and dist > 0)
     check("GEOHASH", True, len(r.geohash("py:geo", "Palermo")[0]) > 0)
+
+    # GEORADIUS STORE / STOREDIST write a zset and return the count
+    n = r.georadius("py:geo", 15, 37, 200, unit="km", store="py:geo_dst")
+    check("GEORADIUS STORE count", 2, n)
+    check("GEORADIUS STORE zcard", 2, r.zcard("py:geo_dst"))
+    n = r.georadius("py:geo", 15, 37, 200, unit="km", store_dist="py:geo_dst2")
+    check("GEORADIUS STOREDIST count", 2, n)
+    score = r.zscore("py:geo_dst2", "Catania")
+    check("GEORADIUS STOREDIST dist", True, score is not None and score > 50)
+    r.delete("py:geo_dst", "py:geo_dst2")
+
     r.delete("py:geo")
 
 
@@ -515,6 +536,28 @@ def test_pubsub(r):
 
     sub.unsubscribe("py:ps_ch")
     sub.close()
+    time.sleep(0.2)
+
+    # Sharded pub/sub (Redis 7+)
+    shard_sub = pub.pubsub()
+    shard_sub.ssubscribe("{py:ps}ch")
+    time.sleep(0.5)
+    shard_sub.get_message(timeout=1)
+    shard_sub.get_message(timeout=0.1)
+
+    sres = pub.spublish("{py:ps}ch", "shard_hello")
+    check("SPUBLISH to shard subscriber", 1, sres)
+
+    smsg = shard_sub.get_message(timeout=2)
+    check("SSUBSCRIBE receive", True, smsg is not None and smsg["type"] == "smessage")
+
+    # Regular PUBLISH must NOT reach shard subscribers (isolated namespaces)
+    pub.publish("{py:ps}ch", "regular")
+    extra = shard_sub.get_message(timeout=0.3)
+    check("Shard isolation from PUBLISH", None, extra)
+
+    shard_sub.sunsubscribe("{py:ps}ch")
+    shard_sub.close()
     time.sleep(0.2)
 
 
