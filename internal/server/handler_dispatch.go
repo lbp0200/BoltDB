@@ -69,7 +69,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	// 如果在事务中（且不是事务控制命令），将命令加入队列
 	if state.inTransaction {
 		switch cmd {
-		case "MULTI", "EXEC", "DISCARD", "WATCH", "UNWATCH", "PING", "QUIT":
+		case "MULTI", "EXEC", "DISCARD", "WATCH", "UNWATCH", "PING", "QUIT", "RESET":
 			// 事务控制/连接命令不排队
 		default:
 			state.commands = append(state.commands, TransactionCommand{
@@ -611,6 +611,15 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 
 	case "BGSAVE":
 		return h.handleBGSAVE(state, args, remoteAddr)
+
+	case "BGREWRITEAOF":
+		return h.handleBGREWRITEAOF(state, args, remoteAddr)
+
+	case "RESET":
+		return h.handleRESET(state, args, remoteAddr)
+
+	case "WAITAOF":
+		return h.handleWAITAOF(state, args, remoteAddr)
 
 	case "LASTSAVE":
 		return h.handleLASTSAVE(state, args, remoteAddr)

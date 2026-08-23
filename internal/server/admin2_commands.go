@@ -431,3 +431,53 @@ func (h *Handler) handleDEBUG(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError(fmt.Sprintf("ERR unknown DEBUG subcommand '%s'", subcommand))
 	}
 }
+
+// handleRESET 实现 RESET 命令（Redis 6.2+）：
+// 丢弃 MULTI 并清空 WATCH、退订所有 channel/pattern/shard 订阅。
+// BoltDB 为单 DB 实现，SELECT 0 无操作。返回 "RESET"。
+func (h *Handler) handleRESET(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	state.inTransaction = false
+	state.commands = nil
+	state.transaction = nil
+
+	if state.watchedKeys != nil {
+		h.watchMu.Lock()
+		for key := range state.watchedKeys {
+			if set, exists := h.watchMonitors[key]; exists {
+				delete(set, state)
+				if len(set) == 0 {
+					delete(h.watchMonitors, key)
+				}
+			}
+		}
+		h.watchMu.Unlock()
+		state.watchedKeys = make(map[string]struct{})
+	}
+
+	if state.subscriber != nil && h.PubSub != nil {
+		h.PubSub.Unsubscribe(state.subscriber)
+		h.PubSub.PUnsubscribe(state.subscriber)
+		h.PubSub.SUnsubscribe(state.subscriber)
+	}
+
+	return proto.NewSimpleString("RESET")
+}
+
+// handleWAITAOF 实现 WAITOF 命令（Redis 7+）：
+// WAITAOF numlocal numreplicas timeout，返回 [numlocal, numreplicas]。
+// BoltDB 无 AOF，numlocal 恒为 0；复制传播不做逐命令确认，numreplicas 恒为 0。
+func (h *Handler) handleWAITAOF(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 3 {
+		return proto.NewError("ERR wrong number of arguments for 'WAITAOF' command")
+	}
+	return &proto.NestedArray{Elems: []proto.RESP{
+		proto.NewInteger(0),
+		proto.NewInteger(0),
+	}}
+}
+
+// handleBGREWRITEAOF 实现 BGREWRITEAOF 命令：
+// BoltDB 无 AOF 支持，与 Redis 在 appendonly no 时的行为一致返回错误。
+func (h *Handler) handleBGREWRITEAOF(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	return proto.NewError("ERR Background append only file rewriting disabled")
+}

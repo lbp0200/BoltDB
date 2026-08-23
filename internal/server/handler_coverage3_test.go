@@ -691,3 +691,87 @@ func TestBLMPOP_PropagatesToBacklog(t *testing.T) {
 	assert.True(t, strings.Contains(prop, "LEFT"))
 	assert.True(t, strings.Contains(prop, "COUNT"))
 }
+
+// TestRESET_ClearsTransactionState verifies RESET discards MULTI + WATCH
+// and unsubscribes all pubsub subscriptions.
+func TestRESET_ClearsTransactionState(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "WATCH", [][]byte{[]byte("rwatch")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "MULTI", nil, "127.0.0.1:12345")
+	handler.executeCommand(state, "SET", [][]byte{[]byte("rkey"), []byte("v")}, "127.0.0.1:12345")
+	assert.True(t, state.inTransaction)
+	assert.NotNil(t, state.watchedKeys)
+
+	resp := handler.executeCommand(state, "RESET", nil, "127.0.0.1:12345")
+	ss, ok := resp.(*proto.SimpleString)
+	assert.True(t, ok)
+	assert.Equal(t, "RESET", string(*ss))
+	assert.False(t, state.inTransaction)
+	assert.Nil(t, state.commands)
+	assert.Equal(t, 0, len(state.watchedKeys))
+
+	// MULTI after RESET is gone: EXEC errors like Redis ("EXEC without MULTI")
+	execResp := handler.executeCommand(state, "EXEC", nil, "127.0.0.1:12345")
+	_, ok = execResp.(*proto.Error)
+	assert.True(t, ok)
+}
+
+// TestRESET_UnsubscribesAll verifies RESET unsubscribes channel, pattern
+// and shard subscriptions in one call.
+func TestRESET_UnsubscribesAll(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandlerWithPubSub(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "SUBSCRIBE", [][]byte{[]byte("rch")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "PSUBSCRIBE", [][]byte{[]byte("r*")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SSUBSCRIBE", [][]byte{[]byte("rsch")}, "127.0.0.1:12345")
+	assert.NotNil(t, state.subscriber)
+
+	resp := handler.executeCommand(state, "RESET", nil, "127.0.0.1:12345")
+	ss, ok := resp.(*proto.SimpleString)
+	assert.True(t, ok)
+	assert.Equal(t, "RESET", string(*ss))
+
+	// No message delivered to the reset connection
+	msgCount := 0
+	handler.PubSub.Publish("rch", []byte("x"))
+	handler.PubSub.SPublish("rsch", []byte("x"))
+	if state.subscriber != nil {
+		msgCount += len(state.subscriber.Channels) + len(state.subscriber.Patterns)
+	}
+	assert.Equal(t, 0, msgCount)
+}
+
+// TestWAITAOF_Reply verifies WAITAOF returns [0, 0] (no AOF).
+func TestWAITAOF_Reply(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "WAITAOF", [][]byte{[]byte("0"), []byte("1"), []byte("1000")}, "127.0.0.1:12345")
+	na, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(na.Elems))
+	i0, ok := na.Elems[0].(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*i0))
+	i1, ok := na.Elems[1].(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*i1))
+}
+
+// TestBGREWRITEAOF_Disabled verifies BGREWRITEAOF errors (no AOF support).
+func TestBGREWRITEAOF_Disabled(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "BGREWRITEAOF", nil, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "rewriting disabled"))
+}
