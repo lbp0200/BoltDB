@@ -594,3 +594,30 @@ func TestHandleCommandGetKeys(t *testing.T) {
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "Invalid command"))
 }
+
+// TestAllDispatchCommands_MatchesRegistry guards the handwritten
+// allDispatchCommands registry (used by the startup write-command
+// consistency check) against drift from command_info.go. Adding a
+// command to one without the other used to be silent until a server
+// start (BLMPOP 2026-08-23) — this makes it a compile-time-visible
+// test failure instead.
+func TestAllDispatchCommands_MatchesRegistry(t *testing.T) {
+	t.Parallel()
+	for _, c := range commandRegistry {
+		if !allDispatchCommands[c.name] {
+			t.Errorf("command %q registered in command_info.go but missing from allDispatchCommands", c.name)
+		}
+	}
+	for cmd := range allDispatchCommands {
+		found := false
+		for _, c := range commandRegistry {
+			if c.name == cmd {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("command %q in allDispatchCommands but missing from command_info.go", cmd)
+		}
+	}
+}
