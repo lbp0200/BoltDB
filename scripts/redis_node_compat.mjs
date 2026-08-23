@@ -178,6 +178,12 @@ async function test_lists(r) {
   check("BLPOP with data", "js:bldata", blResult ? blResult.key : null);
   checkBulk("BLPOP value", "val1", blResult ? blResult.element : null);
   await r.del("js:bldata");
+
+  await r.rPush("js:blm", ["a", "b", "c"]);
+  const blm = await r.sendCommand(["BLMPOP", "1", "1", "js:blm", "LEFT", "COUNT", "2"]);
+  check("BLMPOP key", "js:blm", blm ? blm[0] : null);
+  check("BLMPOP elements", ["a", "b"], blm ? blm[1] : null);
+  await r.del("js:blm");
 }
 
 async function test_hashes(r) {
@@ -274,7 +280,15 @@ async function test_geo(r) {
     console.log(`  ${RED}FAIL${NC} GEORADIUS — ${e.message}`);
     FAIL++; TOTAL++;
   }
-  await r.del(["js:geo", "js:geo2"]);
+  try {
+    const stored = await r.sendCommand(["GEORADIUS", "js:geo", "15", "37", "200", "km", "STORE", "js:geo_dst"]);
+    check("GEORADIUS STORE", 2, stored);
+    check("GEORADIUS STORE zset", 2, await r.zCard("js:geo_dst"));
+  } catch (e) {
+    console.log(`  ${RED}FAIL${NC} GEORADIUS STORE — ${e.message}`);
+    FAIL++; TOTAL++;
+  }
+  await r.del(["js:geo", "js:geo2", "js:geo_dst"]);
 }
 
 async function test_streams(r) {
@@ -316,6 +330,19 @@ async function test_pubsub(r) {
   checkBulk("SUBSCRIBE content", "hello", messages[0]);
   await sub.unsubscribe("js:ch");
   await sub.quit();
+
+  // Sharded PubSub (SPUBLISH / SSUBSCRIBE / smessage)
+  const ssub = createClient({ url: r.options?.url || "redis://127.0.0.1:16379" });
+  await ssub.connect();
+  const shardMessages = [];
+  await ssub.sSubscribe("js:sch", (msg) => shardMessages.push(msg));
+  await new Promise(r => setTimeout(r, 100));
+  check("SPUBLISH", 1, await r.sendCommand(["SPUBLISH", "js:sch", "shard-hello"]));
+  await new Promise(r => setTimeout(r, 200));
+  check("SSUBSCRIBE message", 1, shardMessages.length);
+  checkBulk("smessage content", "shard-hello", shardMessages[0]);
+  await ssub.sUnsubscribe("js:sch");
+  await ssub.quit();
 }
 
 async function test_keys(r) {
