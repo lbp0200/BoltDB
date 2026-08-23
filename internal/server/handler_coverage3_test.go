@@ -1027,3 +1027,27 @@ func TestFAILOVER_Errors(t *testing.T) {
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "syntax error"))
 }
+
+// TestINFO_KeyCompleteness verifies INFO exposes client-critical keys:
+// redis_mode, Stats counters and db0 keyspace line (RESP2 text).
+func TestINFO_KeyCompleteness(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "SET", [][]byte{[]byte("info_k"), []byte("v")}, "127.0.0.1:12345")
+
+	// RESP3 下 INFO 仍为 bulk string（与 Redis 8.2 一致）
+	state.respVersion = 3
+	resp := handler.executeCommand(state, "INFO", nil, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	assert.True(t, ok)
+	text := string(*bs)
+	assert.True(t, strings.Contains(text, "redis_mode:standalone"))
+	assert.True(t, strings.Contains(text, "keyspace_hits:0"))
+	assert.True(t, strings.Contains(text, "expired_keys:0"))
+	assert.True(t, strings.Contains(text, "total_net_input_bytes:0"))
+	assert.True(t, strings.Contains(text, "db0:keys=1,expires=0"))
+	// 缩进行的键不得混入（文本格式与 Redis 一致）
+	assert.True(t, strings.Contains(text, " Latest latency events:"))
+}

@@ -615,6 +615,8 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 			section = strings.ToUpper(string(args[0]))
 		}
 		info := h.buildInfoResponse(section)
+		// 注意：Redis 8.2 的 INFO 在 RESP3 下仍是 bulk string
+		// （实测 wire 确认，非 Map）——保持字符串返回。
 		return proto.NewBulkString([]byte(info))
 
 	// 备份命令

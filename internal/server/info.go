@@ -26,6 +26,11 @@ func (h *Handler) buildInfoResponse(section string) string {
 	if section == "" || section == "ALL" || section == "SERVER" {
 		builder.WriteString("# Server\n")
 		builder.WriteString("redis_version:boltdb-" + Version + "\n")
+		if h.Cluster != nil {
+			builder.WriteString("redis_mode:cluster\n")
+		} else {
+			builder.WriteString("redis_mode:standalone\n")
+		}
 		builder.WriteString("git_commit_id:" + GitCommitID + "\n")
 		builder.WriteString("build_time:" + BuildTime + "\n")
 		builder.WriteString("os:" + runtime.GOOS + "\n")
@@ -116,6 +121,12 @@ func (h *Handler) buildInfoResponse(section string) string {
 		builder.WriteString("# Stats\n")
 		builder.WriteString("total_commands_processed:0\n")
 		builder.WriteString("instantaneous_ops_per_sec:0\n")
+		builder.WriteString("total_net_input_bytes:0\n")
+		builder.WriteString("total_net_output_bytes:0\n")
+		builder.WriteString("keyspace_hits:0\n")
+		builder.WriteString("keyspace_misses:0\n")
+		builder.WriteString("expired_keys:0\n")
+		builder.WriteString("evicted_keys:0\n")
 		builder.WriteString("\n")
 	}
 
@@ -171,7 +182,9 @@ func (h *Handler) buildInfoResponse(section string) string {
 
 	if section == "" || section == "ALL" || section == "KEYSPACE" {
 		builder.WriteString("# Keyspace\n")
-		// Per-DB stats - simplified (no per-DB tracking in BoltDB)
+		if keys, err := h.Db.Keys("*"); err == nil {
+			builder.WriteString("db0:keys=" + strconv.Itoa(len(keys)) + ",expires=0\n")
+		}
 		builder.WriteString("\n")
 	}
 
