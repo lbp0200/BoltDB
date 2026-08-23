@@ -103,12 +103,12 @@
 |------|------|------|
 | FAILOVER | ⏳ 待评估 | 复制管理命令（master 切换）。BoltDB 复制无哨兵/自动故障转移，实现语义需设计（当前 `REPLICAOF NO ONE` 可手动提升） |
 | RESTORE-ASKING | ⏳ 待评估 | 集群迁移内部命令（Redis 集群 slot 迁移时目标节点用），BoltDB 集群无 slot 迁移机制，可能永远不需要 |
-| PSYNC 注册 | ⏳ 低成本可做 | **已实现**（`handler_core.go:637` `handlePSyncWithRDB` 特殊处理）但未注册 command_info → `COMMAND LIST`/`COMMAND INFO PSYNC` 查不到。补注册即可（客户端不做复制不会发 PSYNC，优先级低） |
+| PSYNC / SYNC 注册 | ✅ 已补齐（2026-08-23 `2abd9ce`） | **已实现**（`handler_core.go:637` `handlePSyncWithRDB` 特殊处理）但未注册 command_info → `COMMAND LIST` 查不到。已注册（PSYNC arity -3 / SYNC arity 1，官方元数据）+ dispatch 兜底报 "replication not enabled"（与 REPLICAOF 一致） |
 | CLIENT 子命令对齐 | ⏳ 待评估 | 已实现：SETNAME/GETNAME/ID/KILL/LIST/REPLY/PAUSE/NO-EVICT/UNBLOCK 等；Redis 8.2 还有 SETINFO/TRACKING/TRACKINGINFO/NO-TOUCH/CACHING/GETREDIR/UNPAUSE，逐个核对 |
-| LATENCY 子命令 | ⏳ 低成本可做 | 已实现 LATEST/RESET/HELP（空数据）；缺 DOCTOR/GRAPH/HISTOGRAM/HISTORY（展示型，可返回空/HELP 文本） |
-| OBJECT 子命令 | ⏳ 低成本可做 | 已实现 ENCODING/IDLETIME/FREQ；缺 REFCOUNT（HELP 文本里有但无 case） |
-| MEMORY 子命令 | ⏳ 低成本可做 | 已实现 USAGE（`admin2_commands.go:290`）；缺 STATS/DOCTOR/MALLOC-STATS/PURGE/HELP |
-| SLOWLOG 子命令 | ⏳ 低成本可做 | 已实现 GET/LEN/RESET（全部返回空数据，无真实慢查询日志）；缺 HELP |
+| LATENCY 子命令 | ✅ 已补齐（2026-08-23 `2abd9ce`） | LATEST/RESET/HELP/DOCTOR 原有；GRAPH/HISTORY/HISTOGRAM 已补（空数组，无采样数据） |
+| OBJECT 子命令 | ✅ 已核实完整（2026-08-23） | ENCODING/IDLETIME/FREQ/REFCOUNT/HELP 全部已实现（此前记录"缺 REFCOUNT"有误） |
+| MEMORY 子命令 | ✅ 已补齐（2026-08-23 `2abd9ce`） | USAGE/DOCTOR/HELP 原有；STATS（最小键值对形状，redis-py dict 解析兼容）/MALLOC-STATS（空 bulk）/PURGE（OK）已补 |
+| SLOWLOG 子命令 | ✅ 已核实完整（2026-08-23） | GET/LEN/RESET/HELP 全部已实现（返回空数据，无真实慢查询日志——真实慢日志属功能增强，见待办） |
 | MODULE 子命令 | ⏳ 待评估 | MODULE LIST 返回空列表即可；LOAD/UNLOAD 无模块系统，报错 |
 | BGREWRITEAOF / RESET / WAITAOF | ✅ 已补齐 | 2026-08-23 已实现（65a10a4），此表为留档 |
 
