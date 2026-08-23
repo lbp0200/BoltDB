@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/lbp0200/BoltDB/internal/replication"
@@ -58,7 +59,9 @@ var allDispatchCommands = map[string]bool{
 	"REPLICAOF": true, "SLAVEOF": true, "REPLCONF": true, "INFO": true,
 	"SAVE": true, "BGSAVE": true, "BGREWRITEAOF": true, "LASTSAVE": true, "DBSIZE": true, "TIME": true,
 	"RESET": true, "WAITAOF": true,
-	"PSYNC": true, "SYNC": true,
+	"FAILOVER":       true,
+	"RESTORE-ASKING": true,
+	"PSYNC":          true, "SYNC": true,
 	"FLUSHDB": true, "FLUSHALL": true, "SELECT": true, "MOVE": true,
 	"WAIT": true, "SLOWLOG": true, "MEMORY": true, "MODULE": true,
 	"LOLWUT": true, "LATENCY": true, "READONLY": true, "READWRITE": true,
@@ -198,8 +201,57 @@ func getWriteCommandSet() map[string]bool {
 		"JSON.NUMINCRBY": true, "JSON.NUMMULTBY": true, "JSON.CLEAR": true,
 		"TS.CREATE": true, "TS.ADD": true, "TS.DEL": true,
 		"TS.MADD": true, "TS.INCRBY": true, "TS.CREATERULE": true, "TS.DELETERULE": true,
-		"RESTORE": true, "MIGRATE": true, "FLUSHDB": true, "FLUSHALL": true,
+		"RESTORE": true, "RESTORE-ASKING": true, "MIGRATE": true, "FLUSHDB": true, "FLUSHALL": true,
 		"XAUTOCLAIM": true, "SORT": true,
 		"BZPOPMAX": true, "BZPOPMIN": true,
 	}
+}
+
+// handleFAILOVER 实现 FAILOVER 命令（Redis 7+）：
+//
+//	FAILOVER [TO host port] [FORCE] [ABORT]
+//
+// BoltDB 无哨兵/自动故障转移：ABORT 无进行中故障转移报错；
+// 无 TO 时返回不支持错误；TO host port 时当前 master 转为新 master
+// 的副本（等价于 REPLICAOF host port，Redis 的 FAILOVER TO 语义）。
+func (h *Handler) handleFAILOVER(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if h.Replication == nil {
+		return proto.NewError("ERR replication not enabled")
+	}
+
+	toHost, toPort := "", ""
+	force := false
+	abort := false
+	for i := 0; i < len(args); i++ {
+		switch strings.ToUpper(string(args[i])) {
+		case "TO":
+			if i+2 >= len(args) {
+				return proto.NewError("ERR syntax error")
+			}
+			toHost = string(args[i+1])
+			toPort = string(args[i+2])
+			i += 2
+		case "FORCE":
+			force = true
+		case "ABORT":
+			abort = true
+		default:
+			return proto.NewError("ERR syntax error")
+		}
+	}
+	_ = force
+
+	if abort {
+		// 无进行中的 FAILOVER 流程
+		return proto.NewError("ERR No failover in progress.")
+	}
+	if toHost == "" {
+		return proto.NewError("ERR FAILOVER without TO is not supported (no sentinel/auto-failover)")
+	}
+
+	// 当前 master 转为新 master 的副本
+	if err := replication.StartSlaveReplication(h.Replication, h.Db, toHost+":"+toPort); err != nil {
+		return wrapLogError(err)
+	}
+	return proto.OK
 }

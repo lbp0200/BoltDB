@@ -230,6 +230,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	case "RESTORE":
 		return h.handleRESTORE(state, args, remoteAddr)
 
+	case "RESTORE-ASKING":
+		return h.handleRESTORE(state, args, remoteAddr)
+
 	case "OBJECT":
 		return h.handleOBJECT(state, args, remoteAddr)
 
@@ -594,6 +597,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	// 注意：PSYNC 命令由 processRequest 中的 handlePSyncWithRDB 特殊处理
 	// 这里不需要处理，master 节点会在收到 PSYNC 时直接发送 RDB 数据
 
+	case "FAILOVER":
+		return h.handleFAILOVER(state, args, remoteAddr)
+
 	case "PSYNC", "SYNC":
 		if h.Replication == nil {
 			return proto.NewError("ERR replication not enabled")
@@ -665,6 +671,12 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 		case "LIST":
 			// Return empty array - no modules loaded
 			return &proto.Array{Args: [][]byte{}}
+		case "LOAD", "LOADEX":
+			// BoltDB has no module system — same error Redis gives when
+			// the module file cannot be loaded.
+			return proto.NewError("ERR Error loading the extension. Please check the server logs.")
+		case "UNLOAD":
+			return proto.NewError("ERR Error unloading module: no such module with that name")
 		case "HELP":
 			return &proto.Array{Args: [][]byte{
 				[]byte("MODULE LIST - list loaded modules"),

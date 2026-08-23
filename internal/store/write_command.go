@@ -2198,7 +2198,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 
 	// ========== P1.5: 修复复制数据丢失 ==========
 
-	case "RESTORE":
+	case "RESTORE", "RESTORE-ASKING":
 		if len(args) >= 3 {
 			key := string(args[1])
 			replace := false

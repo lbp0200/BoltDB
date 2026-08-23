@@ -933,3 +933,80 @@ func TestCLIENT_UNBLOCK_WakesBlockedClient(t *testing.T) {
 	_, ok = resp.(*proto.SimpleString)
 	assert.True(t, ok)
 }
+
+// TestMODULE_Subcommands verifies MODULE LOAD/UNLOAD error and LIST empty.
+func TestMODULE_Subcommands(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "MODULE", [][]byte{[]byte("LIST")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(arr.Args))
+
+	resp = handler.executeCommand(state, "MODULE", [][]byte{[]byte("LOAD"), []byte("/tmp/x.so")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "Error loading the extension"))
+
+	resp = handler.executeCommand(state, "MODULE", [][]byte{[]byte("UNLOAD"), []byte("nope")}, "127.0.0.1:12345")
+	errResp, ok = resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "no such module"))
+}
+
+// TestRESTORE_ASKING verifies RESTORE-ASKING restores like RESTORE.
+func TestRESTORE_ASKING(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "SET", [][]byte{[]byte("ra_key"), []byte("hello")}, "127.0.0.1:12345")
+	dumpResp := handler.executeCommand(state, "DUMP", [][]byte{[]byte("ra_key")}, "127.0.0.1:12345")
+	bs, ok := dumpResp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.True(t, len(*bs) > 0)
+
+	resp := handler.executeCommand(state, "RESTORE-ASKING", [][]byte{[]byte("ra_dst"), []byte("0"), *bs}, "127.0.0.1:12345")
+	ss, ok := resp.(*proto.SimpleString)
+	assert.True(t, ok)
+	assert.Equal(t, "OK", string(*ss))
+
+	getResp := handler.executeCommand(state, "GET", [][]byte{[]byte("ra_dst")}, "127.0.0.1:12345")
+	bs2, ok := getResp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "hello", string(*bs2))
+}
+
+// TestFAILOVER_Errors verifies FAILOVER error paths.
+func TestFAILOVER_Errors(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// 无复制：报 replication not enabled
+	resp := handler.executeCommand(state, "FAILOVER", nil, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "replication not enabled"))
+
+	// 启用复制后的 ABORT / 无 TO 错误
+	handler.Replication = replication.NewReplicationManager(handler.Db)
+	defer handler.Replication.Stop()
+
+	resp = handler.executeCommand(state, "FAILOVER", [][]byte{[]byte("ABORT")}, "127.0.0.1:12345")
+	errResp, ok = resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "No failover in progress"))
+
+	resp = handler.executeCommand(state, "FAILOVER", nil, "127.0.0.1:12345")
+	errResp, ok = resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "FAILOVER without TO"))
+
+	resp = handler.executeCommand(state, "FAILOVER", [][]byte{[]byte("TO")}, "127.0.0.1:12345")
+	errResp, ok = resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "syntax error"))
+}
