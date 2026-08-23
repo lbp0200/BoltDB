@@ -85,9 +85,32 @@
 | commit-seq ↔ repl-offset 映射 | 架构级改造。当前 bounded duplicate window (µs) 可接受 |
 | 完全线性化 FULLRESYNC | 等价于上一条。当前保证：无丢失写、无结构性损坏 |
 | EVAL / SCRIPT (Lua) | Lua 沙箱逃逸风险 + 维护成本，非定位 |
+| FUNCTION / FCALL / FCALL_RO | 随 Lua 排除（FUNCTION 是 Lua 引擎的容器命令） |
+| HEXPIRE 系列（12 个：HEXPIRE/HEXPIREAT/HEXPIRETIME/HPEXPIRE/HPEXPIREAT/HPEXPIRETIME/HPERSIST/HPTTL/HTTL/HSETEX/HGETEX/HGETDEL） | Hash 字段级 TTL（Redis 7+）：需要 Hash 存储格式变更（字段级过期元数据），风险高收益低，明确不做 |
+| Vector Set（12 个：VADD/VCARD/VDIM/VEMB/VGETATTR/VINFO/VISMEMBER/VLINKS/VRANDMEMBER/VREM/VSETATTR/VSIM） | Redis 8 实验性特性，API 不稳定，不做 |
+| PFDEBUG / PFSELFTEST | HyperLogLog 内部调试命令（Redis 标记内部），不做 |
 | Lock Sharding / Lock-Free | 复杂度指数级，有明确瓶颈时再碰 |
 | ACL (partial) / FUNCTION / MIGRATE | FUNCTION 随 Lua 排除；MIGRATE 不适用（嵌入式）；ACL 仅实现 CAT/LIST/USERS/WHOAMI/HELP，SETUSER/DELUSER 未实现 |
 | **1TB+ 规模化验证** | ❌ **无硬件条件** | 仅有 256GB HDD 测试环境，无法完成 1TB+ 验证 |
+
+---
+
+## 剩余缺失命令（2026-08-23 全量差分，对照 redis-server 8.2.1）
+
+> `COMMAND LIST` 差分（262/397 已覆盖）中排除子命令展开误报（ACL\|CAT 等——BoltDB 用容器命令内部 dispatch，COMMAND/ACL/CLIENT/PUBSUB/XGROUP/XINFO 容器已覆盖）后的**真缺失**清单。按状态分类：
+
+| 命令 | 状态 | 说明 |
+|------|------|------|
+| FAILOVER | ⏳ 待评估 | 复制管理命令（master 切换）。BoltDB 复制无哨兵/自动故障转移，实现语义需设计（当前 `REPLICAOF NO ONE` 可手动提升） |
+| RESTORE-ASKING | ⏳ 待评估 | 集群迁移内部命令（Redis 集群 slot 迁移时目标节点用），BoltDB 集群无 slot 迁移机制，可能永远不需要 |
+| PSYNC 注册 | ⏳ 低成本可做 | **已实现**（`handler_core.go:637` `handlePSyncWithRDB` 特殊处理）但未注册 command_info → `COMMAND LIST`/`COMMAND INFO PSYNC` 查不到。补注册即可（客户端不做复制不会发 PSYNC，优先级低） |
+| CLIENT 子命令对齐 | ⏳ 待评估 | 已实现：SETNAME/GETNAME/ID/KILL/LIST/REPLY/PAUSE/NO-EVICT/UNBLOCK 等；Redis 8.2 还有 SETINFO/TRACKING/TRACKINGINFO/NO-TOUCH/CACHING/GETREDIR/UNPAUSE，逐个核对 |
+| LATENCY 子命令 | ⏳ 低成本可做 | 已实现 LATEST/RESET/HELP（空数据）；缺 DOCTOR/GRAPH/HISTOGRAM/HISTORY（展示型，可返回空/HELP 文本） |
+| OBJECT 子命令 | ⏳ 低成本可做 | 已实现 ENCODING/IDLETIME/FREQ；缺 REFCOUNT（HELP 文本里有但无 case） |
+| MEMORY 子命令 | ⏳ 低成本可做 | 已实现 USAGE（`admin2_commands.go:290`）；缺 STATS/DOCTOR/MALLOC-STATS/PURGE/HELP |
+| SLOWLOG 子命令 | ⏳ 低成本可做 | 已实现 GET/LEN/RESET（全部返回空数据，无真实慢查询日志）；缺 HELP |
+| MODULE 子命令 | ⏳ 待评估 | MODULE LIST 返回空列表即可；LOAD/UNLOAD 无模块系统，报错 |
+| BGREWRITEAOF / RESET / WAITAOF | ✅ 已补齐 | 2026-08-23 已实现（65a10a4），此表为留档 |
 
 ---
 
