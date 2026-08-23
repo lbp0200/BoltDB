@@ -480,6 +480,19 @@ func (h *Handler) handleMGET(state *connState, args [][]byte, remoteAddr string)
 			results[i] = []byte(v)
 		}
 	}
+	// RESP3: missing keys must use the Null type ('_'); redis-py 8's RESP3
+	// parser blocks forever on a RESP2 null bulk ('$-1') inside an array.
+	if state.respVersion == 3 {
+		elems := make([]proto.RESP, len(results))
+		for i, v := range results {
+			if v == nil {
+				elems[i] = &proto.Null{}
+			} else {
+				elems[i] = proto.NewBulkString(v)
+			}
+		}
+		return &proto.NestedArray{Elems: elems}
+	}
 	return &proto.Array{Args: results}
 }
 

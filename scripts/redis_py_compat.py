@@ -396,6 +396,9 @@ def test_keys(r):
     ttl0 = r.ttl("py:ttl")
     check("TTL after EXPIRE 0", True, ttl0 <= 0)
 
+    # EXPIRE 0 按 Redis 语义立即删除 key，RENAME 前重建
+    r.set("py:ttl", "val")
+
     r.set("py:pexp", "val")
     r.pexpire("py:pexp", 5000)
     ptl = r.pttl("py:pexp")

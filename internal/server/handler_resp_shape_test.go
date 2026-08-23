@@ -1273,3 +1273,128 @@ func setupTestClusterHandler(t *testing.T) (*Handler, *connState) {
 
 	return handler, state
 }
+
+// TestRESPShape_HGETALL_MapVer3 verifies HGETALL returns a RESP3 Map ('%')
+// when the client negotiated protocol 3 and a flat Array under RESP2.
+// redis-py 8 returns dict only for the map prefix; an array makes it
+// return a list, breaking compatibility.
+func TestRESPShape_HGETALL_MapVer3(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "HSET", [][]byte{[]byte("hgm"), []byte("f1"), []byte("v1"), []byte("f2"), []byte("v2")}, "127.0.0.1:12345")
+
+	// RESP2: flat array of field/value pairs
+	resp := handler.executeCommand(state, "HGETALL", [][]byte{[]byte("hgm")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 4, len(arr.Args))
+
+	// RESP3: map type with same pairs
+	state.respVersion = 3
+	resp = handler.executeCommand(state, "HGETALL", [][]byte{[]byte("hgm")}, "127.0.0.1:12345")
+	m, ok := resp.(*proto.Map)
+	assert.True(t, ok)
+	assert.Equal(t, 4, len(m.Elems)) // 2 field/value pairs
+	key0, ok := m.Elems[0].(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "f1", string(*key0))
+	val0, ok := m.Elems[1].(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "v1", string(*val0))
+}
+
+// TestRESPShape_ArrayNilElements_Ver3 verifies commands whose RESP2 reply
+// embeds null bulks ('$-1') — HMGET/MGET/ZMSCORE — must emit the RESP3 Null
+// type ('_') after HELLO 3. redis-py 8's RESP3 parser blocks forever on a
+// RESP2 null bulk inside an array, so this is a compatibility requirement,
+// not just a shape nicety.
+func TestRESPShape_ArrayNilElements_Ver3(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "HSET", [][]byte{[]byte("nil_h"), []byte("f1"), []byte("v1")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SET", [][]byte{[]byte("nil_s"), []byte("sv")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "ZADD", [][]byte{[]byte("nil_z"), []byte("1"), []byte("m1")}, "127.0.0.1:12345")
+
+	// RESP2 baseline: null bulks inside flat arrays
+	resp := handler.executeCommand(state, "HMGET", [][]byte{[]byte("nil_h"), []byte("f1"), []byte("nope")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(arr.Args))
+	assert.True(t, arr.Args[1] == nil)
+
+	// RESP3: Null type elements
+	state.respVersion = 3
+
+	resp = handler.executeCommand(state, "HMGET", [][]byte{[]byte("nil_h"), []byte("f1"), []byte("nope")}, "127.0.0.1:12345")
+	na, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(na.Elems))
+	_, isNull := na.Elems[1].(*proto.Null)
+	assert.True(t, isNull)
+	shapeBulkString(t, na.Elems[0], 1)
+
+	resp = handler.executeCommand(state, "MGET", [][]byte{[]byte("nil_s"), []byte("nope")}, "127.0.0.1:12345")
+	na, ok = resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(na.Elems))
+	_, isNull = na.Elems[1].(*proto.Null)
+	assert.True(t, isNull)
+
+	resp = handler.executeCommand(state, "ZMSCORE", [][]byte{[]byte("nil_z"), []byte("m1"), []byte("nope")}, "127.0.0.1:12345")
+	na, ok = resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(na.Elems))
+	_, isNull = na.Elems[1].(*proto.Null)
+	assert.True(t, isNull)
+}
+
+// TestRESPShape_XREAD_MapVer3 verifies XREAD/XREADGROUP return a RESP3 Map
+// of stream name → entries after HELLO 3 (redis-py 8's xreadgroup callback
+// calls response.items() on the reply, and its legacy conversion expects
+// flat [key, value] map pairs — a nested [key, entries] array inside the
+// map encodes as %0 with an odd element count and breaks the client).
+func TestRESPShape_XREAD_MapVer3(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "XADD", [][]byte{[]byte("xr_map"), []byte("1"), []byte("f"), []byte("v")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATE"), []byte("xr_map"), []byte("xg"), []byte("0")}, "127.0.0.1:12345")
+
+	state.respVersion = 3
+
+	// XREAD
+	resp := handler.executeCommand(state, "XREAD", [][]byte{[]byte("STREAMS"), []byte("xr_map"), []byte("0")}, "127.0.0.1:12345")
+	m, ok := resp.(*proto.Map)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(m.Elems)) // [streamName, entriesArray]
+	key0, ok := m.Elems[0].(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "xr_map", string(*key0))
+	entries, ok := m.Elems[1].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(entries.Elems))
+
+	// XREADGROUP
+	resp = handler.executeCommand(state, "XREADGROUP", [][]byte{[]byte("GROUP"), []byte("xg"), []byte("c1"), []byte("COUNT"), []byte("1"), []byte("STREAMS"), []byte("xr_map"), []byte(">")}, "127.0.0.1:12345")
+	m, ok = resp.(*proto.Map)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(m.Elems))
+	key0, ok = m.Elems[0].(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "xr_map", string(*key0))
+	entries, ok = m.Elems[1].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.True(t, len(entries.Elems) >= 1)
+
+	// RESP2: same command returns the legacy nested array shape
+	state.respVersion = 2
+	resp = handler.executeCommand(state, "XREAD", [][]byte{[]byte("STREAMS"), []byte("xr_map"), []byte("0")}, "127.0.0.1:12345")
+	na, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(na.Elems))
+}

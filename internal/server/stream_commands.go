@@ -209,6 +209,17 @@ func (h *Handler) handleXREAD(state *connState, args [][]byte, remoteAddr string
 			}})
 		}
 	}
+	// RESP3: XREAD must be a Map of stream name → entries. The map is a
+	// flat [key, value, ...] list, so unwrap the [key, entries] pairs.
+	if state.respVersion == 3 {
+		flat := make([]proto.RESP, 0, len(streamResults)*2)
+		for _, pair := range streamResults {
+			if pairArr, ok := pair.(*proto.NestedArray); ok && len(pairArr.Elems) == 2 {
+				flat = append(flat, pairArr.Elems[0], pairArr.Elems[1])
+			}
+		}
+		return &proto.Map{Elems: flat}
+	}
 	return &proto.NestedArray{Elems: streamResults}
 }
 
@@ -680,6 +691,17 @@ func (h *Handler) handleXREADGROUP(state *connState, args [][]byte, remoteAddr s
 			return &proto.Null{}
 		}
 		return proto.NewBulkString(nil)
+	}
+	// RESP3: XREADGROUP must be a Map of stream name → entries. The map is
+	// a flat [key, value, ...] list, so unwrap the [key, entries] pairs.
+	if state.respVersion == 3 {
+		flat := make([]proto.RESP, 0, len(response)*2)
+		for _, pair := range response {
+			if pairArr, ok := pair.(*proto.NestedArray); ok && len(pairArr.Elems) == 2 {
+				flat = append(flat, pairArr.Elems[0], pairArr.Elems[1])
+			}
+		}
+		return &proto.Map{Elems: flat}
 	}
 	return &proto.NestedArray{Elems: response}
 }

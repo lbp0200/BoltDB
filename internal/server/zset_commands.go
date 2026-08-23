@@ -538,6 +538,11 @@ func (h *Handler) handleZSCORE(state *connState, args [][]byte, remoteAddr strin
 		}
 		return proto.NewBulkString(nil)
 	}
+	// RESP3: score is a Double type (',' prefix); redis-py 8 returns float
+	// only for the double, bytes otherwise.
+	if state.respVersion == 3 {
+		return &proto.Double{Value: score}
+	}
 	return proto.NewBulkString([]byte(strconv.FormatFloat(score, 'f', -1, 64)))
 }
 
@@ -651,6 +656,21 @@ func (h *Handler) handleZMSCORE(state *connState, args [][]byte, remoteAddr stri
 		} else {
 			results[i] = []byte(strconv.FormatFloat(s, 'f', -1, 64))
 		}
+	}
+	// RESP3: array of Double/Null — scores use the ',' prefix and missing
+	// members the '_' Null type (redis-py 8 blocks on RESP2 '$-1' and
+	// returns bytes instead of floats without the double prefix).
+	if state.respVersion == 3 {
+		elems := make([]proto.RESP, len(results))
+		for i, v := range results {
+			if v == nil {
+				elems[i] = &proto.Null{}
+			} else {
+				score, _ := strconv.ParseFloat(string(v), 64)
+				elems[i] = &proto.Double{Value: score}
+			}
+		}
+		return &proto.NestedArray{Elems: elems}
 	}
 	return &proto.Array{Args: results}
 }
@@ -883,6 +903,11 @@ func (h *Handler) handleZINCRBY(state *connState, args [][]byte, remoteAddr stri
 	newScore, err := h.Db.ZIncrBy(key, member, delta)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	// RESP3: score is a Double type (',' prefix); redis-py 8 returns float
+	// only for the double, bytes otherwise.
+	if state.respVersion == 3 {
+		return &proto.Double{Value: newScore}
 	}
 	return proto.NewBulkString([]byte(strconv.FormatFloat(newScore, 'f', -1, 64)))
 }

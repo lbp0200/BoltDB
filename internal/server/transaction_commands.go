@@ -35,6 +35,13 @@ func (h *Handler) handleEXEC(state *connState, args [][]byte, remoteAddr string)
 				h.watchMu.Unlock()
 				state.inTransaction = false
 				state.commands = nil
+				// RESP3: nil array must use the Null type ('_'); redis-py 8's
+				// RESP3 parser turns '*-1' into an empty list, which makes
+				// pipeline.execute report "Wrong number of response items"
+				// instead of raising WatchError.
+				if state.respVersion == 3 {
+					return &proto.Null{}
+				}
 				return proto.NilArray{}
 			}
 		}
