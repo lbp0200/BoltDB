@@ -236,11 +236,11 @@ func (h *Handler) handleSINTER(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'SINTER' command")
 	}
 	keys := make([]string, len(args))
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i, arg := range args {
 		keys[i] = string(arg)
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	members, err := h.Db.SInter(keys...)
 	if err != nil {
@@ -262,11 +262,11 @@ func (h *Handler) handleSUNION(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'SUNION' command")
 	}
 	keys := make([]string, len(args))
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i, arg := range args {
 		keys[i] = string(arg)
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	members, err := h.Db.SUnion(keys...)
 	if err != nil {
@@ -288,11 +288,11 @@ func (h *Handler) handleSDIFF(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'SDIFF' command")
 	}
 	keys := make([]string, len(args))
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i, arg := range args {
 		keys[i] = string(arg)
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	members, err := h.Db.SDiff(keys...)
 	if err != nil {
@@ -315,11 +315,11 @@ func (h *Handler) handleSINTERSTORE(state *connState, args [][]byte, remoteAddr 
 	}
 	destination := string(args[0])
 	keys := make([]string, len(args)-1)
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i := 1; i < len(args); i++ {
 		keys[i-1] = string(args[i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	h.markDirtyKeys(state, destination)
 	count, err := h.Db.SInterStore(destination, keys...)
@@ -393,11 +393,11 @@ func (h *Handler) handleSUNIONSTORE(state *connState, args [][]byte, remoteAddr 
 	}
 	destination := string(args[0])
 	keys := make([]string, len(args)-1)
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i := 1; i < len(args); i++ {
 		keys[i-1] = string(args[i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	h.markDirtyKeys(state, destination)
 	count, err := h.Db.SUnionStore(destination, keys...)
@@ -415,11 +415,11 @@ func (h *Handler) handleSDIFFSTORE(state *connState, args [][]byte, remoteAddr s
 	}
 	destination := string(args[0])
 	keys := make([]string, len(args)-1)
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i := 1; i < len(args); i++ {
 		keys[i-1] = string(args[i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	h.markDirtyKeys(state, destination)
 	count, err := h.Db.SDiffStore(destination, keys...)

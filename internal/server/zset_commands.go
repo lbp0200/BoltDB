@@ -23,11 +23,11 @@ func (h *Handler) handleZINTER(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR syntax error")
 	}
 	keys := make([]string, numKeys)
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[1+i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	weights := []float64{}
 	aggregate := "SUM"
@@ -118,11 +118,11 @@ func (h *Handler) handleZINTERCARD(state *connState, args [][]byte, remoteAddr s
 		return proto.NewError("ERR wrong number of arguments for 'ZINTERCARD' command")
 	}
 	keys := make([]string, numKeys)
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[1+i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	var limit int64
 	i := 1 + numKeys
@@ -163,11 +163,11 @@ func (h *Handler) handleZUNION(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR syntax error")
 	}
 	keys := make([]string, numKeys)
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[1+i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	weights := []float64{}
 	aggregate := "SUM"
@@ -453,11 +453,11 @@ func (h *Handler) handleBZPOPMAX(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'BZPOPMAX' command")
 	}
 	keys := make([]string, len(args)-1)
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i := 0; i < len(args)-1; i++ {
 		keys[i] = string(args[i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	timeout, err := strconv.Atoi(string(args[len(args)-1]))
 	if err != nil {
@@ -484,11 +484,11 @@ func (h *Handler) handleBZPOPMIN(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'BZPOPMIN' command")
 	}
 	keys := make([]string, len(args)-1)
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i := 0; i < len(args)-1; i++ {
 		keys[i] = string(args[i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	timeout, err := strconv.Atoi(string(args[len(args)-1]))
 	if err != nil {
@@ -995,11 +995,11 @@ func (h *Handler) handleZMPOP(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR syntax error")
 	}
 	keys := make([]string, numKeys)
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[1+i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	modifier := strings.ToUpper(string(args[1+numKeys]))
 	if modifier != "MIN" && modifier != "MAX" {
@@ -1051,11 +1051,11 @@ func (h *Handler) handleBZMPOP(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR syntax error")
 	}
 	keys := make([]string, numKeys)
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[2+i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	modifier := strings.ToUpper(string(args[2+numKeys]))
 	if modifier != "MIN" && modifier != "MAX" {
@@ -1106,11 +1106,11 @@ func (h *Handler) handleZUNIONSTORE(state *connState, args [][]byte, remoteAddr 
 		return proto.NewError("ERR value is not an integer")
 	}
 	keys := make([]string, numKeys)
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[2+i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	weights := []float64{}
 	aggregate := "SUM"
@@ -1165,11 +1165,11 @@ func (h *Handler) handleZINTERSTORE(state *connState, args [][]byte, remoteAddr 
 		return proto.NewError("ERR value is not an integer")
 	}
 	keys := make([]string, numKeys)
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[2+i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	weights := []float64{}
 	aggregate := "SUM"
@@ -1226,11 +1226,11 @@ func (h *Handler) handleZDIFFSTORE(state *connState, args [][]byte, remoteAddr s
 		return proto.NewError("ERR syntax error")
 	}
 	keys := make([]string, numKeys)
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[2+i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	h.markDirtyKeys(state, destination)
 	count, err := h.Db.ZDiffStore(destination, keys)
@@ -1253,11 +1253,11 @@ func (h *Handler) handleZDIFF(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR syntax error")
 	}
 	keys := make([]string, numKeys)
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[1+i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	withScores := false
 	for i := 1 + numKeys; i < len(args); i++ {

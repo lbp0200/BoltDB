@@ -275,11 +275,11 @@ func (h *Handler) handleTS_MGET(state *connState, args [][]byte, remoteAddr stri
 	}
 	filter := string(args[0])
 	keys := make([]string, len(args)-1)
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i := 1; i < len(args); i++ {
 		keys[i-1] = string(args[i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	results, err := h.Db.TSMGet(filter, keys...)
 	if err != nil {

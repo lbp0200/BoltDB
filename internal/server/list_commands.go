@@ -486,11 +486,11 @@ func (h *Handler) handleBLPOP(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'BLPOP' command")
 	}
 	keys := make([]string, len(args)-1)
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i := 0; i < len(args)-1; i++ {
 		keys[i] = string(args[i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	timeout, err := strconv.Atoi(string(args[len(args)-1]))
 	if err != nil {
@@ -517,11 +517,11 @@ func (h *Handler) handleBRPOP(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR wrong number of arguments for 'BRPOP' command")
 	}
 	keys := make([]string, len(args)-1)
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i := 0; i < len(args)-1; i++ {
 		keys[i] = string(args[i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	timeout, err := strconv.Atoi(string(args[len(args)-1]))
 	if err != nil {
@@ -649,11 +649,11 @@ func (h *Handler) handleLMPOP(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR syntax error")
 	}
 	keys := make([]string, numKeys)
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-		return resp
-	}
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[1+i])
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	modifier := strings.ToUpper(string(args[1+numKeys]))
 	if modifier != "LEFT" && modifier != "RIGHT" {
