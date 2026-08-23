@@ -130,7 +130,13 @@ func (h *Handler) runPubSubLoop(ctx context.Context, conn net.Conn, reader *bufi
 // For RESP3 (respVersion == 3), uses Push type; for RESP2, uses Array.
 func buildPubSubPush(msg *store.Message, respVersion int) proto.RESP {
 	var elems []proto.RESP
-	if msg.Pattern != "" {
+	if msg.Shard {
+		elems = []proto.RESP{
+			proto.NewBulkString([]byte("smessage")),
+			proto.NewBulkString([]byte(msg.Channel)),
+			proto.NewBulkString(msg.Data),
+		}
+	} else if msg.Pattern != "" {
 		elems = []proto.RESP{
 			proto.NewBulkString([]byte("pmessage")),
 			proto.NewBulkString([]byte(msg.Pattern)),
@@ -284,6 +290,63 @@ func (h *Handler) processPubSubCommand(state *connState, req *proto.Array, remot
 
 	case "PING":
 		return proto.NewSimpleString("PONG")
+
+	case "SSUBSCRIBE":
+		if h.PubSub == nil {
+			return proto.NewError("ERR pubsub not enabled")
+		}
+		if len(args) < 2 {
+			return proto.NewError("ERR wrong number of arguments for 'SSUBSCRIBE' command")
+		}
+		channels := make([]string, len(args)-1)
+		for i, arg := range args[1:] {
+			channels[i] = string(arg)
+		}
+		subscribed := h.PubSub.SSubscribe(state.subscriber, channels...)
+		resp := &MultiResponse{
+			Responses: make([]proto.RESP, len(subscribed)),
+		}
+		for i, ch := range subscribed {
+			resp.Responses[i] = makePushOrArray([]proto.RESP{
+				proto.NewBulkString([]byte("ssubscribe")),
+				proto.NewBulkString([]byte(ch)),
+				proto.NewInteger(int64(i + 1)),
+			}, state.respVersion)
+		}
+		return resp
+
+	case "SUNSUBSCRIBE":
+		if h.PubSub == nil {
+			return proto.NewError("ERR pubsub not enabled")
+		}
+		var unsubscribed []string
+		if len(args) > 1 {
+			channels := make([]string, len(args)-1)
+			for i, arg := range args[1:] {
+				channels[i] = string(arg)
+			}
+			unsubscribed = h.PubSub.SUnsubscribe(state.subscriber, channels...)
+		} else {
+			unsubscribed = h.PubSub.SUnsubscribe(state.subscriber)
+		}
+		if len(unsubscribed) == 0 {
+			return makePushOrArray([]proto.RESP{
+				proto.NewBulkString([]byte("sunsubscribe")),
+				proto.NewBulkString([]byte("")),
+				proto.NewInteger(0),
+			}, state.respVersion)
+		}
+		resp := &MultiResponse{
+			Responses: make([]proto.RESP, len(unsubscribed)),
+		}
+		for i, ch := range unsubscribed {
+			resp.Responses[i] = makePushOrArray([]proto.RESP{
+				proto.NewBulkString([]byte("sunsubscribe")),
+				proto.NewBulkString([]byte(ch)),
+				proto.NewInteger(0),
+			}, state.respVersion)
+		}
+		return resp
 
 	case "QUIT":
 		return &PubSubQuitSignal{}

@@ -485,3 +485,96 @@ func TestHandleSlaveReplicationConnection_CancelledContext(t *testing.T) {
 		t.Fatal("handleSlaveReplicationConnection did not return after context cancellation")
 	}
 }
+
+// TestProcessPubSubCommand_SSUBSCRIBE_Coverage tests SSUBSCRIBE: subscribes
+// to shard channels with "ssubscribe" confirmations, isolated from regular
+// SUBSCRIBE channels.
+func TestProcessPubSubCommand_SSUBSCRIBE_Coverage(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.PubSub = store.NewPubSubManager()
+	state.subscriber = store.NewSubscriber("test")
+
+	req := &proto.Array{Args: [][]byte{[]byte("SSUBSCRIBE"), []byte("{shard}ch1"), []byte("{shard}ch2")}}
+	resp := handler.processPubSubCommand(state, req, "127.0.0.1:12345")
+	mr, ok := resp.(*MultiResponse)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(mr.Responses))
+
+	// Confirmation carries the "ssubscribe" type
+	first, ok := mr.Responses[0].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, "ssubscribe", string(*first.Elems[0].(*proto.BulkString)))
+
+	// SPUBLISH delivers to shard subscribers...
+	count := handler.PubSub.SPublish("{shard}ch1", []byte("hello"))
+	assert.Equal(t, 1, count)
+
+	// ...but regular PUBLISH does not reach shard subscribers, and SPUBLISH
+	// does not reach regular subscribers (isolated namespaces).
+	count = handler.PubSub.Publish("{shard}ch1", []byte("regular"))
+	assert.Equal(t, 0, count)
+
+	// Message received by the shard subscriber has the shard flag
+	select {
+	case msg := <-state.subscriber.MessageCh:
+		assert.True(t, msg.Shard)
+		assert.Equal(t, "{shard}ch1", msg.Channel)
+		assert.Equal(t, "hello", string(msg.Data))
+	default:
+		t.Fatal("shard subscriber did not receive the message")
+	}
+}
+
+// TestProcessPubSubCommand_SUNSUBSCRIBE_Coverage tests SUNSUBSCRIBE.
+func TestProcessPubSubCommand_SUNSUBSCRIBE_Coverage(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.PubSub = store.NewPubSubManager()
+	state.subscriber = store.NewSubscriber("test")
+
+	// Subscribe then unsubscribe
+	req := &proto.Array{Args: [][]byte{[]byte("SSUBSCRIBE"), []byte("{s}ch")}}
+	resp := handler.processPubSubCommand(state, req, "127.0.0.1:12345")
+	_, ok := resp.(*MultiResponse)
+	assert.True(t, ok)
+
+	req = &proto.Array{Args: [][]byte{[]byte("SUNSUBSCRIBE"), []byte("{s}ch")}}
+	resp = handler.processPubSubCommand(state, req, "127.0.0.1:12345")
+	mr, ok := resp.(*MultiResponse)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(mr.Responses))
+	first, ok := mr.Responses[0].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, "sunsubscribe", string(*first.Elems[0].(*proto.BulkString)))
+
+	// No more deliveries after unsubscribe
+	count := handler.PubSub.SPublish("{s}ch", []byte("after"))
+	assert.Equal(t, 0, count)
+}
+
+// TestBuildPubSubPush_Shard verifies shard messages assemble as "smessage".
+func TestBuildPubSubPush_Shard(t *testing.T) {
+	t.Parallel()
+
+	msg := &store.Message{Channel: "{s}ch", Data: []byte("m"), Shard: true}
+	resp := buildPubSubPush(msg, 3)
+	push, ok := resp.(*proto.Push)
+	assert.True(t, ok)
+	assert.Equal(t, 3, len(push.Elems))
+	assert.Equal(t, "smessage", string(*push.Elems[0].(*proto.BulkString)))
+	assert.Equal(t, "{s}ch", string(*push.Elems[1].(*proto.BulkString)))
+	assert.Equal(t, "m", string(*push.Elems[2].(*proto.BulkString)))
+
+	// RESP2: NestedArray with same content
+	resp = buildPubSubPush(msg, 2)
+	na, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, "smessage", string(*na.Elems[0].(*proto.BulkString)))
+}

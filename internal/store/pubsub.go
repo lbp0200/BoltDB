@@ -8,21 +8,23 @@ import (
 
 // PubSubManager Pub/Sub管理器
 type PubSubManager struct {
-	mu          sync.RWMutex
-	channels    map[string]map[*Subscriber]bool // 频道 -> 订阅者映射
-	patterns    map[string]map[*Subscriber]bool // 模式 -> 订阅者映射
-	subscribers map[*Subscriber]bool            // 所有订阅者
+	mu            sync.RWMutex
+	channels      map[string]map[*Subscriber]bool // 频道 -> 订阅者映射
+	shardChannels map[string]map[*Subscriber]bool // shard 频道 -> 订阅者映射（SSUBSCRIBE）
+	patterns      map[string]map[*Subscriber]bool // 模式 -> 订阅者映射
+	subscribers   map[*Subscriber]bool            // 所有订阅者
 }
 
 // Subscriber 订阅者
 type Subscriber struct {
-	ID        string
-	Channels  map[string]bool
-	Patterns  map[string]bool
-	MessageCh chan *Message
-	mu        sync.RWMutex
-	closed    bool
-	closeMu   sync.Mutex
+	ID            string
+	Channels      map[string]bool
+	ShardChannels map[string]bool
+	Patterns      map[string]bool
+	MessageCh     chan *Message
+	mu            sync.RWMutex
+	closed        bool
+	closeMu       sync.Mutex
 }
 
 // Message 消息
@@ -30,24 +32,27 @@ type Message struct {
 	Channel string
 	Pattern string
 	Data    []byte
+	Shard   bool // true = shard channel 消息（SSUBSCRIBE/SPUBLISH）
 }
 
 // NewPubSubManager 创建新的Pub/Sub管理器
 func NewPubSubManager() *PubSubManager {
 	return &PubSubManager{
-		channels:    make(map[string]map[*Subscriber]bool),
-		patterns:    make(map[string]map[*Subscriber]bool),
-		subscribers: make(map[*Subscriber]bool),
+		channels:      make(map[string]map[*Subscriber]bool),
+		shardChannels: make(map[string]map[*Subscriber]bool),
+		patterns:      make(map[string]map[*Subscriber]bool),
+		subscribers:   make(map[*Subscriber]bool),
 	}
 }
 
 // NewSubscriber 创建新的订阅者
 func NewSubscriber(id string) *Subscriber {
 	return &Subscriber{
-		ID:        id,
-		Channels:  make(map[string]bool),
-		Patterns:  make(map[string]bool),
-		MessageCh: make(chan *Message, 100),
+		ID:            id,
+		Channels:      make(map[string]bool),
+		ShardChannels: make(map[string]bool),
+		Patterns:      make(map[string]bool),
+		MessageCh:     make(chan *Message, 100),
 	}
 }
 
@@ -95,6 +100,109 @@ func (psm *PubSubManager) PSubscribe(subscriber *Subscriber, patterns ...string)
 	}
 
 	return subscribed
+}
+
+// SSubscribe 订阅 shard 频道（Redis 7+ SSUBSCRIBE）。
+// shard 频道与普通频道命名空间独立：SPUBLISH 只投递给 shard 订阅者。
+func (psm *PubSubManager) SSubscribe(subscriber *Subscriber, channels ...string) []string {
+	psm.mu.Lock()
+	defer psm.mu.Unlock()
+
+	psm.subscribers[subscriber] = true
+	subscribed := make([]string, 0)
+
+	for _, channel := range channels {
+		subscriber.mu.Lock()
+		subscriber.ShardChannels[channel] = true
+		subscriber.mu.Unlock()
+
+		if psm.shardChannels[channel] == nil {
+			psm.shardChannels[channel] = make(map[*Subscriber]bool)
+		}
+		psm.shardChannels[channel][subscriber] = true
+		subscribed = append(subscribed, channel)
+	}
+
+	return subscribed
+}
+
+// SUnsubscribe 取消订阅 shard 频道。
+func (psm *PubSubManager) SUnsubscribe(subscriber *Subscriber, channels ...string) []string {
+	return psm.sUnsubscribeInternal(subscriber, channels...)
+}
+
+// sUnsubscribeInternal 取消 shard 频道订阅（不持有锁调用）。
+func (psm *PubSubManager) sUnsubscribeInternal(subscriber *Subscriber, channels ...string) []string {
+	psm.mu.Lock()
+	defer psm.mu.Unlock()
+	return psm.sUnsubscribeLocked(subscriber, channels...)
+}
+
+// sUnsubscribeLocked 在持有 psm.mu 时取消 shard 频道订阅。
+func (psm *PubSubManager) sUnsubscribeLocked(subscriber *Subscriber, channels ...string) []string {
+	unsubscribed := make([]string, 0)
+	if len(channels) == 0 {
+		subscriber.mu.Lock()
+		for ch := range subscriber.ShardChannels {
+			channels = append(channels, ch)
+		}
+		subscriber.mu.Unlock()
+	}
+
+	for _, channel := range channels {
+		subscriber.mu.Lock()
+		if !subscriber.ShardChannels[channel] {
+			subscriber.mu.Unlock()
+			continue
+		}
+		delete(subscriber.ShardChannels, channel)
+		subscriber.mu.Unlock()
+
+		if subs, exists := psm.shardChannels[channel]; exists {
+			delete(subs, subscriber)
+			if len(subs) == 0 {
+				delete(psm.shardChannels, channel)
+			}
+		}
+		unsubscribed = append(unsubscribed, channel)
+	}
+
+	return unsubscribed
+}
+
+// SPublish 发布消息到 shard 频道（Redis 7+ SPUBLISH），返回接收者数量。
+func (psm *PubSubManager) SPublish(channel string, message []byte) int {
+	psm.mu.RLock()
+	defer psm.mu.RUnlock()
+
+	count := 0
+	msg := &Message{
+		Channel: channel,
+		Data:    message,
+		Shard:   true,
+	}
+
+	if subs, exists := psm.shardChannels[channel]; exists {
+		for sub := range subs {
+			sub.closeMu.Lock()
+			if sub.closed {
+				sub.closeMu.Unlock()
+				continue
+			}
+			select {
+			case sub.MessageCh <- msg:
+				count++
+			default:
+				logger.Logger.Warn().
+					Str("subscriber_id", sub.ID).
+					Str("shard_channel", channel).
+					Msg("订阅者消息通道已满，跳过 shard 消息")
+			}
+			sub.closeMu.Unlock()
+		}
+	}
+
+	return count
 }
 
 // Unsubscribe 取消订阅频道
@@ -283,10 +391,15 @@ func (psm *PubSubManager) RemoveSubscriber(subscriber *Subscriber) {
 	for pattern := range subscriber.Patterns {
 		patterns = append(patterns, pattern)
 	}
+	shardChannels := make([]string, 0, len(subscriber.ShardChannels))
+	for channel := range subscriber.ShardChannels {
+		shardChannels = append(shardChannels, channel)
+	}
 	subscriber.mu.RUnlock()
 
 	psm.unsubscribeLocked(subscriber, channels...)
 	psm.punsubscribeLocked(subscriber, patterns...)
+	psm.sUnsubscribeLocked(subscriber, shardChannels...)
 
 	delete(psm.subscribers, subscriber)
 }

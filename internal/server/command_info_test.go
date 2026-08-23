@@ -13,8 +13,8 @@ import (
 
 func TestCommandRegistryCount(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, 256, len(commandRegistry))
-	assert.Equal(t, 256, len(commandMap))
+	assert.Equal(t, 259, len(commandRegistry))
+	assert.Equal(t, 259, len(commandMap))
 }
 
 func TestCommandMapKeysMatchRegistry(t *testing.T) {
@@ -43,7 +43,7 @@ func TestHandleCommandNoArgs(t *testing.T) {
 	resp := handleCommand(nil)
 	na, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.Equal(t, 256, len(na.Elems))
+	assert.Equal(t, 259, len(na.Elems))
 
 	for _, elem := range na.Elems {
 		cmdInfo, ok := elem.(*proto.NestedArray)
@@ -63,7 +63,7 @@ func TestHandleCommandCount(t *testing.T) {
 	resp := handleCommand([][]byte{[]byte("COUNT")})
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.Equal(t, int64(256), int64(*integer))
+	assert.Equal(t, int64(259), int64(*integer))
 }
 
 func TestHandleCommandInfoExisting(t *testing.T) {
@@ -190,12 +190,12 @@ func TestHandleCommandCaseInsensitive(t *testing.T) {
 	resp := handleCommand([][]byte{[]byte("count")})
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.Equal(t, int64(256), int64(*integer))
+	assert.Equal(t, int64(259), int64(*integer))
 
 	resp = handleCommand([][]byte{[]byte("Count")})
 	integer, ok = resp.(*proto.Integer)
 	assert.True(t, ok)
-	assert.Equal(t, int64(256), int64(*integer))
+	assert.Equal(t, int64(259), int64(*integer))
 }
 
 func TestHandleCommandInfoCaseInsensitive(t *testing.T) {

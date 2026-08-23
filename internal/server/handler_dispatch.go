@@ -719,14 +719,23 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	case "PUBLISH":
 		return h.handlePUBLISH(state, args, remoteAddr)
 
+	case "SPUBLISH":
+		return h.handleSPUBLISH(state, args, remoteAddr)
+
 	case "SUBSCRIBE":
 		return h.handleSUBSCRIBE(state, args, remoteAddr)
+
+	case "SSUBSCRIBE":
+		return h.handleSSUBSCRIBE(state, args, remoteAddr)
 
 	case "PSUBSCRIBE":
 		return h.handlePSUBSCRIBE(state, args, remoteAddr)
 
 	case "UNSUBSCRIBE":
 		return h.handleUNSUBSCRIBE(state, args, remoteAddr)
+
+	case "SUNSUBSCRIBE":
+		return h.handleSUNSUBSCRIBE(state, args, remoteAddr)
 
 	case "PUNSUBSCRIBE":
 		return h.handlePUNSUBSCRIBE(state, args, remoteAddr)

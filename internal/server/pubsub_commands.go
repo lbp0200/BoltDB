@@ -24,6 +24,98 @@ func (h *Handler) handlePUBLISH(state *connState, args [][]byte, remoteAddr stri
 	return proto.NewInteger(int64(count))
 }
 
+// handleSPUBLISH 实现 SPUBLISH 命令（Redis 7+ sharded pub/sub）。
+func (h *Handler) handleSPUBLISH(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if h.PubSub == nil {
+		return proto.NewError("ERR pubsub not enabled")
+	}
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'SPUBLISH' command")
+	}
+	channel := string(args[0])
+	message := args[1]
+	count := h.PubSub.SPublish(channel, message)
+	// #nosec G115 - count is bounded by practical data size limits
+	return proto.NewInteger(int64(count))
+}
+
+// handleSSUBSCRIBE 实现 SSUBSCRIBE 命令（Redis 7+ sharded pub/sub）。
+func (h *Handler) handleSSUBSCRIBE(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if h.PubSub == nil {
+		return proto.NewError("ERR pubsub not enabled")
+	}
+	if len(args) < 1 {
+		return proto.NewError("ERR wrong number of arguments for 'SSUBSCRIBE' command")
+	}
+	channels := make([]string, len(args))
+	for i, arg := range args {
+		channels[i] = string(arg)
+	}
+	state.mu.Lock()
+	if state.subscriber == nil {
+		state.subscriber = store.NewSubscriber(fmt.Sprintf("%s:%d", remoteAddr, time.Now().UnixNano()))
+	}
+	state.mu.Unlock()
+	subscribed := h.PubSub.SSubscribe(state.subscriber, channels...)
+	resp := &MultiResponse{
+		Responses: make([]proto.RESP, len(subscribed)),
+	}
+	for i, ch := range subscribed {
+		resp.Responses[i] = makePushOrArray([]proto.RESP{
+			proto.NewBulkString([]byte("ssubscribe")),
+			proto.NewBulkString([]byte(ch)),
+			proto.NewInteger(int64(i + 1)),
+		}, state.respVersion)
+	}
+	return resp
+}
+
+// handleSUNSUBSCRIBE 实现 SUNSUBSCRIBE 命令（Redis 7+ sharded pub/sub）。
+func (h *Handler) handleSUNSUBSCRIBE(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if h.PubSub == nil {
+		return proto.NewError("ERR pubsub not enabled")
+	}
+	if state.subscriber == nil {
+		channel := ""
+		if len(args) >= 1 {
+			channel = string(args[0])
+		}
+		return makePushOrArray([]proto.RESP{
+			proto.NewBulkString([]byte("sunsubscribe")),
+			proto.NewBulkString([]byte(channel)),
+			proto.NewInteger(0),
+		}, state.respVersion)
+	}
+	var unsubscribed []string
+	if len(args) >= 1 {
+		channels := make([]string, len(args))
+		for i, arg := range args {
+			channels[i] = string(arg)
+		}
+		unsubscribed = h.PubSub.SUnsubscribe(state.subscriber, channels...)
+	} else {
+		unsubscribed = h.PubSub.SUnsubscribe(state.subscriber)
+	}
+	if len(unsubscribed) == 0 {
+		return makePushOrArray([]proto.RESP{
+			proto.NewBulkString([]byte("sunsubscribe")),
+			proto.NewBulkString([]byte("")),
+			proto.NewInteger(0),
+		}, state.respVersion)
+	}
+	resp := &MultiResponse{
+		Responses: make([]proto.RESP, len(unsubscribed)),
+	}
+	for i, ch := range unsubscribed {
+		resp.Responses[i] = makePushOrArray([]proto.RESP{
+			proto.NewBulkString([]byte("sunsubscribe")),
+			proto.NewBulkString([]byte(ch)),
+			proto.NewInteger(0),
+		}, state.respVersion)
+	}
+	return resp
+}
+
 // handleSUBSCRIBE 实现 SUBSCRIBE 命令
 func (h *Handler) handleSUBSCRIBE(state *connState, args [][]byte, remoteAddr string) proto.RESP {
 	if h.PubSub == nil {
