@@ -394,6 +394,30 @@ async function test_server(r) {
   check("INFO", true, info && info.length > 0);
   const dbsize = await r.dbSize();
   check("DBSIZE", true, typeof dbsize === "number");
+
+  // RESET
+  await r.sendCommand(["MULTI"]);
+  await r.sendCommand(["SET", "js:rst_q", "queued"]);
+  const reset = await r.sendCommand(["RESET"]);
+  check("RESET", "RESET", reset);
+  const after = await r.get("js:rst_q");
+  checkNil("RESET discards MULTI", after);
+
+  // WAITAOF [0, 0]
+  const waitaof = await r.sendCommand(["WAITAOF", "0", "1", "100"]);
+  check("WAITAOF [0,0]", [0, 0], waitaof);
+
+  // MODULE LIST empty
+  const mods = await r.sendCommand(["MODULE", "LIST"]);
+  check("MODULE LIST empty", 0, mods.length);
+
+  // FAILOVER without TO errors
+  try {
+    await r.sendCommand(["FAILOVER"]);
+    check("FAILOVER errors", false, true);
+  } catch (e) {
+    check("FAILOVER errors", true, String(e.message).includes("FAILOVER without TO"));
+  }
 }
 
 async function run_all(port) {
