@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -386,4 +387,39 @@ func TestCOPY_NoTTLKey(t *testing.T) {
 	ttlInt, ok := ttlResp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(-1), int64(*ttlInt)) // -1 = no expiry
+}
+
+// TestXINFO_CONSUMERS_IdleField verifies commit 13454f3: XINFO CONSUMERS
+// reports the field name "idle" (computed ms since last seen) instead of the
+// old "seen" field, and the value must be a non-negative integer.
+func TestXINFO_CONSUMERS_IdleField(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Add an entry, create group and consumer
+	handler.executeCommand(state, "XADD", [][]byte{[]byte("xinf_stream"), []byte("1"), []byte("f"), []byte("v")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATE"), []byte("xinf_stream"), []byte("xinf_grp"), []byte("0")}, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+	resp = handler.executeCommand(state, "XGROUP", [][]byte{[]byte("CREATECONSUMER"), []byte("xinf_stream"), []byte("xinf_grp"), []byte("xinf_cons")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// XINFO CONSUMERS must list the consumer with name/idle field pairs
+	infoResp := handler.executeCommand(state, "XINFO", [][]byte{[]byte("CONSUMERS"), []byte("xinf_stream"), []byte("xinf_grp")}, "127.0.0.1:12345")
+	arr, ok := infoResp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(arr.Elems))
+
+	consumerArr, ok := arr.Elems[0].(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 4, len(consumerArr.Elems)) // name, <value>, idle, <value>
+	assert.Equal(t, "name", string(*consumerArr.Elems[0].(*proto.BulkString)))
+	assert.Equal(t, "xinf_cons", string(*consumerArr.Elems[1].(*proto.BulkString)))
+	assert.Equal(t, "idle", string(*consumerArr.Elems[2].(*proto.BulkString)))
+	idleStr := string(*consumerArr.Elems[3].(*proto.BulkString))
+	idleVal, err := strconv.ParseInt(idleStr, 10, 64)
+	assert.NoError(t, err)
+	assert.True(t, idleVal >= 0)
 }
