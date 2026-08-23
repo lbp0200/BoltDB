@@ -46,6 +46,7 @@
 | redis-py 套件扩展 245/245 | 已完成 ✅（2026-08-23）：套件补 10 个新命令用例（BLMPOP LEFT/RIGHT/timeout、GEORADIUS STORE/STOREDIST 计数与距离、SPUBLISH 送达数与 shard 隔离），235→245 全过；同批用例对 redis-server 8.2.1 同样通过（780d47c） |
 | BLMPOP/GEORADIUS STORE 复制传播 | 已完成 ✅（2026-08-23）：新增写命令的复制审计发现两条**静默主从分歧**路径——①BLMPOP 不在 `getWriteCommandSet`/`ReplicatedCommands`，master 的 pop 完全不达 replica（BLPOP/BRPOP/BZMPOP 均有覆盖）；②GEORADIUS(BYMEMBER) 带 STORE/STOREDIST 时在 master 写 zset 但命令标记 readonly，通用传播不触发。修复：BLMPOP 双注册 + `WriteCommand` 非阻塞等价重放（注意 args 含命令名、偏移比 handler 多 1）；GEORADIUS STORE 分支显式传播规范化命令 `GEORADIUS key lon lat radius unit [COUNT n] STORE|STOREDIST dst`（SPOP→SREM 同模式），`WriteCommand` 增 GEORADIUS 重放 case，纯读 GEORADIUS 仍不传播。新增 `TestExecuteReplicatedCommand_BLMPOP/_GEORADIUSStore`，复制对称性 checklist 通过（d24a471） |
 | PUBSUB SHARDCHANNELS + redis-cli 套件 86/86 | 已完成 ✅（2026-08-23）：①PUBSUB 补 SHARDCHANNELS [pattern] 子命令（Redis 7+ sharded pub/sub 配套查询，`GetShardChannels` 只列 shard 频道、与普通频道隔离，测试含 pattern 过滤）；②redis-cli 套件新增第 12 节 GEO+BLMPOP（GEOADD/GEORADIUS STORE/STOREDIST 计数与距离/BLMPOP LEFT COUNT 2、RIGHT、超时 nil），77→86 全过；③启动一致性检查抓出 BLMPOP 漏注册 `allDispatchCommands`（手写 dispatch 清单）导致服务无法启动，已补（d5a94f1） |
+| allDispatchCommands 同步 + 防漂移测试 | 已完成 ✅（2026-08-23）：审计发现手写清单 `allDispatchCommands` 还有 **8 个命令**漏注册（GEORADIUSBYMEMBER/_RO、GEORADIUS_RO、SORT_RO、SPUBLISH、SSUBSCRIBE、SUBSTR、SUNSUBSCRIBE）——它们不在写集合所以启动检查抓不到，属静默漂移。补齐后 259=259 对齐；新增 `TestAllDispatchCommands_MatchesRegistry` 双向对比 commandRegistry，任何一侧新增命令都会在 CI 失败而非等到服务启动（7d7ce86） |
 
 ---
 
