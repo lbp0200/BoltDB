@@ -181,7 +181,7 @@ func (h *Handler) handleGEORADIUS(state *connState, args [][]byte, remoteAddr st
 		return proto.NewError("ERR value is not a valid float")
 	}
 	unit := strings.ToLower(string(args[4]))
-	return h.geoRadiusCommon(key, lon, lat, radius, unit, args[5:])
+	return h.geoRadiusCommon(state, key, lon, lat, radius, unit, args[5:])
 }
 
 // handleGEORADIUSBYMEMBER 实现 GEORADIUSBYMEMBER 命令：以成员坐标为圆心搜索。
@@ -208,7 +208,7 @@ func (h *Handler) handleGEORADIUSBYMEMBER(state *connState, args [][]byte, remot
 		return proto.NewError("ERR value is not a valid float")
 	}
 	unit := strings.ToLower(string(args[3]))
-	return h.geoRadiusCommon(key, positions[0][1], positions[0][0], radius, unit, args[4:])
+	return h.geoRadiusCommon(state, key, positions[0][1], positions[0][0], radius, unit, args[4:])
 }
 
 // hasGeoRadiusStoreOpt 报告选项里是否含 STORE/STOREDIST（_RO 变体禁止）。
@@ -239,9 +239,12 @@ func (h *Handler) handleGEORADIUSBYMEMBER_RO(state *connState, args [][]byte, re
 }
 
 // geoRadiusCommon 执行 GEORADIUS 系列的公共逻辑（选项解析 + 搜索 + 响应组装）。
-func (h *Handler) geoRadiusCommon(key string, lon, lat, radius float64, unit string, opts [][]byte) proto.RESP {
+// 支持 STORE key / STOREDIST key（Redis 语义：结果写入 zset，返回写入数量）。
+func (h *Handler) geoRadiusCommon(state *connState, key string, lon, lat, radius float64, unit string, opts [][]byte) proto.RESP {
 	var count int
 	var withDist, withHash, withCoord bool
+	var storeKey string
+	storeDist := false
 	i := 0
 	for i < len(opts) {
 		opt := strings.ToUpper(string(opts[i]))
@@ -267,9 +270,36 @@ func (h *Handler) geoRadiusCommon(key string, lon, lat, radius float64, unit str
 			i += 2
 		case "ASC", "DESC":
 			i++
+		case "STORE":
+			if i+1 >= len(opts) {
+				return proto.NewError("ERR syntax error")
+			}
+			storeKey = string(opts[i+1])
+			storeDist = false
+			i += 2
+		case "STOREDIST":
+			if i+1 >= len(opts) {
+				return proto.NewError("ERR syntax error")
+			}
+			storeKey = string(opts[i+1])
+			storeDist = true
+			i += 2
 		default:
 			return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", opt))
 		}
+	}
+
+	// STORE/STOREDIST 路径：结果写入 zset，返回写入数量（Redis 语义）。
+	if storeKey != "" {
+		h.markDirtyKeys(state, storeKey)
+		added, err := h.Db.GeoSearchStore(storeKey, key, lon, lat, radius, unit, count, storeDist, "RADIUS", 0)
+		if err != nil {
+			if errors.Is(err, store.ErrWrongType) {
+				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			return wrapLogError(err)
+		}
+		return proto.NewInteger(added)
 	}
 
 	results, err := h.Db.GeoRadius(key, lon, lat, radius, unit, count, withDist, withHash, withCoord)

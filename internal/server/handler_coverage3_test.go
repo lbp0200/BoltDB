@@ -579,3 +579,51 @@ func TestGeoReadOnlyVariants(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, int64(0), int64(*checkInt))
 }
+
+// TestGEORADIUS_StoreOptions verifies GEORADIUS STORE/STOREDIST write the
+// result into a zset and return the count (Redis semantics, verified
+// against redis-server 8.2.1).
+func TestGEORADIUS_StoreOptions(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Palermo (13.36, 38.12), Catania (15.09, 37.50) — both within 200km
+	// of (15, 37).
+	handler.executeCommand(state, "GEOADD", [][]byte{[]byte("geo_st"), []byte("13.361389"), []byte("38.115556"), []byte("Palermo"), []byte("15.087269"), []byte("37.502669"), []byte("Catania")}, "127.0.0.1:12345")
+
+	// STORE: returns count, dst holds member → geohash score
+	resp := handler.executeCommand(state, "GEORADIUS", [][]byte{[]byte("geo_st"), []byte("15"), []byte("37"), []byte("200"), []byte("km"), []byte("STORE"), []byte("geo_dst")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(2), int64(*integer))
+
+	zcard := handler.executeCommand(state, "ZCARD", [][]byte{[]byte("geo_dst")}, "127.0.0.1:12345")
+	zcardInt, ok := zcard.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(2), int64(*zcardInt))
+
+	// STOREDIST: dst holds member → distance score (km)
+	resp = handler.executeCommand(state, "GEORADIUSBYMEMBER", [][]byte{[]byte("geo_st"), []byte("Palermo"), []byte("400"), []byte("km"), []byte("STOREDIST"), []byte("geo_dst2")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(2), int64(*integer))
+
+	zscore := handler.executeCommand(state, "ZSCORE", [][]byte{[]byte("geo_dst2"), []byte("Palermo")}, "127.0.0.1:12345")
+	bs, ok := zscore.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "0", string(*bs)) // distance from Palermo to itself = 0
+
+	// No results → empty zset, count 0
+	resp = handler.executeCommand(state, "GEORADIUS", [][]byte{[]byte("geo_st"), []byte("15"), []byte("37"), []byte("1"), []byte("km"), []byte("STORE"), []byte("geo_dst3")}, "127.0.0.1:12345")
+	integer, ok = resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), int64(*integer))
+
+	// Wrong type source → WRONGTYPE
+	handler.executeCommand(state, "SET", [][]byte{[]byte("geo_str"), []byte("v")}, "127.0.0.1:12345")
+	resp = handler.executeCommand(state, "GEORADIUS", [][]byte{[]byte("geo_str"), []byte("15"), []byte("37"), []byte("10"), []byte("km"), []byte("STORE"), []byte("geo_bad")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
