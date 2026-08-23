@@ -44,6 +44,7 @@
 | 16 处集群路由检查顺序 bug | 已完成 ✅（2026-08-23）：系统审计全部 `checkAndHandleMultiKeyRedirect(keys)` 调用点，发现 **16 个命令**在 keys 填充**前**检查（空 slice → 集群模式下 MOVED/ASK 路由完全失效，命令在错误节点本地执行）：ZINTERCARD/ZINTER/ZUNION/ZDIFF/ZUNIONSTORE/ZINTERSTORE/ZDIFFSTORE/BZPOPMAX/BZPOPMIN/BZMPOP/BLPOP/BRPOP/LMPOP/SINTER/SUNION/SDIFF/SINTERSTORE/SUNIONSTORE/SDIFFSTORE/TS.MGET（ZMPOP/BLMPOP 同批修复）。全部移到填充循环后（5a5210b） |
 | Sharded Pub/Sub（Redis 7+） | 已完成 ✅（2026-08-23）：SSUBSCRIBE/SUNSUBSCRIBE/SPUBLISH 完全缺失。store 层 `PubSubManager` 加独立 `shardChannels` 命名空间（Message 加 Shard 标志；`RemoveSubscriber` 同步清理 shard 订阅防泄漏），handler 层 3 命令接入两条分发路径（handler_dispatch + processPubSubCommand），`buildPubSubPush` 输出 `smessage` push。redis-py 8 双端实测与 redis-server 8.2.1 一致（receivers=1、smessage 送达、普通 PUBLISH 不达 shard 订阅者）。command_info 256→259（468a321） |
 | redis-py 套件扩展 245/245 | 已完成 ✅（2026-08-23）：套件补 10 个新命令用例（BLMPOP LEFT/RIGHT/timeout、GEORADIUS STORE/STOREDIST 计数与距离、SPUBLISH 送达数与 shard 隔离），235→245 全过；同批用例对 redis-server 8.2.1 同样通过（780d47c） |
+| BLMPOP/GEORADIUS STORE 复制传播 | 已完成 ✅（2026-08-23）：新增写命令的复制审计发现两条**静默主从分歧**路径——①BLMPOP 不在 `getWriteCommandSet`/`ReplicatedCommands`，master 的 pop 完全不达 replica（BLPOP/BRPOP/BZMPOP 均有覆盖）；②GEORADIUS(BYMEMBER) 带 STORE/STOREDIST 时在 master 写 zset 但命令标记 readonly，通用传播不触发。修复：BLMPOP 双注册 + `WriteCommand` 非阻塞等价重放（注意 args 含命令名、偏移比 handler 多 1）；GEORADIUS STORE 分支显式传播规范化命令 `GEORADIUS key lon lat radius unit [COUNT n] STORE|STOREDIST dst`（SPOP→SREM 同模式），`WriteCommand` 增 GEORADIUS 重放 case，纯读 GEORADIUS 仍不传播。新增 `TestExecuteReplicatedCommand_BLMPOP/_GEORADIUSStore`，复制对称性 checklist 通过（d24a471） |
 
 ---
 
