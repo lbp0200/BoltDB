@@ -293,3 +293,97 @@ func TestExecuteCommand_TS_REVRANGE_Coverage(t *testing.T) {
 	assert.Equal(t, 2, len(arr.Args))
 	assert.Equal(t, "300", string(arr.Args[0]))
 }
+
+// =====================================================================
+// Regression tests for behavior fixes that shipped without配套测试
+// =====================================================================
+
+// TestCLIENT_SETNAME_LengthLimit verifies commit 736a4f1: names up to 128
+// bytes are accepted; 129 bytes must return an error (Redis compat).
+func TestCLIENT_SETNAME_LengthLimit(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// 128 bytes: should succeed
+	name128 := strings.Repeat("a", 128)
+	resp := handler.executeCommand(state, "CLIENT", [][]byte{[]byte("SETNAME"), []byte(name128)}, "127.0.0.1:12345")
+	assert.Equal(t, proto.OK, resp)
+
+	// 129 bytes: must error
+	name129 := strings.Repeat("b", 129)
+	resp = handler.executeCommand(state, "CLIENT", [][]byte{[]byte("SETNAME"), []byte(name129)}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "ERR CLIENT NAME must not be longer than 128"))
+}
+
+// TestCONFIG_SET_UnknownParam verifies commit de9d5f8: known no-op params
+// (save, appendonly, etc.) are silently accepted; unknown params must error.
+func TestCONFIG_SET_UnknownParam(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Known no-op params must be accepted silently
+	for _, param := range []string{"save", "appendonly", "maxmemory", "maxmemory-policy", "slowlog-log-slower-than", "slowlog-max-len"} {
+		resp := handler.executeCommand(state, "CONFIG", [][]byte{[]byte("SET"), []byte(param), []byte("0")}, "127.0.0.1:12345")
+		assert.Equal(t, proto.OK, resp)
+	}
+
+	// Unknown param must error
+	resp := handler.executeCommand(state, "CONFIG", [][]byte{[]byte("SET"), []byte("unknown-param-xyz"), []byte("0")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "ERR unsupported config parameter"))
+}
+
+// TestCOPY_PreservesTTL verifies commit ddfc36e: COPY must propagate the
+// source key's TTL to the destination key (Redis compat).
+func TestCOPY_PreservesTTL(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// SETEX key 120 value → key has TTL ≈ 120s
+	handler.executeCommand(state, "SETEX", [][]byte{[]byte("copy_src"), []byte("120"), []byte("hello")}, "127.0.0.1:12345")
+
+	// COPY copy_src → copy_dst
+	resp := handler.executeCommand(state, "COPY", [][]byte{[]byte("copy_src"), []byte("copy_dst")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	// Verify value copied
+	getResp := handler.executeCommand(state, "GET", [][]byte{[]byte("copy_dst")}, "127.0.0.1:12345")
+	bs, ok := getResp.(*proto.BulkString)
+	assert.True(t, ok)
+	assert.Equal(t, "hello", string(*bs))
+
+	// Verify TTL propagated (should be ≈ 120, allow 2s tolerance for test runtime)
+	ttlResp := handler.executeCommand(state, "TTL", [][]byte{[]byte("copy_dst")}, "127.0.0.1:12345")
+	ttlInt, ok := ttlResp.(*proto.Integer)
+	assert.True(t, ok)
+	ttl := int64(*ttlInt)
+	assert.True(t, ttl > 100 && ttl <= 120) // within tolerance
+}
+
+// TestCOPY_NoTTLKey verifies COPY of a key without TTL does NOT set a TTL
+// on the destination (TTL should be -1, meaning no expiry).
+func TestCOPY_NoTTLKey(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.executeCommand(state, "SET", [][]byte{[]byte("notTL_src"), []byte("val")}, "127.0.0.1:12345")
+
+	resp := handler.executeCommand(state, "COPY", [][]byte{[]byte("notTL_src"), []byte("notTL_dst")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*integer))
+
+	ttlResp := handler.executeCommand(state, "TTL", [][]byte{[]byte("notTL_dst")}, "127.0.0.1:12345")
+	ttlInt, ok := ttlResp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(-1), int64(*ttlInt)) // -1 = no expiry
+}
