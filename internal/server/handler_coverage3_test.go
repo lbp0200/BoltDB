@@ -1,9 +1,11 @@
 package server
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/lbp0200/BoltDB/internal/replication"
@@ -827,4 +829,107 @@ func TestMemorySubcommands(t *testing.T) {
 	ss, ok := resp.(*proto.SimpleString)
 	assert.True(t, ok)
 	assert.Equal(t, "OK", string(*ss))
+}
+
+// TestCLIENT_REPLY_Skip verifies CLIENT REPLY SKIP suppresses the next
+// response (signal-level; the writer loop consumes it).
+func TestCLIENT_REPLY_Skip(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "CLIENT", [][]byte{[]byte("REPLY"), []byte("SKIP")}, "127.0.0.1:12345")
+	_, ok := resp.(*SkipReplySignal)
+	assert.True(t, ok)
+
+	resp = handler.executeCommand(state, "CLIENT", [][]byte{[]byte("REPLY"), []byte("OFF")}, "127.0.0.1:12345")
+	ss, ok := resp.(*proto.SimpleString)
+	assert.True(t, ok)
+	assert.Equal(t, "OK", string(*ss))
+	assert.True(t, state.replyOff)
+
+	resp = handler.executeCommand(state, "CLIENT", [][]byte{[]byte("REPLY"), []byte("ON")}, "127.0.0.1:12345")
+	ss, ok = resp.(*proto.SimpleString)
+	assert.True(t, ok)
+	assert.Equal(t, "OK", string(*ss))
+	assert.False(t, state.replyOff)
+}
+
+// TestCLIENT_TRACKINGINFO verifies the RESP3 map shape.
+func TestCLIENT_TRACKINGINFO(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+	state.respVersion = 3
+
+	resp := handler.executeCommand(state, "CLIENT", [][]byte{[]byte("TRACKINGINFO")}, "127.0.0.1:12345")
+	m, ok := resp.(*proto.Map)
+	assert.True(t, ok)
+	assert.Equal(t, 6, len(m.Elems)) // flags / redirect / prefixes
+}
+
+// TestCLIENT_HELP verifies CLIENT HELP returns the subcommand list.
+func TestCLIENT_HELP(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	resp := handler.executeCommand(state, "CLIENT", [][]byte{[]byte("HELP")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.True(t, len(arr.Args) >= 10)
+}
+
+// TestCLIENT_UNBLOCK_WakesBlockedClient verifies CLIENT UNBLOCK wakes a
+// connection blocked in BLPOP (returns null like a timeout) without
+// closing the connection.
+func TestCLIENT_UNBLOCK_WakesBlockedClient(t *testing.T) {
+	t.Parallel()
+	handler, _ := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// 注册两个真实连接（阻塞者 + 执行 UNBLOCK 者）
+	blockedCtx, blockedCancel := context.WithCancel(context.Background())
+	blocked := &connState{ctx: blockedCtx, cancel: blockedCancel}
+	unblocker := &connState{}
+
+	handler.connsMu.Lock()
+	handler.conns[blocked] = &connMeta{id: 100, conn: nil}
+	handler.conns[unblocker] = &connMeta{id: 101, conn: nil}
+	handler.connsMu.Unlock()
+
+	// 阻塞者在 goroutine 里执行 BLPOP（空 list，timeout 5s）
+	done := make(chan proto.RESP, 1)
+	go func() {
+		done <- handler.executeCommand(blocked, "BLPOP", [][]byte{[]byte("unblock_key"), []byte("5")}, "127.0.0.1:12345")
+	}()
+	// 等阻塞真正开始
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if blocked.blocking.Load() {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.True(t, blocked.blocking.Load())
+
+	// UNBLOCK
+	resp := handler.executeCommand(unblocker, "CLIENT", [][]byte{[]byte("UNBLOCK"), []byte("100")}, "127.0.0.1:12345")
+	ii, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), int64(*ii))
+
+	select {
+	case r := <-done:
+		// 被唤醒的 BLPOP 返回 null（nilArrayOrNull：RESP2 下 NilArray 值类型）
+		_, ok := r.(proto.NilArray)
+		assert.True(t, ok)
+	case <-time.After(3 * time.Second):
+		t.Fatal("BLPOP was not woken by CLIENT UNBLOCK")
+	}
+
+	// 连接仍可用：同一个 connState 再执行命令成功
+	resp = handler.executeCommand(blocked, "PING", nil, "127.0.0.1:12345")
+	_, ok = resp.(*proto.SimpleString)
+	assert.True(t, ok)
 }

@@ -422,7 +422,7 @@ func (h *Handler) handleBLMOVE(state *connState, args [][]byte, remoteAddr strin
 	}
 	h.markDirtyKeys(state, source, destination)
 	state.blocking.Store(true)
-	value, err := h.Db.BLMoveBlocking(state.ctx, source, destination, sourceDirection, destinationDirection, timeout)
+	value, err := h.Db.BLMoveBlocking(state.blockCtx(), source, destination, sourceDirection, destinationDirection, timeout)
 	state.blocking.Store(false)
 	if err != nil {
 		return wrapStoreError(err)
@@ -497,7 +497,7 @@ func (h *Handler) handleBLPOP(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR timeout is not an integer or out of range")
 	}
 	state.blocking.Store(true)
-	key, value, err := h.Db.BLPOPBlocking(state.ctx, keys, timeout)
+	key, value, err := h.Db.BLPOPBlocking(state.blockCtx(), keys, timeout)
 	state.blocking.Store(false)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -528,7 +528,7 @@ func (h *Handler) handleBRPOP(state *connState, args [][]byte, remoteAddr string
 		return proto.NewError("ERR timeout is not an integer or out of range")
 	}
 	state.blocking.Store(true)
-	key, value, err := h.Db.BRPOPBlocking(state.ctx, keys, timeout)
+	key, value, err := h.Db.BRPOPBlocking(state.blockCtx(), keys, timeout)
 	state.blocking.Store(false)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -581,7 +581,7 @@ func (h *Handler) handleBLMPOP(state *connState, args [][]byte, remoteAddr strin
 		}
 	}
 	state.blocking.Store(true)
-	key, values, err := h.Db.BLMPopBlocking(state.ctx, keys, direction == "LEFT", count, timeout)
+	key, values, err := h.Db.BLMPopBlocking(state.blockCtx(), keys, direction == "LEFT", count, timeout)
 	state.blocking.Store(false)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -617,7 +617,7 @@ func (h *Handler) handleBRPOPLPUSH(state *connState, args [][]byte, remoteAddr s
 		return proto.NewError("ERR timeout is not an integer or out of range")
 	}
 	state.blocking.Store(true)
-	value, err := h.Db.BRPOPLPUSHBlocking(state.ctx, source, destination, timeout)
+	value, err := h.Db.BRPOPLPUSHBlocking(state.blockCtx(), source, destination, timeout)
 	state.blocking.Store(false)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {

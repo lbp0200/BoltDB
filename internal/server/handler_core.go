@@ -39,6 +39,14 @@ type connState struct {
 	monitorCh     chan []byte
 	respVersion   int // 2 for RESP2 (default), 3 for RESP3; set by HELLO
 	blocking      atomic.Bool
+	// blockCancel 是当前阻塞命令（BLPOP/BLMPOP 等）的可取消 context；
+	// CLIENT UNBLOCK 通过它唤醒阻塞中的连接，而不影响连接生命周期。
+	blockMu     sync.Mutex
+	blockCancel context.CancelFunc
+	// replyOff / replySkip 实现 CLIENT REPLY OFF / SKIP 语义：
+	// 写入响应时跳过，直到 CLIENT REPLY ON 恢复。
+	replyOff  bool
+	replySkip bool
 	// noEvict 由 CLIENT NOEVICT ON 设置：输出缓冲区超限时不主动断开
 	// 该连接（Redis 语义：客户端声明自身可以承受大输出缓冲）。
 	noEvict atomic.Bool
@@ -52,6 +60,20 @@ type connState struct {
 	// currentCmd is set for the duration of executeCommand so redirect/fence
 	// helpers know whether the access is a write (IMPORTING write fence).
 	currentCmd string
+}
+
+// blockCtx 返回当前阻塞操作使用的 context：从连接生命周期 ctx 派生，
+// 可被 CLIENT UNBLOCK 单独取消而不影响连接自身。
+func (s *connState) blockCtx() context.Context {
+	s.blockMu.Lock()
+	defer s.blockMu.Unlock()
+	parent := s.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	s.blockCancel = cancel
+	return ctx
 }
 
 type Handler struct {
@@ -543,7 +565,19 @@ func (h *Handler) handleConnection(conn net.Conn) {
 
 		// 批量发送所有响应
 		for _, resp := range responses {
+			// CLIENT REPLY OFF/SKIP 语义（handleCLIENT_REPLY 设置）
+			if state.replySkip {
+				state.replySkip = false
+				continue
+			}
+			if state.replyOff {
+				continue
+			}
 			switch r := resp.(type) {
+			case *SkipReplySignal:
+				// SKIP 自身不写，且跳过下一条响应
+				state.replySkip = true
+				continue
 			case *MultiResponse:
 				for _, subResp := range r.Responses {
 					if err := proto.WriteRESP(writer, subResp); err != nil {

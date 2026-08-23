@@ -287,9 +287,129 @@ func (h *Handler) handleCLIENT(state *connState, args [][]byte, remoteAddr strin
 		// CLIENT GETREDIR — 返回 tracking 失效通知的重定向客户端 ID
 		// （0 = 无重定向；BoltDB 不推送失效通知，仅反映连接状态）。
 		return proto.NewInteger(state.trackingRedirect.Load())
+	case "HELP":
+		return h.handleCLIENT_HELP(state, args, remoteAddr)
+	case "REPLY":
+		return h.handleCLIENT_REPLY(state, args, remoteAddr)
+	case "TRACKINGINFO":
+		return h.handleCLIENT_TRACKINGINFO(state, args, remoteAddr)
+	case "UNBLOCK":
+		return h.handleCLIENT_UNBLOCK(state, args, remoteAddr)
 	default:
 		return proto.NewError("ERR syntax error")
 	}
 
 	// String命令
+}
+
+// SkipReplySignal 表示该响应自身不写入，并跳过下一条响应
+// （CLIENT REPLY SKIP 语义：SKIP 自身回复，下一条命令不回复）。
+type SkipReplySignal struct{}
+
+func (s *SkipReplySignal) String() string { return "" }
+
+// handleCLIENT_HELP 实现 CLIENT HELP。
+func (h *Handler) handleCLIENT_HELP(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	return &proto.Array{Args: [][]byte{
+		[]byte("CLIENT <subcommand> [<arg> ...]"),
+		[]byte("Subcommands:"),
+		[]byte("CACHING (YES|NO)"),
+		[]byte("GETNAME"),
+		[]byte("GETREDIR"),
+		[]byte("HELP"),
+		[]byte("ID"),
+		[]byte("INFO"),
+		[]byte("KILL <ip:port>"),
+		[]byte("LIST [TYPE <type>]"),
+		[]byte("NO-EVICT (ON|OFF)"),
+		[]byte("NO-TOUCH (ON|OFF)"),
+		[]byte("PAUSE <timeout> [WRITE|ALL]"),
+		[]byte("REPLY (ON|OFF|SKIP)"),
+		[]byte("SETINFO <attr> <value>"),
+		[]byte("SETNAME <name>"),
+		[]byte("TRACKING (ON|OFF) [REDIRECT <id>] [BCAST|OPTIN|OPTOUT|NOLOOP]"),
+		[]byte("TRACKINGINFO"),
+		[]byte("UNBLOCK <clientid> [TIMEOUT|ERROR]"),
+		[]byte("UNPAUSE"),
+	}}
+}
+
+// handleCLIENT_REPLY 实现 CLIENT REPLY ON|OFF|SKIP。
+func (h *Handler) handleCLIENT_REPLY(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'CLIENT REPLY' command")
+	}
+	switch strings.ToUpper(string(args[1])) {
+	case "ON":
+		state.replyOff = false
+		return proto.OK
+	case "OFF":
+		state.replyOff = true
+		return proto.OK
+	case "SKIP":
+		state.replySkip = true
+		return &SkipReplySignal{}
+	default:
+		return proto.NewError("ERR syntax error")
+	}
+}
+
+// handleCLIENT_TRACKINGINFO 实现 CLIENT TRACKINGINFO。
+func (h *Handler) handleCLIENT_TRACKINGINFO(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	// BoltDB 不推送失效通知：flags 恒空、redirect 为 0、prefixes 恒空。
+	elems := []proto.RESP{
+		proto.NewBulkString([]byte("flags")), &proto.NestedArray{Elems: []proto.RESP{}},
+		proto.NewBulkString([]byte("redirect")), proto.NewInteger(state.trackingRedirect.Load()),
+		proto.NewBulkString([]byte("prefixes")), &proto.NestedArray{Elems: []proto.RESP{}},
+	}
+	if state.respVersion == 3 {
+		return &proto.Map{Elems: elems}
+	}
+	return &proto.NestedArray{Elems: elems}
+}
+
+// handleCLIENT_UNBLOCK 实现 CLIENT UNBLOCK <clientid> [TIMEOUT|ERROR]。
+// 唤醒目标连接上正在执行的阻塞命令（BLPOP/BLMPOP 等），不关闭连接。
+func (h *Handler) handleCLIENT_UNBLOCK(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	if len(args) < 2 {
+		return proto.NewError("ERR wrong number of arguments for 'CLIENT UNBLOCK' command")
+	}
+	clientID, err := strconv.ParseInt(string(args[1]), 10, 64)
+	if err != nil {
+		return proto.NewError("ERR value is not an integer or out of range")
+	}
+	mode := "TIMEOUT"
+	if len(args) >= 3 {
+		mode = strings.ToUpper(string(args[2]))
+		if mode != "TIMEOUT" && mode != "ERROR" {
+			return proto.NewError("ERR syntax error")
+		}
+	}
+	_ = mode
+
+	h.connsMu.RLock()
+	var target *connState
+	for s, meta := range h.conns {
+		if meta.id == clientID {
+			target = s
+			break
+		}
+	}
+	h.connsMu.RUnlock()
+
+	if target == nil {
+		return proto.NewError("ERR No such client")
+	}
+
+	if !target.blocking.Load() {
+		// 客户端存在但未处于阻塞命令中（Redis 语义）
+		return proto.NewInteger(0)
+	}
+	target.blockMu.Lock()
+	bc := target.blockCancel
+	target.blockMu.Unlock()
+	if bc != nil {
+		bc()
+	}
+	return proto.NewInteger(1)
 }

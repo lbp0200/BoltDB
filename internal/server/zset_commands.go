@@ -464,7 +464,7 @@ func (h *Handler) handleBZPOPMAX(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR timeout is not an integer or out of range")
 	}
 	state.blocking.Store(true)
-	key, member, err := h.Db.BZPopMaxBlocking(state.ctx, keys, timeout)
+	key, member, err := h.Db.BZPopMaxBlocking(state.blockCtx(), keys, timeout)
 	state.blocking.Store(false)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -495,7 +495,7 @@ func (h *Handler) handleBZPOPMIN(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR timeout is not an integer or out of range")
 	}
 	state.blocking.Store(true)
-	key, member, err := h.Db.BZPopMinBlocking(state.ctx, keys, timeout)
+	key, member, err := h.Db.BZPopMinBlocking(state.blockCtx(), keys, timeout)
 	state.blocking.Store(false)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -1075,7 +1075,7 @@ func (h *Handler) handleBZMPOP(state *connState, args [][]byte, remoteAddr strin
 		}
 	}
 	state.blocking.Store(true)
-	key, members, err := h.Db.BZMPopBlocking(state.ctx, keys, modifier, count, timeout)
+	key, members, err := h.Db.BZMPopBlocking(state.blockCtx(), keys, modifier, count, timeout)
 	state.blocking.Store(false)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
