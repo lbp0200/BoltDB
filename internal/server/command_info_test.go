@@ -488,7 +488,9 @@ func TestCommandInfoKeyPositionsConsistency(t *testing.T) {
 		if c.firstKey <= 0 && c.firstKey != -1 {
 			t.Fatalf("command %s has invalid firstKey: %d", c.name, c.firstKey)
 		}
-		if c.lastKey <= 0 && c.lastKey != -1 {
+		// lastKey 可为任意负数（Redis 语义：-N 表示倒数第 N 个参数是
+		// 最后一个 key，如 BLPOP key... timeout 的 lastKey=-2）。
+		if c.lastKey == 0 {
 			t.Fatalf("command %s has invalid lastKey: %d", c.name, c.lastKey)
 		}
 		if c.step <= 0 {
