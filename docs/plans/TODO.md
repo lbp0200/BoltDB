@@ -111,6 +111,7 @@
 | SLOWLOG 子命令 | ✅ 已核实完整（2026-08-23） | GET/LEN/RESET/HELP 全部已实现（返回空数据，无真实慢查询日志——真实慢日志属功能增强，见待办） |
 | MODULE 子命令 | ✅ 已实现（2026-08-23 `5689f08`） | LIST/HELP 原有；LOAD/LOADEX 报 "Error loading the extension"（无模块系统）、UNLOAD 报 "no such module with that name" |
 | BGREWRITEAOF / RESET / WAITAOF | ✅ 已补齐 | 2026-08-23 已实现（65a10a4），此表为留档 |
+| 新命令套件覆盖 + RESP3 双端差分 | 已完成 ✅（2026-08-23 `e4a530d`）：py 245→248、cli 86→93（RESET 丢弃 MULTI 端到端、WAITAOF [0,0]、TRACKINGINFO dict、MODULE LIST、FAILOVER 错误）；BoltDB vs Redis 8.2 双端 RESP3 差分抓出 3 个 wire 缺口已修——**MEMORY STATS** RESP3 应为 Map（原 flat array）、**LATENCY HISTOGRAM** RESP3 应为 Map、**LATENCY GRAPH** 无采样应报 "No samples available for event 'x'"（原空数组）；剩余差异均为内容性（Redis 有采样/内置 vectorset 模块，BoltDB 无） |
 
 ---
 
