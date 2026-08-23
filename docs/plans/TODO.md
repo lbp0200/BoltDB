@@ -95,21 +95,21 @@
 
 ---
 
-## 剩余缺失命令（2026-08-23 全量差分，对照 redis-server 8.2.1）
+## 剩余缺失命令（2026-08-23 全量差分，对照 redis-server 8.2.1）——**已全部清零 ✅（5689f08）**
 
 > `COMMAND LIST` 差分（262/397 已覆盖）中排除子命令展开误报（ACL\|CAT 等——BoltDB 用容器命令内部 dispatch，COMMAND/ACL/CLIENT/PUBSUB/XGROUP/XINFO 容器已覆盖）后的**真缺失**清单。按状态分类：
 
 | 命令 | 状态 | 说明 |
 |------|------|------|
-| FAILOVER | ⏳ 待评估 | 复制管理命令（master 切换）。BoltDB 复制无哨兵/自动故障转移，实现语义需设计（当前 `REPLICAOF NO ONE` 可手动提升） |
-| RESTORE-ASKING | ⏳ 待评估 | 集群迁移内部命令（Redis 集群 slot 迁移时目标节点用），BoltDB 集群无 slot 迁移机制，可能永远不需要 |
+| FAILOVER | ✅ 已实现（2026-08-23 `5689f08`） | `FAILOVER TO host port` 真实语义：当前 master 降级为副本并同步新 master（StartSlaveReplication）；`ABORT` 报 "No failover in progress"；无 TO 报错（无哨兵/自动故障转移）；`FORCE` 接受（无保护机制可绕过） |
+| RESTORE-ASKING | ✅ 已实现（2026-08-23 `5689f08`） | RESTORE 的 dispatch 别名（ASKING 旁路在 redirect 层）；注册 command_info + 写集合 + ReplicatedCommands + write_command 重放 case——对称性清单测试立刻抓到 ReplicatedCommands 缺口 |
 | PSYNC / SYNC 注册 | ✅ 已补齐（2026-08-23 `2abd9ce`） | **已实现**（`handler_core.go:637` `handlePSyncWithRDB` 特殊处理）但未注册 command_info → `COMMAND LIST` 查不到。已注册（PSYNC arity -3 / SYNC arity 1，官方元数据）+ dispatch 兜底报 "replication not enabled"（与 REPLICAOF 一致） |
 | CLIENT 子命令 | ✅ 已对齐（2026-08-23 `8cc0de5`） | 18 个子命令全覆盖：原有 LIST/GETNAME/SETNAME/ID/KILL/PAUSE/UNPAUSE/INFO/NOEVICT/TRACKING/SETINFO/NO-TOUCH/CACHING/GETREDIR；本轮补 HELP/REPLY（ON/OFF/SKIP 写循环抑制，pipeline 安全）/TRACKINGINFO（RESP3 Map）/UNBLOCK（blockCtx 每操作可取消 ctx 唤醒阻塞命令，连接存活；9 个阻塞调用点改造） |
 | LATENCY 子命令 | ✅ 已补齐（2026-08-23 `2abd9ce`） | LATEST/RESET/HELP/DOCTOR 原有；GRAPH/HISTORY/HISTOGRAM 已补（空数组，无采样数据） |
 | OBJECT 子命令 | ✅ 已核实完整（2026-08-23） | ENCODING/IDLETIME/FREQ/REFCOUNT/HELP 全部已实现（此前记录"缺 REFCOUNT"有误） |
 | MEMORY 子命令 | ✅ 已补齐（2026-08-23 `2abd9ce`） | USAGE/DOCTOR/HELP 原有；STATS（最小键值对形状，redis-py dict 解析兼容）/MALLOC-STATS（空 bulk）/PURGE（OK）已补 |
 | SLOWLOG 子命令 | ✅ 已核实完整（2026-08-23） | GET/LEN/RESET/HELP 全部已实现（返回空数据，无真实慢查询日志——真实慢日志属功能增强，见待办） |
-| MODULE 子命令 | ⏳ 待评估 | MODULE LIST 返回空列表即可；LOAD/UNLOAD 无模块系统，报错 |
+| MODULE 子命令 | ✅ 已实现（2026-08-23 `5689f08`） | LIST/HELP 原有；LOAD/LOADEX 报 "Error loading the extension"（无模块系统）、UNLOAD 报 "no such module with that name" |
 | BGREWRITEAOF / RESET / WAITAOF | ✅ 已补齐 | 2026-08-23 已实现（65a10a4），此表为留档 |
 
 ---
