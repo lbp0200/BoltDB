@@ -474,7 +474,36 @@ check "PFMERGE returns OK" "OK" "$result"
 result=$($RCLI PFCOUNT hll:merged 2>&1 || true)
 check_contains "PFCOUNT after merge" "4" "$result"
 
-# ===================== 12. STREAM =====================
+# ===================== 12. GEO + BLMPOP =====================
+section "12. GEO + BLMPOP"
+
+# GEOADD
+result=$($RCLI GEOADD geo:key 13.361389 38.115556 Palermo 15.087269 37.502669 Catania 2>&1 || true)
+check_contains "GEOADD returns 2" "2" "$result"
+
+# GEORADIUS STORE writes a zset and returns the count
+result=$($RCLI GEORADIUS geo:key 15 37 200 km STORE geo:dst 2>&1 || true)
+check_contains "GEORADIUS STORE count" "2" "$result"
+result=$($RCLI ZCARD geo:dst 2>&1 || true)
+check_contains "GEORADIUS STORE zcard" "2" "$result"
+
+# GEORADIUS STOREDIST stores km distances
+result=$($RCLI GEORADIUSBYMEMBER geo:key Palermo 400 km STOREDIST geo:dst2 2>&1 || true)
+check_contains "GEORADIUSBYMEMBER STOREDIST count" "2" "$result"
+result=$($RCLI ZSCORE geo:dst2 Palermo 2>&1 || true)
+check_contains "STOREDIST self distance is 0" "0" "$result"
+
+# BLMPOP: LEFT COUNT 2 then RIGHT
+$RCLI RPUSH blm:key a b c > /dev/null 2>&1
+result=$($RCLI BLMPOP 1 1 blm:key LEFT COUNT 2 2>&1 || true)
+check_contains "BLMPOP LEFT COUNT 2 pops a" "a" "$result"
+check_contains "BLMPOP LEFT COUNT 2 pops b" "b" "$result"
+result=$($RCLI BLMPOP 1 1 blm:key RIGHT 2>&1 || true)
+check_contains "BLMPOP RIGHT pops c" "c" "$result"
+result=$($RCLI BLMPOP 1 1 blm:empty LEFT 2>&1 || true)
+check "BLMPOP timeout returns nil" "(nil)" "$result"
+
+# ===================== 13. STREAM =====================
 section "12. STREAM"
 
 # XADD with explicit ID

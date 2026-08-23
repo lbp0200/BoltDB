@@ -578,3 +578,38 @@ func TestBuildPubSubPush_Shard(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "smessage", string(*na.Elems[0].(*proto.BulkString)))
 }
+
+// TestProcessPubSubCommand_PUBSUB_SHARDCHANNELS tests PUBSUB SHARDCHANNELS:
+// lists active shard channels (isolated from regular channels).
+func TestProcessPubSubCommand_PUBSUB_SHARDCHANNELS(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.PubSub = store.NewPubSubManager()
+	state.subscriber = store.NewSubscriber("test")
+
+	// Regular channel must NOT appear in SHARDCHANNELS
+	handler.PubSub.Subscribe(state.subscriber, "plain_ch")
+	handler.PubSub.SSubscribe(state.subscriber, "{s}one", "{s}two")
+
+	resp := handler.executeCommand(state, "PUBSUB", [][]byte{[]byte("SHARDCHANNELS")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(arr.Args))
+	names := map[string]bool{}
+	for _, ch := range arr.Args {
+		names[string(ch)] = true
+	}
+	assert.True(t, names["{s}one"])
+	assert.True(t, names["{s}two"])
+	assert.True(t, !names["plain_ch"])
+
+	// Pattern filter
+	resp = handler.executeCommand(state, "PUBSUB", [][]byte{[]byte("SHARDCHANNELS"), []byte("{s}o*")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 1, len(arr.Args))
+	assert.Equal(t, "{s}one", string(arr.Args[0]))
+}

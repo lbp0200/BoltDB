@@ -293,6 +293,17 @@ func (h *Handler) handlePUBSUB(state *connState, args [][]byte, remoteAddr strin
 			results[i] = []byte(ch)
 		}
 		return &proto.Array{Args: results}
+	case "SHARDCHANNELS":
+		pattern := "*"
+		if len(args) >= 2 {
+			pattern = string(args[1])
+		}
+		channels := h.PubSub.GetShardChannels(pattern)
+		results := make([][]byte, len(channels))
+		for i, ch := range channels {
+			results[i] = []byte(ch)
+		}
+		return &proto.Array{Args: results}
 	case "NUMSUB":
 		if len(args) < 2 {
 			return proto.NewError("ERR wrong number of arguments for 'PUBSUB NUMSUB' command")

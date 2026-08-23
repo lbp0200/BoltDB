@@ -49,7 +49,7 @@ var allDispatchCommands = map[string]bool{
 	"ZCOUNT": true, "ZMSCORE": true,
 	"ZRANGE": true, "ZREVRANGE": true, "ZRANGEBYSCORE": true, "ZREVRANGEBYSCORE": true,
 	"ZINCRBY": true, "ZRANDMEMBER": true,
-	"LMPOP": true, "ZMPOP": true, "BZMPOP": true,
+	"LMPOP": true, "ZMPOP": true, "BZMPOP": true, "BLMPOP": true,
 	"ZUNIONSTORE": true, "ZINTERSTORE": true, "ZDIFFSTORE": true,
 	"ZDIFF": true, "ZINTER": true, "ZINTERCARD": true, "ZUNION": true,
 	"ZLEXCOUNT": true, "ZRANGEBYLEX": true, "ZREVRANGEBYLEX": true,

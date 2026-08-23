@@ -441,6 +441,20 @@ func (psm *PubSubManager) GetChannels(pattern string) []string {
 	return channels
 }
 
+// GetShardChannels 获取匹配 pattern 的活跃 shard 频道（PUBSUB SHARDCHANNELS）。
+func (psm *PubSubManager) GetShardChannels(pattern string) []string {
+	psm.mu.RLock()
+	defer psm.mu.RUnlock()
+
+	channels := make([]string, 0)
+	for channel := range psm.shardChannels {
+		if pattern == "" || pattern == "*" || matchPattern(channel, pattern) {
+			channels = append(channels, channel)
+		}
+	}
+	return channels
+}
+
 // GetPatternCount 获取模式订阅数量
 func (psm *PubSubManager) GetPatternCount() int {
 	psm.mu.RLock()
