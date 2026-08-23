@@ -33,6 +33,10 @@ func (h *Handler) handleCONFIG(state *connState, args [][]byte, remoteAddr strin
 			for i, cfg := range configs {
 				results[i] = []byte(cfg)
 			}
+			// RESP3: CONFIG GET must be a Map ('%') so clients return a dict.
+			if state.respVersion == 3 {
+				return h.configArrayToMap(results)
+			}
 			return &proto.Array{Args: results}
 		} else if len(args) >= 2 {
 			key := string(args[1])
@@ -54,6 +58,10 @@ func (h *Handler) handleCONFIG(state *connState, args [][]byte, remoteAddr strin
 				}
 			default:
 				value = ""
+			}
+			// RESP3: CONFIG GET must be a Map ('%') so clients return a dict.
+			if state.respVersion == 3 {
+				return h.configArrayToMap([][]byte{[]byte(key), []byte(value)})
 			}
 			return &proto.Array{Args: [][]byte{[]byte(key), []byte(value)}}
 		} else {

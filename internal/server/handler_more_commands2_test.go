@@ -206,9 +206,9 @@ func TestServerStreamCommands2(t *testing.T) {
 			cmd:  "XINFO",
 			args: [][]byte{[]byte("STREAM"), []byte("mystream")},
 			check: func(t *testing.T, resp proto.RESP) {
-				arr, ok := resp.(*proto.Array)
+				na, ok := resp.(*proto.NestedArray)
 				assert.True(t, ok)
-				assert.True(t, len(arr.Args) >= 2)
+				assert.True(t, len(na.Elems) >= 2)
 			},
 		},
 		// XPENDING

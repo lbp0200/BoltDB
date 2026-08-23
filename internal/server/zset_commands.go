@@ -75,17 +75,33 @@ func (h *Handler) handleZINTER(state *connState, args [][]byte, remoteAddr strin
 		return &proto.Array{Args: [][]byte{}}
 	}
 	if withScores {
-		result := make([][]byte, 0, len(members)*2)
-		for _, m := range members {
-			result = append(result, []byte(m.Member), []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)))
-		}
-		return &proto.Array{Args: result}
+		return zrangeWithScoresReply(state, members)
 	}
 	result := make([][]byte, len(members))
 	for i, m := range members {
 		result[i] = []byte(m.Member)
 	}
 	return &proto.Array{Args: result}
+}
+
+// zrangeWithScoresReply 组装 WITHSCORES 响应：RESP3 为 array of [member,
+// Double]（Redis 8 RESP3 wire 语义），RESP2 为扁平 [member, score, ...]。
+func zrangeWithScoresReply(state *connState, members []store.ZSetMember) proto.RESP {
+	if state.respVersion == 3 {
+		elems := make([]proto.RESP, 0, len(members))
+		for _, m := range members {
+			elems = append(elems, &proto.NestedArray{Elems: []proto.RESP{
+				proto.NewBulkString([]byte(m.Member)),
+				&proto.Double{Value: m.Score},
+			}})
+		}
+		return &proto.NestedArray{Elems: elems}
+	}
+	results := make([][]byte, 0, len(members)*2)
+	for _, m := range members {
+		results = append(results, []byte(m.Member), []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)))
+	}
+	return &proto.Array{Args: results}
 }
 
 // handleZINTERCARD 实现 ZINTERCARD 命令（Redis 7.0+），返回交集基数
@@ -199,11 +215,7 @@ func (h *Handler) handleZUNION(state *connState, args [][]byte, remoteAddr strin
 		return &proto.Array{Args: [][]byte{}}
 	}
 	if withScores {
-		result := make([][]byte, 0, len(members)*2)
-		for _, m := range members {
-			result = append(result, []byte(m.Member), []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)))
-		}
-		return &proto.Array{Args: result}
+		return zrangeWithScoresReply(state, members)
 	}
 	result := make([][]byte, len(members))
 	for i, m := range members {
@@ -707,6 +719,17 @@ func (h *Handler) handleZRANGE(state *connState, args [][]byte, remoteAddr strin
 		return wrapStoreError(err)
 	}
 	if withScores {
+		// RESP3: array of [member, Double] pairs; RESP2: flat [m, s, m, s].
+		if state.respVersion == 3 {
+			elems := make([]proto.RESP, 0, len(members))
+			for _, m := range members {
+				elems = append(elems, &proto.NestedArray{Elems: []proto.RESP{
+					proto.NewBulkString([]byte(m.Member)),
+					&proto.Double{Value: m.Score},
+				}})
+			}
+			return &proto.NestedArray{Elems: elems}
+		}
 		results := make([][]byte, 0, len(members)*2)
 		for _, m := range members {
 			results = append(results, []byte(m.Member), []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)))
@@ -751,11 +774,11 @@ func (h *Handler) handleZREVRANGE(state *connState, args [][]byte, remoteAddr st
 		return wrapStoreError(err)
 	}
 	if withScores {
-		results := make([][]byte, 0, len(members)*2)
-		for _, m := range members {
-			results = append(results, []byte(m.Member), []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)))
+		vals := make([]store.ZSetMember, len(members))
+		for i, m := range members {
+			vals[i] = *m
 		}
-		return &proto.Array{Args: results}
+		return zrangeWithScoresReply(state, vals)
 	}
 	results := make([][]byte, len(members))
 	for i, m := range members {
@@ -812,11 +835,7 @@ func (h *Handler) handleZRANGEBYSCORE(state *connState, args [][]byte, remoteAdd
 		}
 	}
 	if withScores {
-		results := make([][]byte, 0, len(members)*2)
-		for _, m := range members {
-			results = append(results, []byte(m.Member), []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)))
-		}
-		return &proto.Array{Args: results}
+		return zrangeWithScoresReply(state, members)
 	}
 	results := make([][]byte, len(members))
 	for i, m := range members {
@@ -873,11 +892,7 @@ func (h *Handler) handleZREVRANGEBYSCORE(state *connState, args [][]byte, remote
 		}
 	}
 	if withScores {
-		results := make([][]byte, 0, len(members)*2)
-		for _, m := range members {
-			results = append(results, []byte(m.Member), []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)))
-		}
-		return &proto.Array{Args: results}
+		return zrangeWithScoresReply(state, members)
 	}
 	results := make([][]byte, len(members))
 	for i, m := range members {
@@ -961,11 +976,7 @@ func (h *Handler) handleZRANDMEMBER(state *connState, args [][]byte, remoteAddr 
 		}}
 	}
 	if withScores {
-		result := make([][]byte, 0, len(members)*2)
-		for _, m := range members {
-			result = append(result, []byte(m.Member), []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)))
-		}
-		return &proto.Array{Args: result}
+		return zrangeWithScoresReply(state, members)
 	}
 	result := make([][]byte, len(members))
 	for i, m := range members {
@@ -1265,11 +1276,7 @@ func (h *Handler) handleZDIFF(state *connState, args [][]byte, remoteAddr string
 		return &proto.Array{Args: [][]byte{}}
 	}
 	if withScores {
-		result := make([][]byte, 0, len(members)*2)
-		for _, m := range members {
-			result = append(result, []byte(m.Member), []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)))
-		}
-		return &proto.Array{Args: result}
+		return zrangeWithScoresReply(state, members)
 	}
 	result := make([][]byte, len(members))
 	for i, m := range members {

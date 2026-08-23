@@ -1411,20 +1411,20 @@ func TestExecuteCommand_XINFO_STREAMS_Coverage(t *testing.T) {
 	handler.executeCommand(state, "XADD", [][]byte{[]byte("mystream"), []byte("1"), []byte("field"), []byte("value")}, "127.0.0.1:12345")
 
 	resp := handler.executeCommand(state, "XINFO", [][]byte{[]byte("STREAM"), []byte("mystream")}, "127.0.0.1:12345")
-	arr, ok := resp.(*proto.Array)
+	arr, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) > 0)
+	assert.True(t, len(arr.Elems) > 0)
 	// Verify stream info contains length field
 	// Format: [length, first-entry-id, last-entry-id, ...]
-	if len(arr.Args) > 0 {
-		assert.Equal(t, "length", string(arr.Args[0]))
+	if len(arr.Elems) > 0 {
+		assert.Equal(t, "length", string(*arr.Elems[0].(*proto.BulkString)))
 	}
 	// Verify recorded-first-entry-id field is present with the first entry ID
 	// (store 层 formatStreamID 把 "1" 规范化为 "1-0")
 	foundRecordedFirst := false
-	for i := 0; i+1 < len(arr.Args); i += 2 {
-		if string(arr.Args[i]) == "recorded-first-entry-id" {
-			assert.Equal(t, "1-0", string(arr.Args[i+1]))
+	for i := 0; i+1 < len(arr.Elems); i += 2 {
+		if string(*arr.Elems[i].(*proto.BulkString)) == "recorded-first-entry-id" {
+			assert.Equal(t, "1-0", string(*arr.Elems[i+1].(*proto.BulkString)))
 			foundRecordedFirst = true
 		}
 	}

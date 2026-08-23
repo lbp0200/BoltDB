@@ -1058,6 +1058,35 @@ func (h *Handler) handleXPENDING(state *connState, args [][]byte, remoteAddr str
 	}}
 }
 
+// streamFirstLastEntries returns the first and last entry of a stream as
+// [id, [field, value, ...]] RESP values, or RESP3 Null / nil bulk when the
+// stream is empty (Redis XINFO STREAM reply shape).
+func (h *Handler) streamFirstLastEntries(key string) (proto.RESP, proto.RESP) {
+	entryResp := func(entries []store.StreamEntry) proto.RESP {
+		if len(entries) == 0 {
+			return proto.NewBulkString(nil)
+		}
+		e := entries[0]
+		fields := make([]proto.RESP, 0, len(e.Fields)*2)
+		for k, v := range e.Fields {
+			fields = append(fields, proto.NewBulkString([]byte(k)), proto.NewBulkString([]byte(v)))
+		}
+		return &proto.NestedArray{Elems: []proto.RESP{
+			proto.NewBulkString([]byte(e.ID)),
+			&proto.NestedArray{Elems: fields},
+		}}
+	}
+	first, err := h.Db.XRange(key, "-", "+", 1)
+	if err != nil {
+		return proto.NewBulkString(nil), proto.NewBulkString(nil)
+	}
+	last, err := h.Db.XRevRange(key, "+", "-", 1)
+	if err != nil {
+		return entryResp(first), proto.NewBulkString(nil)
+	}
+	return entryResp(first), entryResp(last)
+}
+
 // handleXINFO 实现 XINFO 命令
 func (h *Handler) handleXINFO(state *connState, args [][]byte, remoteAddr string) proto.RESP {
 	if len(args) < 1 {
@@ -1103,27 +1132,39 @@ func (h *Handler) handleXINFO(state *connState, args [][]byte, remoteAddr string
 		if info.Groups != nil {
 			groupsCount = int64(len(info.Groups))
 		}
-		response := [][]byte{
-			[]byte("length"),
-			[]byte(strconv.FormatInt(info.Length, 10)),
-			[]byte("radix-tree-keys"),
-			[]byte(strconv.FormatInt(info.RadixTreeKeys, 10)),
-			[]byte("radix-tree-nodes"),
-			[]byte(strconv.FormatInt(info.RadixTreeNodes, 10)),
-			[]byte("last-generated-id"),
-			[]byte(info.LastID),
-			[]byte("max-deleted-entry-id"),
-			[]byte(info.MaxDeletedID),
-			[]byte("entries-added"),
-			[]byte(strconv.FormatInt(info.Length, 10)),
+		// first/last entry for the map reply (Redis includes both; redis-py 8
+		// reads data["last-entry"] unconditionally).
+		firstEntry, lastEntry := h.streamFirstLastEntries(key)
+		response := []proto.RESP{
+			proto.NewBulkString([]byte("length")),
+			proto.NewBulkString([]byte(strconv.FormatInt(info.Length, 10))),
+			proto.NewBulkString([]byte("radix-tree-keys")),
+			proto.NewBulkString([]byte(strconv.FormatInt(info.RadixTreeKeys, 10))),
+			proto.NewBulkString([]byte("radix-tree-nodes")),
+			proto.NewBulkString([]byte(strconv.FormatInt(info.RadixTreeNodes, 10))),
+			proto.NewBulkString([]byte("last-generated-id")),
+			proto.NewBulkString([]byte(info.LastID)),
+			proto.NewBulkString([]byte("max-deleted-entry-id")),
+			proto.NewBulkString([]byte(info.MaxDeletedID)),
+			proto.NewBulkString([]byte("entries-added")),
+			proto.NewBulkString([]byte(strconv.FormatInt(info.Length, 10))),
 			// recorded-first-entry-id：stream 中首个 entry 的 ID
 			// （Redis 标准字段；与 max-deleted-entry-id 对应）
-			[]byte("recorded-first-entry-id"),
-			[]byte(info.FirstID),
-			[]byte("groups"),
-			[]byte(strconv.FormatInt(groupsCount, 10)),
+			proto.NewBulkString([]byte("recorded-first-entry-id")),
+			proto.NewBulkString([]byte(info.FirstID)),
+			proto.NewBulkString([]byte("groups")),
+			proto.NewBulkString([]byte(strconv.FormatInt(groupsCount, 10))),
+			proto.NewBulkString([]byte("first-entry")),
+			firstEntry,
+			proto.NewBulkString([]byte("last-entry")),
+			lastEntry,
 		}
-		return &proto.Array{Args: response}
+		// RESP3: XINFO STREAM must be a Map ('%'); RESP2 keeps the flat
+		// field/value array (redis-py 8 reads keys from the map reply).
+		if state.respVersion == 3 {
+			return &proto.Map{Elems: response}
+		}
+		return &proto.NestedArray{Elems: response}
 	case "GROUPS":
 		if len(args) < 2 {
 			return proto.NewError("ERR wrong number of arguments for 'XINFO GROUPS' command")
@@ -1148,7 +1189,12 @@ func (h *Handler) handleXINFO(state *connState, args [][]byte, remoteAddr string
 				proto.NewBulkString([]byte("last-delivered-id")),
 				proto.NewBulkString([]byte(g.LastDeliveredID)),
 			}
-			response = append(response, &proto.NestedArray{Elems: groupInfo})
+			// RESP3: each group is a Map; redis-py 8 calls .items() on it.
+			if state.respVersion == 3 {
+				response = append(response, &proto.Map{Elems: groupInfo})
+			} else {
+				response = append(response, &proto.NestedArray{Elems: groupInfo})
+			}
 		}
 		return &proto.NestedArray{Elems: response}
 	case "CONSUMERS":
@@ -1177,7 +1223,12 @@ func (h *Handler) handleXINFO(state *connState, args [][]byte, remoteAddr string
 				proto.NewBulkString([]byte("idle")),
 				proto.NewBulkString([]byte(strconv.FormatInt(idle, 10))),
 			}
-			response = append(response, &proto.NestedArray{Elems: consumerInfo})
+			// RESP3: each consumer is a Map; redis-py 8 calls .items() on it.
+			if state.respVersion == 3 {
+				response = append(response, &proto.Map{Elems: consumerInfo})
+			} else {
+				response = append(response, &proto.NestedArray{Elems: consumerInfo})
+			}
 		}
 		return &proto.NestedArray{Elems: response}
 	default:

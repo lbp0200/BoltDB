@@ -433,7 +433,7 @@ func TestXINFO_STREAM_Success(t *testing.T) {
 	handler.executeCommand(state, "XADD", [][]byte{[]byte("xinfo_str"), []byte("*"), []byte("f"), []byte("v")}, "127.0.0.1:12345")
 
 	resp := handler.executeCommand(state, "XINFO", [][]byte{[]byte("STREAM"), []byte("xinfo_str")}, "127.0.0.1:12345")
-	_, ok := resp.(*proto.Array)
+	_, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
 }
 

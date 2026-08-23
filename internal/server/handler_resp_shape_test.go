@@ -604,9 +604,9 @@ func TestRESPShape_XINFO_STREAM(t *testing.T) {
 	handler.executeCommand(state, "XADD", [][]byte{[]byte("xisk"), []byte("1-0"), []byte("f"), []byte("v")}, "127.0.0.1:12345")
 
 	resp := handler.executeCommand(state, "XINFO", [][]byte{[]byte("STREAM"), []byte("xisk")}, "127.0.0.1:12345")
-	arr, ok := resp.(*proto.Array)
+	na, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
-	assert.True(t, len(arr.Args) >= 4)
+	assert.True(t, len(na.Elems) >= 4)
 }
 
 // TestRESPShape_SetReturnsOk verifies SET returns SimpleString("OK")

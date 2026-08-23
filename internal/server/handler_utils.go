@@ -221,3 +221,14 @@ func (h *Handler) nilArrayOrNull(state *connState) proto.RESP {
 	}
 	return proto.NilArray{}
 }
+
+// configArrayToMap converts a flat [key, value, ...] config pair list into
+// a RESP3 Map ('%' prefix) so RESP3 clients (redis-py 8) parse CONFIG GET
+// as a dict.
+func (h *Handler) configArrayToMap(pairs [][]byte) proto.RESP {
+	elems := make([]proto.RESP, len(pairs))
+	for i, p := range pairs {
+		elems[i] = proto.NewBulkString(p)
+	}
+	return &proto.Map{Elems: elems}
+}
