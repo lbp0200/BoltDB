@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
+	"github.com/lbp0200/BoltDB/internal/replication"
 	"github.com/zeebo/assert"
 )
 
@@ -626,4 +627,67 @@ func TestGEORADIUS_StoreOptions(t *testing.T) {
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
 	assert.True(t, strings.Contains(string(*errResp), "WRONGTYPE"))
+}
+
+// TestGEORADIUSStore_PropagatesToBacklog verifies GEORADIUS STORE enters the
+// replication backlog (handler-side canonical propagation). Combined with
+// TestExecuteReplicatedCommand_GEORADIUSStore this closes the master→replica
+// loop for the write path.
+func TestGEORADIUSStore_PropagatesToBacklog(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.Replication = replication.NewReplicationManager(handler.Db)
+	defer handler.Replication.Stop()
+
+	handler.executeCommand(state, "GEOADD", [][]byte{[]byte("gprop"), []byte("13.361389"), []byte("38.115556"), []byte("Palermo"), []byte("15.087269"), []byte("37.502669"), []byte("Catania")}, "127.0.0.1:12345")
+
+	before := handler.Replication.GetBacklog().GetCurrentOffset()
+	resp := handler.executeCommand(state, "GEORADIUS", [][]byte{[]byte("gprop"), []byte("15"), []byte("37"), []byte("200"), []byte("km"), []byte("STORE"), []byte("gprop_dst")}, "127.0.0.1:12345")
+	integer, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	assert.Equal(t, int64(2), int64(*integer))
+
+	after := handler.Replication.GetBacklog().GetCurrentOffset()
+	data, err := handler.Replication.GetBacklog().GetRange(before, after)
+	assert.NoError(t, err)
+	prop := string(data)
+	assert.True(t, strings.Contains(prop, "GEORADIUS"))
+	assert.True(t, strings.Contains(prop, "STORE"))
+	assert.True(t, strings.Contains(prop, "gprop_dst"))
+
+	// Read-only GEORADIUS must NOT be propagated
+	before = handler.Replication.GetBacklog().GetCurrentOffset()
+	handler.executeCommand(state, "GEORADIUS", [][]byte{[]byte("gprop"), []byte("15"), []byte("37"), []byte("200"), []byte("km")}, "127.0.0.1:12345")
+	after = handler.Replication.GetBacklog().GetCurrentOffset()
+	assert.Equal(t, before, after)
+}
+
+// TestBLMPOP_PropagatesToBacklog verifies BLMPOP enters the replication
+// backlog via the generic propagator (isWriteCommand path).
+func TestBLMPOP_PropagatesToBacklog(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.Replication = replication.NewReplicationManager(handler.Db)
+	defer handler.Replication.Stop()
+
+	handler.executeCommand(state, "RPUSH", [][]byte{[]byte("bprop"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
+
+	before := handler.Replication.GetBacklog().GetCurrentOffset()
+	req := &proto.Array{Args: [][]byte{[]byte("BLMPOP"), []byte("1"), []byte("1"), []byte("bprop"), []byte("LEFT"), []byte("COUNT"), []byte("2")}}
+	resp := handler.processRequest(req, nil, "127.0.0.1:12345", nil, nil, state)
+	na, ok := resp.(*proto.NestedArray)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(na.Elems))
+
+	after := handler.Replication.GetBacklog().GetCurrentOffset()
+	data, err := handler.Replication.GetBacklog().GetRange(before, after)
+	assert.NoError(t, err)
+	prop := string(data)
+	assert.True(t, strings.Contains(prop, "BLMPOP"))
+	assert.True(t, strings.Contains(prop, "LEFT"))
+	assert.True(t, strings.Contains(prop, "COUNT"))
 }
