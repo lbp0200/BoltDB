@@ -1117,6 +1117,7 @@ def run_all(host="127.0.0.1", port=6379):
     test_flushdb(r)
     test_lmove_rpoplpush(r)
     test_srandmember_count(r)
+    test_admin_commands(r)
 
     print()
     print("=" * 60)
@@ -1158,6 +1159,42 @@ def start_boltdb():
     return proc, data_dir, port
 
 
+def test_admin_commands(r):
+    """Test RESET, WAITAOF, CLIENT TRACKINGINFO, MODULE, FAILOVER."""
+    print("\n--- ADMIN / CONNECTION ---")
+
+    # RESET：MULTI 排队后 RESET 丢弃事务，SET 直接执行
+    r.execute_command("MULTI")
+    r.execute_command("SET", "py:rst_queue", "queued")
+    r.reset()
+    check("RESET discards MULTI", None, r.get("py:rst_queue"))
+    r.set("py:rst", "direct")
+    check("SET after RESET executes", "direct", r.get("py:rst"))
+    r.delete("py:rst")
+
+    # WAITAOF：无 AOF → [0, 0]
+    waitaof = r.execute_command("WAITAOF", 0, 1, 1000)
+    check("WAITAOF returns [0,0]", [0, 0], list(waitaof))
+
+    # CLIENT TRACKINGINFO（RESP3 下 redis-py 解析为 dict）
+    info = r.execute_command("CLIENT", "TRACKINGINFO")
+    if isinstance(info, dict):
+        check("CLIENT TRACKINGINFO flags", True, b"flags" in info)
+        check("CLIENT TRACKINGINFO redirect", 0, info[b"redirect"])
+    else:
+        check("CLIENT TRACKINGINFO flags", "flags", info[0] if isinstance(info, list) else None)
+
+    # MODULE LIST 空
+    mods = r.execute_command("MODULE", "LIST")
+    check("MODULE LIST empty", 0, len(mods))
+
+    # FAILOVER 无 TO → 明确错误（单实例无哨兵自动故障转移）
+    try:
+        r.execute_command("FAILOVER")
+        check("FAILOVER errors", False, True)
+    except redis.ResponseError as e:
+        check("FAILOVER errors", True, "FAILOVER without TO" in str(e))
+
 def main():
     parser = argparse.ArgumentParser(description="BoltDB redis-py Compatibility Test Suite")
     parser.add_argument("--host", default="127.0.0.1")
@@ -1191,3 +1228,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

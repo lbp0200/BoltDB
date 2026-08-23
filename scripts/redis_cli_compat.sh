@@ -522,6 +522,31 @@ check_contains "XLEN returns count" "2" "$result"
 result=$($RCLI XRANGE st:mystream - + 2>&1 || true)
 check_contains "XRANGE returns entry" "Bob" "$result"
 
+# ===================== 14. ADMIN / CONNECTION =====================
+section "14. ADMIN / CONNECTION"
+
+# WAITAOF returns [0, 0] (no AOF)
+result=$($RCLI WAITAOF 0 1 100 2>&1 || true)
+check "WAITAOF numlocal" "0" "$(echo "$result" | head -1)"
+check "WAITAOF numreplicas" "0" "$(echo "$result" | tail -1)"
+
+# RESET
+result=$($RCLI RESET 2>&1 || true)
+check "RESET returns RESET" "RESET" "$result"
+
+# MODULE LIST empty（redis-cli 非 tty raw 模式：*0 → 空 → 归一化为 (nil)）
+result=$($RCLI MODULE LIST 2>&1 || true)
+check "MODULE LIST empty" "(nil)" "$result"
+
+# FAILOVER without TO errors clearly
+result=$($RCLI FAILOVER 2>&1 || true)
+check_contains "FAILOVER without TO errors" "FAILOVER without TO" "$result"
+
+# CLIENT TRACKINGINFO shows flags/redirect/prefixes
+result=$($RCLI CLIENT TRACKINGINFO 2>&1 || true)
+check_contains "CLIENT TRACKINGINFO flags" "flags" "$result"
+check_contains "CLIENT TRACKINGINFO redirect" "redirect" "$result"
+
 # ===================== SUMMARY =====================
 section "SUMMARY"
 

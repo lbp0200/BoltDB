@@ -801,12 +801,29 @@ func TestLatencySubcommands(t *testing.T) {
 	handler, state := setupTestHandler(t)
 	defer handler.Db.Close()
 
-	for _, sub := range []string{"GRAPH", "HISTORY", "HISTOGRAM"} {
-		resp := handler.executeCommand(state, "LATENCY", [][]byte{[]byte(sub), []byte("command")}, "127.0.0.1:12345")
-		arr, ok := resp.(*proto.Array)
-		assert.True(t, ok)
-		assert.Equal(t, 0, len(arr.Args))
-	}
+	// GRAPH with no samples errors like Redis
+	resp := handler.executeCommand(state, "LATENCY", [][]byte{[]byte("GRAPH"), []byte("command")}, "127.0.0.1:12345")
+	errResp, ok := resp.(*proto.Error)
+	assert.True(t, ok)
+	assert.True(t, strings.Contains(string(*errResp), "No samples available"))
+
+	// HISTORY: empty array (RESP2)
+	resp = handler.executeCommand(state, "LATENCY", [][]byte{[]byte("HISTORY"), []byte("command")}, "127.0.0.1:12345")
+	arr, ok := resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(arr.Args))
+
+	// HISTOGRAM: empty array (RESP2) / empty map (RESP3)
+	resp = handler.executeCommand(state, "LATENCY", [][]byte{[]byte("HISTOGRAM")}, "127.0.0.1:12345")
+	arr, ok = resp.(*proto.Array)
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(arr.Args))
+
+	state.respVersion = 3
+	resp = handler.executeCommand(state, "LATENCY", [][]byte{[]byte("HISTOGRAM")}, "127.0.0.1:12345")
+	m, ok := resp.(*proto.Map)
+	assert.True(t, ok)
+	assert.Equal(t, 0, len(m.Elems))
 }
 
 // TestMemorySubcommands verifies MEMORY STATS/MALLOC-STATS/PURGE shape.

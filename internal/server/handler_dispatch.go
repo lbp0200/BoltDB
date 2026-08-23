@@ -726,15 +726,23 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 				[]byte("- Expected latency < 5ms for SSD, < 50ms for HDD"),
 			}}
 		case "GRAPH":
-			// LATENCY GRAPH <event> - ASCII graph; no samples recorded,
-			// return an empty graph (matches Redis with no data).
-			return &proto.Array{Args: [][]byte{}}
+			// LATENCY GRAPH <event> - ASCII graph; BoltDB records no
+			// samples, so every event errors exactly like Redis does.
+			event := "event"
+			if len(args) >= 2 {
+				event = string(args[1])
+			}
+			return proto.NewError(fmt.Sprintf("No samples available for event '%s'", event))
 		case "HISTORY":
 			// LATENCY HISTORY <event> - time series; no samples recorded.
 			return &proto.Array{Args: [][]byte{}}
 		case "HISTOGRAM":
-			// LATENCY HISTOGRAM [event ...] - latency percentiles map;
-			// no samples recorded, return empty array (RESP2 wire).
+			// LATENCY HISTOGRAM [event ...] - latency percentiles;
+			// RESP3 wire is a Map (like Redis 8.2), RESP2 an array.
+			// No samples recorded, so both are empty.
+			if state.respVersion == 3 {
+				return &proto.Map{Elems: []proto.RESP{}}
+			}
 			return &proto.Array{Args: [][]byte{}}
 		default:
 			return proto.NewError("ERR unknown subcommand for 'LATENCY'")

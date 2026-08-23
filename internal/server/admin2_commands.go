@@ -331,11 +331,10 @@ func (h *Handler) handleMEMORY(state *connState, args [][]byte, remoteAddr strin
 			[]byte("MEMORY HELP - shows this help message"),
 		}}
 	case "STATS":
-		// MEMORY STATS - flat key/value pairs; BadgerDB manages its own
-		// memory, so return the minimal shape clients expect. The trailing
-		// pairs (keys.bytes-per-key, dataset.bytes, peak.allocated,
-		// total.allocated) keep redis-py's dict parser happy.
-		return &proto.Array{Args: [][]byte{
+		// MEMORY STATS - BadgerDB manages its own memory, so return the
+		// minimal key/value shape clients expect. RESP3 wire is a Map
+		// (like Redis 8.2), RESP2 a flat array.
+		pairs := [][]byte{
 			[]byte("peak.allocated"), []byte("0"),
 			[]byte("total.allocated"), []byte("0"),
 			[]byte("startup.allocated"), []byte("0"),
@@ -349,7 +348,15 @@ func (h *Handler) handleMEMORY(state *connState, args [][]byte, remoteAddr strin
 			[]byte("allocator.active"), []byte("0"),
 			[]byte("allocator.resident"), []byte("0"),
 			[]byte("fragmentation"), []byte("0"),
-		}}
+		}
+		if state.respVersion == 3 {
+			elems := make([]proto.RESP, len(pairs))
+			for i, p := range pairs {
+				elems[i] = proto.NewBulkString(p)
+			}
+			return &proto.Map{Elems: elems}
+		}
+		return &proto.Array{Args: pairs}
 	case "MALLOC-STATS":
 		// MEMORY MALLOC-STATS - plain-text dump; empty (BadgerDB manages
 		// its own allocator).
