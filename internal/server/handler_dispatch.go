@@ -54,6 +54,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	start := time.Now()
 	defer func() {
 		h.recordOps()
+		if isWriteCommand(cmd) {
+			h.bumpRdbChanges()
+		}
 		if cmd == "SLOWLOG" {
 			return
 		}

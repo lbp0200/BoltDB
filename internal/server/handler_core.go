@@ -149,11 +149,16 @@ type Handler struct {
 	slowlog *slowlogState
 
 	startTime time.Time
+	runID     string
 
 	// ops tracking for INFO instantaneous_ops_per_sec (1s sliding window)
 	opsMu         sync.Mutex
 	opsTimestamps []int64 // unix seconds with at least one command
 	opsCounts     []int64 // commands in that second
+
+	// rdbChangesSinceLastSave for INFO Persistence
+	rdbChanges   int64
+	rdbChangesMu sync.Mutex
 }
 
 // SetAuthPassword 设置缓存的认证密码（供 main.go 在 Handler 创建后初始化）。

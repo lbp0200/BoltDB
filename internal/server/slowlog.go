@@ -1,8 +1,13 @@
 package server
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // slowlogEntry 是单条慢日志（Redis SLOWLOG 语义的最小可用子集）。
@@ -105,6 +110,32 @@ func (h *Handler) uptimeSeconds() int64 {
 		return 0
 	}
 	return int64(time.Since(h.startTime).Seconds())
+}
+
+func (h *Handler) ensureRunID() string {
+	if h.runID != "" {
+		return h.runID
+	}
+	// 40 hex chars like Redis run_id
+	var b [20]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// fallback to uuid
+		u := uuid.New().String()
+		h.runID = hex.EncodeToString([]byte(u))[:40]
+		return h.runID
+	}
+	h.runID = hex.EncodeToString(b[:])
+	return h.runID
+}
+
+func (h *Handler) rdbChangesSinceLastSave() int64 {
+	h.rdbChangesMu.Lock()
+	defer h.rdbChangesMu.Unlock()
+	return h.rdbChanges
+}
+
+func (h *Handler) bumpRdbChanges() {
+	atomic.AddInt64(&h.rdbChanges, 1)
 }
 
 func (h *Handler) recordOps() {

@@ -43,7 +43,8 @@ func (h *Handler) buildInfoResponse(section string) string {
 		}
 		builder.WriteString("gcc_version:" + runtime.Version() + "\n")
 		builder.WriteString("process_id:" + strconv.Itoa(os.Getpid()) + "\n")
-		builder.WriteString("run_id:\n")
+		runID := h.ensureRunID()
+		builder.WriteString("run_id:" + runID + "\n")
 		builder.WriteString("tcp_backlog:511\n")
 		uptime := h.uptimeSeconds()
 		builder.WriteString("uptime_in_seconds:" + strconv.FormatInt(uptime, 10) + "\n")
@@ -113,7 +114,10 @@ func (h *Handler) buildInfoResponse(section string) string {
 		if h.Backup != nil {
 			lastSave := h.Backup.LastSave()
 			builder.WriteString("rdb_last_save_time:" + strconv.FormatInt(lastSave, 10) + "\n")
-			builder.WriteString("rdb_changes_since_last_save:0\n")
+			builder.WriteString("rdb_changes_since_last_save:" + strconv.FormatInt(h.rdbChangesSinceLastSave(), 10) + "\n")
+		} else {
+			builder.WriteString("rdb_last_save_time:0\n")
+			builder.WriteString("rdb_changes_since_last_save:" + strconv.FormatInt(h.rdbChangesSinceLastSave(), 10) + "\n")
 		}
 		builder.WriteString("\n")
 	}

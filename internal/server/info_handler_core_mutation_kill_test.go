@@ -336,7 +336,7 @@ func TestBuildInfoResponse_ReplicationSentinelRole(t *testing.T) {
 
 // ---------- info.go: Backup/Cluster nil checks ----------
 
-// TestBuildInfoResponse_BackupNil 验证 Backup==nil 时无 persistence 详情
+// TestBuildInfoResponse_BackupNil 验证 Backup==nil 时仍输出 persistence 占位
 // Kills CONDITIONALS_NEGATION on `h.Backup != nil` check
 func TestBuildInfoResponse_BackupNil(t *testing.T) {
 	t.Parallel()
@@ -346,8 +346,8 @@ func TestBuildInfoResponse_BackupNil(t *testing.T) {
 
 	resp := handler.buildInfoResponse("PERSISTENCE")
 	assert.True(t, strings.Contains(resp, "# Persistence"))
-	// When Backup is nil, no rdb_last_save_time should appear
-	assert.True(t, !strings.Contains(resp, "rdb_last_save_time:"))
+	assert.True(t, strings.Contains(resp, "rdb_last_save_time:0"))
+	assert.True(t, strings.Contains(resp, "rdb_changes_since_last_save:"))
 }
 
 // TestBuildInfoResponse_BackupNotNil 验证 Backup!=nil 时输出保存时间
