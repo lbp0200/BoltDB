@@ -67,6 +67,11 @@ func (h *Handler) handleExpireTime(state *connState, args [][]byte, remoteAddr s
 	if err != nil {
 		return proto.NewInteger(-2)
 	}
+	if expireTime == -2 {
+		h.recordKeyspaceMiss()
+	} else {
+		h.recordKeyspaceHit()
+	}
 	return proto.NewInteger(expireTime)
 }
 
@@ -82,6 +87,11 @@ func (h *Handler) handlePExpireTime(state *connState, args [][]byte, remoteAddr 
 	pexpireTime, err := h.Db.PExpireTime(key)
 	if err != nil {
 		return proto.NewInteger(-2)
+	}
+	if pexpireTime == -2 {
+		h.recordKeyspaceMiss()
+	} else {
+		h.recordKeyspaceHit()
 	}
 	return proto.NewInteger(pexpireTime)
 }
