@@ -179,6 +179,15 @@ func (h *Handler) handleTS_RANGE(state *connState, args [][]byte, remoteAddr str
 		}
 		return wrapLogError(err)
 	}
+	if len(results) == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
+	}
 	arr := make([][]byte, 0, len(results)*2)
 	for _, dp := range results {
 		arr = append(arr, []byte(strconv.FormatInt(dp.Timestamp, 10)))
@@ -221,6 +230,7 @@ func (h *Handler) handleTS_INFO(state *connState, args [][]byte, remoteAddr stri
 	info, err := h.Db.TSInfo(key)
 	if err != nil {
 		if errors.Is(err, store.ErrKeyNotFound) {
+			h.recordKeyspaceMiss()
 			if state.respVersion == 3 {
 				return &proto.Null{}
 			}
@@ -231,6 +241,7 @@ func (h *Handler) handleTS_INFO(state *connState, args [][]byte, remoteAddr stri
 		}
 		return wrapLogError(err)
 	}
+	h.recordKeyspaceHit()
 	// Return as array of key-value pairs
 	return &proto.Array{
 		Args: [][]byte{
