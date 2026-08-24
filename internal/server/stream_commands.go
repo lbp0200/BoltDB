@@ -992,6 +992,15 @@ func (h *Handler) handleXPENDING(state *connState, args [][]byte, remoteAddr str
 		}
 		return wrapLogError(err)
 	}
+	if len(entries) == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
+	}
 
 	// Extended form: [IDLE min-idle-time] start end count [consumer]
 	if len(args) >= 5 {
