@@ -697,6 +697,11 @@ func (h *Handler) handleKEYS(state *connState, args [][]byte, remoteAddr string)
 	if err != nil {
 		return wrapStoreError(err)
 	}
+	if len(keys) == 0 {
+		h.recordKeyspaceMiss()
+	} else {
+		h.recordKeyspaceHit()
+	}
 	results := make([][]byte, len(keys))
 	for i, k := range keys {
 		results[i] = []byte(k)
@@ -747,11 +752,13 @@ func (h *Handler) handleSCAN(state *connState, args [][]byte, remoteAddr string)
 func (h *Handler) handleRANDOMKEY(state *connState, args [][]byte, remoteAddr string) proto.RESP {
 	key, err := h.Db.RandomKey()
 	if err != nil || key == "" {
+		h.recordKeyspaceMiss()
 		if state.respVersion == 3 {
 			return &proto.Null{}
 		}
 		return proto.NewBulkString(nil)
 	}
+	h.recordKeyspaceHit()
 	return proto.NewBulkString([]byte(key))
 
 	// List命令
