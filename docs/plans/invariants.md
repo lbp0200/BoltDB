@@ -36,13 +36,13 @@
 
 | # | Invariant | Source | Violation |
 |---|-----------|--------|-----------|
-| R5 | 写命令传播条件：IsMaster && isWriteCommand && 非复制控制命令 | `handler.go:492-496` | 从节点收到无关流量 |
-| R6 | 复制控制命令（REPLICAOF, PSYNC, REPLCONF）永不传播 | `handler.go:493` | 复制循环 |
-| R7 | 只读命令永不传播 | `handler.go:492` `isWriteCommand` | 带宽浪费 |
-| R8 | MULTI 队列中的写命令在 EXEC 前**不传播** | `handler.go:5147-5161` MULTI handler 无传播逻辑 | 从节点事务语义不正确 |
-| R9 | EXEC 将事务中的写命令**逐个独立传播**（非 MULTI/EXEC 块） | `handler.go:5185-5195` | 从节点执行语义错误 |
+| R5 | 写命令传播条件：IsMaster && isWriteCommand && 非复制控制命令 | `handler_core.go:709` `shouldProp` / `replication_helper.go:112` `isWriteCommand` | 从节点收到无关流量 |
+| R6 | 复制控制命令（REPLICAOF, PSYNC, REPLCONF）永不传播 | `replication_helper.go:124` `shouldPropagateCommand` | 复制循环 |
+| R7 | 只读命令永不传播 | `replication_helper.go:112` `isWriteCommand` | 带宽浪费 |
+| R8 | MULTI 队列中的写命令在 EXEC 前**不传播** | `transaction_commands.go:7` `handleMULTI` 无传播逻辑 | 从节点事务语义不正确 |
+| R9 | EXEC 将事务中的写命令**逐个独立传播**（非 MULTI/EXEC 块） | `transaction_commands.go:58` `handleEXEC` 逐条 PropagateCommand | 从节点执行语义错误 |
 | R10 | 传播的 RESP 与原始请求 RESP 字节一致 | `replication.go:194` `serializeCommand` | 从节点解析错误 |
-| R11 | PubSub 消息永不进入复制传播 | `handler.go:492` `isWriteCommand` 不包含 SUBSCRIBE/PUBLISH | 从节点收到无用流量 |
+| R11 | PubSub 消息永不进入复制传播 | `replication_helper.go:112` `isWriteCommand` 不包含 SUBSCRIBE/PUBLISH | 从节点收到无用流量 |
 
 ### 1.3 Partial Sync Contract
 
@@ -50,7 +50,7 @@
 |---|-----------|--------|-----------|
 | R12 | 增量同步条件：replId 匹配 && offset ∈ backlog 可用范围 | `psync.go:30-37` | 错误的全量/增量选择 |
 | R13 | 全量同步后 offset = masterReplOffset（当前最新值） | `psync.go:60-62` | 从节点从错误位点开始 |
-| R14 | 全量同步发送 RDB 后才注册从节点 | `handler.go:574-631` (FULLRESYNC → RDB → AddSlave) | 从节点在 RDB 完成前收到命令 |
+| R14 | 全量同步发送 RDB 后才注册从节点 | `replication_handler.go:44-128` snapshotOffset→GenerateRDB→FULLRESYNC→RDB→SendBacklog→AddSlave→CatchUp | 从节点在 RDB 完成前收到命令 |
 
 ### 1.4 Slave Connection Lifecycle
 
@@ -84,8 +84,8 @@ backlog.availableStart   = max(0, offset - size)   (可读范围下限)
 replication.offset       = backlog.internalOffset  (全局单调计数器)
 
 关键：backlog position != replication offset
-      backlog position 是环形缓冲区中的写指针，会回绕
-      replication offset 是单调计数器，永不回绕
+       backlog position 是环形缓冲区中的写指针，会回绕
+       replication offset 是单调计数器，永不回绕
 ```
 
 ---
@@ -94,14 +94,14 @@ replication.offset       = backlog.internalOffset  (全局单调计数器)
 
 | # | Invariant | Source | Violation |
 |---|-----------|--------|-----------|
-| C1 | `connState` 在 `executeCommand()` 中永不为 nil | `handler.go:1189-1191` `panic("nil connState")` | nil pointer dereference |
+| C1 | `connState` 在 `executeCommand()` 中永不为 nil | `handler_dispatch.go:45` `if state==nil return Error` | nil pointer dereference |
 | C2 | `connState.cancel()` 最多调用一次 | `context.CancelFunc` 幂等保证 | double close |
-| C3 | 每个连接恰好一个 `handleConnection` goroutine | `handler.go:239` | goroutine leak |
-| C4 | 连接 cleanup 按固定顺序执行：cancel → unregister → RemoveSubscriber → unwatch → conn.Close | `handler.go:294-315` | 资源泄漏 |
-| C5 | PSYNC 接管后，连接关闭责任转移给 `handleSlaveReplicationConnection` | `handler.go:245-256` `replicationOwned` | 连接双重关闭 |
-| C6 | Pipeline：先读第一个命令，然后 `reader.Buffered() > 0` 时 drain 剩余 | `handler.go:320-380` | pipeline 乱序 |
-| C7 | Pipeline 中所有响应批量 flush（一次 Flush 调用） | `handler.go:406-408` | 性能退化 |
-| C8 | CLIENT KILL 通过 `state.cancel()` 触发目标 ctx 取消，不直接关闭 conn | `handler.go:1322-1329` | 竞态关闭 |
+| C3 | 每个连接恰好一个 `handleConnection` goroutine | `handler_core.go:317` `ServeTCP` / `368` `handleConnection` | goroutine leak |
+| C4 | 连接 cleanup 按固定顺序执行：cancel → unregister → RemoveSubscriber → unwatch → conn.Close | `handler_core.go:457` `handleConnection` defer | 资源泄漏 |
+| C5 | PSYNC 接管后，连接关闭责任转移给 `handleSlaveReplicationConnection` | `handler_core.go:384` `replicationOwned` | 连接双重关闭 |
+| C6 | Pipeline：先读第一个命令，然后 `reader.Buffered() > 0` 时 drain 剩余 | `handler_core.go:491` `processRequest` + buffered loop | pipeline 乱序 |
+| C7 | Pipeline 中所有响应批量 flush（一次 Flush 调用） | `handler_core.go:602` `flushBytes`/`writer.Flush` | 性能退化 |
+| C8 | CLIENT KILL 通过 `state.cancel()` 触发目标 ctx 取消，不直接关闭 conn | `client_commands.go:148` `targetState.cancel()` | 竞态关闭 |
 
 ---
 
@@ -110,12 +110,12 @@ replication.offset       = backlog.internalOffset  (全局单调计数器)
 | # | Invariant | Source | Violation |
 |---|-----------|--------|-----------|
 | K1 | 所有阻塞操作必须 select `case <-ctx.Done()` | `list.go:1500,1540,1590,1637` `stream.go:574,598` | goroutine leak / shutdown hang |
-| K2 | `ctx.Done()` 后 goroutine 必须在 ≤ 1s 内退出 | `handler.go:228-229` `shutdown` | Server.Shutdown hang |
+| K2 | `ctx.Done()` 后 goroutine 必须在 ≤ 1s 内退出 | `handler_core.go:336` `Shutdown` | Server.Shutdown hang |
 | K3 | 阻塞操作同时响应超时和 ctx 取消：`select { case <-timeoutCh: case <-ctx.Done(): }` | `list.go:1494-1503` | 超时不响应 ctx |
 | K4 | 阻塞操作超时后必须 unregister（从等待队列移除） | `list.go:1498,1501` | 悬空 channel/goroutine |
 | K5 | `defer cancel()` 必须在创建 ctx 的同一 goroutine 中 | Go 惯例 | 取消传播断裂 |
-| K6 | Shutdown 顺序：Listener.Close → 所有 conn.cancel() → conn goroutine 退出 → Replication.Stop → PubSub.Close → Db.Close | `handler.go` `Shutdown` | 资源释放顺序错误 |
-| K7 | CLIENT KILL 不会导致 `handleConnection` panic（cancel 安全） | `handler.go:1322-1329` | 竞态 |
+| K6 | Shutdown 顺序：Listener.Close（`ln.Close` via `ctx.Done`）→ `replMgr.Stop()`（关 slave TCP unblock）→ `cancel()`（root ctx）→ `handler.Shutdown()`（`shuttingDown=1`→`conn.cancel+Close`→`wg.Wait`）→ `backupMgr.Wait()`（in-flight BGSAVE）→ `db.Close()` | `cmd/boltDB/main.go:448` + `handler_core.go:336` `Shutdown` | 资源释放顺序错误 |
+| K7 | CLIENT KILL 不会导致 `handleConnection` panic（cancel 安全） | `client_commands.go:148` cancel + Close 幂等 | 竞态 |
 
 ### 阻塞操作完整清单
 
@@ -127,9 +127,9 @@ replication.offset       = backlog.internalOffset  (全局单调计数器)
 | BRPOPLPUSH | `store/list.go:1637` | ✅ | ✅ (timeoutCh) |
 | BZPOPMIN/BZPOPMAX | handler (store 层) | ✅ | ✅ (timeoutCh) |
 | XREAD (blocking) | `store/stream.go:574,598` | ✅ | ✅ (timeoutCh) |
-| PubSub loop | `server/handler.go:683` | ✅ | N/A |
-| MONITOR loop | `server/handler.go:994` | ✅ | N/A |
-| Replication slave loop | `server/handler.go:1095` | ✅ | N/A |
+| PubSub loop | `handler_core.go:632` `runPubSubLoop` + `pubsub_commands.go` | ✅ | N/A |
+| MONITOR loop | `handler_core.go:642` `runMonitorLoop` | ✅ | N/A |
+| Replication slave loop | `replication_handler.go:202` `handleSlaveReplicationConnection` | ✅ | N/A |
 
 ---
 
@@ -137,16 +137,16 @@ replication.offset       = backlog.internalOffset  (全局单调计数器)
 
 | # | Invariant | Source | Violation |
 |---|-----------|--------|-----------|
-| T1 | MULTI 设置 `state.inTransaction = true`，清空 commands 队列 | `handler.go:5147-5161` | 状态错误 |
-| T2 | MULTI 不可嵌套 | `handler.go:5148-5150` | 事务状态不一致 |
-| T3 | 事务中非控制命令返回 `QUEUED` 并加入 commands 队列 | `handler.go:1194-1204` | 响应错误 |
-| T4 | 事务控制命令（MULTI/EXEC/DISCARD/WATCH/UNWATCH/PING/QUIT）不排队 | `handler.go:1196` | 死锁 |
-| T5 | EXEC 空事务返回空数组 `*-1\r\n` | `handler.go:5180` `results` | 响应格式不一致 |
-| T6 | EXEC 先检查 dirty keys，dirty 则返回 `*-1\r\n` 并清空事务 | `handler.go:5168-5179` | WATCH 竞争丢失 |
-| T7 | EXEC 后清空 `inTransaction` 和 commands | `handler.go:5197-5198` | 事务状态残留 |
-| T8 | DISCARD 清空 `inTransaction`、commands 和 transaction | `handler.go:5201-5208` | 事务状态残留 |
-| T9 | WATCH 在 MULTI + 有排队命令时拒绝 | `handler.go:5214-5216` | WATCH 语义违反 |
-| T10 | `markDirtyKeys` 修改 key 时通知所有 WATCH 该 key 的连接 | `handler.go:121-134` | WATCH 竞争丢失 |
+| T1 | MULTI 设置 `state.inTransaction = true`，清空 commands 队列 | `transaction_commands.go:7` `handleMULTI` | 状态错误 |
+| T2 | MULTI 不可嵌套 | `transaction_commands.go:9` | 事务状态不一致 |
+| T3 | 事务中非控制命令返回 `QUEUED` 并加入 commands 队列 | `handler_dispatch.go:70` `inTransaction` 分支 | 响应错误 |
+| T4 | 事务控制命令（MULTI/EXEC/DISCARD/WATCH/UNWATCH/PING/QUIT）不排队 | `handler_dispatch.go:72` | 死锁 |
+| T5 | EXEC 空事务返回空数组 `*-1\r\n` / RESP3 Null | `transaction_commands.go:42` `Null{}` vs `NilArray` | 响应格式不一致 |
+| T6 | EXEC 先检查 dirty keys，dirty 则返回 `*-1\r\n` 并清空事务 | `transaction_commands.go:31` watchMu dirty check | WATCH 竞争丢失 |
+| T7 | EXEC 后清空 `inTransaction` 和 commands | `transaction_commands.go:82` | 事务状态残留 |
+| T8 | DISCARD 清空 `inTransaction`、commands 和 transaction | `transaction_commands.go:115` `handleDISCARD` | 事务状态残留 |
+| T9 | WATCH 在 MULTI + 有排队命令时拒绝 | `transaction_commands.go:131` | WATCH 语义违反 |
+| T10 | `markDirtyKeys` 修改 key 时通知所有 WATCH 该 key 的连接 | `handler_core.go:markDirtyKeys` + `transaction_commands.go:138` | WATCH 竞争丢失 |
 
 ---
 
@@ -154,14 +154,14 @@ replication.offset       = backlog.internalOffset  (全局单调计数器)
 
 | # | Invariant | Source | Violation |
 |---|-----------|--------|-----------|
-| P1 | PubSub 消息永不进入复制传播 | `handler.go:492` `isWriteCommand` | 从节点收到无用流量 |
-| P2 | SUBSCRIBE/PSUBSCRIBE 设置 `state.subscriber` 并切换到 PubSub 循环 | `handler.go:432-438` | 主循环继续处理命令 |
-| P3 | PubSub 模式下仅接受：(P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT | `handler.go:889-891` | 错误命令在 PubSub 模式执行 |
-| P4 | PubSub flush ticker 间隔 100ms | `handler.go:678` | 延迟 / 性能 |
-| P5 | PubSub 消息读取在独立 goroutine 中，通过 channel 发回主循环 | `handler.go:660-676` | 读取阻塞推送 |
-| P6 | PubSub 退出时关闭 done channel 确保 reader goroutine 退出 | `handler.go:658` | goroutine leak |
-| P7 | RemoveSubscriber 在连接 cleanup 中执行 | `handler.go:303-304` | 悬挂订阅 |
-| P8 | 慢订阅者被 OutputBufferLimit 断开 | `handler.go:725-731` | 服务器被慢客户端拖垮 |
+| P1 | PubSub 消息永不进入复制传播 | `replication_helper.go:112` `isWriteCommand` | 从节点收到无用流量 |
+| P2 | SUBSCRIBE/PSUBSCRIBE 设置 `state.subscriber` 并切换到 PubSub 循环 | `handler_core.go:632` `runPubSubLoop` | 主循环继续处理命令 |
+| P3 | PubSub 模式下仅接受：(P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT | `pubsub_commands.go:handlePUBSUB` 入口校验 | 错误命令在 PubSub 模式执行 |
+| P4 | PubSub flush ticker 间隔 100ms | `pubsub_commands.go` ticker | 延迟 / 性能 |
+| P5 | PubSub 消息读取在独立 goroutine 中，通过 channel 发回主循环 | `handler_core.go:runPubSubLoop` | 读取阻塞推送 |
+| P6 | PubSub 退出时关闭 done channel 确保 reader goroutine 退出 | `handler_core.go:runPubSubLoop` done | goroutine leak |
+| P7 | RemoveSubscriber 在连接 cleanup 中执行 | `handler_core.go:466` `RemoveSubscriber` | 悬挂订阅 |
+| P8 | 慢订阅者被 OutputBufferLimit 断开 | `handler_core.go:619` `OutputBufferLimit` 检查 | 服务器被慢客户端拖垮 |
 
 ---
 
@@ -169,11 +169,11 @@ replication.offset       = backlog.internalOffset  (全局单调计数器)
 
 | # | Invariant | Source | Violation |
 |---|-----------|--------|-----------|
-| M1 | MONITOR 广播不阻塞发布者（channel 满时 drop） | `handler.go:918-923` `select default` | 发布者被慢 monitor 拖慢 |
-| M2 | MONITOR 模式下仅接受 QUIT / PING | `handler.go:1052-1057` | 错误命令在 monitor 模式执行 |
-| M3 | MONITOR 消息格式 `+timestamp [0 addr] "cmd" "arg1" ...\r\n` | `handler.go:926-949` | redis-cli 解析失败 |
-| M4 | MONITOR flush ticker 间隔 100ms | `handler.go:989` | 延迟 / 性能 |
-| M5 | MONITOR 使用独立 goroutine 读取命令 | `handler.go:971-987` | 读取阻塞推送 |
+| M1 | MONITOR 广播不阻塞发布者（channel 满时 drop） | `handler_core.go:broadcastToMonitors` `select default` | 发布者被慢 monitor 拖慢 |
+| M2 | MONITOR 模式下仅接受 QUIT / PING | `handler_core.go:runMonitorLoop` | 错误命令在 monitor 模式执行 |
+| M3 | MONITOR 消息格式 `+timestamp [0 addr] "cmd" "arg1" ...\r\n` | `handler_core.go:broadcastToMonitors` | redis-cli 解析失败 |
+| M4 | MONITOR flush ticker 间隔 100ms | `handler_core.go:runMonitorLoop` | 延迟 / 性能 |
+| M5 | MONITOR 使用独立 goroutine 读取命令 | `handler_core.go:runMonitorLoop` | 读取阻塞推送 |
 
 ---
 
@@ -181,11 +181,11 @@ replication.offset       = backlog.internalOffset  (全局单调计数器)
 
 | # | Invariant | Source | Violation |
 |---|-----------|--------|-----------|
-| O1 | OutputBufferLimit 是软限制（post-flush 检查，不保证精确截断） | `handler.go:422-429` | 连接可能略微超限 |
-| O2 | `outputBytes` 累计跟踪 flush 字节数（`writer.Buffered()` pre-Flush） | `handler.go:407,419` | 错误计算 |
-| O3 | PubSub/MONITOR 模式下 outputBuffer 检查在 flush ticker 中执行 | `handler.go:714-731` `handler.go:1017-1035` | 慢客户端保护失效 |
-| O4 | OutputBufferLimit == 0 表示不限制 | `handler.go:70` | 零值语义错误 |
-| O5 | CLIENT LIST 中 `omem` = `outputBytes`，`oFlags` = `>` 当 outputBytes > limit/2 | `handler.go:1178,1181` | 监控信息错误 |
+| O1 | OutputBufferLimit 是软限制（post-flush 检查，不保证精确截断） | `handler_core.go:619` | 连接可能略微超限 |
+| O2 | `outputBytes` 累计跟踪 flush 字节数（`writer.Buffered()` pre-Flush） | `handler_core.go:602` `flushBytes` | 错误计算 |
+| O3 | PubSub/MONITOR 模式下 outputBuffer 检查在 flush ticker 中执行 | `handler_core.go:619` + `pubsub_commands.go` | 慢客户端保护失效 |
+| O4 | OutputBufferLimit == 0 表示不限制 | `handler_core.go:106` | 零值语义错误 |
+| O5 | CLIENT LIST 中 `omem` = `outputBytes`，`oFlags` = `>` 当 outputBytes > limit/2 | `client_commands.go:CLIENT LIST` | 监控信息错误 |
 
 ---
 
@@ -195,13 +195,13 @@ replication.offset       = backlog.internalOffset  (全局单调计数器)
 
 | # | Invariant | Source | Violation |
 |---|-----------|--------|-----------|
-| OW1 | `bufio.Reader/Writer` 和 `net.Conn` 由 conn goroutine 独占，不可跨 goroutine 访问 | `handler.go:258-259` 创建在 `handleConnection` | data race |
+| OW1 | `bufio.Reader/Writer` 和 `net.Conn` 由 conn goroutine 独占，不可跨 goroutine 访问 | `handler_core.go:401` 创建在 `handleConnection` | data race |
 | OW2 | `connState` 字段在所属 goroutine 内可直接读写（不加锁） | 设计约定 | 不必要的锁竞争 |
-| OW3 | 跨 goroutine 访问 `connState` 字段必须持有 `state.mu` | `handler.go:27` | data race |
-| OW4 | `Handler.conns` 必须通过 `h.connsMu` (RWMutex) 保护 | `handler.go:58-59` | data race |
-| OW5 | `Handler.watchMonitors` 必须通过 `h.watchMu` (Mutex) 保护 | `handler.go:51-52` | data race |
-| OW6 | `Handler.monitorClients` 必须通过 `h.monitorMu` (Mutex) 保护 | `handler.go:65` | data race |
-| OW7 | 持有 `state.mu` 时禁止调用 `cancel()` | `handler.go:1322-1326` (KILL 时先 unlock) | 死锁 |
+| OW3 | 跨 goroutine 访问 `connState` 字段必须持有 `state.mu` | `handler_core.go:24` | data race |
+| OW4 | `Handler.conns` 必须通过 `h.connsMu` (RWMutex) 保护 | `handler_core.go:94` | data race |
+| OW5 | `Handler.watchMonitors` 必须通过 `h.watchMu` (Mutex) 保护 | `handler_core.go:88` | data race |
+| OW6 | `Handler.monitorClients` 必须通过 `h.monitorMu` (Mutex) 保护 | `handler_core.go:100` | data race |
+| OW7 | 持有 `state.mu` 时禁止调用 `cancel()` | `client_commands.go:148` (KILL 时先 unlock) | 死锁 |
 
 ### 9.2 资源所有权矩阵
 
@@ -305,6 +305,8 @@ F8. [竞态关闭] 同时通过 cancel() 和 conn.Close() 关闭连接
 | 版本 | 日期 | 变更 |
 |------|------|------|
 | v1.0 | 2026-05-17 | 从 `docs/architecture/v0.3.md §7` 提取并强化：新增 R1-R17（完整复制契约）、B1-B6（backlog 环形缓冲区形式化）、C1-C8（连接生命周期）、K1-K7（取消模型）、T1-T10（事务）、P1-P8（PubSub）、M1-M5（Monitor）、O1-O5（Output Buffer）、OW1-OW7 + 矩阵（所有权）、ST1-ST7（存储层）、F1-F8（禁止模式） |
+| v1.1 | 2026-08-24 | `handler.go` 8824 行拆为 24 文件（`handler_core.go`/`handler_dispatch.go`/`replication_handler.go`/`transaction_commands.go`/`client_commands.go`/…）：全量更新 Source 列行号，消除失效引用；`handler.go` 遗留引用归档于 `docs/plans/archive/` |
+| v1.2 | 2026-08-24 | 自主巡检 8 轮：`handler_core double-reader→single`（`TotalInputBytes`）、`authPassword` 热路径缓存（`OW7`）、`waitPauseWindow` Timer 泄漏、`CLIENT KILL` 持锁调 `cancel` 死锁、`PubSub.Clear` shard 泄漏、`K6` 关闭时序对齐 `AGENTS`、EXPIRE/SORT 条件写 R7 等；`SORT/EXPIRE` 复制回归加固 |
 
 ### 核验命令
 

@@ -423,6 +423,7 @@ func (psm *PubSubManager) Clear() {
 
 	// 重置所有映射
 	psm.channels = make(map[string]map[*Subscriber]bool)
+	psm.shardChannels = make(map[string]map[*Subscriber]bool)
 	psm.patterns = make(map[string]map[*Subscriber]bool)
 	psm.subscribers = make(map[*Subscriber]bool)
 }

@@ -88,14 +88,15 @@ func TestIdleTimeout_ZeroDefault(t *testing.T) {
 // TestAUTH_TimingAttackResistance 验证密码比较使用 constant-time compare，
 // 防止时序侧信道攻击。正确密码和错误密码的比较时间应一致。
 //
-// 注意：本测试通过 t.Setenv("BOLTDB_PASSWORD", ...) 配置认证密码，而认证检查
-// 在 handler_dispatch.go 入口用 os.Getenv 读取。若本测试 t.Parallel() 并行执行，
-// env 设置会污染同一进程内所有并行测试——它们会因读到非空密码且未认证而返回
-// NOAUTH Authentication required. 错误，导致其它命令测试随机失败。
-// 因此这里必须保持【不带】t.Parallel()，让本测试在串行阶段独占运行，
-// env 副作用只影响自身，不会泄漏到其它并行测试。
-// 用 t.Setenv 而非 os.Setenv，是因为 t.Setenv 在并行测试中会直接 panic 拦截
-// （而非静默污染），若未来有人误加回 t.Parallel()，能立刻让测试失败而非掩盖问题。
+// 注意：本测试通过 t.Setenv("BOLTDB_PASSWORD", ...) 配置认证密码，
+// 认证检查在 handler_dispatch.go 入口使用 Handler.authPassword 缓存
+// （启动时 SetAuthPassword(os.Getenv(...))，避免每命令 os.Getenv），
+// setupTestHandler 会在创建 Handler 时读取当前 env 并缓存，因此本测试
+// 必须在 t.Setenv 之后创建 Handler 才能拿到正确密码。
+// 若本测试 t.Parallel() 并行执行，t.Setenv 会直接 panic（Go 1.17+ 保护），
+// 且即使绕过，缓存机制也无法完全隔离——其它并行测试若在 env 设置前已创建
+// Handler（缓存空密码），则不受污染；但若在 env 设置后创建则会误判 NOAUTH。
+// 因此这里必须保持【不带】t.Parallel()，让本测试在串行阶段独占运行。
 func TestAUTH_TimingAttackResistance(t *testing.T) {
 	t.Setenv("BOLTDB_PASSWORD", "correct-password-12345")
 	// t.Setenv 在测试结束时自动清除，无需手动 Unsetenv

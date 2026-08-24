@@ -141,6 +141,20 @@ type Handler struct {
 	// handler.Shutdown → backupMgr.Wait → db.Close）。
 	// nil 表示未接线（单元测试环境），SHUTDOWN 仅返回 OK。
 	OnShutdown func()
+
+	// authPassword 缓存 BOLTDB_PASSWORD（启动时一次性读取，避免每命令 os.Getenv）。
+	// 空串表示无认证；main.go 与 setupTestHandler 在创建 Handler 后从环境变量初始化。
+	authPassword string
+}
+
+// SetAuthPassword 设置缓存的认证密码（供 main.go 在 Handler 创建后初始化）。
+func (h *Handler) SetAuthPassword(pw string) {
+	h.authPassword = pw
+}
+
+// GetAuthPassword 返回当前缓存的认证密码（测试用）。
+func (h *Handler) GetAuthPassword() string {
+	return h.authPassword
 }
 
 // connMeta 连接元数据
@@ -398,8 +412,10 @@ func (h *Handler) handleConnection(conn net.Conn) {
 	// 用 CumulativeLimitReader 包装输入流：既在配置 MaxInputBytes 时
 	// 限制单连接累计读取量，也始终累计已读字节数（CLUSTER CALLS 统计
 	// NetInputBytes 的数据源；limit<=0 时不限制只计数）。
-	reader := bufio.NewReader(NewCumulativeLimitReader(conn, h.MaxInputBytes))
+	// 单实例复用：reader 与 meta.limitReader 必须为同一对象，否则
+	// TotalInputBytes 统计为 0（双实例 bug，2026-08-24 修复）。
 	limitReader := NewCumulativeLimitReader(conn, h.MaxInputBytes)
+	reader := bufio.NewReader(limitReader)
 	writer := bufio.NewWriter(conn)
 
 	// 在复制接管时，需要关闭reader/writer以防止defer尝试Flush
@@ -692,17 +708,20 @@ func (h *Handler) processRequest(req *proto.Array, reader *bufio.Reader, remoteA
 	propagateArgs := req.Args
 	switch cmd {
 	case "EXPIRE":
-		if len(args) >= 2 {
-			if seconds, err := strconv.Atoi(string(args[1])); err == nil {
+		// EXPIRE key seconds [NX|XX|GT|LT] → PEXPIREAT key absoluteMS
+		// args[0]=EXPIRE, args[1]=key, args[2]=seconds
+		if len(args) >= 3 {
+			if seconds, err := strconv.Atoi(string(args[2])); err == nil {
 				absoluteMS := time.Now().UnixNano()/int64(time.Millisecond) + int64(seconds)*1000
-				propagateArgs = [][]byte{[]byte("PEXPIREAT"), args[0], []byte(strconv.FormatInt(absoluteMS, 10))}
+				propagateArgs = [][]byte{[]byte("PEXPIREAT"), args[1], []byte(strconv.FormatInt(absoluteMS, 10))}
 			}
 		}
 	case "PEXPIRE":
-		if len(args) >= 2 {
-			if ms, err := strconv.ParseInt(string(args[1]), 10, 64); err == nil {
+		// PEXPIRE key milliseconds [NX|XX|GT|LT] → PEXPIREAT key absoluteMS
+		if len(args) >= 3 {
+			if ms, err := strconv.ParseInt(string(args[2]), 10, 64); err == nil {
 				absoluteMS := time.Now().UnixNano()/int64(time.Millisecond) + ms
-				propagateArgs = [][]byte{[]byte("PEXPIREAT"), args[0], []byte(strconv.FormatInt(absoluteMS, 10))}
+				propagateArgs = [][]byte{[]byte("PEXPIREAT"), args[1], []byte(strconv.FormatInt(absoluteMS, 10))}
 			}
 		}
 	}
@@ -712,6 +731,43 @@ func (h *Handler) processRequest(req *proto.Array, reader *bufio.Reader, remoteA
 	// slave，造成主从不一致。因此仅当命令真正返回 1（master 上确实设置了 TTL）
 	// 时传播；返回 0 表示未写，不做任何传播。
 	if cmd == "EXPIRE" || cmd == "PEXPIRE" {
+		shouldProp = shouldProp && isPositiveIntegerResp(resp)
+	}
+	// SORT 仅在带 STORE 时写目标 key；不带 STORE 的 SORT 是只读（R7），不应进 backlog。
+	if cmd == "SORT" {
+		hasStore := false
+		for _, a := range args {
+			if strings.EqualFold(string(a), "STORE") {
+				hasStore = true
+				break
+			}
+		}
+		if !hasStore {
+			shouldProp = false
+		}
+	}
+	// SET 条件写（NX/XX）空转返回 Null/Bulk(nil) 时未写入，不进 backlog
+	if cmd == "SET" {
+		hasNX := false
+		hasXX := false
+		for _, a := range args {
+			switch strings.ToUpper(string(a)) {
+			case "NX":
+				hasNX = true
+			case "XX":
+				hasXX = true
+			}
+		}
+		if hasNX || hasXX {
+			if _, isNull := resp.(*proto.Null); isNull {
+				shouldProp = false
+			} else if bs, ok := resp.(*proto.BulkString); ok && bs == nil {
+				shouldProp = false
+			}
+		}
+	}
+	// SETNX/MSETNX/HSETNX 返回 0 表示未写入
+	if cmd == "SETNX" || cmd == "MSETNX" || cmd == "HSETNX" {
 		shouldProp = shouldProp && isPositiveIntegerResp(resp)
 	}
 	if h.Replication != nil && h.Replication.IsMaster() && shouldProp {

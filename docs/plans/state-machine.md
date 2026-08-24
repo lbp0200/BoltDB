@@ -20,7 +20,7 @@
 
 ## 1. Connection States
 
-BoltDB 使用多维状态模型替代单一的 enum。状态由 `connState`（`internal/server/handler.go:25-41`）中的多个正交字段共同决定。
+BoltDB 使用多维状态模型替代单一的 enum。状态由 `connState`（`internal/server/handler_core.go:23-63`）中的多个正交字段共同决定。
 
 ### 1.1 状态定义
 
@@ -62,7 +62,7 @@ BLOCKING 是**瞬态**（transient），必须最终转换到 `NORMAL` 或 `CLOS
 
 ### 1.4 CLOSING 语义
 
-CLOSING **不是 connState 上的持久字段**。连接关闭通过 `state.cancel()` 触发，清理在 `handleConnection` 的 `defer` 中执行（`handler.go:294-314`）。
+CLOSING **不是 connState 上的持久字段**。连接关闭通过 `state.cancel()` 触发，清理在 `handleConnection` 的 `defer` 中执行（`handler_core.go:457`）。
 
 触发 CLOSING 的事件：
 - `QUIT` 命令
@@ -83,27 +83,27 @@ cancel() → unregisterConnection() → RemoveSubscriber() → unregisterMonitor
 
 | From | Command/Event | To | Guard | 文件:行 |
 |------|--------------|----|-------|---------|
-| NORMAL | MULTI | MULTI | 不在其他模式 | handler.go:5147-5161 |
-| NORMAL | SUBSCRIBE | SUBSCRIBED | 不在 MULTI；不在 BLOCKING | handler.go:4953-4980 |
-| NORMAL | PSUBSCRIBE | SUBSCRIBED | 同上 | handler.go:4982-5009 |
-| NORMAL | MONITOR | MONITOR | 不在 MULTI；不在 BLOCKING | handler.go:7177-7185 |
-| NORMAL | BLPOP / BRPOP / ... | BLOCKING | 不在 MULTI（排队）；不在 SUBSCRIBED/MONITOR | handler.go:2800-2855 |
-| NORMAL | QUIT | CLOSING | — | handler.go:1215-1217 |
-| MULTI | EXEC | NORMAL | WATCH 脏检测通过；commands 非空时执行队列 | handler.go:5164-5199 |
-| MULTI | DISCARD | NORMAL | — | handler.go:5201-5208 |
-| MULTI | QUEUED | MULTI | 非控制命令入队 | handler.go:1194-1204 |
-| MULTI | QUIT | CLOSING | 不排队，直接执行 | handler.go:1196,1215-1217 |
-| SUBSCRIBED | UNSUBSCRIBE (all) | SUBSCRIBED | **不自动退出 PubSub 模式** | handler.go:817-848 |
-| SUBSCRIBED | QUIT | CLOSING | 返回 PubSubQuitSignal | handler.go:886-887 |
-| SUBSCRIBED | PING | SUBSCRIBED | — | handler.go:883-884 |
-| SUBSCRIBED | (P)SUBSCRIBE/(P)UNSUBSCRIBE | SUBSCRIBED | — | handler.go:769-882 |
-| MONITOR | QUIT | CLOSING | 返回 PubSubQuitSignal | handler.go:1053-1054 |
-| MONITOR | PING | MONITOR | — | handler.go:1056-1057 |
+| NORMAL | MULTI | MULTI | 不在其他模式 | transaction_commands.go:7 |
+| NORMAL | SUBSCRIBE | SUBSCRIBED | 不在 MULTI；不在 BLOCKING | pubsub_commands.go:handleSUBSCRIBE |
+| NORMAL | PSUBSCRIBE | SUBSCRIBED | 同上 | pubsub_commands.go:handlePSUBSCRIBE |
+| NORMAL | MONITOR | MONITOR | 不在 MULTI；不在 BLOCKING | handler_dispatch.go:992 |
+| NORMAL | BLPOP / BRPOP / ... | BLOCKING | 不在 MULTI（排队）；不在 SUBSCRIBED/MONITOR | store/list.go:1443 |
+| NORMAL | QUIT | CLOSING | — | handler_dispatch.go:100 |
+| MULTI | EXEC | NORMAL | WATCH 脏检测通过；commands 非空时执行队列 | transaction_commands.go:26 |
+| MULTI | DISCARD | NORMAL | — | transaction_commands.go:115 |
+| MULTI | QUEUED | MULTI | 非控制命令入队 | handler_dispatch.go:70 |
+| MULTI | QUIT | CLOSING | 不排队，直接执行 | handler_dispatch.go:72,100 |
+| SUBSCRIBED | UNSUBSCRIBE (all) | SUBSCRIBED | **不自动退出 PubSub 模式** | pubsub_commands.go:handleUNSUBSCRIBE |
+| SUBSCRIBED | QUIT | CLOSING | 返回 PubSubQuitSignal | pubsub_commands.go:QUIT |
+| SUBSCRIBED | PING | SUBSCRIBED | — | pubsub_commands.go:PING |
+| SUBSCRIBED | (P)SUBSCRIBE/(P)UNSUBSCRIBE | SUBSCRIBED | — | pubsub_commands.go |
+| MONITOR | QUIT | CLOSING | 返回 PubSubQuitSignal | handler_core.go:runMonitorLoop |
+| MONITOR | PING | MONITOR | — | handler_core.go:runMonitorLoop |
 | BLOCKING | 数据到达 | NORMAL | store 通过 channel 通知 | list.go:1443-1463 |
 | BLOCKING | 超时 | NORMAL | timeoutCh 触发 + unregisterBlockingPop | list.go:1494-1508 |
 | BLOCKING | ctx 取消 | CLOSING | state.cancel() 触发 | list.go:1496,1503 |
-| BLOCKING | CLIENT KILL | CLOSING | targetState.cancel() → ctx.Done() | handler.go:1322-1329 |
-| CLOSING | cleanup 完成 | — | 连接 goroutine 退出 | handler.go:294-314 |
+| BLOCKING | CLIENT KILL | CLOSING | targetState.cancel() → ctx.Done() | client_commands.go:148 |
+| CLOSING | cleanup 完成 | — | 连接 goroutine 退出 | handler_core.go:457 |
 
 ### 2.2 非法转换
 
@@ -111,25 +111,25 @@ cancel() → unregisterConnection() → RemoveSubscriber() → unregisterMonitor
 
 | From | Command | 结果 | 错误消息 | 文件:行 |
 |------|---------|------|---------|---------|
-| NORMAL | EXEC | ❌ 拒绝 | `ERR EXEC without MULTI` | handler.go:5165-5166 |
-| NORMAL | DISCARD | ❌ 拒绝 | `ERR DISCARD without MULTI` | handler.go:5202-5203 |
-| MULTI | MULTI | ❌ 拒绝 | `ERR MULTI calls can not be nested` | handler.go:5148-5150 |
-| MULTI | WATCH（有排队的命令） | ❌ 拒绝 | `ERR WATCH inside MULTI is not allowed` | handler.go:5214-5216 |
-| MULTI | 非控制命令 | ➡️ QUEUED（不拒绝，排队） | `QUEUED` | handler.go:1194-1204 |
-| MULTI | SUBSCRIBE | ➡️ QUEUED → EXEC 时报错 | `ERR command 'SUBSCRIBE' not supported in transaction` | handler.go:7480-7481 |
-| SUBSCRIBED | MULTI | ❌ 拒绝 | `ERR only (P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT allowed in this context` | handler.go:889-891 |
+| NORMAL | EXEC | ❌ 拒绝 | `ERR EXEC without MULTI` | transaction_commands.go:28 |
+| NORMAL | DISCARD | ❌ 拒绝 | `ERR DISCARD without MULTI` | transaction_commands.go:117 |
+| MULTI | MULTI | ❌ 拒绝 | `ERR MULTI calls can not be nested` | transaction_commands.go:9 |
+| MULTI | WATCH（有排队的命令） | ❌ 拒绝 | `ERR WATCH inside MULTI is not allowed` | transaction_commands.go:131 |
+| MULTI | 非控制命令 | ➡️ QUEUED（不拒绝，排队） | `QUEUED` | handler_dispatch.go:70 |
+| MULTI | SUBSCRIBE | ➡️ QUEUED → EXEC 时报错 | `ERR command 'SUBSCRIBE' not supported in transaction` | handler_dispatch.go:1002 |
+| SUBSCRIBED | MULTI | ❌ 拒绝 | `ERR only (P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT allowed in this context` | pubsub_commands.go:PubSub allowlist |
 | SUBSCRIBED | BLPOP | ❌ 拒绝 | 同上 | 同上 |
 | SUBSCRIBED | EXEC | ❌ 拒绝 | 同上 | 同上 |
 | SUBSCRIBED | SET/GET/... | ❌ 拒绝 | 同上 | 同上 |
-| MONITOR | MULTI | ❌ 拒绝 | `ERR only PING / QUIT allowed in this context` | handler.go:1055 |
+| MONITOR | MULTI | ❌ 拒绝 | `ERR only PING / QUIT allowed in this context` | handler_core.go:runMonitorLoop |
 | MONITOR | BLPOP | ❌ 拒绝 | 同上 | 同上 |
 | MONITOR | SUBSCRIBE | ❌ 拒绝 | 同上 | 同上 |
-| BLOCKING | MULTI | ➡️ QUEUED（排队等待 EXEC 时阻塞执行） | 阻塞命令在事务中不阻塞 | handler.go:1194-1204 |
-| BLOCKING | QUIT | ➡️ CLOSING（cancel 中断阻塞） | — | handler.go:1215-1217 |
+| BLOCKING | MULTI | ➡️ QUEUED（排队等待 EXEC 时阻塞执行） | 阻塞命令在事务中不阻塞 | handler_dispatch.go:70 |
+| BLOCKING | QUIT | ➡️ CLOSING（cancel 中断阻塞） | — | handler_dispatch.go:100 |
 
 ### 2.3 状态优先级
 
-当多个状态同时激活（`inTransaction && subscriber != nil`）时，模式循环检查顺序决定实际行为（`handler.go:417-449`）：
+当多个状态同时激活（`inTransaction && subscriber != nil`）时，模式循环检查顺序决定实际行为（`handler_core.go:630`）：
 
 ```
 SUBSCRIBED > MONITOR > NORMAL/MULTI
@@ -149,7 +149,7 @@ MULTI 允许条件:
 - subscriber == nil（隐含，MULTI 在 PubSub 循环中被拒绝）
 ```
 
-`handler.go:5147-5161`
+`transaction_commands.go:7`
 
 ### 3.2 MULTI → NORMAL (EXEC)
 
@@ -160,7 +160,7 @@ EXEC 允许条件:
 - 执行队列中的每个命令，单个失败不中断整体
 ```
 
-`handler.go:5164-5199`
+`transaction_commands.go:26`
 
 ### 3.3 MULTI → NORMAL (DISCARD)
 
@@ -169,7 +169,7 @@ DISCARD 允许条件:
 - inTransaction == true
 ```
 
-`handler.go:5201-5208`
+`transaction_commands.go:115`
 
 ### 3.4 NORMAL → SUBSCRIBED
 
@@ -179,9 +179,9 @@ SUBSCRIBE 允许条件:
 - inTransaction == false（隐含，SUBSCRIBE 在 MULTI 中被排队拒绝）
 ```
 
-`handler.go:4953-4980`
+`pubsub_commands.go:handleSUBSCRIBE`
 
-SUBSCRIBE 后 main loop 在下一轮 iteration 检测 `subscriber != nil` 并切换到 `runPubSubLoop`（`handler.go:431-437`）。
+SUBSCRIBE 后 main loop 在下一轮 iteration 检测 `subscriber != nil` 并切换到 `runPubSubLoop`（`handler_core.go:632`）。
 
 ### 3.5 SUBSCRIBED 命令限制
 
@@ -196,7 +196,7 @@ PubSub 模式下允许的命令:
 其他所有命令 → ERROR
 ```
 
-`handler.go:889-891`
+`pubsub_commands.go:PubSub allowlist`
 
 ### 3.6 NORMAL → MONITOR
 
@@ -207,7 +207,7 @@ MONITOR 允许条件:
 - inTransaction == false（隐含，MONITOR 在 MULTI 中被排队拒绝）
 ```
 
-`handler.go:7177-7185`
+`handler_dispatch.go:992`
 
 ### 3.7 MONITOR 命令限制
 
@@ -218,7 +218,7 @@ MONITOR 模式下允许的命令:
 其他所有命令 → ERROR
 ```
 
-`handler.go:1052-1057`
+`handler_core.go:runMonitorLoop`
 
 ### 3.8 BLOCKING 进入条件
 
@@ -411,9 +411,9 @@ EXEC 时逐个执行排队命令，BLPOP 此时才实际阻塞。
 
 | 模式循环 | 所在文件:行 | 命令源 | 消息源 | 退出条件 |
 |----------|------------|--------|--------|---------|
-| main loop | handler.go:317-455 | 直接读取 bufio.Reader | N/A | ctx.Done / 读错误 |
-| PubSub loop | handler.go:642-739 | cmdCh（独立 goroutine 读取） | subscriber.MessageCh | QUIT / ctx.Done |
-| Monitor loop | handler.go:952-1042 | cmdCh（独立 goroutine 读取） | monitorCh | QUIT / ctx.Done |
+| main loop | handler_core.go:368 | 直接读取 bufio.Reader | N/A | ctx.Done / 读错误 |
+| PubSub loop | handler_core.go:632 | cmdCh（独立 goroutine 读取） | subscriber.MessageCh | QUIT / ctx.Done |
+| Monitor loop | handler_core.go:642 | cmdCh（独立 goroutine 读取） | monitorCh | QUIT / ctx.Done |
 
 ---
 
@@ -430,7 +430,7 @@ BoltDB 使用多维状态而非单一 enum，原因：
 ### 7.2 优先级实现细节
 
 ```
-handleConnection main loop (handler.go:417-449):
+handleConnection main loop (handler_core.go:630):
 
 1. processRequest (可能设置 subscriber 或 monitoring)
 2. 检查 subscriber != nil → 切换到 PubSub 循环
@@ -459,6 +459,7 @@ BLOCKING 未作为显式状态字段存储，意味着：
 | 版本 | 日期 | 变更 |
 |------|------|------|
 | v1.0 | 2026-05-17 | 初始版本：基于 handler.go, list.go, stream.go 实现提取的状态机形式化 |
+| v1.1 | 2026-08-24 | `handler.go` 拆分 24 文件：全量更新 `文件:行` 列至 `handler_core/dispatch/transaction_commands/pubsub` 等；`CLIENT KILL` 死锁回归、`SORT` R7 等 8 轮巡检同步 |
 
 ### 核验命令
 

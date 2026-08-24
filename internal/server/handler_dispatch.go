@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -28,16 +27,22 @@ func (h *Handler) pauseExempt(cmd string) bool {
 // pauseUntil 归零（CLIENT UNPAUSE 调用）或当前时间超过 pauseUntil
 // （暂停超时自动恢复）。连接上下文取消（关闭/服务器关闭）时立即返回，
 // 避免优雅关闭被暂停窗口拖住。轮询间隔 10ms 保证 UNPAUSE 及时生效。
+// 使用 time.NewTimer 避免 time.After 在循环中的 Timer 泄漏（每 10ms 一个
+// Timer 直至触发，若 ctx 先取消则 Timer 残留至 GC）。
 func (h *Handler) waitPauseWindow(state *connState) {
 	for {
 		until := h.pauseUntil.Load()
 		if until == 0 || time.Now().UnixMilli() >= until {
 			return
 		}
+		timer := time.NewTimer(10 * time.Millisecond)
 		select {
 		case <-state.ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
 			return
-		case <-time.After(10 * time.Millisecond):
+		case <-timer.C:
 		}
 	}
 }
@@ -55,8 +60,8 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	}
 
 	state.mu.Lock()
-	// 如果配置了密码，检查是否已认证
-	if password := os.Getenv("BOLTDB_PASSWORD"); password != "" && !state.authenticated {
+	// 如果配置了密码，检查是否已认证（authPassword 启动时缓存，避免每命令 os.Getenv）
+	if password := h.authPassword; password != "" && !state.authenticated {
 		switch cmd {
 		case "AUTH", "PING", "QUIT", "COMMAND", "HELLO":
 			// 这些命令可以绕过认证

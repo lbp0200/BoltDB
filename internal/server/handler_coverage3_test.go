@@ -694,6 +694,81 @@ func TestBLMPOP_PropagatesToBacklog(t *testing.T) {
 	assert.True(t, strings.Contains(prop, "COUNT"))
 }
 
+// TestSORT_Store_PropagatesToBacklog verifies SORT STORE enters the
+// replication backlog via the generic propagator, while plain SORT
+// (read-only) does not — closing the R7 gap noted in code-review.
+func TestSORT_Store_PropagatesToBacklog(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.Replication = replication.NewReplicationManager(handler.Db)
+	defer handler.Replication.Stop()
+
+	handler.executeCommand(state, "RPUSH", [][]byte{[]byte("sortsrc"), []byte("3"), []byte("1"), []byte("2")}, "127.0.0.1:12345")
+
+	before := handler.Replication.GetBacklog().GetCurrentOffset()
+	req := &proto.Array{Args: [][]byte{[]byte("SORT"), []byte("sortsrc"), []byte("STORE"), []byte("sortdst")}}
+	resp := handler.processRequest(req, nil, "127.0.0.1:12345", nil, nil, state)
+	_, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+
+	after := handler.Replication.GetBacklog().GetCurrentOffset()
+	data, err := handler.Replication.GetBacklog().GetRange(before, after)
+	assert.NoError(t, err)
+	prop := string(data)
+	assert.True(t, strings.Contains(prop, "SORT"))
+	assert.True(t, strings.Contains(prop, "STORE"))
+
+	// Read-only SORT must NOT be propagated (R7)
+	before = handler.Replication.GetBacklog().GetCurrentOffset()
+	req2 := &proto.Array{Args: [][]byte{[]byte("SORT"), []byte("sortsrc")}}
+	handler.processRequest(req2, nil, "127.0.0.1:12345", nil, nil, state)
+	after = handler.Replication.GetBacklog().GetCurrentOffset()
+	assert.Equal(t, before, after)
+}
+
+// TestEXPIRE_PropagatesAsPEXPIREAT verifies EXPIRE/PEXPIRE are
+// canonicalized to PEXPIREAT with absolute timestamp before entering
+// the backlog — the fix for handler_core.go:710 index bug (key/seconds swap).
+func TestEXPIRE_PropagatesAsPEXPIREAT(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.Replication = replication.NewReplicationManager(handler.Db)
+	defer handler.Replication.Stop()
+
+	handler.executeCommand(state, "SET", [][]byte{[]byte("expkey"), []byte("v")}, "127.0.0.1:12345")
+	handler.executeCommand(state, "SET", [][]byte{[]byte("pexpkey"), []byte("v")}, "127.0.0.1:12345")
+
+	// EXPIRE → PEXPIREAT
+	before := handler.Replication.GetBacklog().GetCurrentOffset()
+	req := &proto.Array{Args: [][]byte{[]byte("EXPIRE"), []byte("expkey"), []byte("100")}}
+	resp := handler.processRequest(req, nil, "127.0.0.1:12345", nil, nil, state)
+	_, ok := resp.(*proto.Integer)
+	assert.True(t, ok)
+	after := handler.Replication.GetBacklog().GetCurrentOffset()
+	data, err := handler.Replication.GetBacklog().GetRange(before, after)
+	assert.NoError(t, err)
+	prop := string(data)
+	// Must be PEXPIREAT with correct key, not raw EXPIRE nor swapped args
+	assert.True(t, strings.Contains(prop, "PEXPIREAT"))
+	assert.True(t, strings.Contains(prop, "expkey"))
+	assert.False(t, strings.Contains(prop, "EXPIRE\r\n$6\r\nEXPIRE"))
+
+	// PEXPIRE → PEXPIREAT
+	before = handler.Replication.GetBacklog().GetCurrentOffset()
+	req2 := &proto.Array{Args: [][]byte{[]byte("PEXPIRE"), []byte("pexpkey"), []byte("100000")}}
+	handler.processRequest(req2, nil, "127.0.0.1:12345", nil, nil, state)
+	after = handler.Replication.GetBacklog().GetCurrentOffset()
+	data2, err := handler.Replication.GetBacklog().GetRange(before, after)
+	assert.NoError(t, err)
+	prop2 := string(data2)
+	assert.True(t, strings.Contains(prop2, "PEXPIREAT"))
+	assert.True(t, strings.Contains(prop2, "pexpkey"))
+}
+
 // TestRESET_ClearsTransactionState verifies RESET discards MULTI + WATCH
 // and unsubscribes all pubsub subscriptions.
 func TestRESET_ClearsTransactionState(t *testing.T) {

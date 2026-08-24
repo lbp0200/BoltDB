@@ -5,7 +5,6 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -373,9 +372,8 @@ func (h *Handler) handleMEMORY(state *connState, args [][]byte, remoteAddr strin
 
 // handleAUTH 实现 AUTH 命令
 func (h *Handler) handleAUTH(state *connState, args [][]byte, remoteAddr string) proto.RESP {
-	// 简化实现：检查密码
-	// 支持环境变量 BOLTDB_PASSWORD
-	password := os.Getenv("BOLTDB_PASSWORD")
+	// 简化实现：检查密码（使用 Handler 缓存的 authPassword，避免每 AUTH os.Getenv）
+	password := h.authPassword
 	if password == "" {
 		// 没有配置密码，任何密码都接受
 		state.authenticated = true

@@ -38,6 +38,39 @@ func TestExecuteCommand_CLIENT_KILL_Coverage(t *testing.T) {
 	assert.True(t, int64(*integer) >= 0)
 }
 
+// TestCLIENT_KILL_Blocking_NoDeadlock verifies CLIENT KILL TYPE BLOCKING
+// does not deadlock when a blocking client holds state.mu — the fix for
+// OW7/F2 (Lock→capture→Unlock→cancel, 2026-08-24).
+func TestCLIENT_KILL_Blocking_NoDeadlock(t *testing.T) {
+	t.Parallel()
+
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	// Register a fake blocking client
+	blockState := &connState{}
+	blockState.blocking.Store(true)
+	_, cancel := context.WithCancel(context.Background())
+	blockState.cancel = cancel
+	handler.registerConnection(blockState, &mockConn{}, "127.0.0.1:9999")
+	defer handler.unregisterConnection(blockState)
+
+	// CLIENT KILL TYPE BLOCKING should not deadlock (previous bug held mu while cancel)
+	done := make(chan struct{})
+	go func() {
+		resp := handler.executeCommand(state, "CLIENT", [][]byte{[]byte("KILL"), []byte("TYPE"), []byte("BLOCKING")}, "127.0.0.1:12345")
+		_, ok := resp.(*proto.Integer)
+		assert.True(t, ok)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("CLIENT KILL TYPE BLOCKING deadlocked — OW7 fix missing")
+	}
+}
+
 // TestExecuteCommand_CLIENT_PAUSE_Coverage tests CLIENT PAUSE command
 func TestExecuteCommand_CLIENT_PAUSE_Coverage(t *testing.T) {
 	t.Parallel()

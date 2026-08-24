@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -23,7 +24,7 @@ func setupTestHandler(t *testing.T) (*Handler, *connState) {
 	dbPath := t.TempDir()
 	db, err := store.NewBotreonStore(dbPath)
 	assert.NoError(t, err)
-	return &Handler{
+	h := &Handler{
 		Db:    db,
 		conns: make(map[*connState]*connMeta),
 		cmdCounters: map[string]*atomic.Int64{
@@ -31,7 +32,9 @@ func setupTestHandler(t *testing.T) (*Handler, *connState) {
 			"ZREVRANK": new(atomic.Int64),
 			"ZRANGE":   new(atomic.Int64),
 		},
-	}, &connState{}
+	}
+	h.SetAuthPassword(os.Getenv("BOLTDB_PASSWORD"))
+	return h, &connState{}
 }
 
 // TestExecuteCommand 单元测试：直接测试executeCommand函数

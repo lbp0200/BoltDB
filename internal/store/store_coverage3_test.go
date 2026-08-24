@@ -347,13 +347,17 @@ func TestPubSubManager_Clear_Coverage(t *testing.T) {
 	t.Parallel()
 	psm := NewPubSubManager()
 	sub := NewSubscriber("test-sub")
-	psm.mu.Lock()
-	psm.subscribers[sub] = true
-	psm.mu.Unlock()
-	assert.Equal(t, 1, psm.GetTotalSubscriberCount())
+	psm.Subscribe(sub, "chan1")
+	sub2 := NewSubscriber("shard-sub")
+	psm.SSubscribe(sub2, "shardChan")
+	assert.Equal(t, 2, psm.GetTotalSubscriberCount())
+	assert.Equal(t, 1, len(psm.GetChannels("*")))
+	assert.Equal(t, 1, len(psm.GetShardChannels("*")))
 
 	psm.Clear()
 	assert.Equal(t, 0, psm.GetTotalSubscriberCount())
+	assert.Equal(t, 0, len(psm.GetShardChannels("*")))
+	assert.Equal(t, 0, len(psm.GetChannels("*")))
 }
 
 func TestRestoreHLL_Coverage(t *testing.T) {
@@ -371,8 +375,14 @@ func TestRestoreHLL_Coverage(t *testing.T) {
 func TestIsUUIDFormat_Coverage(t *testing.T) {
 	t.Parallel()
 	assert.True(t, isUUIDFormat("550e8400-e29b-41d4-a716-446655440000"))
+	assert.True(t, isUUIDFormat("550E8400-E29B-41D4-A716-446655440000")) // uppercase hex
 	assert.False(t, isUUIDFormat(""))
 	assert.False(t, isUUIDFormat("not-a-uuid"))
+	assert.False(t, isUUIDFormat("550e8400-e29b-41d4-a716-44665544000"))  // 35 chars
+	assert.False(t, isUUIDFormat("550e8400-e29b-41d4-a716-4466554400000")) // 37 chars
+	assert.False(t, isUUIDFormat("550e8400-e29b-41d4-a716_446655440000"))  // '_' at dash pos
+	assert.False(t, isUUIDFormat("550e8400-e29b-41d4-a716-44665544000g"))  // 'g' non-hex
+	assert.False(t, isUUIDFormat("550e8400e29b-41d4-a716-446655440000"))   // missing dash at 8
 }
 
 func TestDecompressZSTD_Coverage(t *testing.T) {

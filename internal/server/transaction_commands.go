@@ -1,6 +1,8 @@
 package server
 
 import (
+	"strings"
+
 	"github.com/lbp0200/BoltDB/internal/proto"
 )
 
@@ -71,6 +73,45 @@ func (h *Handler) handleEXEC(state *connState, args [][]byte, remoteAddr string)
 				propArgs = sremArgs
 			} else if !shouldPropagateCommand(tc.Command) {
 				continue
+			}
+			// SORT 仅带 STORE 时写；不带 STORE 的 SORT 是只读，不进 backlog（R7）
+			if tc.Command == "SORT" {
+				hasStore := false
+				for _, a := range tc.Args {
+					if strings.EqualFold(string(a), "STORE") {
+						hasStore = true
+						break
+					}
+				}
+				if !hasStore {
+					continue
+				}
+			}
+			// SET 条件写（NX/XX）空转返回 Null 时未写入
+			if tc.Command == "SET" {
+				hasNX := false
+				hasXX := false
+				for _, a := range tc.Args {
+					switch strings.ToUpper(string(a)) {
+					case "NX":
+						hasNX = true
+					case "XX":
+						hasXX = true
+					}
+				}
+				if hasNX || hasXX {
+					if _, isNull := results[i].(*proto.Null); isNull {
+						continue
+					}
+					if bs, ok := results[i].(*proto.BulkString); ok && bs == nil {
+						continue
+					}
+				}
+			}
+			if tc.Command == "SETNX" || tc.Command == "MSETNX" || tc.Command == "HSETNX" {
+				if !isPositiveIntegerResp(results[i]) {
+					continue
+				}
 			}
 			fullArgs := make([][]byte, 1, len(propArgs)+1)
 			fullArgs[0] = []byte(propCmd)

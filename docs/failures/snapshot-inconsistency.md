@@ -27,7 +27,7 @@ AddSlave                          ← PropagateCommand sends O3+
 
 ### 3. Conservative Snapshot Offset (Current fix)
 
-**Current fix** (May 2026, `handler.go:626`): capture `snapshotOffset` **BEFORE** `db.View()`, not after.
+**Current fix** (May 2026, `replication_handler.go:65`): capture `snapshotOffset` **BEFORE** `db.View()`, not after.
 
 ```
 capture snapshotOffset  ← PRE-View

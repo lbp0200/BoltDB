@@ -82,10 +82,11 @@ func (h *Handler) handleCLIENT(state *connState, args [][]byte, remoteAddr strin
 				h.connsMu.RUnlock()
 				for _, t := range targets {
 					t.state.mu.Lock()
-					if t.state.cancel != nil {
-						t.state.cancel()
-					}
+					cancelFn := t.state.cancel
 					t.state.mu.Unlock()
+					if cancelFn != nil {
+						cancelFn()
+					}
 					if t.conn != nil {
 						_ = t.conn.Close()
 					}
@@ -106,10 +107,11 @@ func (h *Handler) handleCLIENT(state *connState, args [][]byte, remoteAddr strin
 				h.connsMu.RUnlock()
 				for _, t := range targets {
 					t.state.mu.Lock()
-					if t.state.cancel != nil {
-						t.state.cancel()
-					}
+					cancelFn := t.state.cancel
 					t.state.mu.Unlock()
+					if cancelFn != nil {
+						cancelFn()
+					}
 					if t.conn != nil {
 						_ = t.conn.Close()
 					}
@@ -146,10 +148,11 @@ func (h *Handler) handleCLIENT(state *connState, args [][]byte, remoteAddr strin
 		}
 
 		targetState.mu.Lock()
-		if targetState.cancel != nil {
-			targetState.cancel()
-		}
+		cancelFn := targetState.cancel
 		targetState.mu.Unlock()
+		if cancelFn != nil {
+			cancelFn()
+		}
 		if targetConn != nil {
 			_ = targetConn.Close()
 		}

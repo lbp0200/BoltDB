@@ -22,7 +22,7 @@ to the slave (not yet in propagation snapshot).
    `[capturedOffset, postAddOffset)` after `AddSlave`. Gap is typically 0-2 commands.
 3. `writeMu` separation: Added `SlaveConnection.writeMu` to serialize write I/O.
 
-**Files:** `internal/replication/psync.go`, `internal/server/handler.go`
+**Files:** `internal/replication/psync.go`, `internal/server/replication_handler.go` + `handler_core.go`
 
 **Regression guards:**
 - `TestRegressionSnapshotFullresyncOffset`

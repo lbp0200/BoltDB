@@ -233,13 +233,45 @@ func main() {
 	measureGET(rdb, foundKeys, *concurrency)
 }
 
-// fetchSlotOwners 通过任一节点拉取 CLUSTER SLOTS，返回每个槽位范围及其
-// 主节点地址（Nodes[0] 为主节点）。
+// fetchSlotOwners 通过任一节点拉取集群槽位映射，优先 CLUSTER SHARDS（Redis 7+，
+// go-redis 9.22+ 首选），失败回退 CLUSTER SLOTS（BoltDB 现有实现，兼容旧集群）。
+// 主节点地址取每 shard 的首个节点（Nodes[0]）。
 func fetchSlotOwners(ctx context.Context, addr string) ([]slotOwner, error) {
 	client := redis.NewClient(&redis.Options{Addr: addr, PoolSize: 1})
 	defer func() { _ = client.Close() }()
 
-	slots, err := client.ClusterSlots(ctx).Result()
+	// 优先尝试 SHARDS（RESP3 Map，Redis 7+）；BoltDB 的 SHARDS 为兼容实现，
+	// 若解析失败或空结果则回退 SLOTS。
+	if shards, err := client.ClusterShards(ctx).Result(); err == nil && len(shards) > 0 {
+		owners := make([]slotOwner, 0, len(shards)*2)
+		for _, shard := range shards {
+			if len(shard.Nodes) == 0 || len(shard.Slots) == 0 {
+				continue
+			}
+			// 取首个节点地址：BoltDB 的 SHARDS 中 Endpoint/IP 仅为 host，需拼接 Port；
+			// Redis 7+ 的 Endpoint 可能已含 host，统一用 host+Port 拼装。
+			node := shard.Nodes[0]
+			host := node.Endpoint
+			if host == "" {
+				host = node.IP
+			}
+			if host == "" {
+				host = node.Hostname
+			}
+			if host == "" || node.Port == 0 {
+				continue
+			}
+			nodeAddr := fmt.Sprintf("%s:%d", host, node.Port)
+			for _, r := range shard.Slots {
+				owners = append(owners, slotOwner{start: int(r.Start), end: int(r.End), addr: nodeAddr})
+			}
+		}
+		if len(owners) > 0 {
+			return owners, nil
+		}
+	}
+
+	slots, err := client.ClusterSlots(ctx).Result() //nolint:staticcheck // fallback for BoltDB / pre-7 Redis; SHARDS preferred above
 	if err != nil {
 		return nil, err
 	}

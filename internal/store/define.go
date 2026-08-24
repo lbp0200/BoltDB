@@ -851,8 +851,7 @@ func isUUIDFormat(s string) bool {
 		return false
 	}
 	for i, c := range s {
-		pos := i % 37
-		if pos == 8 || pos == 13 || pos == 18 || pos == 23 {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
 			if c != '-' {
 				return false
 			}
