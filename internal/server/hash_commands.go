@@ -52,11 +52,13 @@ func (h *Handler) handleHGET(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
 	if err != nil || value == nil {
+		h.recordKeyspaceMiss()
 		if state.respVersion == 3 {
 			return &proto.Null{}
 		}
 		return proto.NewBulkString(nil)
 	}
+	h.recordKeyspaceHit()
 	return proto.NewBulkString(value)
 }
 

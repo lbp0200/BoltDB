@@ -474,6 +474,13 @@ func (h *Handler) handleMGET(state *connState, args [][]byte, remoteAddr string)
 	if err != nil {
 		return wrapStoreError(err)
 	}
+	for _, v := range values {
+		if v == "" {
+			h.recordKeyspaceMiss()
+		} else {
+			h.recordKeyspaceHit()
+		}
+	}
 	results := make([][]byte, len(values))
 	for i, v := range values {
 		if v == "" {
