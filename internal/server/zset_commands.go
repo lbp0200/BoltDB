@@ -635,9 +635,19 @@ func (h *Handler) handleZCOUNT(state *connState, args [][]byte, remoteAddr strin
 	count, err := h.Db.ZCount(key, minScore, maxScore)
 	if err != nil {
 		if errors.Is(err, store.ErrKeyNotFound) {
+			h.recordKeyspaceMiss()
 			return proto.NewInteger(0)
 		}
 		return wrapStoreError(err)
+	}
+	if count == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
 	}
 	return proto.NewInteger(count)
 }
