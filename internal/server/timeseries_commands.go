@@ -403,6 +403,22 @@ func (h *Handler) handleTS_MRANGE(state *connState, args [][]byte, remoteAddr st
 	if err != nil {
 		return wrapLogError(err)
 	}
+	if len(results) == 0 {
+		for _, k := range keys {
+			if exists, err := h.Db.Exists(k); err == nil && !exists {
+				h.recordKeyspaceMiss()
+			} else if err == nil && exists {
+				h.recordKeyspaceHit()
+			}
+		}
+		if len(keys) == 0 {
+			h.recordKeyspaceMiss()
+		}
+	} else {
+		for range results {
+			h.recordKeyspaceHit()
+		}
+	}
 	respElems := make([]proto.RESP, len(results))
 	for i, r := range results {
 		keyName := r[0].(string)
@@ -465,6 +481,22 @@ func (h *Handler) handleTS_MREVRANGE(state *connState, args [][]byte, remoteAddr
 		}
 		if len(dps) > 0 {
 			results = append(results, []interface{}{key, dps})
+		}
+	}
+	if len(results) == 0 {
+		for _, k := range keys {
+			if exists, err := h.Db.Exists(k); err == nil && !exists {
+				h.recordKeyspaceMiss()
+			} else if err == nil && exists {
+				h.recordKeyspaceHit()
+			}
+		}
+		if len(keys) == 0 {
+			h.recordKeyspaceMiss()
+		}
+	} else {
+		for range results {
+			h.recordKeyspaceHit()
 		}
 	}
 	respElems := make([]proto.RESP, len(results))
