@@ -109,7 +109,7 @@
 | LATENCY 子命令 | ✅ 已补齐（2026-08-23 `2abd9ce`） | LATEST/RESET/HELP/DOCTOR 原有；GRAPH/HISTORY/HISTOGRAM 已补（空数组，无采样数据） |
 | OBJECT 子命令 | ✅ 已核实完整（2026-08-23） | ENCODING/IDLETIME/FREQ/REFCOUNT/HELP 全部已实现（此前记录"缺 REFCOUNT"有误） |
 | MEMORY 子命令 | ✅ 已补齐（2026-08-23 `2abd9ce`） | USAGE/DOCTOR/HELP 原有；STATS（最小键值对形状，redis-py dict 解析兼容）/MALLOC-STATS（空 bulk）/PURGE（OK）已补 |
-| SLOWLOG 子命令 | ✅ 真实实现（2026-08-25 `36c86e8`+`8cfc1fc`/`be64d5e`） | GET/LEN/RESET/HELP 已为真实环形缓冲（阈值10ms/maxLen128/截断），CONFIG `slowlog-*` 打通，SLOWLOG自身不进日志；INFO `uptime`/`COMMANDSTATS`/`instantaneous_ops_per_sec` 已改真值 |
+| SLOWLOG 子命令 | ✅ 真实实现（2026-08-25 `36c86e8`+`8cfc1fc`/`be64d5e`） | GET/LEN/RESET/HELP 已为真实环形缓冲（阈值10ms/maxLen128/截断），CONFIG `slowlog-*` 打通，SLOWLOG自身不进日志；INFO `uptime`/`COMMANDSTATS`/`instantaneous_ops_per_sec` 已改真值；`expired_keys` 决策：`immediate-expiry` 语义（见下方） |
 | MODULE 子命令 | ✅ 已实现（2026-08-23 `5689f08`） | LIST/HELP 原有；LOAD/LOADEX 报 "Error loading the extension"（无模块系统）、UNLOAD 报 "no such module with that name" |
 | BGREWRITEAOF / RESET / WAITAOF | ✅ 已补齐 | 2026-08-23 已实现（65a10a4），此表为留档 |
 | INFO 键级补齐（redis_mode/Stats/db0） | 已完成 ✅（2026-08-23 `15459a7`）：INFO 与 Redis 8.2 键级差分发现 9 个客户端关键键缺失，补齐 8 个（47→55 键）——Server 加 `redis_mode`（standalone/cluster）、Stats 加 keyspace_hits/misses、expired_keys、evicted_keys、total_net_input/output_bytes、Keyspace 加 `db0:keys=N,expires=0`（真实计数）；`master_link_status` 是误报（Redis master 角色本无此键）。**实测 wire 确认 Redis 8.2 的 INFO 在 RESP3 下仍是 bulk string**（%7 Map 是 HELLO 的响应）——一度尝试 Map 化 INFO 已在提交前回退 |
@@ -153,6 +153,13 @@
 - TOML 配置文件（CLI flag > 配置 > 自动推导 > 硬编码默认值，优先级链完整）
 - Prometheus metrics 端点
 - 10 个版本 tag，成熟发版节奏（v8.39.1）
+
+### 决策记录：`INFO expired_keys` 的观测边界（2026-08-25）
+
+- **现状**：`expired_keys` 仅在 `EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT` 的“立即过期”分支（`TTL<=0` 或时间戳已过去）成功删除时 `recordExpired()`；`SET ... EX/PX` 等写入的自然到期由 Badger 的 `ExpiresAt` 在读取时惰性不可见，`DBSIZE` 与 `keyspace_misses` 会正确反映，但 `expired_keys` 不会额外自增
+- **不接入后台回调的原因**：Badger 的过期清理是 `lazy`（读时过滤）+ `Compaction`/`ValueGC`（`RunValueLogGC` 按 `discardRatio` 重写 vlog），不提供逐 key 的“刚好过期”事件；要补回调需在每次读的过期判定点加带锁 side-effect 或加全量扫描，读热点代价高且需跨 `store`↔`Handler` 事件总线硬耦合
+- **trade-off**：`expired_keys` 会低估自然到期的量级，但满足初版生产“是否在发生过期”的监控下限；后续如需精确审计，建议在 `store/base.go` 的 `ExpiresAt` 过期判定处暴露 `ExpiredCallback` 注入 `Handler.recordExpired()` 并配低频抽样扫描兜底，而非监听 Compaction/ValueGC
+- **结论**：保持 `immediate-expiry` 语义，不接入 Badger 后台异步清理回调；`evicted_keys` 保持 0（`noeviction` 策略，尚未实现 `maxmemory` 驱逐）
 
 ### 已知缺口与风险
 
