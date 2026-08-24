@@ -51,6 +51,21 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	if state == nil {
 		return proto.NewError("ERR internal error: nil connState")
 	}
+	start := time.Now()
+	defer func() {
+		elapsed := time.Since(start)
+		// 组装全量参数（含命令名，供 SLOWLOG 展示）。
+		fullArgs := make([][]byte, 0, len(args)+1)
+		fullArgs = append(fullArgs, []byte(cmd))
+		fullArgs = append(fullArgs, args...)
+		clientName := ""
+		if state.clientInfo != nil {
+			state.mu.Lock()
+			clientName = state.clientInfo.Name
+			state.mu.Unlock()
+		}
+		h.ensureSlowlog().add(elapsed, fullArgs, remoteAddr, clientName)
+	}()
 
 	// CLIENT PAUSE 窗口：暂停期间除豁免命令（CLIENT/QUIT/AUTH/HELLO/
 	// COMMAND/PING 等）外，所有命令在入口等待直到 UNPAUSE 或暂停超时。

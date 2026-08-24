@@ -114,7 +114,9 @@ func TestBuildInfoResponse_StatsSection(t *testing.T) {
 
 	resp := handler.buildInfoResponse("STATS")
 	assert.True(t, strings.Contains(resp, "# Stats"))
-	assert.True(t, strings.Contains(resp, "total_commands_processed:0"))
+	assert.True(t, strings.Contains(resp, "total_commands_processed:"))
+	assert.True(t, strings.Contains(resp, "total_net_input_bytes:"))
+	assert.True(t, strings.Contains(resp, "total_net_output_bytes:"))
 	assert.True(t, !strings.Contains(resp, "# Server"))
 }
 

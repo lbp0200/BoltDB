@@ -841,8 +841,8 @@ func TestExecuteCommand_SLOWLOG_GET_Coverage(t *testing.T) {
 	defer handler.Db.Close()
 
 	resp := handler.executeCommand(state, "SLOWLOG", [][]byte{[]byte("GET")}, "127.0.0.1:12345")
-	// Should return an array
-	_, ok := resp.(*proto.Array)
+	// SLOWLOG GET returns NestedArray (each entry itself is an array)
+	_, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
 }
 

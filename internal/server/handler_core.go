@@ -145,6 +145,8 @@ type Handler struct {
 	// authPassword 缓存 BOLTDB_PASSWORD（启动时一次性读取，避免每命令 os.Getenv）。
 	// 空串表示无认证；main.go 与 setupTestHandler 在创建 Handler 后从环境变量初始化。
 	authPassword string
+
+	slowlog *slowlogState
 }
 
 // SetAuthPassword 设置缓存的认证密码（供 main.go 在 Handler 创建后初始化）。

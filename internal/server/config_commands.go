@@ -22,12 +22,19 @@ func (h *Handler) handleCONFIG(state *connState, args [][]byte, remoteAddr strin
 			if h.Replication != nil && h.Replication.GetBacklog() != nil {
 				backlogSize = h.Replication.GetBacklog().GetSize()
 			}
+			sl := h.ensureSlowlog()
+			sl.mu.Lock()
+			slowlogThreshold := sl.threshold
+			slowlogMaxLen := sl.maxLen
+			sl.mu.Unlock()
 			configs := []string{
 				"save", "",
 				"appendonly", "no",
 				"maxmemory", "0",
 				"maxmemory-policy", "noeviction",
 				"backlog-size", strconv.FormatInt(backlogSize, 10),
+				"slowlog-log-slower-than", strconv.FormatInt(slowlogThreshold, 10),
+				"slowlog-max-len", strconv.Itoa(slowlogMaxLen),
 			}
 			results := make([][]byte, len(configs))
 			for i, cfg := range configs {
@@ -56,6 +63,10 @@ func (h *Handler) handleCONFIG(state *connState, args [][]byte, remoteAddr strin
 				} else {
 					value = strconv.FormatInt(replication.DefaultBacklogSize, 10)
 				}
+			case "slowlog-log-slower-than":
+				value = strconv.FormatInt(h.ensureSlowlog().threshold, 10)
+			case "slowlog-max-len":
+				value = strconv.Itoa(h.ensureSlowlog().maxLen)
 			default:
 				value = ""
 			}
@@ -83,10 +94,20 @@ func (h *Handler) handleCONFIG(state *connState, args [][]byte, remoteAddr strin
 				return proto.NewError(fmt.Sprintf("ERR invalid backlog-size: %s", err))
 			}
 			h.Replication.SetBacklogSize(size)
-		case "save", "appendonly", "maxmemory", "maxmemory-policy",
-			"slowlog-log-slower-than", "slowlog-max-len":
+		case "slowlog-log-slower-than":
+			us, err := strconv.ParseInt(val, 10, 64)
+			if err != nil {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			h.ensureSlowlog().setThreshold(us)
+		case "slowlog-max-len":
+			n, err := strconv.Atoi(val)
+			if err != nil {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			h.ensureSlowlog().setMaxLen(n)
+		case "save", "appendonly", "maxmemory", "maxmemory-policy":
 			// Known no-op configs: accepted for client compatibility
-			// (redis-py, redis-cli send these during init)
 		default:
 			return proto.NewError(fmt.Sprintf("ERR unsupported config parameter: %s", param))
 		}

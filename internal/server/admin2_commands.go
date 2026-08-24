@@ -251,25 +251,45 @@ func (h *Handler) handleWAIT(state *connState, args [][]byte, remoteAddr string)
 
 // handleSLOWLOG 实现 SLOWLOG 命令
 func (h *Handler) handleSLOWLOG(state *connState, args [][]byte, remoteAddr string) proto.RESP {
-	// BoltDB does not implement slow query logging yet
-	// Return empty list for all subcommands
 	if len(args) < 1 {
 		return proto.NewError("ERR wrong number of arguments for 'SLOWLOG' command")
 	}
 	subCommand := strings.ToUpper(string(args[0]))
+	sl := h.ensureSlowlog()
 	switch subCommand {
 	case "GET":
-		// Return empty array for GET
-		return &proto.Array{Args: [][]byte{}}
+		n := 128
+		if len(args) >= 2 {
+			v, err := strconv.Atoi(string(args[1]))
+			if err != nil {
+				return proto.NewError("ERR value is not an integer or out of range")
+			}
+			n = v
+		}
+		entries := sl.get(n)
+		elems := make([]proto.RESP, 0, len(entries))
+		for _, e := range entries {
+			// Redis SLOWLOG entry: [id, timestamp, duration, [args], clientAddr, clientName]
+			argsArr := make([][]byte, len(e.args))
+			copy(argsArr, e.args)
+			elems = append(elems, &proto.NestedArray{Elems: []proto.RESP{
+				proto.NewInteger(e.id),
+				proto.NewInteger(e.timestamp),
+				proto.NewInteger(e.duration),
+				&proto.Array{Args: argsArr},
+				proto.NewBulkString([]byte(e.clientAddr)),
+				proto.NewBulkString([]byte(e.clientName)),
+			}})
+		}
+		return &proto.NestedArray{Elems: elems}
 	case "LEN":
-		// Return 0 (no slowlog entries)
-		return proto.NewInteger(0)
+		return proto.NewInteger(int64(sl.len()))
 	case "RESET":
-		// Return OK for RESET
+		sl.reset()
 		return proto.OK
 	case "HELP":
 		return &proto.Array{Args: [][]byte{
-			[]byte("SLOWLOG GET <count> - returns top <count> entries from the slowlog"),
+			[]byte("SLOWLOG GET [count] - returns top <count> entries from the slowlog"),
 			[]byte("SLOWLOG LEN - returns the length of the slowlog"),
 			[]byte("SLOWLOG RESET - clears the slowlog"),
 			[]byte("SLOWLOG HELP - shows this help message"),

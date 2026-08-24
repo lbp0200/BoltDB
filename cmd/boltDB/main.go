@@ -351,6 +351,7 @@ func main() {
 		Timeout:           time.Duration(*idleTimeoutFlag) * time.Second,
 	}
 	handler.SetAuthPassword(os.Getenv("BOLTDB_PASSWORD"))
+	handler.EnsureSlowlog()
 	// SHUTDOWN 命令 → cancel() → ctx.Done() → ServeTCP 返回 → 走完整关闭序列
 	handler.OnShutdown = cancel
 	// CLUSTER CALLS 真实统计源：命令数 / 输入字节 / 输出字节
