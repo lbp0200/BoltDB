@@ -114,6 +114,23 @@ func (s *BotreonStore) Scan(cursor uint64, pattern string, count int) (ScanResul
 	return result, err
 }
 
+// DBSize 返回数据库中键的数量（不展开键列表，避免大库 O(n) 分配）。
+func (s *BotreonStore) DBSize() (int64, error) {
+	var count int64
+	err := s.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		iter := txn.NewIterator(opts)
+		defer iter.Close()
+		prefix := prefixKeyTypeBytes
+		for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
+			count++
+		}
+		return nil
+	})
+	return count, err
+}
+
 // Keys 实现 Keys 命令，返回匹配模式的键列表
 func (s *BotreonStore) Keys(pattern string) ([]string, error) {
 	var keys []string

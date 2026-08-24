@@ -182,8 +182,8 @@ func (h *Handler) buildInfoResponse(section string) string {
 
 	if section == "" || section == "ALL" || section == "KEYSPACE" {
 		builder.WriteString("# Keyspace\n")
-		if keys, err := h.Db.Keys("*"); err == nil {
-			builder.WriteString("db0:keys=" + strconv.Itoa(len(keys)) + ",expires=0\n")
+		if n, err := h.Db.DBSize(); err == nil {
+			builder.WriteString("db0:keys=" + strconv.FormatInt(n, 10) + ",expires=0\n")
 		}
 		builder.WriteString("\n")
 	}

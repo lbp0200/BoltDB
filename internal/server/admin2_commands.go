@@ -141,11 +141,11 @@ func (h *Handler) handleLASTSAVE(state *connState, args [][]byte, remoteAddr str
 
 // handleDBSIZE 实现 DBSIZE 命令
 func (h *Handler) handleDBSIZE(state *connState, args [][]byte, remoteAddr string) proto.RESP {
-	keys, err := h.Db.Keys("*")
+	n, err := h.Db.DBSize()
 	if err != nil {
 		return wrapStoreError(err)
 	}
-	return proto.NewInteger(int64(len(keys)))
+	return proto.NewInteger(n)
 }
 
 // handleTIME 实现 TIME 命令
