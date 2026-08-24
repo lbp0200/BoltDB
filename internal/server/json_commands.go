@@ -214,7 +214,20 @@ func (h *Handler) handleJSON_ARRLEN(state *connState, args [][]byte, remoteAddr 
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
+		if errors.Is(err, store.ErrKeyNotFound) {
+			h.recordKeyspaceMiss()
+			return proto.NewInteger(count)
+		}
 		return wrapLogError(err)
+	}
+	if count == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
 	}
 	return proto.NewInteger(count)
 }
@@ -237,7 +250,20 @@ func (h *Handler) handleJSON_OBJKEYS(state *connState, args [][]byte, remoteAddr
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
+		if errors.Is(err, store.ErrKeyNotFound) {
+			h.recordKeyspaceMiss()
+			return &proto.Array{Args: [][]byte{}}
+		}
 		return wrapLogError(err)
+	}
+	if len(keys) == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
 	}
 	arr := make([][]byte, len(keys))
 	for i, k := range keys {
