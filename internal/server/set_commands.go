@@ -512,6 +512,15 @@ func (h *Handler) handleSSCAN(state *connState, args [][]byte, remoteAddr string
 	if err != nil {
 		return wrapStoreError(err)
 	}
+	if len(result.Members) == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
+	}
 	// 返回格式: [cursor, [member1, member2, ...]]
 	memberElems := make([]proto.RESP, len(result.Members))
 	for i, m := range result.Members {
@@ -563,6 +572,15 @@ func (h *Handler) handleHSCAN(state *connState, args [][]byte, remoteAddr string
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
 		return wrapLogError(err)
+	}
+	if len(hscanResult.Fields) == 0 {
+		if exists, err := h.Db.Exists(hscanKey); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
 	}
 	fieldElems := make([]proto.RESP, 0, len(hscanResult.Fields)*2)
 	for fieldName, fieldVal := range hscanResult.Fields {

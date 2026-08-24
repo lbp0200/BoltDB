@@ -730,6 +730,15 @@ func (h *Handler) handleSCAN(state *connState, args [][]byte, remoteAddr string)
 	if err != nil {
 		return wrapStoreError(err)
 	}
+	if len(result.Keys) == 0 {
+		if cursor == 0 {
+			h.recordKeyspaceMiss()
+		} else {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
+	}
 	// 返回嵌套数组格式: [cursor, [key1, key2, ...]]
 	return proto.NewScanResponse(result.Cursor, result.Keys)
 }

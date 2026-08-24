@@ -1457,6 +1457,15 @@ func (h *Handler) handleZSCAN(state *connState, args [][]byte, remoteAddr string
 	if err != nil {
 		return wrapStoreError(err)
 	}
+	if len(result.Members) == 0 {
+		if exists, err := h.Db.Exists(zSetName); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
+	}
 	// 返回格式: [cursor, [member1, score1, member2, score2, ...]]
 	membersArray := make([][]byte, len(result.Members)*2)
 	for i, m := range result.Members {
