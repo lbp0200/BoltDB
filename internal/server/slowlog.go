@@ -107,6 +107,36 @@ func (h *Handler) uptimeSeconds() int64 {
 	return int64(time.Since(h.startTime).Seconds())
 }
 
+func (h *Handler) recordOps() {
+	sec := time.Now().Unix()
+	h.opsMu.Lock()
+	defer h.opsMu.Unlock()
+	// keep only last 2 seconds for instantaneous calc
+	if len(h.opsTimestamps) > 0 && h.opsTimestamps[len(h.opsTimestamps)-1] == sec {
+		h.opsCounts[len(h.opsCounts)-1]++
+		return
+	}
+	h.opsTimestamps = append(h.opsTimestamps, sec)
+	h.opsCounts = append(h.opsCounts, 1)
+	if len(h.opsTimestamps) > 2 {
+		h.opsTimestamps = h.opsTimestamps[1:]
+		h.opsCounts = h.opsCounts[1:]
+	}
+}
+
+func (h *Handler) instantaneousOps() int64 {
+	now := time.Now().Unix()
+	h.opsMu.Lock()
+	defer h.opsMu.Unlock()
+	var total int64
+	for i, ts := range h.opsTimestamps {
+		if now-ts <= 1 {
+			total += h.opsCounts[i]
+		}
+	}
+	return total
+}
+
 // add 记录一条慢日志，需在命令执行后调用。
 func (s *slowlogState) add(duration time.Duration, args [][]byte, clientAddr, clientName string) {
 	us := duration.Microseconds()
