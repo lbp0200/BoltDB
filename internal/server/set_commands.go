@@ -123,7 +123,17 @@ func (h *Handler) handleSMEMBERS(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
 	if err != nil {
+		h.recordKeyspaceMiss()
 		return &proto.Array{Args: [][]byte{}}
+	}
+	if len(members) == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
 	}
 	results := make([][]byte, len(members))
 	for i, m := range members {
@@ -205,11 +215,17 @@ func (h *Handler) handleSRANDMEMBER(state *connState, args [][]byte, remoteAddr 
 			return wrapStoreError(err)
 		}
 		if member == "" {
+			if exists, err := h.Db.Exists(key); err == nil && !exists {
+				h.recordKeyspaceMiss()
+			} else if err == nil && exists {
+				h.recordKeyspaceHit()
+			}
 			if state.respVersion == 3 {
 				return &proto.Null{}
 			}
 			return proto.NewBulkString(nil)
 		}
+		h.recordKeyspaceHit()
 		return proto.NewBulkString([]byte(member))
 	}
 	// SRANDMEMBER key count - return array of members
@@ -220,6 +236,15 @@ func (h *Handler) handleSRANDMEMBER(state *connState, args [][]byte, remoteAddr 
 	members, err := h.Db.SRandMemberN(key, count)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if len(members) == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
 	}
 	results := make([][]byte, len(members))
 	for i, m := range members {
