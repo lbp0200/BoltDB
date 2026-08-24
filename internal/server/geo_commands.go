@@ -350,6 +350,15 @@ func (h *Handler) geoRadiusCommon(state *connState, key string, lon, lat, radius
 		}
 		return wrapLogError(err)
 	}
+	if len(results) == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
+	}
 
 	if !withCoord && !withDist && !withHash {
 		resp := make([][]byte, len(results))
@@ -505,6 +514,15 @@ func (h *Handler) handleGEOSEARCH(state *connState, args [][]byte, remoteAddr st
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
 		return wrapStoreError(err)
+	}
+	if len(results) == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
 	}
 
 	if !withCoord && !withDist && !withHash {
