@@ -541,6 +541,13 @@ func (h *Handler) handleTS_QUERYINDEX(state *connState, args [][]byte, remoteAdd
 	if err != nil {
 		return wrapLogError(err)
 	}
+	if len(keys) == 0 {
+		h.recordKeyspaceMiss()
+	} else {
+		for range keys {
+			h.recordKeyspaceHit()
+		}
+	}
 	arr := make([][]byte, len(keys))
 	for i, key := range keys {
 		arr[i] = []byte(key)
