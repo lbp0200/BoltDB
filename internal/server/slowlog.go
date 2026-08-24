@@ -146,7 +146,7 @@ func (h *Handler) recordKeyspaceMiss() {
 	atomic.AddInt64(&h.keyspaceMisses, 1)
 }
 
-func (h *Handler) recordExpired() { //nolint:unused // wired via store callback in next patch
+func (h *Handler) recordExpired() {
 	atomic.AddInt64(&h.expiredKeys, 1)
 }
 

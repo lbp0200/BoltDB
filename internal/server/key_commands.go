@@ -345,6 +345,9 @@ func (h *Handler) handleEXPIRE(state *connState, args [][]byte, remoteAddr strin
 	if err != nil {
 		return wrapStoreError(err)
 	}
+	if success && seconds <= 0 {
+		h.recordExpired()
+	}
 	return proto.NewInteger(int64(boolToInt(success)))
 }
 
@@ -365,6 +368,9 @@ func (h *Handler) handleEXPIREAT(state *connState, args [][]byte, remoteAddr str
 	success, err := h.Db.ExpireAt(key, timestamp)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if success && timestamp <= time.Now().Unix() {
+		h.recordExpired()
 	}
 	return proto.NewInteger(int64(boolToInt(success)))
 }
@@ -387,6 +393,9 @@ func (h *Handler) handlePEXPIRE(state *connState, args [][]byte, remoteAddr stri
 	if err != nil {
 		return wrapStoreError(err)
 	}
+	if success && milliseconds <= 0 {
+		h.recordExpired()
+	}
 	return proto.NewInteger(int64(boolToInt(success)))
 }
 
@@ -407,6 +416,9 @@ func (h *Handler) handlePEXPIREAT(state *connState, args [][]byte, remoteAddr st
 	success, err := h.Db.PExpireAt(key, timestamp)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if success && timestamp <= time.Now().UnixMilli() {
+		h.recordExpired()
 	}
 	return proto.NewInteger(int64(boolToInt(success)))
 }
