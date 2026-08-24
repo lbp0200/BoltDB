@@ -267,6 +267,15 @@ func (h *Handler) handleXRANGE(state *connState, args [][]byte, remoteAddr strin
 		}
 		return wrapLogError(err)
 	}
+	if len(entries) == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
+	}
 
 	// XRANGE returns [[entryID, [field, value, ...]], ...]
 	// go-redis parses nested arrays as flat when structure is [id, [fields...]]
@@ -328,6 +337,15 @@ func (h *Handler) handleXREVRANGE(state *connState, args [][]byte, remoteAddr st
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
 		return wrapLogError(err)
+	}
+	if len(entries) == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
 	}
 
 	// XREVRANGE returns [[entryID, [field, value, ...]], ...] (reverse order)
