@@ -56,6 +56,7 @@ func (h *Handler) handleJSON_GET(state *connState, args [][]byte, remoteAddr str
 	result, err := h.Db.JSONGet(key, paths...)
 	if err != nil {
 		if errors.Is(err, store.ErrKeyNotFound) {
+			h.recordKeyspaceMiss()
 			if state.respVersion == 3 {
 				return &proto.Null{}
 			}
@@ -66,6 +67,7 @@ func (h *Handler) handleJSON_GET(state *connState, args [][]byte, remoteAddr str
 		}
 		return wrapLogError(err)
 	}
+	h.recordKeyspaceHit()
 	if len(result) == 1 {
 		return proto.NewBulkString([]byte(result[0]))
 	}
@@ -117,6 +119,7 @@ func (h *Handler) handleJSON_TYPE(state *connState, args [][]byte, remoteAddr st
 	result, err := h.Db.JSONType(key, path)
 	if err != nil {
 		if errors.Is(err, store.ErrKeyNotFound) {
+			h.recordKeyspaceMiss()
 			if state.respVersion == 3 {
 				return &proto.Null{}
 			}
@@ -127,6 +130,7 @@ func (h *Handler) handleJSON_TYPE(state *connState, args [][]byte, remoteAddr st
 		}
 		return wrapLogError(err)
 	}
+	h.recordKeyspaceHit()
 	return proto.NewBulkString([]byte(result))
 }
 
@@ -149,6 +153,13 @@ func (h *Handler) handleJSON_MGET(state *connState, args [][]byte, remoteAddr st
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
 		return wrapLogError(err)
+	}
+	for _, v := range result {
+		if v == "" {
+			h.recordKeyspaceMiss()
+		} else {
+			h.recordKeyspaceHit()
+		}
 	}
 	arr := make([][]byte, len(result))
 	for i, v := range result {
