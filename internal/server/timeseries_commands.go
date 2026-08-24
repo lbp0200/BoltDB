@@ -301,6 +301,13 @@ func (h *Handler) handleTS_MGET(state *connState, args [][]byte, remoteAddr stri
 		}
 		return wrapLogError(err)
 	}
+	for _, dp := range results {
+		if dp == nil {
+			h.recordKeyspaceMiss()
+		} else {
+			h.recordKeyspaceHit()
+		}
+	}
 	arr := make([][]byte, 0, len(results)*2)
 	for _, dp := range results {
 		if dp == nil {
@@ -342,6 +349,15 @@ func (h *Handler) handleTS_REVRANGE(state *connState, args [][]byte, remoteAddr 
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
 		return wrapLogError(err)
+	}
+	if len(results) == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
 	}
 	arr := make([][]byte, 0, len(results)*2)
 	for _, dp := range results {
