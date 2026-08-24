@@ -168,6 +168,21 @@ func (h *Handler) handleBITFIELD(state *connState, args [][]byte, remoteAddr str
 	if err != nil {
 		return wrapStoreError(err)
 	}
+	for _, r := range results {
+		if v, ok := r.(int64); ok {
+			if v == 0 {
+				if exists, err := h.Db.Exists(key); err == nil && !exists {
+					h.recordKeyspaceMiss()
+				} else if err == nil && exists {
+					h.recordKeyspaceHit()
+				}
+			} else {
+				h.recordKeyspaceHit()
+			}
+		} else {
+			h.recordKeyspaceHit()
+		}
+	}
 	// Single operation returns integer, multiple operations return array
 	if len(results) == 1 {
 		switch v := results[0].(type) {
@@ -218,6 +233,21 @@ func (h *Handler) handleBITFIELD_RO(state *connState, args [][]byte, remoteAddr 
 	results, err := h.Db.BitField(key, operations)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	for _, r := range results {
+		if v, ok := r.(int64); ok {
+			if v == 0 {
+				if exists, err := h.Db.Exists(key); err == nil && !exists {
+					h.recordKeyspaceMiss()
+				} else if err == nil && exists {
+					h.recordKeyspaceHit()
+				}
+			} else {
+				h.recordKeyspaceHit()
+			}
+		} else {
+			h.recordKeyspaceHit()
+		}
 	}
 	// Single operation returns integer, multiple operations return array
 	if len(results) == 1 {
