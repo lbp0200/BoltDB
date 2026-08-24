@@ -268,6 +268,7 @@ func (h *Handler) handleTS_LEN(state *connState, args [][]byte, remoteAddr strin
 	length, err := h.Db.TSLen(key)
 	if err != nil {
 		if errors.Is(err, store.ErrKeyNotFound) {
+			h.recordKeyspaceMiss()
 			if state.respVersion == 3 {
 				return &proto.Null{}
 			}
@@ -277,6 +278,15 @@ func (h *Handler) handleTS_LEN(state *connState, args [][]byte, remoteAddr strin
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
 		return wrapLogError(err)
+	}
+	if length == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
 	}
 	return proto.NewInteger(length)
 }
