@@ -436,6 +436,11 @@ func (h *Handler) handleTTL(state *connState, args [][]byte, remoteAddr string) 
 	if err != nil {
 		return proto.NewInteger(-2)
 	}
+	if ttl == -2 {
+		h.recordKeyspaceMiss()
+	} else {
+		h.recordKeyspaceHit()
+	}
 	return proto.NewInteger(ttl)
 }
 
@@ -451,6 +456,11 @@ func (h *Handler) handlePTTL(state *connState, args [][]byte, remoteAddr string)
 	pttl, err := h.Db.PTTL(key)
 	if err != nil {
 		return proto.NewInteger(-2)
+	}
+	if pttl == -2 {
+		h.recordKeyspaceMiss()
+	} else {
+		h.recordKeyspaceHit()
 	}
 	return proto.NewInteger(pttl)
 }
