@@ -725,9 +725,19 @@ func (h *Handler) handleZRANGE(state *connState, args [][]byte, remoteAddr strin
 	members, err := h.Db.ZRange(key, start, stop)
 	if err != nil {
 		if errors.Is(err, store.ErrKeyNotFound) {
+			h.recordKeyspaceMiss()
 			return &proto.Array{Args: [][]byte{}}
 		}
 		return wrapStoreError(err)
+	}
+	if len(members) == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
 	}
 	if withScores {
 		// RESP3: array of [member, Double] pairs; RESP2: flat [m, s, m, s].
@@ -780,9 +790,19 @@ func (h *Handler) handleZREVRANGE(state *connState, args [][]byte, remoteAddr st
 	members, err := h.Db.ZRevRange(key, start, stop)
 	if err != nil {
 		if errors.Is(err, store.ErrKeyNotFound) {
+			h.recordKeyspaceMiss()
 			return &proto.Array{Args: [][]byte{}}
 		}
 		return wrapStoreError(err)
+	}
+	if len(members) == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
 	}
 	if withScores {
 		vals := make([]store.ZSetMember, len(members))
