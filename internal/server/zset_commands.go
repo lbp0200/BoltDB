@@ -1342,6 +1342,15 @@ func (h *Handler) handleZLEXCOUNT(state *connState, args [][]byte, remoteAddr st
 	if err != nil {
 		return wrapStoreError(err)
 	}
+	if count == 0 {
+		if exists, err := h.Db.Exists(zSetName); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
+	}
 	return proto.NewInteger(count)
 }
 
