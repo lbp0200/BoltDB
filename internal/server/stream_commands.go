@@ -1164,6 +1164,9 @@ func (h *Handler) handleXINFO(state *connState, args [][]byte, remoteAddr string
 			}
 			return wrapLogError(err)
 		}
+		if err == nil {
+			h.recordKeyspaceHit()
+		}
 		groupsCount := int64(0)
 		if info.Groups != nil {
 			groupsCount = int64(len(info.Groups))
@@ -1213,6 +1216,9 @@ func (h *Handler) handleXINFO(state *connState, args [][]byte, remoteAddr string
 			}
 			return wrapLogError(err)
 		}
+		if err == nil {
+			h.recordKeyspaceHit()
+		}
 		var response []proto.RESP
 		for _, g := range groups {
 			groupInfo := []proto.RESP{
@@ -1245,6 +1251,9 @@ func (h *Handler) handleXINFO(state *connState, args [][]byte, remoteAddr string
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
 			return wrapLogError(err)
+		}
+		if err == nil {
+			h.recordKeyspaceHit()
 		}
 		var response []proto.RESP
 		now := time.Now().UnixMilli()
