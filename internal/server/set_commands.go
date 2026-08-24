@@ -92,6 +92,11 @@ func (h *Handler) handleSISMEMBER(state *connState, args [][]byte, remoteAddr st
 	if err != nil {
 		return proto.NewInteger(0)
 	}
+	if exists {
+		h.recordKeyspaceHit()
+	} else {
+		h.recordKeyspaceMiss()
+	}
 	return proto.NewInteger(int64(boolToInt(exists)))
 }
 
@@ -346,6 +351,13 @@ func (h *Handler) handleSMISMEMBER(state *connState, args [][]byte, remoteAddr s
 	results, err := h.Db.SMIsMember(key, members...)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	for _, v := range results {
+		if v == 1 {
+			h.recordKeyspaceHit()
+		} else {
+			h.recordKeyspaceMiss()
+		}
 	}
 	elems := make([]proto.RESP, len(results))
 	for i, v := range results {
