@@ -129,6 +129,7 @@ func (h *Handler) handleTS_GET(state *connState, args [][]byte, remoteAddr strin
 	dp, err := h.Db.TSGet(key)
 	if err != nil {
 		if errors.Is(err, store.ErrKeyNotFound) {
+			h.recordKeyspaceMiss()
 			if state.respVersion == 3 {
 				return &proto.Null{}
 			}
@@ -139,6 +140,7 @@ func (h *Handler) handleTS_GET(state *connState, args [][]byte, remoteAddr strin
 		}
 		return wrapLogError(err)
 	}
+	h.recordKeyspaceHit()
 	// Return as array: [timestamp, value]
 	return &proto.Array{
 		Args: [][]byte{
