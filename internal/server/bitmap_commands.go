@@ -50,6 +50,15 @@ func (h *Handler) handleGETBIT(state *connState, args [][]byte, remoteAddr strin
 	if err != nil {
 		return wrapStoreError(err)
 	}
+	if bit == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
+	}
 	return proto.NewInteger(int64(bit))
 }
 
@@ -96,6 +105,15 @@ func (h *Handler) handleBITCOUNT(state *connState, args [][]byte, remoteAddr str
 	count, err := h.Db.BitCountWithUnit(key, start, end, unit)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if count == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
 	}
 	return proto.NewInteger(int64(count))
 }
