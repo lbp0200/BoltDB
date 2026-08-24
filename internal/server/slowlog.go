@@ -138,6 +138,18 @@ func (h *Handler) bumpRdbChanges() {
 	atomic.AddInt64(&h.rdbChanges, 1)
 }
 
+func (h *Handler) recordKeyspaceHit() {
+	atomic.AddInt64(&h.keyspaceHits, 1)
+}
+
+func (h *Handler) recordKeyspaceMiss() {
+	atomic.AddInt64(&h.keyspaceMisses, 1)
+}
+
+func (h *Handler) recordExpired() { //nolint:unused // wired via store callback in next patch
+	atomic.AddInt64(&h.expiredKeys, 1)
+}
+
 func (h *Handler) recordOps() {
 	sec := time.Now().Unix()
 	h.opsMu.Lock()

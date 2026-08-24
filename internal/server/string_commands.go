@@ -270,6 +270,7 @@ func (h *Handler) handleGET(state *connState, args [][]byte, remoteAddr string) 
 	value, err := h.Db.Get(key)
 	if err != nil {
 		if errors.Is(err, store.ErrKeyNotFound) {
+			h.recordKeyspaceMiss()
 			if state.respVersion == 3 {
 				return &proto.Null{}
 			}
@@ -280,6 +281,7 @@ func (h *Handler) handleGET(state *connState, args [][]byte, remoteAddr string) 
 		}
 		return wrapLogError(err)
 	}
+	h.recordKeyspaceHit()
 	return proto.NewBulkString([]byte(value))
 }
 

@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/lbp0200/BoltDB/internal/replication"
 )
@@ -128,10 +129,10 @@ func (h *Handler) buildInfoResponse(section string) string {
 		builder.WriteString("instantaneous_ops_per_sec:" + strconv.FormatInt(h.instantaneousOps(), 10) + "\n")
 		builder.WriteString("total_net_input_bytes:" + strconv.FormatInt(h.TotalInputBytes(), 10) + "\n")
 		builder.WriteString("total_net_output_bytes:" + strconv.FormatInt(h.TotalOutputBytes(), 10) + "\n")
-		builder.WriteString("keyspace_hits:0\n")
-		builder.WriteString("keyspace_misses:0\n")
-		builder.WriteString("expired_keys:0\n")
-		builder.WriteString("evicted_keys:0\n")
+		builder.WriteString("keyspace_hits:" + strconv.FormatInt(atomic.LoadInt64(&h.keyspaceHits), 10) + "\n")
+		builder.WriteString("keyspace_misses:" + strconv.FormatInt(atomic.LoadInt64(&h.keyspaceMisses), 10) + "\n")
+		builder.WriteString("expired_keys:" + strconv.FormatInt(atomic.LoadInt64(&h.expiredKeys), 10) + "\n")
+		builder.WriteString("evicted_keys:" + strconv.FormatInt(atomic.LoadInt64(&h.evictedKeys), 10) + "\n")
 		builder.WriteString("\n")
 	}
 

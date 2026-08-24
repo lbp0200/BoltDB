@@ -159,6 +159,12 @@ type Handler struct {
 	// rdbChangesSinceLastSave for INFO Persistence
 	rdbChanges   int64
 	rdbChangesMu sync.Mutex
+
+	// keyspace_hits/misses + expired/evicted for INFO Stats
+	keyspaceHits   int64
+	keyspaceMisses int64
+	expiredKeys    int64
+	evictedKeys    int64
 }
 
 // SetAuthPassword 设置缓存的认证密码（供 main.go 在 Handler 创建后初始化）。
