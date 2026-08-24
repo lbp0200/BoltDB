@@ -143,7 +143,7 @@ func TestServerAdditionalCommands(t *testing.T) {
 			cmd:  "SLOWLOG",
 			args: [][]byte{[]byte("GET"), []byte("10")},
 			check: func(t *testing.T, resp proto.RESP) {
-				_, ok := resp.(*proto.Array)
+				_, ok := resp.(*proto.NestedArray)
 				assert.True(t, ok)
 			},
 		},
