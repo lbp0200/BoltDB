@@ -45,8 +45,9 @@ func (h *Handler) buildInfoResponse(section string) string {
 		builder.WriteString("process_id:" + strconv.Itoa(os.Getpid()) + "\n")
 		builder.WriteString("run_id:\n")
 		builder.WriteString("tcp_backlog:511\n")
-		builder.WriteString("uptime_in_seconds:0\n")
-		builder.WriteString("uptime_in_days:0\n")
+		uptime := h.uptimeSeconds()
+		builder.WriteString("uptime_in_seconds:" + strconv.FormatInt(uptime, 10) + "\n")
+		builder.WriteString("uptime_in_days:" + strconv.FormatInt(uptime/86400, 10) + "\n")
 		builder.WriteString("\n")
 	}
 
@@ -190,7 +191,17 @@ func (h *Handler) buildInfoResponse(section string) string {
 
 	if section == "" || section == "ALL" || section == "COMMANDSTATS" {
 		builder.WriteString("# Commandstats\n")
-		// No per-command stats in BoltDB (hardcoded for compatibility)
+		if h.cmdCounters != nil {
+			h.cmdCountersMu.Lock()
+			for cmd, c := range h.cmdCounters {
+				n := c.Load()
+				if n == 0 {
+					continue
+				}
+				builder.WriteString("cmdstat_" + strings.ToLower(cmd) + ":calls=" + strconv.FormatInt(n, 10) + ",usec=0,usec_per_call=0.00\n")
+			}
+			h.cmdCountersMu.Unlock()
+		}
 		builder.WriteString("\n")
 	}
 

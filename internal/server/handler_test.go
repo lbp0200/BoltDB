@@ -32,7 +32,8 @@ func setupTestHandler(t *testing.T) (*Handler, *connState) {
 			"ZREVRANK": new(atomic.Int64),
 			"ZRANGE":   new(atomic.Int64),
 		},
-		slowlog: newSlowlogState(),
+		slowlog:   newSlowlogState(),
+		startTime: time.Now(),
 	}
 	h.SetAuthPassword(os.Getenv("BOLTDB_PASSWORD"))
 	return h, &connState{}

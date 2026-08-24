@@ -147,6 +147,8 @@ type Handler struct {
 	authPassword string
 
 	slowlog *slowlogState
+
+	startTime time.Time
 }
 
 // SetAuthPassword 设置缓存的认证密码（供 main.go 在 Handler 创建后初始化）。

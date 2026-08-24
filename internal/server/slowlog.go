@@ -86,11 +86,25 @@ func (h *Handler) EnsureSlowlog() {
 	}
 }
 
+// EnsureStartTime 保证 Handler.startTime 非零（用于 INFO uptime 真值）。
+func (h *Handler) EnsureStartTime() {
+	if h.startTime.IsZero() {
+		h.startTime = time.Now()
+	}
+}
+
 func (h *Handler) ensureSlowlog() *slowlogState {
 	if h.slowlog == nil {
 		h.slowlog = newSlowlogState()
 	}
 	return h.slowlog
+}
+
+func (h *Handler) uptimeSeconds() int64 {
+	if h.startTime.IsZero() {
+		return 0
+	}
+	return int64(time.Since(h.startTime).Seconds())
 }
 
 // add 记录一条慢日志，需在命令执行后调用。
