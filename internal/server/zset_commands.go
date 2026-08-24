@@ -584,11 +584,17 @@ func (h *Handler) handleZRANK(state *connState, args [][]byte, remoteAddr string
 		return wrapStoreError(err)
 	}
 	if rank < 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceMiss()
+		}
 		if state.respVersion == 3 {
 			return &proto.Null{}
 		}
 		return proto.NewBulkString(nil)
 	}
+	h.recordKeyspaceHit()
 	return proto.NewInteger(rank)
 }
 
@@ -607,11 +613,17 @@ func (h *Handler) handleZREVRANK(state *connState, args [][]byte, remoteAddr str
 		return wrapStoreError(err)
 	}
 	if rank < 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceMiss()
+		}
 		if state.respVersion == 3 {
 			return &proto.Null{}
 		}
 		return proto.NewBulkString(nil)
 	}
+	h.recordKeyspaceHit()
 	return proto.NewInteger(rank)
 }
 
