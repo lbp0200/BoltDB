@@ -110,6 +110,11 @@ func (h *Handler) handleTYPE(state *connState, args [][]byte, remoteAddr string)
 	if err != nil {
 		return proto.NewSimpleString("none")
 	}
+	if keyType == "none" {
+		h.recordKeyspaceMiss()
+	} else {
+		h.recordKeyspaceHit()
+	}
 	return proto.NewSimpleString(keyType)
 }
 
@@ -124,11 +129,13 @@ func (h *Handler) handleDUMP(state *connState, args [][]byte, remoteAddr string)
 	}
 	data, err := h.Db.Dump(key)
 	if err != nil {
+		h.recordKeyspaceMiss()
 		if state.respVersion == 3 {
 			return &proto.Null{}
 		}
 		return proto.NewBulkString(nil)
 	}
+	h.recordKeyspaceHit()
 	return proto.NewBulkString(data)
 }
 
@@ -237,11 +244,13 @@ func (h *Handler) handleOBJECT(state *connState, args [][]byte, remoteAddr strin
 			return wrapStoreError(err)
 		}
 		if refcount == 0 {
+			h.recordKeyspaceMiss()
 			if state.respVersion == 3 {
 				return &proto.Null{}
 			}
 			return proto.NewBulkString(nil)
 		}
+		h.recordKeyspaceHit()
 		return proto.NewInteger(refcount)
 	case "ENCODING":
 		encoding, err := h.Db.ObjectEncoding(key)
@@ -249,11 +258,13 @@ func (h *Handler) handleOBJECT(state *connState, args [][]byte, remoteAddr strin
 			return wrapStoreError(err)
 		}
 		if encoding == "" {
+			h.recordKeyspaceMiss()
 			if state.respVersion == 3 {
 				return &proto.Null{}
 			}
 			return proto.NewBulkString(nil)
 		}
+		h.recordKeyspaceHit()
 		return proto.NewBulkString([]byte(encoding))
 	case "IDLETIME":
 		// BadgerDB 不维护访问时间，空闲时间恒为 0；但与其他 OBJECT
@@ -263,11 +274,13 @@ func (h *Handler) handleOBJECT(state *connState, args [][]byte, remoteAddr strin
 			return wrapStoreError(err)
 		}
 		if !exists {
+			h.recordKeyspaceMiss()
 			if state.respVersion == 3 {
 				return &proto.Null{}
 			}
 			return proto.NewBulkString(nil)
 		}
+		h.recordKeyspaceHit()
 		idletime, err := h.Db.ObjectIdleTime(key)
 		if err != nil {
 			return wrapStoreError(err)
@@ -282,11 +295,13 @@ func (h *Handler) handleOBJECT(state *connState, args [][]byte, remoteAddr strin
 			return wrapStoreError(err)
 		}
 		if !exists {
+			h.recordKeyspaceMiss()
 			if state.respVersion == 3 {
 				return &proto.Null{}
 			}
 			return proto.NewBulkString(nil)
 		}
+		h.recordKeyspaceHit()
 		return proto.NewInteger(0)
 	default:
 		return proto.NewError("ERR syntax error")
