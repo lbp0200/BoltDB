@@ -525,6 +525,15 @@ func (h *Handler) handleZCARD(state *connState, args [][]byte, remoteAddr string
 		}
 		return wrapLogError(err)
 	}
+	if count == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
+	}
 	return proto.NewInteger(int64(count))
 }
 

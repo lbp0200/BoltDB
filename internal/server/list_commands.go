@@ -132,6 +132,15 @@ func (h *Handler) handleLLEN(state *connState, args [][]byte, remoteAddr string)
 		}
 		return proto.NewInteger(0)
 	}
+	if length == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
+	}
 	// #nosec G115 - length is bounded by practical data size limits
 	return proto.NewInteger(int64(length))
 }
