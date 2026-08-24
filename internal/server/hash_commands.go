@@ -161,6 +161,11 @@ func (h *Handler) handleHEXISTS(state *connState, args [][]byte, remoteAddr stri
 		}
 		return proto.NewInteger(0)
 	}
+	if exists {
+		h.recordKeyspaceHit()
+	} else {
+		h.recordKeyspaceMiss()
+	}
 	return proto.NewInteger(int64(boolToInt(exists)))
 }
 
@@ -246,6 +251,13 @@ func (h *Handler) handleHMGET(state *connState, args [][]byte, remoteAddr string
 	values, err := h.Db.HMGet(key, fields...)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	for _, v := range values {
+		if v == nil {
+			h.recordKeyspaceMiss()
+		} else {
+			h.recordKeyspaceHit()
+		}
 	}
 	results := make([][]byte, len(values))
 	for i, v := range values {

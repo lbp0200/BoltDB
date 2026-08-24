@@ -545,11 +545,13 @@ func (h *Handler) handleZSCORE(state *connState, args [][]byte, remoteAddr strin
 		return wrapLogError(err)
 	}
 	if !exists {
+		h.recordKeyspaceMiss()
 		if state.respVersion == 3 {
 			return &proto.Null{}
 		}
 		return proto.NewBulkString(nil)
 	}
+	h.recordKeyspaceHit()
 	// RESP3: score is a Double type (',' prefix); redis-py 8 returns float
 	// only for the double, bytes otherwise.
 	if state.respVersion == 3 {

@@ -87,6 +87,9 @@ func (h *Handler) handleEXISTS(state *connState, args [][]byte, remoteAddr strin
 		}
 		if exists {
 			count++
+			h.recordKeyspaceHit()
+		} else {
+			h.recordKeyspaceMiss()
 		}
 	}
 	// #nosec G115 - count is bounded by practical data size limits
