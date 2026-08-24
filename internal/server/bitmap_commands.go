@@ -308,6 +308,15 @@ func (h *Handler) handleBITPOS(state *connState, args [][]byte, remoteAddr strin
 	if err != nil {
 		return wrapStoreError(err)
 	}
+	if pos == -1 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
+	}
 	return proto.NewInteger(int64(pos))
 }
 
@@ -324,6 +333,15 @@ func (h *Handler) handleBITLEN(state *connState, args [][]byte, remoteAddr strin
 	length, err := h.Db.BitLen(key)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if length == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
 	}
 	return proto.NewInteger(int64(length))
 }
