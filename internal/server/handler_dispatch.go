@@ -53,6 +53,9 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	}
 	start := time.Now()
 	defer func() {
+		if cmd == "SLOWLOG" {
+			return
+		}
 		elapsed := time.Since(start)
 		// 组装全量参数（含命令名，供 SLOWLOG 展示）。
 		fullArgs := make([][]byte, 0, len(args)+1)
