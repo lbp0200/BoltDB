@@ -154,17 +154,20 @@ func (h *Handler) handleLINDEX(state *connState, args [][]byte, remoteAddr strin
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
+		h.recordKeyspaceMiss()
 		if state.respVersion == 3 {
 			return &proto.Null{}
 		}
 		return proto.NewBulkString(nil)
 	}
 	if value == "" {
+		h.recordKeyspaceMiss()
 		if state.respVersion == 3 {
 			return &proto.Null{}
 		}
 		return proto.NewBulkString(nil)
 	}
+	h.recordKeyspaceHit()
 	return proto.NewBulkString([]byte(value))
 }
 
@@ -187,7 +190,18 @@ func (h *Handler) handleLRANGE(state *connState, args [][]byte, remoteAddr strin
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
+		h.recordKeyspaceMiss()
 		return &proto.Array{Args: [][]byte{}}
+	}
+	if len(values) == 0 {
+		// 空结果可能是 key 不存在或范围为空，尝试用 Exists 区分
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
 	}
 	results := make([][]byte, len(values))
 	for i, v := range values {
