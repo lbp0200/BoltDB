@@ -129,7 +129,17 @@ func (h *Handler) handleHGETALL(state *connState, args [][]byte, remoteAddr stri
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
+		h.recordKeyspaceMiss()
 		return &proto.Array{Args: [][]byte{}}
+	}
+	if len(data) == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
 	}
 	results := make([][]byte, 0, len(data)*2)
 	// 稳定字段顺序：map 遍历无序，客户端比较数组需要确定性输出
@@ -192,7 +202,17 @@ func (h *Handler) handleHKEYS(state *connState, args [][]byte, remoteAddr string
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
+		h.recordKeyspaceMiss()
 		return &proto.Array{Args: [][]byte{}}
+	}
+	if len(keys) == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
 	}
 	results := make([][]byte, len(keys))
 	for i, k := range keys {
@@ -215,7 +235,17 @@ func (h *Handler) handleHVALS(state *connState, args [][]byte, remoteAddr string
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
+		h.recordKeyspaceMiss()
 		return &proto.Array{Args: [][]byte{}}
+	}
+	if len(values) == 0 {
+		if exists, err := h.Db.Exists(key); err == nil && !exists {
+			h.recordKeyspaceMiss()
+		} else if err == nil && exists {
+			h.recordKeyspaceHit()
+		}
+	} else {
+		h.recordKeyspaceHit()
 	}
 	results := make([][]byte, len(values))
 	copy(results, values)
