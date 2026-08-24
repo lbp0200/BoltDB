@@ -87,6 +87,13 @@ func (h *Handler) handleGEOPOS(state *connState, args [][]byte, remoteAddr strin
 		}
 		return wrapLogError(err)
 	}
+	for _, pos := range positions {
+		if pos[0] == 0 && pos[1] == 0 {
+			h.recordKeyspaceMiss()
+		} else {
+			h.recordKeyspaceHit()
+		}
+	}
 	results := make([]proto.RESP, len(positions))
 	for i, pos := range positions {
 		if pos[0] == 0 && pos[1] == 0 {
@@ -127,6 +134,13 @@ func (h *Handler) handleGEOHASH(state *connState, args [][]byte, remoteAddr stri
 		}
 		return wrapLogError(err)
 	}
+	for _, hv := range hashes {
+		if hv == "" {
+			h.recordKeyspaceMiss()
+		} else {
+			h.recordKeyspaceHit()
+		}
+	}
 	hashResults := make([][]byte, len(hashes))
 	for i, h := range hashes {
 		hashResults[i] = []byte(h)
@@ -154,8 +168,16 @@ func (h *Handler) handleGEODIST(state *connState, args [][]byte, remoteAddr stri
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
+		if errors.Is(err, store.ErrKeyNotFound) {
+			h.recordKeyspaceMiss()
+			if state.respVersion == 3 {
+				return &proto.Null{}
+			}
+			return proto.NewBulkString(nil)
+		}
 		return wrapLogError(err)
 	}
+	h.recordKeyspaceHit()
 	return proto.NewBulkString([]byte(fmt.Sprintf("%.4f", dist)))
 }
 
