@@ -37,7 +37,8 @@ func (s *BotreonStore) BRPOPLPUSH(source, destination string, timeout int) (stri
 
 // BLMPopBlocking 实现 Redis BLMPOP 命令：阻塞式从多个 list 按序弹出元素。
 // 阻塞等待被唤醒时只弹出 1 个元素（Redis 语义：阻塞时 COUNT 被忽略）。
-func (s *BotreonStore) BLMPopBlocking(ctx context.Context, keys []string, fromLeft bool, count int, timeout int) (string, []string, error) {
+// timeoutMs 为毫秒；0 表示永久阻塞（Redis 语义），负值非法由 handler 校验。
+func (s *BotreonStore) BLMPopBlocking(ctx context.Context, keys []string, fromLeft bool, count int, timeoutMs int64) (string, []string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -69,8 +70,8 @@ func (s *BotreonStore) BLMPopBlocking(ctx context.Context, keys []string, fromLe
 	// 阻塞等待：唤醒时只弹出 1 个（Redis 语义）
 	resultCh := make(chan BlockingResult, 1)
 	var timerCh <-chan time.Time
-	if timeout > 0 {
-		timer := time.NewTimer(time.Duration(timeout) * time.Second)
+	if timeoutMs > 0 {
+		timer := time.NewTimer(time.Duration(timeoutMs) * time.Millisecond)
 		defer func() {
 			if !timer.Stop() {
 				select {
@@ -213,8 +214,9 @@ func (s *BotreonStore) registerAndRecheck(keys []string, ch chan BlockingResult,
 	return "", "", false
 }
 
-// BLPOPBlocking implements blocking left pop with timeout
-func (s *BotreonStore) BLPOPBlocking(ctx context.Context, keys []string, timeout int) (string, string, error) {
+// BLPOPBlocking implements blocking left pop with timeout in milliseconds
+// (0 = block forever, matching redis).
+func (s *BotreonStore) BLPOPBlocking(ctx context.Context, keys []string, timeoutMs int64) (string, string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -228,8 +230,8 @@ func (s *BotreonStore) BLPOPBlocking(ctx context.Context, keys []string, timeout
 
 	resultCh := make(chan BlockingResult, 1)
 	var timerCh <-chan time.Time
-	if timeout > 0 {
-		timer := time.NewTimer(time.Duration(timeout) * time.Second)
+	if timeoutMs > 0 {
+		timer := time.NewTimer(time.Duration(timeoutMs) * time.Millisecond)
 		defer func() {
 			if !timer.Stop() {
 				select {
@@ -260,8 +262,9 @@ func (s *BotreonStore) BLPOPBlocking(ctx context.Context, keys []string, timeout
 	}
 }
 
-// BRPOPBlocking implements blocking right pop with timeout
-func (s *BotreonStore) BRPOPBlocking(ctx context.Context, keys []string, timeout int) (string, string, error) {
+// BRPOPBlocking implements blocking right pop with timeout in milliseconds
+// (0 = block forever, matching redis).
+func (s *BotreonStore) BRPOPBlocking(ctx context.Context, keys []string, timeoutMs int64) (string, string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -274,8 +277,8 @@ func (s *BotreonStore) BRPOPBlocking(ctx context.Context, keys []string, timeout
 
 	resultCh := make(chan BlockingResult, 1)
 	var timerCh <-chan time.Time
-	if timeout > 0 {
-		timer := time.NewTimer(time.Duration(timeout) * time.Second)
+	if timeoutMs > 0 {
+		timer := time.NewTimer(time.Duration(timeoutMs) * time.Millisecond)
 		defer func() {
 			if !timer.Stop() {
 				select {
@@ -306,17 +309,11 @@ func (s *BotreonStore) BRPOPBlocking(ctx context.Context, keys []string, timeout
 	}
 }
 
-// BRPOPLPUSHBlocking implements blocking rpoplpush with timeout
-func (s *BotreonStore) BRPOPLPUSHBlocking(ctx context.Context, source, destination string, timeout int) (string, error) {
+// BRPOPLPUSHBlocking implements blocking rpoplpush with timeout in
+// milliseconds (0 = block forever, matching redis).
+func (s *BotreonStore) BRPOPLPUSHBlocking(ctx context.Context, source, destination string, timeoutMs int64) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
-	}
-	if timeout == 0 {
-		value, err := s.RPopLPush(source, destination)
-		if err != nil || value == "" {
-			return "", nil
-		}
-		return value, nil
 	}
 
 	value, err := s.RPopLPush(source, destination)
@@ -337,16 +334,19 @@ func (s *BotreonStore) BRPOPLPUSHBlocking(ctx context.Context, source, destinati
 		return value, nil
 	}
 
-	timeoutDur := time.Duration(timeout) * time.Second
-	timer := time.NewTimer(timeoutDur)
-	defer func() {
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
+	var timerCh <-chan time.Time
+	if timeoutMs > 0 {
+		timer := time.NewTimer(time.Duration(timeoutMs) * time.Millisecond)
+		defer func() {
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
 			}
-		}
-	}()
+		}()
+		timerCh = timer.C
+	}
 
 	for {
 		select {
@@ -356,7 +356,7 @@ func (s *BotreonStore) BRPOPLPUSHBlocking(ctx context.Context, source, destinati
 				return value, nil
 			}
 			s.registerBlockingPop(source, resultCh)
-		case <-timer.C:
+		case <-timerCh:
 			s.unregisterBlockingPop(resultCh, keys)
 			return "", nil
 		case <-ctx.Done():
@@ -369,13 +369,11 @@ func (s *BotreonStore) BRPOPLPUSHBlocking(ctx context.Context, source, destinati
 	}
 }
 
-// BLMoveBlocking implements blocking lmove with timeout
-func (s *BotreonStore) BLMoveBlocking(ctx context.Context, source, destination, sourceDirection, destinationDirection string, timeout float64) (string, error) {
+// BLMoveBlocking implements blocking lmove with timeout in milliseconds
+// (0 = block forever, matching redis).
+func (s *BotreonStore) BLMoveBlocking(ctx context.Context, source, destination, sourceDirection, destinationDirection string, timeoutMs int64) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
-	}
-	if timeout == 0 {
-		return s.LMove(source, destination, sourceDirection, destinationDirection)
 	}
 
 	value, err := s.LMove(source, destination, sourceDirection, destinationDirection)
@@ -396,16 +394,19 @@ func (s *BotreonStore) BLMoveBlocking(ctx context.Context, source, destination, 
 		return value, nil
 	}
 
-	timeoutDur := time.Duration(timeout) * time.Second
-	timer := time.NewTimer(timeoutDur)
-	defer func() {
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
+	var timerCh <-chan time.Time
+	if timeoutMs > 0 {
+		timer := time.NewTimer(time.Duration(timeoutMs) * time.Millisecond)
+		defer func() {
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
 			}
-		}
-	}()
+		}()
+		timerCh = timer.C
+	}
 
 	for {
 		select {
@@ -415,7 +416,7 @@ func (s *BotreonStore) BLMoveBlocking(ctx context.Context, source, destination, 
 				return value, nil
 			}
 			s.registerBlockingPop(source, resultCh)
-		case <-timer.C:
+		case <-timerCh:
 			s.unregisterBlockingPop(resultCh, keys)
 			return "", nil
 		case <-ctx.Done():

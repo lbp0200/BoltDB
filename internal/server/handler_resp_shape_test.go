@@ -970,7 +970,7 @@ func TestRESP3Shape_BLMoveMissingReturnsNull(t *testing.T) {
 	handler, state := setupRESP3(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(state, "BLMOVE", [][]byte{[]byte("nosuchkey"), []byte("dst"), []byte("LEFT"), []byte("LEFT"), []byte("0")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(state, "BLMOVE", [][]byte{[]byte("nosuchkey"), []byte("dst"), []byte("LEFT"), []byte("LEFT"), []byte("0.01")}, "127.0.0.1:12345")
 	shapeNull(t, resp)
 }
 
@@ -997,7 +997,7 @@ func TestRESP3Shape_BRPopLPushMissingReturnsNull(t *testing.T) {
 	handler, state := setupRESP3(t)
 	defer handler.Db.Close()
 
-	resp := handler.executeCommand(state, "BRPOPLPUSH", [][]byte{[]byte("nosuchkey"), []byte("dst"), []byte("0")}, "127.0.0.1:12345")
+	resp := handler.executeCommand(state, "BRPOPLPUSH", [][]byte{[]byte("nosuchkey"), []byte("dst"), []byte("0.01")}, "127.0.0.1:12345")
 	shapeNull(t, resp)
 }
 

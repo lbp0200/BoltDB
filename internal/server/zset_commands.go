@@ -462,12 +462,12 @@ func (h *Handler) handleBZPOPMAX(state *connState, args [][]byte, remoteAddr str
 	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
 		return resp
 	}
-	timeout, err := strconv.Atoi(string(args[len(args)-1]))
-	if err != nil {
-		return proto.NewError("ERR timeout is not an integer or out of range")
+	timeoutMs, errResp, ok := parseBlockTimeoutSeconds(args[len(args)-1])
+	if !ok {
+		return errResp
 	}
 	state.blocking.Store(true)
-	key, member, err := h.Db.BZPopMaxBlocking(state.blockCtx(), keys, timeout)
+	key, member, err := h.Db.BZPopMaxBlocking(state.blockCtx(), keys, timeoutMs)
 	state.blocking.Store(false)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -493,12 +493,12 @@ func (h *Handler) handleBZPOPMIN(state *connState, args [][]byte, remoteAddr str
 	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
 		return resp
 	}
-	timeout, err := strconv.Atoi(string(args[len(args)-1]))
-	if err != nil {
-		return proto.NewError("ERR timeout is not an integer or out of range")
+	timeoutMs, errResp, ok := parseBlockTimeoutSeconds(args[len(args)-1])
+	if !ok {
+		return errResp
 	}
 	state.blocking.Store(true)
-	key, member, err := h.Db.BZPopMinBlocking(state.blockCtx(), keys, timeout)
+	key, member, err := h.Db.BZPopMinBlocking(state.blockCtx(), keys, timeoutMs)
 	state.blocking.Store(false)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -1103,9 +1103,9 @@ func (h *Handler) handleBZMPOP(state *connState, args [][]byte, remoteAddr strin
 	if len(args) < 4 {
 		return proto.NewError("ERR wrong number of arguments for 'BZMPOP' command")
 	}
-	timeout, tErr := strconv.Atoi(string(args[0]))
-	if tErr != nil || timeout < 0 {
-		return proto.NewError("ERR timeout is not an integer or out of range")
+	timeoutMs, tResp, tOk := parseBlockTimeoutSeconds(args[0])
+	if !tOk {
+		return tResp
 	}
 	numKeys, kErr := strconv.Atoi(string(args[1]))
 	if kErr != nil || numKeys < 1 || 2+numKeys+1 > len(args) {
@@ -1136,7 +1136,7 @@ func (h *Handler) handleBZMPOP(state *connState, args [][]byte, remoteAddr strin
 		}
 	}
 	state.blocking.Store(true)
-	key, members, err := h.Db.BZMPopBlocking(state.blockCtx(), keys, modifier, count, timeout)
+	key, members, err := h.Db.BZMPopBlocking(state.blockCtx(), keys, modifier, count, timeoutMs)
 	state.blocking.Store(false)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {

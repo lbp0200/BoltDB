@@ -402,7 +402,7 @@ func (h *Handler) handleSETEX(state *connState, args [][]byte, remoteAddr string
 	}
 	seconds, err := strconv.Atoi(string(args[1]))
 	if err != nil {
-		return proto.NewError("ERR invalid integer")
+		return proto.NewError("ERR value is not an integer or out of range")
 	}
 	// Redis compatibility: SETEX rejects TTL <= 0
 	if seconds <= 0 {
@@ -426,7 +426,7 @@ func (h *Handler) handlePSETEX(state *connState, args [][]byte, remoteAddr strin
 	}
 	milliseconds, err := strconv.ParseInt(string(args[1]), 10, 64)
 	if err != nil {
-		return proto.NewError("ERR invalid integer")
+		return proto.NewError("ERR value is not an integer or out of range")
 	}
 	// Redis compatibility: PSETEX rejects TTL <= 0
 	if milliseconds <= 0 {

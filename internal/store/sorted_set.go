@@ -78,7 +78,7 @@ func (s *BotreonStore) registerAndRecheckZMin(keys []string, ch chan string) (st
 }
 
 // BZMPopBlocking 实现 Redis BZMPOP 命令，阻塞式从多个排序集合弹出成员
-func (s *BotreonStore) BZMPopBlocking(ctx context.Context, keys []string, modifier string, count int, timeout int) (string, []ZSetMember, error) {
+func (s *BotreonStore) BZMPopBlocking(ctx context.Context, keys []string, modifier string, count int, timeoutMs int64) (string, []ZSetMember, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -93,8 +93,8 @@ func (s *BotreonStore) BZMPopBlocking(ctx context.Context, keys []string, modifi
 
 	resultCh := make(chan string, 1)
 	var timerCh <-chan time.Time
-	if timeout > 0 {
-		timer := time.NewTimer(time.Duration(timeout) * time.Second)
+	if timeoutMs > 0 {
+		timer := time.NewTimer(time.Duration(timeoutMs) * time.Millisecond)
 		defer func() {
 			if !timer.Stop() {
 				select {
@@ -148,7 +148,7 @@ func (s *BotreonStore) BZMPopBlocking(ctx context.Context, keys []string, modifi
 }
 
 // BZPopMaxBlocking 实现 Redis BZPOPMAX 命令，阻塞式弹出分数最高的成员
-func (s *BotreonStore) BZPopMaxBlocking(ctx context.Context, keys []string, timeout int) (string, *ZSetMember, error) {
+func (s *BotreonStore) BZPopMaxBlocking(ctx context.Context, keys []string, timeoutMs int64) (string, *ZSetMember, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -165,8 +165,8 @@ func (s *BotreonStore) BZPopMaxBlocking(ctx context.Context, keys []string, time
 
 	resultCh := make(chan string, 1)
 	var timerCh <-chan time.Time
-	if timeout > 0 {
-		timer := time.NewTimer(time.Duration(timeout) * time.Second)
+	if timeoutMs > 0 {
+		timer := time.NewTimer(time.Duration(timeoutMs) * time.Millisecond)
 		defer func() {
 			if !timer.Stop() {
 				select {
@@ -202,7 +202,7 @@ func (s *BotreonStore) BZPopMaxBlocking(ctx context.Context, keys []string, time
 }
 
 // BZPopMinBlocking 实现 Redis BZPOPMIN 命令，阻塞式弹出分数最低的成员
-func (s *BotreonStore) BZPopMinBlocking(ctx context.Context, keys []string, timeout int) (string, *ZSetMember, error) {
+func (s *BotreonStore) BZPopMinBlocking(ctx context.Context, keys []string, timeoutMs int64) (string, *ZSetMember, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -219,8 +219,8 @@ func (s *BotreonStore) BZPopMinBlocking(ctx context.Context, keys []string, time
 
 	resultCh := make(chan string, 1)
 	var timerCh <-chan time.Time
-	if timeout > 0 {
-		timer := time.NewTimer(time.Duration(timeout) * time.Second)
+	if timeoutMs > 0 {
+		timer := time.NewTimer(time.Duration(timeoutMs) * time.Millisecond)
 		defer func() {
 			if !timer.Stop() {
 				select {
@@ -265,7 +265,11 @@ func (s *BotreonStore) BZPopMax(ctx context.Context, keys []string, timeout int)
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 		defer cancel()
 	}
-	return s.BZPopMaxBlocking(ctx, keys, timeout)
+	timeoutMs := int64(timeout)
+	if timeoutMs < 0 {
+		timeoutMs = 0
+	}
+	return s.BZPopMaxBlocking(ctx, keys, timeoutMs)
 }
 
 // BZPopMin keeps backward compatibility
@@ -278,5 +282,9 @@ func (s *BotreonStore) BZPopMin(ctx context.Context, keys []string, timeout int)
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 		defer cancel()
 	}
-	return s.BZPopMinBlocking(ctx, keys, timeout)
+	timeoutMs := int64(timeout)
+	if timeoutMs < 0 {
+		timeoutMs = 0
+	}
+	return s.BZPopMinBlocking(ctx, keys, timeoutMs)
 }

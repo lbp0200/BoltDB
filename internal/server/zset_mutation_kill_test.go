@@ -379,7 +379,8 @@ func TestBZMPOP_InvalidTimeout(t *testing.T) {
 	resp := handler.executeCommand(state, "BZMPOP", [][]byte{[]byte("abc"), []byte("1"), []byte("k1"), []byte("MIN")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
-	assert.True(t, strings.Contains(string(*errResp), "not an integer"))
+	// redis-server 8.2.1: unparseable timeouts report "not a float"
+	assert.True(t, strings.Contains(string(*errResp), "not a float"))
 }
 
 func TestBZMPOP_NegativeTimeout(t *testing.T) {
@@ -390,7 +391,8 @@ func TestBZMPOP_NegativeTimeout(t *testing.T) {
 	resp := handler.executeCommand(state, "BZMPOP", [][]byte{[]byte("-1"), []byte("1"), []byte("k1"), []byte("MIN")}, "127.0.0.1:12345")
 	errResp, ok := resp.(*proto.Error)
 	assert.True(t, ok)
-	assert.True(t, strings.Contains(string(*errResp), "not an integer"))
+	// redis-server 8.2.1: negative timeouts report a dedicated message
+	assert.True(t, strings.Contains(string(*errResp), "timeout is negative"))
 }
 
 func TestBZMPOP_InvalidNumKeys(t *testing.T) {

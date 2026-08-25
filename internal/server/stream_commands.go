@@ -136,9 +136,11 @@ func (h *Handler) handleXREAD(state *connState, args [][]byte, remoteAddr string
 		if i+1 >= len(args) {
 			return proto.NewError("ERR syntax error")
 		}
-		b, err := strconv.ParseInt(string(args[i+1]), 10, 64)
-		if err != nil {
-			return proto.NewError("ERR value is not an integer")
+		// block=-1 doubles as the "no BLOCK given" sentinel below, so an
+		// explicit negative must be rejected here rather than wrapped around.
+		b, bResp, bOk := parseXreadBlockMs(args[i+1])
+		if !bOk {
+			return bResp
 		}
 		block = b
 		i += 2
@@ -583,9 +585,9 @@ func (h *Handler) handleXREADGROUP(state *connState, args [][]byte, remoteAddr s
 			if i+1 >= groupIdx {
 				return proto.NewError("ERR syntax error")
 			}
-			b, err := strconv.ParseInt(string(args[i+1]), 10, 64)
-			if err != nil {
-				return proto.NewError("ERR value is not an integer")
+			b, bResp, bOk := parseXreadBlockMs(args[i+1])
+			if !bOk {
+				return bResp
 			}
 			block = b
 			i += 2
@@ -623,9 +625,9 @@ func (h *Handler) handleXREADGROUP(state *connState, args [][]byte, remoteAddr s
 			if i+1 >= len(args) {
 				return proto.NewError("ERR syntax error")
 			}
-			b, err := strconv.ParseInt(string(args[i+1]), 10, 64)
-			if err != nil {
-				return proto.NewError("ERR value is not an integer")
+			b, bResp, bOk := parseXreadBlockMs(args[i+1])
+			if !bOk {
+				return bResp
 			}
 			block = b
 			i += 2

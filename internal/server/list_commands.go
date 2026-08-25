@@ -440,13 +440,13 @@ func (h *Handler) handleBLMOVE(state *connState, args [][]byte, remoteAddr strin
 	}
 	sourceDirection := strings.ToUpper(string(args[2]))
 	destinationDirection := strings.ToUpper(string(args[3]))
-	timeout, err := strconv.ParseFloat(string(args[4]), 64)
-	if err != nil {
-		return proto.NewError("ERR timeout is not a float")
+	timeoutMs, errResp, ok := parseBlockTimeoutSeconds(args[4])
+	if !ok {
+		return errResp
 	}
 	h.markDirtyKeys(state, source, destination)
 	state.blocking.Store(true)
-	value, err := h.Db.BLMoveBlocking(state.blockCtx(), source, destination, sourceDirection, destinationDirection, timeout)
+	value, err := h.Db.BLMoveBlocking(state.blockCtx(), source, destination, sourceDirection, destinationDirection, timeoutMs)
 	state.blocking.Store(false)
 	if err != nil {
 		return wrapStoreError(err)
@@ -516,12 +516,12 @@ func (h *Handler) handleBLPOP(state *connState, args [][]byte, remoteAddr string
 	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
 		return resp
 	}
-	timeout, err := strconv.Atoi(string(args[len(args)-1]))
-	if err != nil {
-		return proto.NewError("ERR timeout is not an integer or out of range")
+	timeoutMs, errResp, ok := parseBlockTimeoutSeconds(args[len(args)-1])
+	if !ok {
+		return errResp
 	}
 	state.blocking.Store(true)
-	key, value, err := h.Db.BLPOPBlocking(state.blockCtx(), keys, timeout)
+	key, value, err := h.Db.BLPOPBlocking(state.blockCtx(), keys, timeoutMs)
 	state.blocking.Store(false)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -547,12 +547,12 @@ func (h *Handler) handleBRPOP(state *connState, args [][]byte, remoteAddr string
 	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
 		return resp
 	}
-	timeout, err := strconv.Atoi(string(args[len(args)-1]))
-	if err != nil {
-		return proto.NewError("ERR timeout is not an integer or out of range")
+	timeoutMs, errResp, ok := parseBlockTimeoutSeconds(args[len(args)-1])
+	if !ok {
+		return errResp
 	}
 	state.blocking.Store(true)
-	key, value, err := h.Db.BRPOPBlocking(state.blockCtx(), keys, timeout)
+	key, value, err := h.Db.BRPOPBlocking(state.blockCtx(), keys, timeoutMs)
 	state.blocking.Store(false)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -572,9 +572,9 @@ func (h *Handler) handleBLMPOP(state *connState, args [][]byte, remoteAddr strin
 	if len(args) < 4 {
 		return proto.NewError("ERR wrong number of arguments for 'BLMPOP' command")
 	}
-	timeout, tErr := strconv.Atoi(string(args[0]))
-	if tErr != nil || timeout < 0 {
-		return proto.NewError("ERR timeout is not an integer or out of range")
+	timeoutMs, tResp, tOk := parseBlockTimeoutSeconds(args[0])
+	if !tOk {
+		return tResp
 	}
 	numKeys, kErr := strconv.Atoi(string(args[1]))
 	if kErr != nil || numKeys < 1 || 2+numKeys >= len(args) {
@@ -605,7 +605,7 @@ func (h *Handler) handleBLMPOP(state *connState, args [][]byte, remoteAddr strin
 		}
 	}
 	state.blocking.Store(true)
-	key, values, err := h.Db.BLMPopBlocking(state.blockCtx(), keys, direction == "LEFT", count, timeout)
+	key, values, err := h.Db.BLMPopBlocking(state.blockCtx(), keys, direction == "LEFT", count, timeoutMs)
 	state.blocking.Store(false)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -636,12 +636,12 @@ func (h *Handler) handleBRPOPLPUSH(state *connState, args [][]byte, remoteAddr s
 	if resp := h.checkAndHandleMultiKeyRedirect([]string{source, destination}); resp != nil {
 		return resp
 	}
-	timeout, err := strconv.Atoi(string(args[2]))
-	if err != nil {
-		return proto.NewError("ERR timeout is not an integer or out of range")
+	timeoutMs, errResp, ok := parseBlockTimeoutSeconds(args[2])
+	if !ok {
+		return errResp
 	}
 	state.blocking.Store(true)
-	value, err := h.Db.BRPOPLPUSHBlocking(state.blockCtx(), source, destination, timeout)
+	value, err := h.Db.BRPOPLPUSHBlocking(state.blockCtx(), source, destination, timeoutMs)
 	state.blocking.Store(false)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {

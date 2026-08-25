@@ -600,7 +600,7 @@ func TestBLPOPBlockingRace(t *testing.T) {
 		key := fmt.Sprintf("race_list_%d", i)
 		done := make(chan struct{})
 		go func() {
-			k, v, err := store.BLPOPBlocking(context.Background(), []string{key}, 2)
+			k, v, err := store.BLPOPBlocking(context.Background(), []string{key}, 2000)
 			assert.NoError(t, err)
 			assert.Equal(t, key, k)
 			assert.Equal(t, "value", v)
@@ -628,7 +628,7 @@ func TestBRPOPBlockingRace(t *testing.T) {
 		key := fmt.Sprintf("race_rlist_%d", i)
 		done := make(chan struct{})
 		go func() {
-			k, v, err := store.BRPOPBlocking(context.Background(), []string{key}, 2)
+			k, v, err := store.BRPOPBlocking(context.Background(), []string{key}, 2000)
 			assert.NoError(t, err)
 			assert.Equal(t, key, k)
 			assert.Equal(t, "value", v)
@@ -656,7 +656,7 @@ func TestBLPOPBlockingMultipleKeysRace(t *testing.T) {
 		key := fmt.Sprintf("multi_blpop_%d", i)
 		done := make(chan struct{})
 		go func() {
-			k, v, err := store.BLPOPBlocking(context.Background(), []string{"nobody", key, "nobody2"}, 2)
+			k, v, err := store.BLPOPBlocking(context.Background(), []string{"nobody", key, "nobody2"}, 2000)
 			assert.NoError(t, err)
 			assert.Equal(t, key, k)
 			assert.Equal(t, "data", v)
@@ -685,7 +685,7 @@ func TestBLPOPBlockingConcurrentPushers(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		k, v, err := store.BLPOPBlocking(context.Background(), []string{key}, 3)
+		k, v, err := store.BLPOPBlocking(context.Background(), []string{key}, 3000)
 		assert.NoError(t, err)
 		assert.Equal(t, key, k)
 		assert.NotEqual(t, "", v)
@@ -721,7 +721,7 @@ func TestBLPOPBlockingAlreadyHasData(t *testing.T) {
 	_, err := store.LPush("existing", "hello")
 	assert.NoError(t, err)
 
-	k, v, err := store.BLPOPBlocking(context.Background(), []string{"existing"}, 2)
+	k, v, err := store.BLPOPBlocking(context.Background(), []string{"existing"}, 2000)
 	assert.NoError(t, err)
 	assert.Equal(t, "existing", k)
 	assert.Equal(t, "hello", v)
@@ -733,7 +733,7 @@ func TestBLPOPBlockingUnregisterCleanup(t *testing.T) {
 
 	// When timeout triggers, the channel should be properly cleaned up
 	// Register internally, then let it timeout
-	k, v, err := store.BLPOPBlocking(context.Background(), []string{"ghost"}, 1)
+	k, v, err := store.BLPOPBlocking(context.Background(), []string{"ghost"}, 1000)
 	assert.NoError(t, err)
 	assert.Equal(t, "", k)
 	assert.Equal(t, "", v)
@@ -748,7 +748,7 @@ func TestBLPOPBlockingUnregisterCleanup(t *testing.T) {
 	_, err = store.LPush("ghost", "after_timeout")
 	assert.NoError(t, err)
 
-	k, v, err = store.BLPOPBlocking(context.Background(), []string{"ghost"}, 1)
+	k, v, err = store.BLPOPBlocking(context.Background(), []string{"ghost"}, 1000)
 	assert.NoError(t, err)
 	assert.Equal(t, "ghost", k)
 	assert.Equal(t, "after_timeout", v)
@@ -888,7 +888,12 @@ func TestBRPOPLPUSHBlocking_EmptyList(t *testing.T) {
 	t.Parallel()
 	store := setupTestStore(t)
 
-	value, err := store.BRPOPLPUSHBlocking(context.Background(), "empty_src", "dst", 0)
+	// timeout 0 now means "block forever" (redis semantics), so a cancelled
+	// context provides the immediate-return path for an empty source.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	value, err := store.BRPOPLPUSHBlocking(ctx, "empty_src", "dst", 0)
 	assert.NoError(t, err)
 	assert.Equal(t, "", value)
 }
@@ -899,7 +904,7 @@ func TestBRPOPLPUSHBlocking_ConcurrentPush(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		value, err := store.BRPOPLPUSHBlocking(context.Background(), "concurrent_src", "concurrent_dst", 3)
+		value, err := store.BRPOPLPUSHBlocking(context.Background(), "concurrent_src", "concurrent_dst", 3000)
 		assert.NoError(t, err)
 		assert.Equal(t, "pushed_data", value)
 		close(done)
@@ -923,7 +928,7 @@ func TestBRPOPLPUSHBlocking_ContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	value, err := store.BRPOPLPUSHBlocking(ctx, "cancel_src", "cancel_dst", 10)
+	value, err := store.BRPOPLPUSHBlocking(ctx, "cancel_src", "cancel_dst", 10000)
 	assert.NoError(t, err)
 	assert.Equal(t, "", value)
 }
@@ -945,7 +950,10 @@ func TestBLMoveBlocking_EmptyList(t *testing.T) {
 	t.Parallel()
 	store := setupTestStore(t)
 
-	value, err := store.BLMoveBlocking(context.Background(), "empty_src", "dst", "LEFT", "RIGHT", 0)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	value, err := store.BLMoveBlocking(ctx, "empty_src", "dst", "LEFT", "RIGHT", 0)
 	assert.NoError(t, err)
 	assert.Equal(t, "", value)
 }
@@ -956,7 +964,7 @@ func TestBLMoveBlocking_ConcurrentPush(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		value, err := store.BLMoveBlocking(context.Background(), "push_src", "push_dst", "RIGHT", "LEFT", 3)
+		value, err := store.BLMoveBlocking(context.Background(), "push_src", "push_dst", "RIGHT", "LEFT", 3000)
 		assert.NoError(t, err)
 		assert.Equal(t, "new_value", value)
 		close(done)
