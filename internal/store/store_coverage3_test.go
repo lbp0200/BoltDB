@@ -378,7 +378,7 @@ func TestIsUUIDFormat_Coverage(t *testing.T) {
 	assert.True(t, isUUIDFormat("550E8400-E29B-41D4-A716-446655440000")) // uppercase hex
 	assert.False(t, isUUIDFormat(""))
 	assert.False(t, isUUIDFormat("not-a-uuid"))
-	assert.False(t, isUUIDFormat("550e8400-e29b-41d4-a716-44665544000"))  // 35 chars
+	assert.False(t, isUUIDFormat("550e8400-e29b-41d4-a716-44665544000"))   // 35 chars
 	assert.False(t, isUUIDFormat("550e8400-e29b-41d4-a716-4466554400000")) // 37 chars
 	assert.False(t, isUUIDFormat("550e8400-e29b-41d4-a716_446655440000"))  // '_' at dash pos
 	assert.False(t, isUUIDFormat("550e8400-e29b-41d4-a716-44665544000g"))  // 'g' non-hex

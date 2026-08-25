@@ -219,9 +219,10 @@ func TestGeoRadiusByMember(t *testing.T) {
 //   - FarEast (37.7749, -90.0)       2838km east
 //
 // Half-extents at the center latitude (37.7749°):
-//   width 1000km → halfLon  5.68°;   height 1000km → halfLat  4.49°
-//   width 2000km → halfLon 11.37°;   height 5000km → halfLat 22.46°
-//   width 5000km → halfLon 28.41°;   height 5000km → halfLat 22.46°
+//
+//	width 1000km → halfLon  5.68°;   height 1000km → halfLat  4.49°
+//	width 2000km → halfLon 11.37°;   height 5000km → halfLat 22.46°
+//	width 5000km → halfLon 28.41°;   height 5000km → halfLat 22.46°
 //
 // Every point sits well clear of any box edge (margin ≫ the geohash 26-bit
 // decode error ≈ 0.5m), and each box below has at least one point that
@@ -262,8 +263,8 @@ func TestGeoSearchBox_RectangleNotCircle(t *testing.T) {
 	results, err := s.GeoSearchBox("box1", -122.4194, 37.7749, 5000, 1000, "km", 0, false, false, false)
 	assert.NoError(t, err)
 	names := geoMemberNames(results)
-	assert.True(t, names["SF"]) // center
-	assert.True(t, names["LA"]) // ~556km, within 2500x1000km box
+	assert.True(t, names["SF"])   // center
+	assert.True(t, names["LA"])   // ~556km, within 2500x1000km box
 	assert.True(t, names["East"]) // ~1970km east, within box
 	// North (~1112km north) exceeds the 500km half-height — a width/2 circle
 	// implementation would wrongly include it.
@@ -286,9 +287,9 @@ func TestGeoSearchBox_TallRectangle(t *testing.T) {
 	assert.NoError(t, err)
 	names := geoMemberNames(results)
 	assert.True(t, names["SF"])
-	assert.True(t, names["LA"]) // 556km, well inside the 2000x5000km box
+	assert.True(t, names["LA"])    // 556km, well inside the 2000x5000km box
 	assert.True(t, names["North"]) // 1113km north: inside the box, outside a width/2 circle
-	assert.True(t, names["NW"]) // inside the box, outside a width/2 circle
+	assert.True(t, names["NW"])    // inside the box, outside a width/2 circle
 	assert.False(t, names["East"]) // 1968km east exceeds the ~1120km half-width
 	assert.False(t, names["FarEast"])
 }
@@ -342,10 +343,10 @@ func TestGeoSearchStore_Box(t *testing.T) {
 		names[m.Member] = m.Score
 	}
 	assert.Equal(t, 4, len(names))
-	assert.True(t, names["SF"] < 1.0) // STOREDIST: SF distance from center ≈ 0 (km)
+	assert.True(t, names["SF"] < 1.0)                                  // STOREDIST: SF distance from center ≈ 0 (km)
 	assert.True(t, names["North"] > 1000.0 && names["North"] < 1300.0) // ≈ 1113km
-	assert.True(t, names["NW"] > 1900.0 && names["NW"] < 2300.0) // ≈ 2065km
-	assert.True(t, names["LA"] > 400.0 && names["LA"] < 700.0) // ≈ 556km
+	assert.True(t, names["NW"] > 1900.0 && names["NW"] < 2300.0)       // ≈ 2065km
+	assert.True(t, names["LA"] > 400.0 && names["LA"] < 700.0)         // ≈ 556km
 
 	// Without STOREDIST the score is the member geohash (not a distance).
 	stored, err = s.GeoSearchStore("boxdst2", "boxsrc", -122.4194, 37.7749, 1000, "km", 0, false, "BOX", 5000)
