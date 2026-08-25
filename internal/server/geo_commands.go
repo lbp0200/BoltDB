@@ -313,6 +313,9 @@ func (h *Handler) geoRadiusCommon(state *connState, key string, lon, lat, radius
 
 	// STORE/STOREDIST 路径：结果写入 zset，返回写入数量（Redis 语义）。
 	if storeKey != "" {
+		if resp := h.checkAndHandleMultiKeyRedirect([]string{key, storeKey}); resp != nil {
+			return resp
+		}
 		h.markDirtyKeys(state, storeKey)
 		added, err := h.Db.GeoSearchStore(storeKey, key, lon, lat, radius, unit, count, storeDist, "RADIUS", 0)
 		if err != nil {

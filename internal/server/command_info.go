@@ -81,7 +81,7 @@ func init() {
 		{name: "GEOPOS", arity: -2, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "GEORADIUS", arity: -6, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "GEORADIUS_RO", arity: -6, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
-		{name: "GEORADIUSBYMEMBER", arity: -5, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: 1, step: 1},
+		{name: "GEORADIUSBYMEMBER", arity: -5, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "GEORADIUSBYMEMBER_RO", arity: -5, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "GEOSEARCH", arity: -7, flags: []commandFlag{flagReadonly}, firstKey: 1, lastKey: 1, step: 1},
 		{name: "GEOSEARCHSTORE", arity: -8, flags: []commandFlag{flagWrite, flagDenyOOM}, firstKey: 1, lastKey: 2, step: 1},
