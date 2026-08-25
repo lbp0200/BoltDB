@@ -37,8 +37,10 @@ jobs:
           cache: true
 
       - name: Generate coverage profile
+        # GHA runner (2C7G) 资源有限：并行测试会争抢 CPU/磁盘导致时序假阳性。
+        # go.yml 的 test job 经验证 -p=1 -parallel=1 可消除（见 go.yml 注释）。
         run: |
-          go test -race -timeout 300s -short -p=2 -parallel=4 \
+          go test -race -timeout 300s -short -p=1 -parallel=1 \
             -coverprofile=coverage.out -covermode=atomic \
             ./internal/... ./cmd/boltDB/... 2>&1
 
