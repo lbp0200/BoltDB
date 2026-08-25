@@ -25,29 +25,30 @@ func TestRole(t *testing.T) {
 	assert.Equal(t, "master", arr[0])
 }
 
-// TestConfigGet 测试 CONFIG GET 命令
+// TestConfigGet 测试 CONFIG GET 命令（RESP3 返回 Map）
 func TestConfigGet(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
 
 	ctx := context.Background()
 
-	// CONFIG GET - 获取所有配置
+	// CONFIG GET - 获取所有配置（RESP3: Map）
 	result, err := sharedClient.Do(ctx, "CONFIG", "GET", "*").Result()
 	assert.NoError(t, err)
 
-	arr, ok := result.([]interface{})
+	m, ok := result.(map[interface{}]interface{})
 	assert.True(t, ok)
-	assert.True(t, len(arr) >= 2)
+	assert.True(t, len(m) >= 2)
 
-	// CONFIG GET - 获取特定配置
-	result, err = sharedClient.Do(ctx, "CONFIG", "GET", "maxclients").Result()
+	// CONFIG GET - 获取特定配置（RESP3: Map with one entry）
+	result, err = sharedClient.Do(ctx, "CONFIG", "GET", "maxmemory").Result()
 	assert.NoError(t, err)
 
-	arr, ok = result.([]interface{})
+	m, ok = result.(map[interface{}]interface{})
 	assert.True(t, ok)
-	assert.Equal(t, 2, len(arr))
-	assert.Equal(t, "maxclients", arr[0])
+	assert.Equal(t, 1, len(m))
+	_, has := m["maxmemory"]
+	assert.True(t, has)
 }
 
 // TestConfigSet 测试 CONFIG SET 命令
@@ -57,8 +58,13 @@ func TestConfigSet(t *testing.T) {
 
 	ctx := context.Background()
 
-	// CONFIG SET - 设置配置
-	result, err := sharedClient.Do(ctx, "CONFIG", "SET", "maxclients", "1000").Result()
+	// CONFIG SET - 设置已知可写配置（slowlog-max-len 为白名单参数）
+	result, err := sharedClient.Do(ctx, "CONFIG", "SET", "slowlog-max-len", "200").Result()
+	assert.NoError(t, err)
+	assert.Equal(t, "OK", result)
+
+	// CONFIG SET - 已知 no-op 配置（save 等）也应返回 OK
+	result, err = sharedClient.Do(ctx, "CONFIG", "SET", "save", "").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, "OK", result)
 

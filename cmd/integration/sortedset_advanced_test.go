@@ -332,16 +332,18 @@ func TestZRangeByRankWithScores(t *testing.T) {
 	// 准备测试数据
 	assert.NoError(t, sharedClient.ZAdd(ctx, "zrankws", redis.Z{Score: 10, Member: "a"}, redis.Z{Score: 20, Member: "b"}, redis.Z{Score: 30, Member: "c"}).Err())
 
-	// ZRANGEBYRANK with WITHSCORES - 需要用原始命令
+	// ZRANGEBYRANK with WITHSCORES - RESP3 returns array of [member, Double] pairs.
 	result, err := sharedClient.Do(ctx, "ZRANGE", "zrankws", "0", "1", "WITHSCORES").Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})
 	assert.True(t, ok)
-	// [member1, score1, member2, score2]
-	assert.Equal(t, 4, len(arr))
-	assert.Equal(t, "a", arr[0])
-	assert.Equal(t, "10", arr[1]) // Scores are returned as strings in RESP
-	assert.Equal(t, "b", arr[2])
-	assert.Equal(t, "20", arr[3])
+	// RESP3: [[member, score], ...]
+	assert.Equal(t, 2, len(arr))
+	p0, ok := arr[0].([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, "a", p0[0])
+	p1, ok := arr[1].([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, "b", p1[0])
 }

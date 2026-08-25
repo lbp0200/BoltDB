@@ -1162,19 +1162,27 @@ func TestZRandMember(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 5, len(repeated))
 
-	// ZRANDMEMBER key WITHSCORES - 返回带分数的单个成员
+	// ZRANDMEMBER key WITHSCORES - RESP3 returns array of [member, Double] pairs.
 	val, err = sharedClient.Do(ctx, "ZRANDMEMBER", "zrand_test", "1", "WITHSCORES").Result()
 	assert.NoError(t, err)
 	arr, ok := val.([]interface{})
 	assert.True(t, ok)
-	assert.Equal(t, 2, len(arr))
+	assert.Equal(t, 1, len(arr))
+	pair, ok := arr[0].([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(pair))
 
-	// ZRANDMEMBER key count WITHSCORES
+	// ZRANDMEMBER key count WITHSCORES - RESP3: one entry per member.
 	val, err = sharedClient.Do(ctx, "ZRANDMEMBER", "zrand_test", 2, "WITHSCORES").Result()
 	assert.NoError(t, err)
 	arr, ok = val.([]interface{})
 	assert.True(t, ok)
-	assert.Equal(t, 4, len(arr)) // 2 members × 2 (member+score)
+	assert.Equal(t, 2, len(arr))
+	for _, e := range arr {
+		p, ok := e.([]interface{})
+		assert.True(t, ok)
+		assert.Equal(t, 2, len(p))
+	}
 
 	// ZRANDMEMBER 不存在的 key - 返回 nil
 	val, err = sharedClient.Do(ctx, "ZRANDMEMBER", "nonexistent").Result()
@@ -1223,12 +1231,17 @@ func TestZDIFF(t *testing.T) {
 	assert.True(t, containsString(members, "a"))
 	assert.True(t, containsString(members, "c"))
 
-	// ZDIFF WITHSCORES
+	// ZDIFF WITHSCORES - RESP3: array of [member, Double] pairs.
 	result, err = sharedClient.Do(ctx, "ZDIFF", 2, "zdiff_a", "zdiff_b", "WITHSCORES").Result()
 	assert.NoError(t, err)
 	arr, ok = result.([]interface{})
 	assert.True(t, ok)
-	assert.Equal(t, 4, len(arr)) // 2 members × 2 (member + score)
+	assert.Equal(t, 2, len(arr))
+	for _, e := range arr {
+		p, ok := e.([]interface{})
+		assert.True(t, ok)
+		assert.Equal(t, 2, len(p))
+	}
 
 	// ZDIFF 不存在的 key → 空数组
 	result, err = sharedClient.Do(ctx, "ZDIFF", 1, "nonexistent").Result()
@@ -1471,20 +1484,18 @@ func TestXREADBlocking(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEqual(t, "", id1)
 
-	// 读取刚添加的消息 - 使用原始命令避免解析问题
+	// 读取刚添加的消息 - RESP3 返回 Map[stream -> entries].
 	result, err := sharedClient.Do(ctx, "XREAD", "COUNT", "1", "STREAMS", "mystream", "0").Result()
 	assert.NoError(t, err)
 	assert.NotEqual(t, nil, result)
 
-	// XREAD返回格式: [[key, [entries...], ...]]，外层数组每个元素是一个stream
-	// entries数组中每个元素是 [id, [field, value, ...]] 格式
-	arr, ok := result.([]interface{})
+	m, ok := result.(map[interface{}]interface{})
 	assert.True(t, ok)
-	assert.Equal(t, 1, len(arr)) // 1 stream
-	streamArr, ok := arr[0].([]interface{})
+	entries, ok := m["mystream"]
 	assert.True(t, ok)
-	assert.Equal(t, 2, len(streamArr)) // [streamKey, entries]
-	assert.Equal(t, "mystream", streamArr[0])
+	slice, ok := entries.([]interface{})
+	assert.True(t, ok)
+	assert.True(t, len(slice) >= 1)
 }
 
 // jsonEqual compares two JSON strings semantically (ignoring field order)
@@ -2997,7 +3008,10 @@ func TestZINTERIntegration(t *testing.T) {
 	assert.NoError(t, err)
 	withScores, ok := val.([]interface{})
 	assert.True(t, ok)
-	assert.Equal(t, 2, len(withScores)) // 1 member + 1 score
+	assert.Equal(t, 1, len(withScores))
+	pair, ok := withScores[0].([]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(pair))
 
 	// ZINTER empty intersection → empty array
 	assert.NoError(t, sharedClient.ZAdd(ctx, "zi_empty", redis.Z{Score: 1, Member: "x"}).Err())
@@ -3024,12 +3038,17 @@ func TestZUNIONIntegration(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, 3, len(members)) // a, b, c
 
-	// ZUNION WITHSCORES
+	// ZUNION WITHSCORES - RESP3: array of [member, Double] pairs.
 	val, err = sharedClient.Do(ctx, "ZUNION", "2", "zu_a", "zu_b", "WITHSCORES").Result()
 	assert.NoError(t, err)
 	withScores, ok := val.([]interface{})
 	assert.True(t, ok)
-	assert.Equal(t, 6, len(withScores)) // 3 members * (member + score)
+	assert.Equal(t, 3, len(withScores))
+	for _, e := range withScores {
+		p, ok := e.([]interface{})
+		assert.True(t, ok)
+		assert.Equal(t, 2, len(p))
+	}
 
 	// ZUNION with empty key → members from non-empty key only
 	val, err = sharedClient.Do(ctx, "ZUNION", "2", "zu_a", "nonexistent_zu").Result()

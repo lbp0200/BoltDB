@@ -214,7 +214,7 @@ func TestXGroupDelConsumer(t *testing.T) {
 	assert.Equal(t, int64(0), result) // 消费者不存在
 }
 
-// TestXReadGroup 测试 XREADGROUP 命令
+// TestXReadGroup 测试 XREADGROUP 命令（RESP3 返回 Map[stream -> entries]）
 func TestXReadGroup(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
@@ -232,21 +232,17 @@ func TestXReadGroup(t *testing.T) {
 	err = sharedClient.XGroupCreate(ctx, "readstream", "mygroup", "0").Err()
 	assert.NoError(t, err)
 
-	// XREADGROUP - 从组读取
+	// XREADGROUP - 从组读取（RESP3: Map）
 	result, err := sharedClient.Do(ctx, "XREADGROUP", "GROUP", "mygroup", "consumer1", "COUNT", "1", "STREAMS", "readstream", ">").Result()
 	assert.NoError(t, err)
 
-	// Redis returns: [[streamKey, [[entryID, [field, value]]]]]
-	// Outer array length equals number of streams (1 in this case)
-	arr, ok := result.([]interface{})
+	m, ok := result.(map[interface{}]interface{})
 	assert.True(t, ok)
-	assert.Equal(t, 1, len(arr)) // 1 stream
-
-	// Each stream element is [streamKey, [entries]]
-	streamArr, ok := arr[0].([]interface{})
+	entries, ok := m["readstream"]
 	assert.True(t, ok)
-	assert.Equal(t, 2, len(streamArr)) // [streamKey, entries]
-	assert.Equal(t, "readstream", streamArr[0])
+	slice, ok := entries.([]interface{})
+	assert.True(t, ok)
+	assert.True(t, len(slice) >= 1)
 }
 
 // TestXClaim 测试 XCLAIM 命令
@@ -341,7 +337,7 @@ func TestXPending(t *testing.T) {
 	assert.Equal(t, "consumer1", ext[0].Consumer)
 }
 
-// TestXInfoGroups 测试 XINFO GROUPS 命令
+// TestXInfoGroups 测试 XINFO GROUPS 命令（RESP3: 每组为 Map）
 func TestXInfoGroups(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
@@ -359,19 +355,19 @@ func TestXInfoGroups(t *testing.T) {
 	err = sharedClient.XGroupCreate(ctx, "infostream", "mygroup", "0").Err()
 	assert.NoError(t, err)
 
-	// XINFO GROUPS - 获取组信息
+	// XINFO GROUPS - 获取组信息（RESP3: array of Maps）
 	result, err := sharedClient.Do(ctx, "XINFO", "GROUPS", "infostream").Result()
 	assert.NoError(t, err)
 
 	arr, ok := result.([]interface{})
 	assert.True(t, ok)
-	// 至少有一个组
 	assert.Equal(t, 1, len(arr))
 
-	group, ok := arr[0].([]interface{})
+	group, ok := arr[0].(map[interface{}]interface{})
 	assert.True(t, ok)
-	// 组信息包含 name, consumers, pending 等
-	assert.True(t, len(group) >= 6)
+	assert.True(t, len(group) >= 4)
+	_, has := group["name"]
+	assert.True(t, has)
 }
 
 // TestXInfoConsumers 测试 XINFO CONSUMERS 命令
@@ -493,7 +489,7 @@ func TestXRevRange(t *testing.T) {
 	assert.Equal(t, 2, len(arr))
 }
 
-// TestXInfoStream 测试 XINFO STREAM 命令
+// TestXInfoStream 测试 XINFO STREAM 命令（RESP3: Map）
 func TestXInfoStream(t *testing.T) {
 	setupTest(t)
 	defer teardownTest(t)
@@ -507,12 +503,13 @@ func TestXInfoStream(t *testing.T) {
 	}).Result()
 	assert.NoError(t, err)
 
-	// XINFO STREAM - 获取流信息
+	// XINFO STREAM - 获取流信息（RESP3: Map）
 	result, err := sharedClient.Do(ctx, "XINFO", "STREAM", "infostream").Result()
 	assert.NoError(t, err)
 
-	arr, ok := result.([]interface{})
+	m, ok := result.(map[interface{}]interface{})
 	assert.True(t, ok)
-	// 流信息包含 length, groups, first-entry, last-entry 等
-	assert.True(t, len(arr) >= 8)
+	assert.True(t, len(m) >= 8)
+	_, has := m["length"]
+	assert.True(t, has)
 }
