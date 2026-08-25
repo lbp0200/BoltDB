@@ -167,6 +167,9 @@ func (h *Handler) recordKeyspaceLookups(keys []string) {
 	}
 }
 
+// expired_keys 仅统计 immediate-expiry 分支（见 docs/plans/TODO.md 决策记录）：
+// EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT 在 TTL<=0 或时间戳已过时立即删除的成功路径。
+// Badger 自然到期（SET EX/PX 后的 lazy 过期）不计入该值，DBSIZE/未命中已能反映。
 func (h *Handler) recordExpired() {
 	atomic.AddInt64(&h.expiredKeys, 1)
 }
