@@ -326,6 +326,7 @@ func (h *Handler) handleLPOS(state *connState, args [][]byte, remoteAddr string)
 		}
 	}
 
+	h.recordKeyspaceLookup(key)
 	positions, err := h.Db.LPos(key, element, rank, count, maxlen)
 	if err != nil {
 		return wrapStoreError(err)

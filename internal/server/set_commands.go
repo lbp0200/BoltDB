@@ -281,6 +281,7 @@ func (h *Handler) handleSINTER(state *connState, args [][]byte, remoteAddr strin
 	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
 		return resp
 	}
+	h.recordKeyspaceLookups(keys)
 	members, err := h.Db.SInter(keys...)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -307,6 +308,7 @@ func (h *Handler) handleSUNION(state *connState, args [][]byte, remoteAddr strin
 	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
 		return resp
 	}
+	h.recordKeyspaceLookups(keys)
 	members, err := h.Db.SUnion(keys...)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -333,6 +335,7 @@ func (h *Handler) handleSDIFF(state *connState, args [][]byte, remoteAddr string
 	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
 		return resp
 	}
+	h.recordKeyspaceLookups(keys)
 	members, err := h.Db.SDiff(keys...)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -425,6 +428,7 @@ func (h *Handler) handleSINTERCARD(state *connState, args [][]byte, remoteAddr s
 		}
 		limit = l
 	}
+	h.recordKeyspaceLookups(sinterKeys)
 	count, err := h.Db.SInterCardWithLimit(limit, sinterKeys...)
 	if err != nil {
 		return wrapStoreError(err)

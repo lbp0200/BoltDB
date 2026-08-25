@@ -146,6 +146,27 @@ func (h *Handler) recordKeyspaceMiss() {
 	atomic.AddInt64(&h.keyspaceMisses, 1)
 }
 
+// recordKeyspaceLookup mirrors redis lookupKeyRead stats: one hit when the key
+// exists, one miss otherwise. The lookup happens before the type check, so
+// WRONGTYPE paths still count as a hit (verified against redis-server 8.2.1).
+// Call sites must invoke this only after argument parsing succeeds, matching
+// redis where syntax errors return before any lookup.
+func (h *Handler) recordKeyspaceLookup(key string) {
+	if exists, err := h.Db.Exists(key); err == nil {
+		if exists {
+			h.recordKeyspaceHit()
+		} else {
+			h.recordKeyspaceMiss()
+		}
+	}
+}
+
+func (h *Handler) recordKeyspaceLookups(keys []string) {
+	for _, k := range keys {
+		h.recordKeyspaceLookup(k)
+	}
+}
+
 func (h *Handler) recordExpired() {
 	atomic.AddInt64(&h.expiredKeys, 1)
 }

@@ -182,10 +182,20 @@ func (h *Handler) handleXREAD(state *connState, args [][]byte, remoteAddr string
 		state.blocking.Store(false)
 	}
 	if err != nil {
+		// redis-server 8.2.1 empirically records TWO lookups per stream key
+		// on the success path, but aborts after a single lookup when it
+		// errors (e.g. NOGROUP); replicate both behaviors for INFO parity.
+		for _, k := range streamKeys {
+			h.recordKeyspaceLookup(k)
+		}
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
 		return wrapLogError(err)
+	}
+	for _, k := range streamKeys {
+		h.recordKeyspaceLookup(k)
+		h.recordKeyspaceLookup(k)
 	}
 
 	// Format response
@@ -658,10 +668,24 @@ func (h *Handler) handleXREADGROUP(state *connState, args [][]byte, remoteAddr s
 		state.blocking.Store(false)
 	}
 	if err != nil {
+		// Same single-lookup-on-error behavior as XREAD.
+		for _, k := range streamKeys {
+			h.recordKeyspaceLookup(k)
+		}
+		var noGroup *store.ErrNOGroup
+		if errors.As(err, &noGroup) {
+			// redis appends a command-specific suffix on the XREADGROUP path
+			return proto.NewError(noGroup.Error() + " in XREADGROUP with GROUP option")
+		}
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
 		return wrapLogError(err)
+	}
+	// Same double-lookup-per-key stats behavior as XREAD in redis-server 8.2.1.
+	for _, k := range streamKeys {
+		h.recordKeyspaceLookup(k)
+		h.recordKeyspaceLookup(k)
 	}
 
 	// PEL / LastDeliveredID mutations must reach replicas (live XCLAIM/XACK)
@@ -807,7 +831,14 @@ func (h *Handler) handleXCLAIM(state *connState, args [][]byte, remoteAddr strin
 
 	h.markDirtyKeys(state, key)
 	claimed, err := h.Db.XClaim(key, group, consumer, opts, ids...)
+	// The key lookup happens before group resolution in redis, so the NOGROUP
+	// error path still records a hit/miss for the key.
+	h.recordKeyspaceLookup(key)
 	if err != nil {
+		var noGroup *store.ErrNOGroup
+		if errors.As(err, &noGroup) {
+			return proto.NewError(noGroup.Error())
+		}
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
@@ -933,6 +964,10 @@ func (h *Handler) handleXAUTOCLAIM(state *connState, args [][]byte, remoteAddr s
 	h.markDirtyKeys(state, key)
 	result, err := h.Db.XAutoClaim(key, group, consumer, minIdleTime, start, opts)
 	if err != nil {
+		var noGroup *store.ErrNOGroup
+		if errors.As(err, &noGroup) {
+			return proto.NewError(noGroup.Error())
+		}
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}

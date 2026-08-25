@@ -64,6 +64,7 @@ func (h *Handler) handleZINTER(state *connState, args [][]byte, remoteAddr strin
 			return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", args[i]))
 		}
 	}
+	h.recordKeyspaceLookups(keys)
 	members, err := h.Db.ZInter(keys, weights, aggregate)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -140,6 +141,7 @@ func (h *Handler) handleZINTERCARD(state *connState, args [][]byte, remoteAddr s
 			return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", args[i]))
 		}
 	}
+	h.recordKeyspaceLookups(keys)
 	count, err := h.Db.ZInterCard(keys, limit)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -204,6 +206,7 @@ func (h *Handler) handleZUNION(state *connState, args [][]byte, remoteAddr strin
 			return proto.NewError(fmt.Sprintf("ERR syntax error, unknown option '%s'", args[i]))
 		}
 	}
+	h.recordKeyspaceLookups(keys)
 	members, err := h.Db.ZUnion(keys, weights, aggregate)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -677,6 +680,8 @@ func (h *Handler) handleZMSCORE(state *connState, args [][]byte, remoteAddr stri
 	for i := 1; i < len(args); i++ {
 		members[i-1] = string(args[i])
 	}
+	// Redis does a single key lookup for the whole command (not per member).
+	h.recordKeyspaceLookup(key)
 	scores, err := h.Db.ZMScore(key, members...)
 	if err != nil {
 		return wrapStoreError(err)
@@ -873,6 +878,7 @@ func (h *Handler) handleZRANGEBYSCORE(state *connState, args [][]byte, remoteAdd
 			break
 		}
 	}
+	h.recordKeyspaceLookup(zsetName)
 	members, err := h.Db.ZRangeByScore(zsetName, minScore, maxScore, offset, count, minExclusive, maxExclusive)
 	if err != nil {
 		return wrapStoreError(err)
@@ -930,6 +936,7 @@ func (h *Handler) handleZREVRANGEBYSCORE(state *connState, args [][]byte, remote
 			break
 		}
 	}
+	h.recordKeyspaceLookup(zsetName)
 	members, err := h.Db.ZRevRangeByScore(zsetName, maxScore, minScore, offset, count, minExclusive, maxExclusive)
 	if err != nil {
 		return wrapStoreError(err)
@@ -1003,6 +1010,7 @@ func (h *Handler) handleZRANDMEMBER(state *connState, args [][]byte, remoteAddr 
 			withScores = true
 		}
 	}
+	h.recordKeyspaceLookup(key)
 	members, err := h.Db.ZRandMember(key, count)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -1318,6 +1326,7 @@ func (h *Handler) handleZDIFF(state *connState, args [][]byte, remoteAddr string
 			withScores = true
 		}
 	}
+	h.recordKeyspaceLookups(keys)
 	members, err := h.Db.ZDiff(keys)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -1398,6 +1407,7 @@ func (h *Handler) handleZRANGEBYLEX(state *connState, args [][]byte, remoteAddr 
 			}
 		}
 	}
+	h.recordKeyspaceLookup(zSetName)
 	members, err := h.Db.ZRangeByLex(zSetName, min, max, offset, count)
 	if err != nil {
 		return wrapStoreError(err)
@@ -1441,6 +1451,7 @@ func (h *Handler) handleZREVRANGEBYLEX(state *connState, args [][]byte, remoteAd
 			}
 		}
 	}
+	h.recordKeyspaceLookup(zSetName)
 	members, err := h.Db.ZRevRangeByLex(zSetName, max, min, offset, count)
 	if err != nil {
 		return wrapStoreError(err)

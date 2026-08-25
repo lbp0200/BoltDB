@@ -583,8 +583,10 @@ func (h *Handler) handleCOPY(state *connState, args [][]byte, remoteAddr string)
 		return wrapStoreError(err)
 	}
 	if srcType == "none" {
+		h.recordKeyspaceMiss()
 		return proto.NewInteger(0) // 源键不存在
 	}
+	h.recordKeyspaceHit()
 	// 检查目标键是否存在
 	dstExists, err := h.Db.Exists(dstKey)
 	if err != nil {
@@ -652,6 +654,9 @@ func (h *Handler) handleTOUCH(state *connState, args [][]byte, remoteAddr string
 		}
 		if exists {
 			count++
+			h.recordKeyspaceHit()
+		} else {
+			h.recordKeyspaceMiss()
 		}
 	}
 	return proto.NewInteger(count)
@@ -849,11 +854,13 @@ func (h *Handler) handleSORT(state *connState, args [][]byte, remoteAddr string)
 	}
 	// Redis: SORT on non-existent key returns empty array
 	if keyType == "none" {
+		h.recordKeyspaceMiss()
 		if destKey != "" {
 			_, _ = h.Db.Del(destKey)
 		}
 		return &proto.Array{Args: [][]byte{}}
 	}
+	h.recordKeyspaceHit()
 	var values []string
 	var scores []float64
 

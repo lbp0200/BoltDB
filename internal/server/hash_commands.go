@@ -390,6 +390,7 @@ func (h *Handler) handleHSTRLEN(state *connState, args [][]byte, remoteAddr stri
 	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 		return resp
 	}
+	h.recordKeyspaceLookup(key)
 	length, err := h.Db.HStrLen(key, field)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -431,6 +432,7 @@ func (h *Handler) handleHRANDFIELD(state *connState, args [][]byte, remoteAddr s
 			withValues = true
 		}
 	}
+	h.recordKeyspaceLookup(key)
 	fields, values, err := h.Db.HRandField(key, count, withValues)
 	if err != nil {
 		return wrapStoreError(err)

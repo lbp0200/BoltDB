@@ -594,6 +594,11 @@ func (h *Handler) setKeyWithOpts(state *connState, key, value string, ttl time.D
 	} else if !errors.Is(err, store.ErrKeyNotFound) && !errors.Is(err, store.ErrWrongType) {
 		return wrapStoreError(err)
 	}
+	// SET ... GET performs a read of the old value; redis counts that lookup
+	// (plain SET without GET records no keyspace stats).
+	if get {
+		h.recordKeyspaceLookup(key)
+	}
 
 	if nx && exists {
 		if get {

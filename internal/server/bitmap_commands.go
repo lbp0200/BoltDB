@@ -143,6 +143,8 @@ func (h *Handler) handleBITOP(state *connState, args [][]byte, remoteAddr string
 		return resp
 	}
 	h.markDirtyKeys(state, destKey)
+	// Redis counts lookups for source keys only (dest is a pure write target).
+	h.recordKeyspaceLookups(sourceKeys)
 	length, err := h.Db.BitOp(operation, destKey, sourceKeys...)
 	if err != nil {
 		return wrapStoreError(err)
@@ -381,6 +383,7 @@ func (h *Handler) handlePFCOUNT(state *connState, args [][]byte, remoteAddr stri
 	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
 		return resp
 	}
+	h.recordKeyspaceLookups(keys)
 	count, err := h.Db.PFCount(keys...)
 	if err != nil {
 		return wrapStoreError(err)

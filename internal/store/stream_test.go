@@ -269,7 +269,7 @@ func TestStreamXReadGroupBlocking(t *testing.T) {
 	done := make(chan []map[string][]StreamEntry, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		result, err := store.XReadGroup(context.Background(), "mygroup", "consumer1", 10, 1000, "mystream", ">")
+		result, err := store.XReadGroup(context.Background(), "mygroup", "consumer1", 10, 1000, "mystream")
 		if err != nil {
 			errCh <- err
 			return
@@ -305,7 +305,7 @@ func TestStreamXReadGroupBlockingTimeout(t *testing.T) {
 	err := store.XGroupCreate("mystream", "mygroup", "0")
 	assert.NoError(t, err)
 
-	result, err := store.XReadGroup(context.Background(), "mygroup", "consumer1", 10, 100, "mystream", ">")
+	result, err := store.XReadGroup(context.Background(), "mygroup", "consumer1", 10, 100, "mystream")
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(result))
 }
@@ -325,7 +325,7 @@ func TestStreamXReadGroup(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Read from group
-	results, err := store.XReadGroup(nil, "mygroup", "myconsumer", 10, 0, "mystream", ">")
+	results, err := store.XReadGroup(nil, "mygroup", "myconsumer", 10, 0, "mystream")
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(results))
 }
@@ -345,7 +345,7 @@ func TestStreamXPending(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Read from group (this will create pending entries)
-	_, err = store.XReadGroup(nil, "mygroup", "myconsumer", 10, 0, "mystream", ">")
+	_, err = store.XReadGroup(nil, "mygroup", "myconsumer", 10, 0, "mystream")
 	assert.NoError(t, err)
 
 	// Get pending info
@@ -367,7 +367,7 @@ func TestStreamXClaim(t *testing.T) {
 	// Create group and read
 	err = store.XGroupCreate("mystream", "mygroup", "0")
 	assert.NoError(t, err)
-	_, err = store.XReadGroup(nil, "mygroup", "consumer1", 10, 0, "mystream", ">")
+	_, err = store.XReadGroup(nil, "mygroup", "consumer1", 10, 0, "mystream")
 	assert.NoError(t, err)
 
 	// Claim for another consumer
@@ -420,7 +420,7 @@ func TestStreamXClaimOptions(t *testing.T) {
 	assert.NoError(t, err)
 	err = store.XGroupCreate("mystream", "mygroup", "0")
 	assert.NoError(t, err)
-	_, err = store.XReadGroup(nil, "mygroup", "consumer1", 10, 0, "mystream", ">")
+	_, err = store.XReadGroup(nil, "mygroup", "consumer1", 10, 0, "mystream")
 	assert.NoError(t, err)
 
 	// Claim with RETRYCOUNT=5 and IDLE=60000: DeliveryCount set to 5,
@@ -455,7 +455,7 @@ func TestStreamXClaimLastID(t *testing.T) {
 	assert.NoError(t, err)
 	err = store.XGroupCreate("mystream", "mygroup", "0")
 	assert.NoError(t, err)
-	_, err = store.XReadGroup(nil, "mygroup", "consumer1", 10, 0, "mystream", ">")
+	_, err = store.XReadGroup(nil, "mygroup", "consumer1", 10, 0, "mystream")
 	assert.NoError(t, err)
 
 	// Claim with LASTID 2000000000000-0
@@ -503,7 +503,7 @@ func TestStreamXAutoClaim(t *testing.T) {
 	_ = store.XGroupCreate("mystream", "mygroup", "0")
 
 	// Read to create pending
-	_, _ = store.XReadGroup(nil, "mygroup", "consumer1", 10, 0, "mystream", ">")
+	_, _ = store.XReadGroup(nil, "mygroup", "consumer1", 10, 0, "mystream")
 
 	// Auto claim
 	result, err := store.XAutoClaim("mystream", "mygroup", "consumer2", 0, ">", XAutoClaimOptions{})
@@ -846,9 +846,9 @@ func TestXAckDelRemoveRefs(t *testing.T) {
 	assert.NoError(t, err)
 
 	// 两个 group 分别读取，产生 PEL 引用
-	_, err = store.XReadGroup(nil, "group1", "consumer1", 10, 0, stream, ">")
+	_, err = store.XReadGroup(nil, "group1", "consumer1", 10, 0, stream)
 	assert.NoError(t, err)
-	_, err = store.XReadGroup(nil, "group2", "consumer2", 10, 0, stream, ">")
+	_, err = store.XReadGroup(nil, "group2", "consumer2", 10, 0, stream)
 	assert.NoError(t, err)
 
 	// 验证两个 group 的 PEL 都有该 entry
@@ -921,7 +921,7 @@ func TestXIsAckedByAllGroups(t *testing.T) {
 	assert.NoError(t, err)
 
 	// 读取产生 PEL 引用
-	_, err = store.XReadGroup(nil, "group1", "consumer1", 10, 0, stream, ">")
+	_, err = store.XReadGroup(nil, "group1", "consumer1", 10, 0, stream)
 	assert.NoError(t, err)
 
 	// 边缘场景 2: 1 个 group, 未 ACK → 应返回 false
@@ -942,7 +942,7 @@ func TestXIsAckedByAllGroups(t *testing.T) {
 	// 创建第 2 个 group 并读取产生 PEL
 	err = store.XGroupCreate(stream, "group2", "0")
 	assert.NoError(t, err)
-	_, err = store.XReadGroup(nil, "group2", "consumer2", 10, 0, stream, ">")
+	_, err = store.XReadGroup(nil, "group2", "consumer2", 10, 0, stream)
 	assert.NoError(t, err)
 
 	// 边缘场景 4: 2 个 group, 仅 1 个 ACK → 应返回 false
@@ -963,7 +963,7 @@ func TestXIsAckedByAllGroups(t *testing.T) {
 	// 创建第 3 个 group 并读取产生 PEL
 	err = store.XGroupCreate(stream, "group3", "0")
 	assert.NoError(t, err)
-	_, err = store.XReadGroup(nil, "group3", "consumer3", 10, 0, stream, ">")
+	_, err = store.XReadGroup(nil, "group3", "consumer3", 10, 0, stream)
 	assert.NoError(t, err)
 
 	// 边缘场景 6: 3 个 group, 仅 2 个 ACK → 应返回 false
@@ -993,7 +993,7 @@ func TestXIsAckedByAllGroups_EntryDeleted(t *testing.T) {
 	assert.NoError(t, err)
 	err = store.XGroupCreate(stream, "g1", "0")
 	assert.NoError(t, err)
-	_, err = store.XReadGroup(nil, "g1", "c1", 10, 0, stream, ">")
+	_, err = store.XReadGroup(nil, "g1", "c1", 10, 0, stream)
 	assert.NoError(t, err)
 
 	// 先 ACK 再删除 entry
@@ -2466,7 +2466,7 @@ func TestWriteCommandXAck(t *testing.T) {
 	err = store.XGroupCreate("s", "g", "0")
 	assert.NoError(t, err)
 	// Read to populate the PEL
-	_, err = store.XReadGroup(nil, "g", "c1", 10, 0, "s", ">")
+	_, err = store.XReadGroup(nil, "g", "c1", 10, 0, "s")
 	assert.NoError(t, err)
 	pending, err := store.XPending("s", "g")
 	assert.NoError(t, err)
@@ -2884,7 +2884,7 @@ func TestWriteCommandXClaim(t *testing.T) {
 	assert.NoError(t, err)
 	err = store.XGroupCreate("s", "g", "0")
 	assert.NoError(t, err)
-	_, err = store.XReadGroup(nil, "g", "c1", 10, 0, "s", ">")
+	_, err = store.XReadGroup(nil, "g", "c1", 10, 0, "s")
 	assert.NoError(t, err)
 
 	// Replay: XCLAIM s g c2 0 1-1 (claim pending message to c2)

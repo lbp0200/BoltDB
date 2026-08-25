@@ -232,7 +232,7 @@ func (s *BotreonStore) XClaim(key, group, consumer string, opts XClaimOptions, i
 		groupKey := streamGroupDataKey(key, group)
 		item, err := txn.Get(groupKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
-			return nil
+			return &ErrNOGroup{Key: key, Group: group}
 		}
 		if err != nil {
 			return err

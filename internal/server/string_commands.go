@@ -53,6 +53,11 @@ func (h *Handler) handleLCS(state *connState, args [][]byte, remoteAddr string) 
 		}
 	}
 
+	// Redis counts one lookup per key (both-hit +2 / mixed +1hit+1miss /
+	// both-miss +2 misses), recorded before the store call.
+	h.recordKeyspaceLookup(key1)
+	h.recordKeyspaceLookup(key2)
+
 	// LEN mode: only need the length
 	if withLen && !withIdx {
 		length, err := h.Db.GetLCSLength(key1, key2)
@@ -304,6 +309,7 @@ func (h *Handler) handleGETDEL(state *connState, args [][]byte, remoteAddr strin
 		return resp
 	}
 	gdValue, gdErr := h.Db.Get(gdKey)
+	h.recordKeyspaceLookup(gdKey)
 	if gdErr != nil {
 		if errors.Is(gdErr, store.ErrKeyNotFound) {
 			if state.respVersion == 3 {
@@ -363,6 +369,7 @@ func (h *Handler) handleGETEX(state *connState, args [][]byte, remoteAddr string
 		}
 	}
 	gexValue, gexErr := h.Db.Get(gexKey)
+	h.recordKeyspaceLookup(gexKey)
 	if gexErr != nil {
 		if errors.Is(gexErr, store.ErrKeyNotFound) {
 			if state.respVersion == 3 {
@@ -460,6 +467,7 @@ func (h *Handler) handleGETSET(state *connState, args [][]byte, remoteAddr strin
 	}
 	h.markDirtyKeys(state, key)
 	oldValue, err := h.Db.GetSet(key, value)
+	h.recordKeyspaceLookup(key)
 	if err != nil {
 		return wrapStoreError(err)
 	}
@@ -597,6 +605,7 @@ func (h *Handler) handleGETRANGE(state *connState, args [][]byte, remoteAddr str
 	if err1 != nil || err2 != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
 	}
+	h.recordKeyspaceLookup(key)
 	value, err := h.Db.GetRange(key, start, end)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {

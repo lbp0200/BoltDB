@@ -5,10 +5,23 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
 )
+
+// ErrNOGroup mirrors redis's NOGROUP error: XREADGROUP on a stream key that
+// has no consumer group (including a missing key) must fail, never silently
+// return an empty read.
+type ErrNOGroup struct {
+	Key   string
+	Group string
+}
+
+func (e *ErrNOGroup) Error() string {
+	return fmt.Sprintf("NOGROUP No such key '%s' or consumer group '%s'", e.Key, e.Group)
+}
 
 // XReadGroup reads from a consumer group
 func (s *BotreonStore) XReadGroup(ctx context.Context, group, consumer string, count int64, block int64, keys ...string) ([]map[string][]StreamEntry, error) {
@@ -27,7 +40,7 @@ func (s *BotreonStore) XReadGroup(ctx context.Context, group, consumer string, c
 			groupKey := streamGroupDataKey(key, group)
 			item, err := txn.Get(groupKey)
 			if errors.Is(err, badger.ErrKeyNotFound) {
-				return nil
+				return &ErrNOGroup{Key: key, Group: group}
 			}
 			if err != nil {
 				return err
