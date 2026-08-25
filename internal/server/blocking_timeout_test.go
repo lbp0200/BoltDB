@@ -21,14 +21,14 @@ func TestParseBlockTimeoutSeconds(t *testing.T) {
 		wantMs  int64 // -1 marks "expect error reply"
 		wantErr string
 	}{
-		{"0", 0, ""},              // forever
-		{".0", 0, ""},             // exact zero still means forever
+		{"0", 0, ""},  // forever
+		{".0", 0, ""}, // exact zero still means forever
 		{"+1", 1000, ""},
 		{"00.5", 500, ""},
 		{"5.", 5000, ""},
 		{"1e3", 1000000, ""},
 		{"0.01", 10, ""},
-		{"92233720368.5", -2, "ERR timeout is out of range"},   // ms overflow → blocked in redis (huge), here capped as out of range? see note below
+		{"92233720368.5", -2, "ERR timeout is out of range"}, // ms overflow → blocked in redis (huge), here capped as out of range? see note below
 		{"-1", -1, "ERR timeout is negative"},
 		{"-0.01", -1, "ERR timeout is negative"},
 		{"-inf", -1, "ERR timeout is negative"},

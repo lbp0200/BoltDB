@@ -187,11 +187,13 @@ func TestGeoMutationKill_GeosearchBybox(t *testing.T) {
 // (see git history of the old `radius = width / 2` implementation).
 //
 // Dataset (center = SF, 37.7749°N, 122.4194°W) and box results:
-//   5000x1000 km → {SF, LA, East}
-//   2000x5000 km → {SF, LA, North, NW}
-//   1000x5000 km → {SF, LA, North, NW}
-//   10000x10000km → all points except Bali (13453km away)
-//   10x10 km     → {SF}
+//
+//	5000x1000 km → {SF, LA, East}
+//	2000x5000 km → {SF, LA, North, NW}
+//	1000x5000 km → {SF, LA, North, NW}
+//	10000x10000km → all points except Bali (13453km away)
+//	10x10 km     → {SF}
+//
 // Every point is far from any box edge (margin ≫ geohash 26-bit decode
 // error), and both 5000x1000 and 1000x5000 have discriminating points:
 // a width/2-circle implementation returns the wrong set in both cases.
@@ -209,10 +211,10 @@ func TestGeoSearchBybox_RectangularSemantics(t *testing.T) {
 	geoAdd("-122.4194", "37.7749", "SF")
 	geoAdd("-118.2437", "34.0522", "LA")
 	geoAdd("-122.4194", "47.7749", "North") // 1113km north
-	geoAdd("-124.4194", "56.2749", "NW")     // 2065km away
-	geoAdd("-100.0", "37.7749", "East")      // 1968km east
-	geoAdd("-74.0060", "40.7128", "NYC")     // 4134km away
-	geoAdd("115.1390", "-8.8028", "Bali")    // 13453km away
+	geoAdd("-124.4194", "56.2749", "NW")    // 2065km away
+	geoAdd("-100.0", "37.7749", "East")     // 1968km east
+	geoAdd("-74.0060", "40.7128", "NYC")    // 4134km away
+	geoAdd("115.1390", "-8.8028", "Bali")   // 13453km away
 
 	search := func(width, height string) map[string]bool {
 		resp := handler.executeCommand(state, "GEOSEARCH", [][]byte{
@@ -376,10 +378,10 @@ func TestGeoSearchStore_Bybox(t *testing.T) {
 		scores[string(zarr.Args[i])] = v
 	}
 	assert.Equal(t, 4, len(scores))
-	assert.True(t, scores["SF"] < 1.0) // ≈ 0 km
+	assert.True(t, scores["SF"] < 1.0)                                   // ≈ 0 km
 	assert.True(t, scores["North"] > 1000.0 && scores["North"] < 1300.0) // ≈ 1113 km
-	assert.True(t, scores["NW"] > 1900.0 && scores["NW"] < 2300.0) // ≈ 2065 km
-	assert.True(t, scores["LA"] > 400.0 && scores["LA"] < 700.0) // ≈ 556 km
+	assert.True(t, scores["NW"] > 1900.0 && scores["NW"] < 2300.0)       // ≈ 2065 km
+	assert.True(t, scores["LA"] > 400.0 && scores["LA"] < 700.0)         // ≈ 556 km
 }
 
 // TestGeoMutationKill_GeosearchstoreOptions 验证 GEOSEARCHSTORE 选项

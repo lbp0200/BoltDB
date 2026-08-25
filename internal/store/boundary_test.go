@@ -285,8 +285,8 @@ func TestBoundary_LargeStream100K(t *testing.T) {
 		for j := i; j < end; j++ {
 			id := fmt.Sprintf("%d-%d", j/1000, j%1000)
 			fields := map[string]string{
-				"seq":   fmt.Sprintf("%d", j),
-				"data":  fmt.Sprintf("payload:%d", j),
+				"seq":  fmt.Sprintf("%d", j),
+				"data": fmt.Sprintf("payload:%d", j),
 			}
 			if _, err := s.XAdd("bigstream", StreamXAddOptions{}, id, fields); err != nil {
 				t.Fatalf("XAdd %d failed: %v", j, err)

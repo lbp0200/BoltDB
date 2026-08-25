@@ -1093,10 +1093,11 @@ func TestExecuteReplicatedCommand_GEOSEARCHSTORE(t *testing.T) {
 // the master used (width AND height, not a width/2 circle fallback).
 //
 // Center (13.5, 38.0), box 100km × 5000km (halfLon ≈ 0.568°, halfLat ≈ 22.46°):
-//   Palermo  (13.361, 38.116) dlon 0.139° (~12km)    → INSIDE
-//   Catania  (15.087, 37.503) dlon 1.587° (~141km)   → OUTSIDE (exceeds half-width)
-//   FarNorth (13.5, 47.0)     dlat 9.0° (~1000km)    → INSIDE the box,
-//                                                   OUTSIDE a width/2 (50km) circle
+//
+//	Palermo  (13.361, 38.116) dlon 0.139° (~12km)    → INSIDE
+//	Catania  (15.087, 37.503) dlon 1.587° (~141km)   → OUTSIDE (exceeds half-width)
+//	FarNorth (13.5, 47.0)     dlat 9.0° (~1000km)    → INSIDE the box,
+//	                                                OUTSIDE a width/2 (50km) circle
 func TestExecuteReplicatedCommand_GEOSEARCHSTORE_Bybox(t *testing.T) {
 	t.Parallel()
 	testStore := setupTestStore(t)
