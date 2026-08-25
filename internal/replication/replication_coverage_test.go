@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -1358,9 +1359,10 @@ func TestExecuteReplicatedCommand_XCLAIM(t *testing.T) {
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
-	// XCLAIM on non-existent stream should not error
+	// XCLAIM without group should return NOGROUP (c5f33b0: no longer silent empty)
 	err := executeReplicatedCommand(testStore, [][]byte{[]byte("XCLAIM"), []byte("stream"), []byte("group"), []byte("consumer"), []byte("1000"), []byte("0-0")}, context.Background())
-	assert.NoError(t, err)
+	assert.True(t, err != nil)
+	assert.True(t, strings.Contains(err.Error(), "NOGROUP"))
 }
 
 // TestExecuteReplicatedCommand_XGROUP tests executeReplicatedCommand for XGROUP
@@ -1851,12 +1853,14 @@ func TestExecuteReplicatedCommand_XAUTOCLAIM_WithOptions(t *testing.T) {
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
+	// Missing group → NOGROUP (c5f33b0), not silent success.
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("XAUTOCLAIM"), []byte("stream"), []byte("group"),
 		[]byte("consumer"), []byte("1000"), []byte("0-0"),
 		[]byte("COUNT"), []byte("10"), []byte("JUSTID"),
 	}, context.Background())
-	assert.NoError(t, err)
+	assert.True(t, err != nil)
+	assert.True(t, strings.Contains(err.Error(), "NOGROUP"))
 }
 
 // TestExecuteReplicatedCommand_SORT_STORE_List tests SORT with STORE option (list source)
