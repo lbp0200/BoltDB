@@ -638,8 +638,8 @@ func TestLoadRDB_StreamWithConsumerGroups(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NoError(t, testStore.XGroupCreate("sgstream", "g1", "0"))
 
-	// Deliver to create PEL
-	_, err = testStore.XReadGroup(nil, "g1", "c1", 10, 0, "sgstream", ">")
+	// Deliver to create PEL (stream key only; ">" is RESP-level stream ID, not a store key)
+	_, err = testStore.XReadGroup(nil, "g1", "c1", 10, 0, "sgstream")
 	assert.NoError(t, err)
 
 	groups, err := testStore.XInfoGroups("sgstream")
