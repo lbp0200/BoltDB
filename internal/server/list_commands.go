@@ -85,6 +85,7 @@ func (h *Handler) handleLPOP(state *connState, args [][]byte, remoteAddr string)
 		}
 		return proto.NewBulkString(nil)
 	}
+	h.markDirtyKeys(state, key)
 	return proto.NewBulkString([]byte(value))
 }
 
@@ -113,6 +114,7 @@ func (h *Handler) handleRPOP(state *connState, args [][]byte, remoteAddr string)
 		}
 		return proto.NewBulkString(nil)
 	}
+	h.markDirtyKeys(state, key)
 	return proto.NewBulkString([]byte(value))
 }
 
@@ -386,7 +388,6 @@ func (h *Handler) handleRPOPLPUSH(state *connState, args [][]byte, remoteAddr st
 	if resp := h.checkAndHandleMultiKeyRedirect([]string{source, destination}); resp != nil {
 		return resp
 	}
-	h.markDirtyKeys(state, source, destination)
 	value, err := h.Db.RPopLPush(source, destination)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -403,6 +404,7 @@ func (h *Handler) handleRPOPLPUSH(state *connState, args [][]byte, remoteAddr st
 		}
 		return proto.NewBulkString(nil)
 	}
+	h.markDirtyKeys(state, source, destination)
 	return proto.NewBulkString([]byte(value))
 }
 
@@ -418,7 +420,6 @@ func (h *Handler) handleLMOVE(state *connState, args [][]byte, remoteAddr string
 	}
 	sourceDirection := strings.ToUpper(string(args[2]))
 	destinationDirection := strings.ToUpper(string(args[3]))
-	h.markDirtyKeys(state, source, destination)
 	value, err := h.Db.LMove(source, destination, sourceDirection, destinationDirection)
 	if err != nil {
 		return wrapStoreError(err)
@@ -429,6 +430,7 @@ func (h *Handler) handleLMOVE(state *connState, args [][]byte, remoteAddr string
 		}
 		return proto.NewBulkString(nil)
 	}
+	h.markDirtyKeys(state, source, destination)
 	return proto.NewBulkString([]byte(value))
 }
 
@@ -448,7 +450,6 @@ func (h *Handler) handleBLMOVE(state *connState, args [][]byte, remoteAddr strin
 	if !ok {
 		return errResp
 	}
-	h.markDirtyKeys(state, source, destination)
 	state.blocking.Store(true)
 	value, err := h.Db.BLMoveBlocking(state.blockCtx(), source, destination, sourceDirection, destinationDirection, timeoutMs)
 	state.blocking.Store(false)
@@ -461,6 +462,7 @@ func (h *Handler) handleBLMOVE(state *connState, args [][]byte, remoteAddr strin
 		}
 		return proto.NewBulkString(nil)
 	}
+	h.markDirtyKeys(state, source, destination)
 	return proto.NewBulkString([]byte(value))
 }
 
@@ -714,6 +716,7 @@ func (h *Handler) handleLMPOP(state *connState, args [][]byte, remoteAddr string
 	if key == "" || len(elements) == 0 {
 		return h.nilArrayOrNull(state)
 	}
+	h.markDirtyKeys(state, key)
 	elemArgs := make([][]byte, len(elements))
 	for i, e := range elements {
 		elemArgs[i] = []byte(e)

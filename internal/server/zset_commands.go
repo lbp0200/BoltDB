@@ -1099,6 +1099,7 @@ func (h *Handler) handleZMPOP(state *connState, args [][]byte, remoteAddr string
 	if key == "" || len(members) == 0 {
 		return h.nilArrayOrNull(state)
 	}
+	h.markDirtyKeys(state, key)
 	result := make([][]byte, 0, 1+len(members)*2)
 	result = append(result, []byte(key))
 	for _, m := range members {
@@ -1157,6 +1158,7 @@ func (h *Handler) handleBZMPOP(state *connState, args [][]byte, remoteAddr strin
 	if key == "" || len(members) == 0 {
 		return h.nilArrayOrNull(state)
 	}
+	h.markDirtyKeys(state, key)
 	result := make([][]byte, 0, 1+len(members)*2)
 	result = append(result, []byte(key))
 	for _, m := range members {
