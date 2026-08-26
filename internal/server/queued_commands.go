@@ -614,6 +614,8 @@ func (h *Handler) setKeyWithOpts(state *connState, key, value string, ttl time.D
 		return nilBulkString(state.respVersion)
 	}
 
+	// 成功写入路径：先标脏再落盘，与其它条件写"成功才脏"一致。
+	h.markDirtyKeys(state, key)
 	if keepTTL {
 		ttlSec, ttlErr := h.Db.TTL(key)
 		if err := h.Db.Set(key, value); err != nil {

@@ -268,7 +268,9 @@ func (h *Handler) handleSET(state *connState, args [][]byte, remoteAddr string) 
 		return wrapLogError(err)
 	}
 
-	h.markDirtyKeys(state, key)
+	// 普通 SET 仅在非条件写入或条件满足时才标脏；SET 的 NX/XX 空转
+	// 分支会在 setKeyWithOpts 内返回 nil 且不写入，因此这里不提前脏标记
+	// 由 setKeyWithOpts 成功写入后再脏（与 MSETNX/HSETNX 成功才脏一致）。
 	return h.setKeyWithOpts(state, key, value, ttl, nx, xx, get, keepTTL)
 }
 
