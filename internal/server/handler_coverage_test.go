@@ -800,6 +800,31 @@ func TestExecuteCommand_COPY_STREAM_Coverage(t *testing.T) {
 	}
 }
 
+// TestExecuteCommand_COPY_GEO verifies COPY for GEO type
+func TestExecuteCommand_COPY_GEO_Coverage(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+	resp := handler.executeCommand(state, "GEOADD", [][]byte{[]byte("gsrc"), []byte("13.361389"), []byte("38.115556"), []byte("Palermo")}, "127.0.0.1:12345")
+	if _, ok := resp.(*proto.Error); ok {
+		t.Fatalf("GEOADD: %v", resp)
+	}
+	resp = handler.executeCommand(state, "COPY", [][]byte{[]byte("gsrc"), []byte("gdst")}, "127.0.0.1:12345")
+	if _, ok := resp.(*proto.Error); ok {
+		t.Fatalf("COPY geo: %v", resp)
+	}
+	resp = handler.executeCommand(state, "TYPE", [][]byte{[]byte("gdst")}, "127.0.0.1:12345")
+	ss, ok := resp.(*proto.SimpleString)
+	if !ok || string(*ss) != "GEOHASH" {
+		// GEO type reports as GEOHASH
+		t.Fatalf("COPY geo TYPE: %v", resp)
+	}
+	resp = handler.executeCommand(state, "GEODIST", [][]byte{[]byte("gdst"), []byte("Palermo"), []byte("Palermo"), []byte("km")}, "127.0.0.1:12345")
+	if _, ok := resp.(*proto.Error); ok {
+		t.Fatalf("COPY geo GEODIST: %v", resp)
+	}
+}
+
 // TestExecuteCommand_COPY_DB0 verifies COPY with explicit DB 0 is accepted
 // (single-DB server; previously any DB option was rejected).
 func TestExecuteCommand_COPY_DB0_Coverage(t *testing.T) {

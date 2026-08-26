@@ -372,6 +372,52 @@ func TestRestoreHLL_Coverage(t *testing.T) {
 	assert.True(t, card > 0)
 }
 
+func TestDumpRestoreFullTypes_Coverage(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+
+	// STRING
+	mustSet(t, s, "dump_str", "hello")
+	// LIST
+	_, _ = s.LPush("dump_list", "a", "b", "c")
+	// HASH
+	_ = s.HSet("dump_hash", "f1", "v1")
+	// SET
+	_, _ = s.SAdd("dump_set", "m1", "m2")
+	// ZSET
+	_ = s.ZAdd("dump_zset", []ZSetMember{{Member: "a", Score: 1}, {Member: "b", Score: 2}})
+	// GEO
+	_, _ = s.GeoAdd("dump_geo", []GeoMember{{Member: "Palermo", Lat: 38.115556, Lon: 13.361389}})
+	// JSON
+	_, _, _ = s.JSONSet("dump_json", "$", `{"a":1}`, false, false)
+	// HLL
+	_, _ = s.PFAdd("dump_hll", "x", "y")
+	// STREAM
+	_, _ = s.XAdd("dump_stream", StreamXAddOptions{}, "*", map[string]string{"f": "v"})
+	// TS
+	_ = s.TSCreate("dump_ts", TSCreateOptions{})
+	_, _ = s.TSAdd("dump_ts", 1000, 1.23, TSAddOptions{})
+
+	keys := []string{"dump_str", "dump_list", "dump_hash", "dump_set", "dump_zset", "dump_geo", "dump_json", "dump_hll", "dump_stream", "dump_ts"}
+	for _, k := range keys {
+		data, err := s.Dump(k)
+		assert.NoError(t, err)
+		assert.True(t, len(data) > 0)
+		_, _ = s.Del("dump_restore_" + k)
+		err = s.Restore("dump_restore_"+k, data, 0, false)
+		assert.NoError(t, err)
+		exists, err := s.Exists("dump_restore_" + k)
+		assert.NoError(t, err)
+		assert.True(t, exists)
+	}
+	// Verify a couple of values
+	v, err := s.Get("dump_restore_dump_str")
+	assert.NoError(t, err)
+	assert.Equal(t, "hello", v)
+	_, err = s.JSONGet("dump_restore_dump_json", "$")
+	assert.NoError(t, err)
+}
+
 func TestIsUUIDFormat_Coverage(t *testing.T) {
 	t.Parallel()
 	assert.True(t, isUUIDFormat("550e8400-e29b-41d4-a716-446655440000"))
