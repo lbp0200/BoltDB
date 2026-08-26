@@ -20,12 +20,12 @@ func TestJSONSetNX(t *testing.T) {
 	s := setupTestStore(t)
 
 	// NX=true, key doesn't exist → should set
-	result, err := s.JSONSet("jsnx1", "$", `{"a":1}`, true, false)
+	result, _, err := s.JSONSet("jsnx1", "$", `{"a":1}`, true, false)
 	assert.NoError(t, err)
 	assert.Equal(t, "OK", result)
 
 	// NX=true, key exists → should skip
-	result, err = s.JSONSet("jsnx1", "$", `{"b":2}`, true, false)
+	result, _, err = s.JSONSet("jsnx1", "$", `{"b":2}`, true, false)
 	assert.NoError(t, err)
 	// skipped but still returns OK
 }
@@ -35,15 +35,15 @@ func TestJSONSetXX(t *testing.T) {
 	s := setupTestStore(t)
 
 	// XX=true, key doesn't exist → should skip
-	result, err := s.JSONSet("jsxx1", "$", `{"a":1}`, false, true)
+	result, _, err := s.JSONSet("jsxx1", "$", `{"a":1}`, false, true)
 	assert.NoError(t, err)
 	_ = result
 
 	// Now set without XX
-	s.JSONSet("jsxx1", "$", `{"a":1}`, false, false)
+	_, _, _ = s.JSONSet("jsxx1", "$", `{"a":1}`, false, false)
 
 	// XX=true, key exists → should set
-	result, err = s.JSONSet("jsxx1", "$", `{"b":2}`, false, true)
+	result, _, err = s.JSONSet("jsxx1", "$", `{"b":2}`, false, true)
 	assert.NoError(t, err)
 	assert.Equal(t, "OK", result)
 }
@@ -53,14 +53,14 @@ func TestJSONSetNXAndXX(t *testing.T) {
 	s := setupTestStore(t)
 
 	// Both NX and XX → always skip
-	s.JSONSet("jsnxexx", "$", `{"a":1}`, true, true)
+	_, _, _ = s.JSONSet("jsnxexx", "$", `{"a":1}`, true, true)
 }
 
 func TestJSONClearP9(t *testing.T) {
 	t.Parallel()
 	s := setupTestStore(t)
 
-	s.JSONSet("jclr", "$", `{"a":1,"b":2}`, false, false)
+	_, _, _ = s.JSONSet("jclr", "$", `{"a":1,"b":2}`, false, false)
 	cleared, err := s.JSONClear("jclr", "$")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), cleared)
@@ -78,7 +78,7 @@ func TestJSONDebugMemoryP9(t *testing.T) {
 	t.Parallel()
 	s := setupTestStore(t)
 
-	s.JSONSet("jsdm", "$", `{"key":"value"}`, false, false)
+	_, _, _ = s.JSONSet("jsdm", "$", `{"key":"value"}`, false, false)
 	size, err := s.JSONDebugMemory("jsdm", "$")
 	assert.NoError(t, err)
 	assert.True(t, size > 0)
@@ -88,7 +88,7 @@ func TestJSONTypeP9(t *testing.T) {
 	t.Parallel()
 	s := setupTestStore(t)
 
-	s.JSONSet("jst", "$", `{"key":"value"}`, false, false)
+	_, _, _ = s.JSONSet("jst", "$", `{"key":"value"}`, false, false)
 	jtype, err := s.JSONType("jst", "$")
 	assert.NoError(t, err)
 	assert.Equal(t, "object", jtype)
@@ -98,7 +98,7 @@ func TestJSONTypeArray(t *testing.T) {
 	t.Parallel()
 	s := setupTestStore(t)
 
-	s.JSONSet("jsta", "$", `[1,2,3]`, false, false)
+	_, _, _ = s.JSONSet("jsta", "$", `[1,2,3]`, false, false)
 	jtype, err := s.JSONType("jsta", "$")
 	assert.NoError(t, err)
 	assert.Equal(t, "array", jtype)

@@ -55,23 +55,26 @@ func (s *BotreonStore) jsonReadBytesInTxn(txn *badger.Txn, key string) ([]byte, 
 
 // JSONSet implements JSON.SET command
 // JSON.SET key path value [NX | XX]
-func (s *BotreonStore) JSONSet(key, path, value string, nx, xx bool) (string, error) {
+// 返回 (OK, 是否实际写入, 错误)。NX/XX 条件不满足时返回 (OK, false, nil) ——
+// 上层借此决定是否污染 WATCH（空转不脏，见 812ab66）以及是否进入复制流。
+func (s *BotreonStore) JSONSet(key, path, value string, nx, xx bool) (string, bool, error) {
 	// Only support root path for now
 	if path != "$" && path != "." {
-		return "", errors.New("ERR path must be '$' or '.'")
+		return "", false, errors.New("ERR path must be '$' or '.'")
 	}
 
 	// Validate JSON first
 	var newValue interface{}
 	if err := json.Unmarshal([]byte(value), &newValue); err != nil {
-		return "", errors.New("ERR invalid JSON")
+		return "", false, errors.New("ERR invalid JSON")
 	}
 
 	jsonData, err := json.Marshal(newValue)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
+	wrote := false
 	err = s.retryUpdate(func(txn *badger.Txn) error {
 		exists, err := s.jsonKeyExistsInTxn(txn, key)
 		if err != nil {
@@ -100,12 +103,19 @@ func (s *BotreonStore) JSONSet(key, path, value string, nx, xx bool) (string, er
 		if err := txn.Set(TypeOfKeyGet(key), []byte(KeyTypeJSON)); err != nil {
 			return err
 		}
-		return txn.Set([]byte(s.jsonKey(key)), jsonData)
+		if err := txn.Set([]byte(s.jsonKey(key)), jsonData); err != nil {
+			return err
+		}
+		wrote = true
+		return nil
 	}, 30)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	return "OK", nil
+	if !wrote {
+		return "OK", false, nil
+	}
+	return "OK", true, nil
 }
 
 // JSONGet implements JSON.GET command

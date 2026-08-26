@@ -1701,7 +1701,7 @@ func TestDeterministicConflict_JSONArrAppendConcurrent(t *testing.T) {
 	key := "json:arrappend:conflict"
 	const goroutines = 20
 
-	if _, err := s.JSONSet(key, "$", `[]`, false, false); err != nil {
+	if _, _, err := s.JSONSet(key, "$", `[]`, false, false); err != nil {
 		t.Fatalf("JSONSet: %v", err)
 	}
 

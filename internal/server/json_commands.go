@@ -29,20 +29,16 @@ func (h *Handler) handleJSON_SET(state *connState, args [][]byte, remoteAddr str
 			xx = true
 		}
 	}
-	result, err := h.Db.JSONSet(key, path, value, nx, xx)
+	result, wrote, err := h.Db.JSONSet(key, path, value, nx, xx)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
 		return wrapLogError(err)
 	}
-	// NX/XX may return OK without actually writing (condition not met) — don't
-	// pollute WATCH in that case. The store returns "OK" in all paths today,
-	// so we conservatively dirty only when the visible value changed; if the
-	// key was absent before and still absent, or present with same payload,
-	// the TXN was a no-op — but we have no cheap signal, so we keep marking.
-	// At minimum, an invalid-JSON error above is not dirty.
-	h.markDirtyKeys(state, key)
+	if wrote {
+		h.markDirtyKeys(state, key)
+	}
 	return proto.NewSimpleString(result)
 }
 

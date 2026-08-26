@@ -22,7 +22,7 @@ func TestDelJSONKey(t *testing.T) {
 
 	s := setupTestStore(t)
 
-	_, err := s.JSONSet("del_json_key", "$", `{"a":1}`, false, false)
+	_, _, err := s.JSONSet("del_json_key", "$", `{"a":1}`, false, false)
 	assert.NoError(t, err)
 
 	deleted, err := s.Del("del_json_key")
@@ -49,9 +49,9 @@ func TestDelJSONKeyMultiple(t *testing.T) {
 
 	s := setupTestStore(t)
 
-	_, err := s.JSONSet("del_json_a", "$", `{"x":1}`, false, false)
+	_, _, err := s.JSONSet("del_json_a", "$", `{"x":1}`, false, false)
 	assert.NoError(t, err)
-	_, err = s.JSONSet("del_json_b", "$", `{"y":2}`, false, false)
+	_, _, err = s.JSONSet("del_json_b", "$", `{"y":2}`, false, false)
 	assert.NoError(t, err)
 
 	deleted1, err := s.Del("del_json_a")
@@ -109,7 +109,7 @@ func TestDelMultipleKeyTypesInOneCall(t *testing.T) {
 	s.HSet("del_multi_hash", "f", "v")
 	s.SAdd("del_multi_set", "m")
 	mustZAdd(t, s, "del_multi_zset", []ZSetMember{{Member: "m1", Score: 1.0}})
-	_, _ = s.JSONSet("del_multi_json", "$", `{"k":"v"}`, false, false)
+	_, _, _ = s.JSONSet("del_multi_json", "$", `{"k":"v"}`, false, false)
 	_, _ = s.TSAdd("del_multi_ts", 1000, 2.0, TSAddOptions{})
 
 	// Del one at a time since Del() only takes a single key
@@ -1008,7 +1008,7 @@ func TestTypeAllTypes(t *testing.T) {
 	s.HSet("type_hash", "f", "v")
 	s.SAdd("type_set", "m")
 	mustZAdd(t, s, "type_zset", []ZSetMember{{Member: "m1", Score: 1.0}})
-	_, _ = s.JSONSet("type_json", "$", `{}`, false, false)
+	_, _, _ = s.JSONSet("type_json", "$", `{}`, false, false)
 
 	tests := []struct {
 		key    string

@@ -10,7 +10,7 @@ func TestJSONSet(t *testing.T) {
 	var err error
 
 	// Test JSON.SET with simple object
-	result, err := db.JSONSet("user:1", "$", `{"name":"John","age":30}`, false, false)
+	result, _, err := db.JSONSet("user:1", "$", `{"name":"John","age":30}`, false, false)
 	if err != nil {
 		t.Fatalf("JSON.SET failed: %v", err)
 	}
@@ -28,7 +28,7 @@ func TestJSONSet(t *testing.T) {
 	}
 
 	// Test JSON.SET with NX (should not update existing key)
-	result, err = db.JSONSet("user:1", "$", `{"name":"Jane"}`, true, false)
+	result, _, err = db.JSONSet("user:1", "$", `{"name":"Jane"}`, true, false)
 	if err != nil {
 		t.Fatalf("JSON.SET NX failed: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestJSONSet(t *testing.T) {
 	}
 
 	// Test JSON.SET with XX (should update existing key)
-	result, err = db.JSONSet("user:1", "$", `{"name":"Jane","city":"NYC"}`, false, true)
+	result, _, err = db.JSONSet("user:1", "$", `{"name":"Jane","city":"NYC"}`, false, true)
 	if err != nil {
 		t.Fatalf("JSON.SET XX failed: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestJSONGet(t *testing.T) {
 	var err error
 
 	// Set up test data
-	_, err = db.JSONSet("user:1", "$", `{"name":"John","age":30}`, false, false)
+	_, _, err = db.JSONSet("user:1", "$", `{"name":"John","age":30}`, false, false)
 	if err != nil {
 		t.Fatalf("JSON.SET failed: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestJSONDel(t *testing.T) {
 	var err error
 
 	// Set up test data
-	_, err = db.JSONSet("user:1", "$", `{"name":"John","age":30}`, false, false)
+	_, _, err = db.JSONSet("user:1", "$", `{"name":"John","age":30}`, false, false)
 	if err != nil {
 		t.Fatalf("JSON.SET failed: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestJSONType(t *testing.T) {
 	var err error
 
 	// Set up test data
-	_, err = db.JSONSet("user:1", "$", `{"name":"John","age":30}`, false, false)
+	_, _, err = db.JSONSet("user:1", "$", `{"name":"John","age":30}`, false, false)
 	if err != nil {
 		t.Fatalf("JSON.SET failed: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestJSONArrAppend(t *testing.T) {
 	var err error
 
 	// Set up array
-	_, err = db.JSONSet("arr", "$", `[]`, false, false)
+	_, _, err = db.JSONSet("arr", "$", `[]`, false, false)
 	if err != nil {
 		t.Fatalf("JSON.SET failed: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestJSONObjKeys(t *testing.T) {
 	var err error
 
 	// Set up object
-	_, err = db.JSONSet("user:1", "$", `{"name":"John","age":30,"city":"NYC"}`, false, false)
+	_, _, err = db.JSONSet("user:1", "$", `{"name":"John","age":30,"city":"NYC"}`, false, false)
 	if err != nil {
 		t.Fatalf("JSON.SET failed: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestJSONNumIncrBy(t *testing.T) {
 	var err error
 
 	// Set up number
-	_, err = db.JSONSet("counter", "$", `10`, false, false)
+	_, _, err = db.JSONSet("counter", "$", `10`, false, false)
 	if err != nil {
 		t.Fatalf("JSON.SET failed: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestJSONNumMultBy(t *testing.T) {
 	var err error
 
 	// Set up number
-	_, err = db.JSONSet("counter", "$", `10`, false, false)
+	_, _, err = db.JSONSet("counter", "$", `10`, false, false)
 	if err != nil {
 		t.Fatalf("JSON.SET failed: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestJSONClear(t *testing.T) {
 	var err error
 
 	// Set up object
-	_, err = db.JSONSet("user:1", "$", `{"name":"John","age":30}`, false, false)
+	_, _, err = db.JSONSet("user:1", "$", `{"name":"John","age":30}`, false, false)
 	if err != nil {
 		t.Fatalf("JSON.SET failed: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestJSONDebugMemory(t *testing.T) {
 	var err error
 
 	// Set up object
-	_, err = db.JSONSet("user:1", "$", `{"name":"John"}`, false, false)
+	_, _, err = db.JSONSet("user:1", "$", `{"name":"John"}`, false, false)
 	if err != nil {
 		t.Fatalf("JSON.SET failed: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestJSONDebugMemoryPath(t *testing.T) {
 	db := setupTestStore(t)
 
 	// Set up nested object
-	_, err := db.JSONSet("user:2", "$", `{"name":"Alice","age":25,"address":{"city":"NYC","zip":"10001"}}`, false, false)
+	_, _, err := db.JSONSet("user:2", "$", `{"name":"Alice","age":25,"address":{"city":"NYC","zip":"10001"}}`, false, false)
 	if err != nil {
 		t.Fatalf("JSON.SET failed: %v", err)
 	}
@@ -294,11 +294,11 @@ func TestJSONMGet(t *testing.T) {
 	var err error
 
 	// Set up test data
-	_, err = db.JSONSet("user:1", "$", `{"name":"John"}`, false, false)
+	_, _, err = db.JSONSet("user:1", "$", `{"name":"John"}`, false, false)
 	if err != nil {
 		t.Fatalf("JSON.SET failed: %v", err)
 	}
-	_, err = db.JSONSet("user:2", "$", `{"name":"Jane"}`, false, false)
+	_, _, err = db.JSONSet("user:2", "$", `{"name":"Jane"}`, false, false)
 	if err != nil {
 		t.Fatalf("JSON.SET failed: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestJSONSetWrongType(t *testing.T) {
 	}
 
 	// Try to set JSON on the same key - should return ErrWrongType
-	_, err = db.JSONSet("mykey", "$", `{"name":"John"}`, false, false)
+	_, _, err = db.JSONSet("mykey", "$", `{"name":"John"}`, false, false)
 	if err != ErrWrongType {
 		t.Errorf("Expected ErrWrongType, got %v", err)
 	}
@@ -380,7 +380,7 @@ func BenchmarkJSONSet(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = db.JSONSet("key", "$", `{"name":"John","age":30,"city":"NYC"}`, false, false)
+		_, _, _ = db.JSONSet("key", "$", `{"name":"John","age":30,"city":"NYC"}`, false, false)
 	}
 }
 
@@ -392,7 +392,7 @@ func BenchmarkJSONGet(b *testing.B) {
 	}
 	defer db.Close()
 
-	_, _ = db.JSONSet("key", "$", `{"name":"John","age":30,"city":"NYC"}`, false, false)
+	_, _, _ = db.JSONSet("key", "$", `{"name":"John","age":30,"city":"NYC"}`, false, false)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

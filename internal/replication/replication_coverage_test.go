@@ -1616,7 +1616,7 @@ func TestExecuteReplicatedCommand_JSON_DEL(t *testing.T) {
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
-	testStore.JSONSet("jsondel", "$", `{"a":1,"b":2}`, false, false)
+	_, _, _ = testStore.JSONSet("jsondel", "$", `{"a":1,"b":2}`, false, false)
 
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("JSON.DEL"), []byte("jsondel"),
@@ -1630,7 +1630,7 @@ func TestExecuteReplicatedCommand_JSON_ARRAPPEND(t *testing.T) {
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
-	testStore.JSONSet("jsonarr", "$", `[1,2]`, false, false)
+	_, _, _ = testStore.JSONSet("jsonarr", "$", `[1,2]`, false, false)
 
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("JSON.ARRAPPEND"), []byte("jsonarr"), []byte("$"), []byte("3"),
@@ -1644,7 +1644,7 @@ func TestExecuteReplicatedCommand_JSON_NUMINCRBY(t *testing.T) {
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
-	testStore.JSONSet("jsonnum", "$", `10`, false, false)
+	_, _, _ = testStore.JSONSet("jsonnum", "$", `10`, false, false)
 
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("JSON.NUMINCRBY"), []byte("jsonnum"), []byte("$"), []byte("5"),
@@ -1658,7 +1658,7 @@ func TestExecuteReplicatedCommand_JSON_NUMMULTBY(t *testing.T) {
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
-	testStore.JSONSet("jsonmult", "$", `10`, false, false)
+	_, _, _ = testStore.JSONSet("jsonmult", "$", `10`, false, false)
 
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("JSON.NUMMULTBY"), []byte("jsonmult"), []byte("$"), []byte("2"),
@@ -1672,7 +1672,7 @@ func TestExecuteReplicatedCommand_JSON_CLEAR(t *testing.T) {
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
-	testStore.JSONSet("jsonclear", "$", `{"a":1}`, false, false)
+	_, _, _ = testStore.JSONSet("jsonclear", "$", `{"a":1}`, false, false)
 
 	err := executeReplicatedCommand(testStore, [][]byte{
 		[]byte("JSON.CLEAR"), []byte("jsonclear"),

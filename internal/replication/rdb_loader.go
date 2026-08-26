@@ -530,7 +530,7 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取JSON值失败，跳过")
 				continue
 			}
-			if _, err := s.JSONSet(key, "$", value, false, false); err != nil {
+			if _, _, err := s.JSONSet(key, "$", value, false, false); err != nil {
 				logger.Logger.Warn().Str("key", key).Err(err).Msg("存储JSON值失败")
 			}
 

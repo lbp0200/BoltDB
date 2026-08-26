@@ -1802,7 +1802,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 					xx = true
 				}
 			}
-			_, jErr := s.JSONSet(key, path, value, nx, xx)
+			_, _, jErr := s.JSONSet(key, path, value, nx, xx)
 			return jErr
 		}
 

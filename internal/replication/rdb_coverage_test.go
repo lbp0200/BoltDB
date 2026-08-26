@@ -559,7 +559,7 @@ func TestLoadRDB_WithJSONData(t *testing.T) {
 	testStore := setupTestStore(t)
 	defer testStore.Close()
 
-	_, err := testStore.JSONSet("myjson", "$", `{"name":"test","value":42}`, false, false)
+	_, _, err := testStore.JSONSet("myjson", "$", `{"name":"test","value":42}`, false, false)
 	assert.NoError(t, err)
 
 	rdbData, err := GenerateRDB(testStore)
