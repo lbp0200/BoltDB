@@ -403,8 +403,8 @@ func (h *Handler) handlePFMERGE(state *connState, args [][]byte, remoteAddr stri
 	for i := 1; i < len(args); i++ {
 		sourceKeys[i-1] = string(args[i])
 	}
-	// 检查集群重定向
-	if resp := h.checkAndHandleRedirect(state, destKey); resp != nil {
+	allKeys := append([]string{destKey}, sourceKeys...)
+	if resp := h.checkAndHandleMultiKeyRedirect(allKeys); resp != nil {
 		return resp
 	}
 	h.markDirtyKeys(state, destKey)

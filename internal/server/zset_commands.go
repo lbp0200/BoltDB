@@ -1184,7 +1184,8 @@ func (h *Handler) handleZUNIONSTORE(state *connState, args [][]byte, remoteAddr 
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[2+i])
 	}
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+	allKeys := append([]string{destination}, keys...)
+	if resp := h.checkAndHandleMultiKeyRedirect(allKeys); resp != nil {
 		return resp
 	}
 	weights := []float64{}
@@ -1243,7 +1244,8 @@ func (h *Handler) handleZINTERSTORE(state *connState, args [][]byte, remoteAddr 
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[2+i])
 	}
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+	allKeys := append([]string{destination}, keys...)
+	if resp := h.checkAndHandleMultiKeyRedirect(allKeys); resp != nil {
 		return resp
 	}
 	weights := []float64{}
@@ -1304,7 +1306,8 @@ func (h *Handler) handleZDIFFSTORE(state *connState, args [][]byte, remoteAddr s
 	for i := 0; i < numKeys; i++ {
 		keys[i] = string(args[2+i])
 	}
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+	allKeys := append([]string{destination}, keys...)
+	if resp := h.checkAndHandleMultiKeyRedirect(allKeys); resp != nil {
 		return resp
 	}
 	h.markDirtyKeys(state, destination)
@@ -1563,10 +1566,10 @@ func (h *Handler) handleZRANGESTORE(state *connState, args [][]byte, remoteAddr 
 		return proto.NewError("ERR wrong number of arguments for 'ZRANGESTORE' command")
 	}
 	dstKey := string(args[0])
-	if resp := h.checkAndHandleRedirect(state, dstKey); resp != nil {
+	srcKey := string(args[1])
+	if resp := h.checkAndHandleMultiKeyRedirect([]string{dstKey, srcKey}); resp != nil {
 		return resp
 	}
-	srcKey := string(args[1])
 	min := string(args[2])
 	max := string(args[3])
 

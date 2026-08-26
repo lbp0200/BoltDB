@@ -559,10 +559,10 @@ func (h *Handler) handleCOPY(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'COPY' command")
 	}
 	srcKey := string(args[0])
-	if resp := h.checkAndHandleRedirect(state, srcKey); resp != nil {
+	dstKey := string(args[1])
+	if resp := h.checkAndHandleMultiKeyRedirect([]string{srcKey, dstKey}); resp != nil {
 		return resp
 	}
-	dstKey := string(args[1])
 	replace := false
 	db := int(0)
 	i := 2
@@ -798,6 +798,10 @@ func (h *Handler) handleSORT(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewError("ERR wrong number of arguments for 'SORT' command")
 	}
 	key := string(args[0])
+	// Defer redirect until STORE target is known — SORT may write to destKey,
+	// so both keys must be co-located (Redis CROSSSLOT).
+	// We do a provisional single-key check here and re-check with all keys
+	// after parsing STORE below.
 	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 		return resp
 	}
@@ -860,6 +864,11 @@ func (h *Handler) handleSORT(state *connState, args [][]byte, remoteAddr string)
 		}
 	}
 
+	if destKey != "" {
+		if resp := h.checkAndHandleMultiKeyRedirect([]string{key, destKey}); resp != nil {
+			return resp
+		}
+	}
 	// Get source type
 	keyType, err := h.Db.Type(key)
 	if err != nil {

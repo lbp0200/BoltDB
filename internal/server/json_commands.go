@@ -29,7 +29,6 @@ func (h *Handler) handleJSON_SET(state *connState, args [][]byte, remoteAddr str
 			xx = true
 		}
 	}
-	h.markDirtyKeys(state, key)
 	result, err := h.Db.JSONSet(key, path, value, nx, xx)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -37,6 +36,13 @@ func (h *Handler) handleJSON_SET(state *connState, args [][]byte, remoteAddr str
 		}
 		return wrapLogError(err)
 	}
+	// NX/XX may return OK without actually writing (condition not met) — don't
+	// pollute WATCH in that case. The store returns "OK" in all paths today,
+	// so we conservatively dirty only when the visible value changed; if the
+	// key was absent before and still absent, or present with same payload,
+	// the TXN was a no-op — but we have no cheap signal, so we keep marking.
+	// At minimum, an invalid-JSON error above is not dirty.
+	h.markDirtyKeys(state, key)
 	return proto.NewSimpleString(result)
 }
 
@@ -92,13 +98,15 @@ func (h *Handler) handleJSON_DEL(state *connState, args [][]byte, remoteAddr str
 	for i := 1; i < len(args); i++ {
 		paths = append(paths, string(args[i]))
 	}
-	h.markDirtyKeys(state, key)
 	count, err := h.Db.JSONDel(key, paths...)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
 		return wrapLogError(err)
+	}
+	if count > 0 {
+		h.markDirtyKeys(state, key)
 	}
 	return proto.NewInteger(count)
 }
@@ -140,12 +148,12 @@ func (h *Handler) handleJSON_MGET(state *connState, args [][]byte, remoteAddr st
 		return proto.NewError("ERR wrong number of arguments for 'JSON.MGET' command")
 	}
 	path := string(args[len(args)-1])
-	keys := make([]string, 0)
+	keys := make([]string, 0, len(args)-1)
 	for i := 0; i < len(args)-1; i++ {
 		keys = append(keys, string(args[i]))
-		if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
-			return resp
-		}
+	}
+	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+		return resp
 	}
 	result, err := h.Db.JSONMGet(path, keys...)
 	if err != nil {
@@ -185,8 +193,13 @@ func (h *Handler) handleJSON_ARRAPPEND(state *connState, args [][]byte, remoteAd
 	for i := 2; i < len(args); i++ {
 		values = append(values, string(args[i]))
 	}
-	h.markDirtyKeys(state, key)
 	count, err := h.Db.JSONArrAppend(key, path, values...)
+	if errors.Is(err, store.ErrKeyNotFound) {
+		return proto.NewError("ERR path not found")
+	}
+	if err == nil {
+		h.markDirtyKeys(state, key)
+	}
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -285,8 +298,10 @@ func (h *Handler) handleJSON_NUMINCRBY(state *connState, args [][]byte, remoteAd
 	if err != nil {
 		return proto.NewError("ERR increment must be a valid number")
 	}
-	h.markDirtyKeys(state, key)
 	result, err := h.Db.JSONNumIncrBy(key, path, increment)
+	if err == nil {
+		h.markDirtyKeys(state, key)
+	}
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -309,8 +324,10 @@ func (h *Handler) handleJSON_NUMMULTBY(state *connState, args [][]byte, remoteAd
 	if err != nil {
 		return proto.NewError("ERR multiplier must be a valid number")
 	}
-	h.markDirtyKeys(state, key)
 	result, err := h.Db.JSONNumMultBy(key, path, multiplier)
+	if err == nil {
+		h.markDirtyKeys(state, key)
+	}
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
@@ -333,8 +350,10 @@ func (h *Handler) handleJSON_CLEAR(state *connState, args [][]byte, remoteAddr s
 	if len(args) >= 2 {
 		path = string(args[1])
 	}
-	h.markDirtyKeys(state, key)
 	count, err := h.Db.JSONClear(key, path)
+	if err == nil && count > 0 {
+		h.markDirtyKeys(state, key)
+	}
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")

@@ -367,7 +367,8 @@ func (h *Handler) handleSINTERSTORE(state *connState, args [][]byte, remoteAddr 
 	for i := 1; i < len(args); i++ {
 		keys[i-1] = string(args[i])
 	}
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+	allKeys := append([]string{destination}, keys...)
+	if resp := h.checkAndHandleMultiKeyRedirect(allKeys); resp != nil {
 		return resp
 	}
 	h.markDirtyKeys(state, destination)
@@ -453,7 +454,8 @@ func (h *Handler) handleSUNIONSTORE(state *connState, args [][]byte, remoteAddr 
 	for i := 1; i < len(args); i++ {
 		keys[i-1] = string(args[i])
 	}
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+	allKeys := append([]string{destination}, keys...)
+	if resp := h.checkAndHandleMultiKeyRedirect(allKeys); resp != nil {
 		return resp
 	}
 	h.markDirtyKeys(state, destination)
@@ -475,7 +477,8 @@ func (h *Handler) handleSDIFFSTORE(state *connState, args [][]byte, remoteAddr s
 	for i := 1; i < len(args); i++ {
 		keys[i-1] = string(args[i])
 	}
-	if resp := h.checkAndHandleMultiKeyRedirect(keys); resp != nil {
+	allKeys := append([]string{destination}, keys...)
+	if resp := h.checkAndHandleMultiKeyRedirect(allKeys); resp != nil {
 		return resp
 	}
 	h.markDirtyKeys(state, destination)
