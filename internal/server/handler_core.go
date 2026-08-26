@@ -146,7 +146,8 @@ type Handler struct {
 	// 空串表示无认证；main.go 与 setupTestHandler 在创建 Handler 后从环境变量初始化。
 	authPassword string
 
-	slowlog *slowlogState
+	slowlog     *slowlogState
+	slowlogOnce sync.Once
 
 	startTime time.Time
 	runID     string

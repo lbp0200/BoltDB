@@ -86,9 +86,11 @@ func (s *slowlogState) get(n int) []slowlogEntry {
 
 // EnsureSlowlog 保证 Handler.slowlog 非空（兼容手写 &Handler{} 的零星测试与 main 构造）。
 func (h *Handler) EnsureSlowlog() {
-	if h.slowlog == nil {
-		h.slowlog = newSlowlogState()
-	}
+	h.slowlogOnce.Do(func() {
+		if h.slowlog == nil {
+			h.slowlog = newSlowlogState()
+		}
+	})
 }
 
 // EnsureStartTime 保证 Handler.startTime 非零（用于 INFO uptime 真值）。
@@ -99,9 +101,11 @@ func (h *Handler) EnsureStartTime() {
 }
 
 func (h *Handler) ensureSlowlog() *slowlogState {
-	if h.slowlog == nil {
-		h.slowlog = newSlowlogState()
-	}
+	h.slowlogOnce.Do(func() {
+		if h.slowlog == nil {
+			h.slowlog = newSlowlogState()
+		}
+	})
 	return h.slowlog
 }
 
