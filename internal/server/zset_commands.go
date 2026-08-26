@@ -291,12 +291,15 @@ parseOpts:
 		return proto.NewError("ERR wrong number of arguments for 'ZADD' command")
 	}
 
-	h.markDirtyKeys(state, key)
 	changed, err := h.Db.ZAddWithOptions(key, opts, members)
 	if err != nil {
 		return wrapStoreError(err)
 	}
 	// INCR 模式返回新 score（BulkString），其余返回变更计数
+	// 空转（NX 已存在 / XX 不存在 / GT/LT 不满足）changed==0，此时不污染 WATCH
+	if changed > 0 {
+		h.markDirtyKeys(state, key)
+	}
 	if opts.INCR {
 		if changed == 0 {
 			// 未变更（NX 命中或 XX 不命中）：返回 nil
