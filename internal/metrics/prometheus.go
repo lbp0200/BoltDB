@@ -127,5 +127,9 @@ func prometheusText(s Snapshot) string {
 	b.WriteString("# TYPE boltdb_total_output_bytes counter\n")
 	fmt.Fprintf(&b, "boltdb_total_output_bytes %d\n", s.TotalOutputBytes)
 
+	b.WriteString("# HELP boltdb_query_budget_trips Query budget exceeded count\n")
+	b.WriteString("# TYPE boltdb_query_budget_trips counter\n")
+	fmt.Fprintf(&b, "boltdb_query_budget_trips %d\n", s.QueryBudgetTrips)
+
 	return b.String()
 }
