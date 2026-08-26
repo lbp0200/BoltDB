@@ -464,7 +464,7 @@ func (b *ClusterBus) ApplyGossipPayloadFrom(reporterID string, payload *GossipPa
 			}
 		} else {
 			// 防幽灵节点：gossip 可能带来 MEET 过程中残留的 placeholder
-			//（不同 NodeID 但同 Addr），跳过已存在相同地址的条目
+			// （不同 NodeID 但同 Addr），跳过已存在相同地址的条目
 			if nodeByAddr := findNodeByAddr(b.cluster.Nodes, gi.Addr); nodeByAddr != nil {
 				continue
 			}

@@ -126,7 +126,7 @@ type BotreonStore struct {
 	errorInjector *ErrorInjector
 
 	// closeCh 在 Close()/CloseWithTimeout() 时关闭，用于通知阻塞操作
-	//（BLPOP/BRPOP/BZPOPMIN/BZPOPMAX/XREAD BLOCK）立即退出，
+	// （BLPOP/BRPOP/BZPOPMIN/BZPOPMAX/XREAD BLOCK）立即退出，
 	// 避免操作结束后 channel 残留。
 	closeCh   chan struct{}
 	closeOnce sync.Once

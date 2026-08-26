@@ -203,7 +203,7 @@ type ClientInfo struct {
 	DB       int                 // 当前数据库 ID
 	Sub      int                 // 订阅频道数
 	PSub     int                 // 模式订阅数
-	Multi    int                 //事务中的命令数
+	Multi    int                 // 事务中的命令数
 	Cmd      string              // 最后执行的命令
 	OFlags   string              // 客户端输出缓冲区限制标志
 	LibName  string              // 客户端库名称（CLIENT SETINFO LIB-NAME）
