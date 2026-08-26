@@ -624,8 +624,19 @@ func (h *Handler) handleCOPY(state *connState, args [][]byte, remoteAddr string)
 		copied = h.copyHash(srcKey, dstKey)
 	case "set":
 		copied = h.copySet(srcKey, dstKey)
-	case "zset":
-		copied = h.copySortedSet(srcKey, dstKey)
+	case "zset", "GEOHASH":
+		// GEO 在 TYPE 层已映射为 zset（base.go），需区分 GEO 与普通 zset：
+		// 若源键存在 GEO 索引（members 非空）则走 copyGeo，否则回退到普通 zset。
+		if members, err := h.Db.GeoMembers(srcKey); err == nil && len(members) > 0 {
+			copied = h.copyGeo(srcKey, dstKey)
+		} else {
+			// 额外探测：空 GEO 与普通 zset 均可能 members==0，再以内部类型键区分
+			if typ, _ := h.Db.RawType(srcKey); typ == "GEOHASH" {
+				copied = h.copyGeo(srcKey, dstKey)
+			} else {
+				copied = h.copySortedSet(srcKey, dstKey)
+			}
+		}
 	case "json":
 		copied = h.copyJSON(srcKey, dstKey)
 	case "stream":
@@ -634,8 +645,6 @@ func (h *Handler) handleCOPY(state *connState, args [][]byte, remoteAddr string)
 		copied = h.copyHLL(srcKey, dstKey)
 	case "TIMESERIES":
 		copied = h.copyTimeSeries(srcKey, dstKey)
-	case "GEOHASH":
-		copied = h.copyGeo(srcKey, dstKey)
 	default:
 		return proto.NewError("ERR unknown type")
 	}

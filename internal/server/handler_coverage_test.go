@@ -815,8 +815,7 @@ func TestExecuteCommand_COPY_GEO_Coverage(t *testing.T) {
 	}
 	resp = handler.executeCommand(state, "TYPE", [][]byte{[]byte("gdst")}, "127.0.0.1:12345")
 	ss, ok := resp.(*proto.SimpleString)
-	if !ok || string(*ss) != "GEOHASH" {
-		// GEO type reports as GEOHASH
+	if !ok || (string(*ss) != "zset" && string(*ss) != "GEOHASH") {
 		t.Fatalf("COPY geo TYPE: %v", resp)
 	}
 	resp = handler.executeCommand(state, "GEODIST", [][]byte{[]byte("gdst"), []byte("Palermo"), []byte("Palermo"), []byte("km")}, "127.0.0.1:12345")

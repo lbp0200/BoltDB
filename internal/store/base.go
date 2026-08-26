@@ -66,6 +66,41 @@ func (s *BotreonStore) Exists(key string) (bool, error) {
 
 // Type 实现 Redis TYPE 命令，返回键的类型
 func (s *BotreonStore) Type(key string) (string, error) {
+	raw, err := s.RawType(key)
+	if err != nil {
+		return "none", err
+	}
+	if raw == "none" {
+		return "none", nil
+	}
+	switch raw {
+	case KeyTypeString:
+		return "string", nil
+	case KeyTypeList:
+		return "list", nil
+	case KeyTypeHash:
+		return "hash", nil
+	case KeyTypeSet:
+		return "set", nil
+	case KeyTypeSortedSet:
+		return "zset", nil
+	case KeyTypeJSON:
+		return "json", nil
+	case KeyTypeTimeSeries:
+		return "ts", nil
+	case KeyTypeStream:
+		return "stream", nil
+	case KeyTypeHyperLogLog:
+		return "string", nil // HyperLogLog 内部存储为 string
+	case KeyTypeGeo:
+		return "zset", nil // Geo 底层为 zset+hash，TYPE 兼容返回 zset
+	default:
+		return "none", nil
+	}
+}
+
+// RawType 返回内部 TYPE_ 键的原始值（不做 Redis 别名映射），用于 COPY 等需精确区分 zset/geo 的场景
+func (s *BotreonStore) RawType(key string) (string, error) {
 	var keyType string
 	err := s.db.View(func(txn *badger.Txn) error {
 		typeKey := TypeOfKeyGet(key)
@@ -82,29 +117,6 @@ func (s *BotreonStore) Type(key string) (string, error) {
 			return err
 		}
 		keyType = string(val)
-		// 将内部类型转换为Redis类型
-		switch keyType {
-		case KeyTypeString:
-			keyType = "string"
-		case KeyTypeList:
-			keyType = "list"
-		case KeyTypeHash:
-			keyType = "hash"
-		case KeyTypeSet:
-			keyType = "set"
-		case KeyTypeSortedSet:
-			keyType = "zset"
-		case KeyTypeJSON:
-			keyType = "json"
-		case KeyTypeTimeSeries:
-			keyType = "ts"
-		case KeyTypeStream:
-			keyType = "stream"
-		case KeyTypeHyperLogLog:
-			keyType = "string" // HyperLogLog 内部存储为 string
-		default:
-			keyType = "none"
-		}
 		return nil
 	})
 	return keyType, err
