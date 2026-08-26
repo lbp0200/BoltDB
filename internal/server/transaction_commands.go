@@ -17,6 +17,11 @@ func queuedCommandKeys(cmd string, args [][]byte) []string {
 		return nil
 	}
 	if info.firstKey == 0 {
+		// FLUSHDB/FLUSHALL 这类无 key 参数但清库的写，在 WATCH 语义上
+		// 等同于"污染所有被监视的 key"，用哨兵 * 告知调用方走 markAll。
+		if cmd == "FLUSHDB" || cmd == "FLUSHALL" {
+			return []string{"*"}
+		}
 		return nil
 	}
 	// commandInfo 的 firstKey/lastKey 以 1 为基数，指代 args 中的位置（不含命令名）。
@@ -192,7 +197,9 @@ func (h *Handler) handleEXEC(state *connState, args [][]byte, remoteAddr string)
 			}
 			if shouldDirty {
 				keys := queuedCommandKeys(tc.Command, tc.Args)
-				if len(keys) > 0 {
+				if len(keys) == 1 && keys[0] == "*" {
+					h.markAllWatchDirty()
+				} else if len(keys) > 0 {
 					h.markDirtyKeys(state, keys...)
 				}
 			}
