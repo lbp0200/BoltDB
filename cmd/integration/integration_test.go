@@ -1890,19 +1890,18 @@ func TestSlowLog(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Reset to ensure isolated assertions (shared server accumulates slowlog across tests)
+	// Reset and assert isolation: shared server accumulates slowlog across
+	// tests, so we RESET and immediately assert LEN==0 before GET.
 	_, _ = sharedClient.Do(ctx, "SLOWLOG", "RESET").Result()
+	result, err := sharedClient.Do(ctx, "SLOWLOG", "LEN").Result()
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), result)
 
-	// SLOWLOG GET should return empty array
-	result, err := sharedClient.Do(ctx, "SLOWLOG", "GET", "10").Result()
+	// SLOWLOG GET should return empty array after RESET
+	result, err = sharedClient.Do(ctx, "SLOWLOG", "GET", "10").Result()
 	assert.NoError(t, err)
 	_, ok := result.([]interface{})
 	assert.True(t, ok) // Should be empty array
-
-	// SLOWLOG LEN should return 0
-	result, err = sharedClient.Do(ctx, "SLOWLOG", "LEN").Result()
-	assert.NoError(t, err)
-	assert.Equal(t, int64(0), result)
 
 	// SLOWLOG RESET should return OK
 	result, err = sharedClient.Do(ctx, "SLOWLOG", "RESET").Result()
