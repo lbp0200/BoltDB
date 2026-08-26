@@ -1885,33 +1885,44 @@ func TestWait(t *testing.T) {
 
 // TestSlowLog 测试 SLOWLOG 命令
 func TestSlowLog(t *testing.T) {
-	setupTest(t)
-	defer teardownTest(t)
-
+	// Use isolated server to avoid shared slowlog state pollution across tests.
+	isolated := StartIsolatedServer(t)
 	ctx := context.Background()
 
-	// Reset and assert isolation: shared server accumulates slowlog across
-	// tests, so we RESET and immediately assert LEN==0 before GET.
-	_, _ = sharedClient.Do(ctx, "SLOWLOG", "RESET").Result()
-	result, err := sharedClient.Do(ctx, "SLOWLOG", "LEN").Result()
+	// Configure a tiny threshold so DEBUG SLEEP trips slowlog reliably.
+	_, _ = isolated.Client.Do(ctx, "CONFIG", "SET", "slowlog-log-slower-than", "1000").Result()
+	_, _ = isolated.Client.Do(ctx, "SLOWLOG", "RESET").Result()
+
+	// SLOWLOG LEN should return 0 after RESET
+	result, err := isolated.Client.Do(ctx, "SLOWLOG", "LEN").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), result)
 
 	// SLOWLOG GET should return empty array after RESET
-	result, err = sharedClient.Do(ctx, "SLOWLOG", "GET", "10").Result()
+	result, err = isolated.Client.Do(ctx, "SLOWLOG", "GET", "10").Result()
 	assert.NoError(t, err)
 	_, ok := result.([]interface{})
 	assert.True(t, ok) // Should be empty array
 
-	// SLOWLOG RESET should return OK
-	result, err = sharedClient.Do(ctx, "SLOWLOG", "RESET").Result()
+	// Trigger a slow command and verify it appears in slowlog
+	_, _ = isolated.Client.Do(ctx, "DEBUG", "SLEEP", "0.01").Result()
+	result, err = isolated.Client.Do(ctx, "SLOWLOG", "LEN").Result()
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), result)
+	result, err = isolated.Client.Do(ctx, "SLOWLOG", "GET", "10").Result()
+	assert.NoError(t, err)
+	arr, ok := result.([]interface{})
+	assert.True(t, ok)
+	assert.True(t, len(arr) > 0)
+	// Reset via isolated SLOWLOG RESET should return OK
+	result, err = isolated.Client.Do(ctx, "SLOWLOG", "RESET").Result()
 	assert.NoError(t, err)
 	assert.Equal(t, "OK", result)
 
 	// SLOWLOG HELP should return help text
-	result, err = sharedClient.Do(ctx, "SLOWLOG", "HELP").Result()
+	result, err = isolated.Client.Do(ctx, "SLOWLOG", "HELP").Result()
 	assert.NoError(t, err)
-	arr, ok := result.([]interface{})
+	arr, ok = result.([]interface{})
 	assert.True(t, ok)
 	assert.True(t, len(arr) > 0)
 }
