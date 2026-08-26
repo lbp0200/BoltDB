@@ -67,14 +67,28 @@ func (h *Handler) TotalInputBytes() int64 {
 	return total
 }
 
+// ensureCmdCounters 保证 cmdCounters 已初始化（惰性 + 并发安全）。
+func (h *Handler) ensureCmdCounters() {
+	h.cmdCountersOnce.Do(func() {
+		if h.cmdCounters == nil {
+			h.cmdCounters = make(map[string]*atomic.Int64)
+		}
+	})
+}
+
+// EnsureCmdCounters 对外暴露的初始化入口（供 main.go 预热调用，可选）。
+func (h *Handler) EnsureCmdCounters() {
+	h.ensureCmdCounters()
+}
+
 // TotalCommandsProcessed 返回所有命令累计执行次数
 // （CLUSTER CALLS CommandsProcessed 数据源）。
 func (h *Handler) TotalCommandsProcessed() int64 {
+	h.cmdCountersMu.Lock()
+	defer h.cmdCountersMu.Unlock()
 	if h.cmdCounters == nil {
 		return 0
 	}
-	h.cmdCountersMu.Lock()
-	defer h.cmdCountersMu.Unlock()
 	var total int64
 	for _, c := range h.cmdCounters {
 		total += c.Load()
@@ -83,11 +97,9 @@ func (h *Handler) TotalCommandsProcessed() int64 {
 }
 
 // incrementCmdCounter 按命令名称递增调用计数器。
-// 线程安全，计数器在首次访问时惰性初始化。
+// 线程安全，计数器在首次访问时惰性初始化（生产 Handler 未显式初始化时亦可用）。
 func (h *Handler) incrementCmdCounter(cmd string) {
-	if h.cmdCounters == nil {
-		return
-	}
+	h.ensureCmdCounters()
 	h.cmdCountersMu.Lock()
 	counter, exists := h.cmdCounters[cmd]
 	if !exists {
@@ -101,11 +113,11 @@ func (h *Handler) incrementCmdCounter(cmd string) {
 // GetCmdCount 返回指定命令的调用次数。
 // 如果该命令从未被调用或计数未启用，返回 0。
 func (h *Handler) GetCmdCount(cmd string) int64 {
+	h.cmdCountersMu.Lock()
+	defer h.cmdCountersMu.Unlock()
 	if h.cmdCounters == nil {
 		return 0
 	}
-	h.cmdCountersMu.Lock()
-	defer h.cmdCountersMu.Unlock()
 	counter, exists := h.cmdCounters[cmd]
 	if !exists {
 		return 0

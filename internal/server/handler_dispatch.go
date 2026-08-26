@@ -54,6 +54,7 @@ func (h *Handler) executeCommand(state *connState, cmd string, args [][]byte, re
 	start := time.Now()
 	defer func() {
 		h.recordOps()
+		h.incrementCmdCounter(cmd)
 		if isWriteCommand(cmd) {
 			h.bumpRdbChanges()
 		}

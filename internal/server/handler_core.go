@@ -126,9 +126,11 @@ type Handler struct {
 	shuttingDown atomic.Int32
 
 	// cmdCounters 按命令名统计调用次数，用于使用率分析。
-	// 添加新命令计数时在对应的 handleXXX 函数中调用 h.incrementCmdCounter("CMD")。
-	cmdCounters   map[string]*atomic.Int64
-	cmdCountersMu sync.Mutex
+	// 统一在 handler_dispatch.executeCommand 入口 via incrementCmdCounter(CMD)
+	// 计数（全命令覆盖），无需在各 handleXXX 内重复调用。
+	cmdCounters     map[string]*atomic.Int64
+	cmdCountersMu   sync.Mutex
+	cmdCountersOnce sync.Once
 
 	// pauseUntil 是 CLIENT PAUSE 的过期时间（Unix 毫秒，0 = 未暂停）。
 	// 暂停窗口内除豁免命令（CLIENT/QUIT/AUTH/HELLO/COMMAND 等）外，

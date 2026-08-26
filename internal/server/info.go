@@ -196,8 +196,8 @@ func (h *Handler) buildInfoResponse(section string) string {
 
 	if section == "" || section == "ALL" || section == "COMMANDSTATS" {
 		builder.WriteString("# Commandstats\n")
+		h.cmdCountersMu.Lock()
 		if h.cmdCounters != nil {
-			h.cmdCountersMu.Lock()
 			for cmd, c := range h.cmdCounters {
 				n := c.Load()
 				if n == 0 {
@@ -205,8 +205,8 @@ func (h *Handler) buildInfoResponse(section string) string {
 				}
 				builder.WriteString("cmdstat_" + strings.ToLower(cmd) + ":calls=" + strconv.FormatInt(n, 10) + ",usec=0,usec_per_call=0.00\n")
 			}
-			h.cmdCountersMu.Unlock()
 		}
+		h.cmdCountersMu.Unlock()
 		builder.WriteString("\n")
 	}
 
