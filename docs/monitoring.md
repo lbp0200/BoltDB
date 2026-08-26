@@ -52,6 +52,8 @@ INFO metric endpoint enabled addr=:6338
 | `boltdb_writes_l0_rejected` | counter | 因 L0 分数超过硬阈值（默认 20.0）而被拒绝的写操作数 |
 | `boltdb_writes_l0_delayed` | counter | 因 L0 分数超过软阈值（默认 8.0）而被延迟的写操作数 |
 
+| `boltdb_query_budget_trips` | counter | 查询预算超限次数（`QueryBudgetConfig.MaxScanIterations` 被触发） |
+
 详见 `internal/store/backpressure.go` 和 `docs/failures/l0-collapse.md`。
 
 ### Go 运行时
