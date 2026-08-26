@@ -542,6 +542,7 @@ func (h *Handler) handleMSET(state *connState, args [][]byte, remoteAddr string)
 	if err := h.Db.MSet(pairs...); err != nil {
 		return wrapStoreError(err)
 	}
+	h.markDirtyKeys(state, keys...)
 	return proto.OK
 }
 
@@ -565,6 +566,9 @@ func (h *Handler) handleMSETNX(state *connState, args [][]byte, remoteAddr strin
 	success, err := h.Db.MSetNX(pairs...)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if success {
+		h.markDirtyKeys(state, keys...)
 	}
 	return proto.NewInteger(int64(boolToInt(success)))
 }
