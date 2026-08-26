@@ -12,12 +12,11 @@ import (
 // TestRegressionFullresyncKeyLoss verifies that after FULLRESYNC, the slave
 // has exactly the same keys (all types) as the master.
 //
-// This is a diagnostic test for TODO(C): investigating why the slave may still
-// be missing keys that the master has after a full resynchronization.
-//
-// It writes a comprehensive set of keys across ALL supported data types,
-// triggers a FULLRESYNC, then systematically compares every key's existence,
-// type, and value between master and slave.
+// This was introduced as a diagnostic for TODO(C) and has been promoted to a
+// hard regression: it writes a comprehensive set of keys across ALL supported
+// data types, triggers a FULLRESYNC, then asserts exact master≡slave via
+// existence + TYPE + value (and SCAN). See docs/failures/snapshot-inconsistency.md
+// and docs/plans/TODO.md “FULLRESYNC 线性边界（Issue #3，延期）”.
 func TestRegressionFullresyncKeyLoss(t *testing.T) {
 	master := StartRegression(t)
 	defer master.Close()
