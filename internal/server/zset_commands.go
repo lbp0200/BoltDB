@@ -491,6 +491,7 @@ func (h *Handler) handleBZPOPMAX(state *connState, args [][]byte, remoteAddr str
 	if key == "" {
 		return h.nilArrayOrNull(state)
 	}
+	h.markDirtyKeys(state, key)
 	return &proto.Array{Args: [][]byte{[]byte(key), []byte(member.Member), []byte(fmt.Sprintf("%.10g", member.Score))}}
 }
 
@@ -522,6 +523,7 @@ func (h *Handler) handleBZPOPMIN(state *connState, args [][]byte, remoteAddr str
 	if key == "" {
 		return h.nilArrayOrNull(state)
 	}
+	h.markDirtyKeys(state, key)
 	return &proto.Array{Args: [][]byte{[]byte(key), []byte(member.Member), []byte(fmt.Sprintf("%.10g", member.Score))}}
 }
 

@@ -542,6 +542,7 @@ func (h *Handler) handleBLPOP(state *connState, args [][]byte, remoteAddr string
 	if key == "" {
 		return h.nilArrayOrNull(state)
 	}
+	h.markDirtyKeys(state, key)
 	return &proto.Array{Args: [][]byte{[]byte(key), []byte(value)}}
 }
 
@@ -573,6 +574,7 @@ func (h *Handler) handleBRPOP(state *connState, args [][]byte, remoteAddr string
 	if key == "" {
 		return h.nilArrayOrNull(state)
 	}
+	h.markDirtyKeys(state, key)
 	return &proto.Array{Args: [][]byte{[]byte(key), []byte(value)}}
 }
 
@@ -626,6 +628,7 @@ func (h *Handler) handleBLMPOP(state *connState, args [][]byte, remoteAddr strin
 	if key == "" || len(values) == 0 {
 		return h.nilArrayOrNull(state)
 	}
+	h.markDirtyKeys(state, key)
 	// Redis 8 wire shape: [key, [v1, v2, ...]]
 	elemArgs := make([][]byte, 0, len(values))
 	for _, v := range values {
@@ -668,6 +671,7 @@ func (h *Handler) handleBRPOPLPUSH(state *connState, args [][]byte, remoteAddr s
 		}
 		return proto.NewBulkString(nil)
 	}
+	h.markDirtyKeys(state, source, destination)
 	return proto.NewBulkString([]byte(value))
 
 	// Hash命令
