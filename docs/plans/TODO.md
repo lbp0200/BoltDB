@@ -84,9 +84,8 @@
 ## 架构边界（已决策：不做）
 
 | 边界 | 原因 |
-|------|------|
-| commit-seq ↔ repl-offset 映射 | 架构级改造。当前 bounded duplicate window (µs) 可接受 |
-| 完全线性化 FULLRESYNC | 等价于上一条。当前保证：无丢失写、无结构性损坏 |
+| commit-seq ↔ repl-offset 映射（Issue #3） | 架构级改造。当前 bounded duplicate window (µs) 可接受；详见 `docs/failures/snapshot-inconsistency.md` 及下节“FULLRESYNC 线性边界（Issue #3，延期）” |
+| 完全线性化 FULLRESYNC（Issue #3） | 等价于上一条。当前保证：无丢失写、无结构性损坏；延期至下次迭代 |
 | EVAL / SCRIPT (Lua) | Lua 沙箱逃逸风险 + 维护成本，非定位 |
 | FUNCTION / FCALL / FCALL_RO | 随 Lua 排除（FUNCTION 是 Lua 引擎的容器命令） |
 | HEXPIRE 系列（12 个：HEXPIRE/HEXPIREAT/HEXPIRETIME/HPEXPIRE/HPEXPIREAT/HPEXPIRETIME/HPERSIST/HPTTL/HTTL/HSETEX/HGETEX/HGETDEL） | Hash 字段级 TTL（Redis 7+）：需要 Hash 存储格式变更（字段级过期元数据），风险高收益低，明确不做 |
@@ -116,6 +115,26 @@
 | BGREWRITEAOF / RESET / WAITAOF | ✅ 已补齐 | 2026-08-23 已实现（65a10a4），此表为留档 |
 | INFO 键级补齐（redis_mode/Stats/db0） | 已完成 ✅（2026-08-23 `15459a7`）：INFO 与 Redis 8.2 键级差分发现 9 个客户端关键键缺失，补齐 8 个（47→55 键）——Server 加 `redis_mode`（standalone/cluster）、Stats 加 keyspace_hits/misses、expired_keys、evicted_keys、total_net_input/output_bytes、Keyspace 加 `db0:keys=N,expires=0`（真实计数）；`master_link_status` 是误报（Redis master 角色本无此键）。**实测 wire 确认 Redis 8.2 的 INFO 在 RESP3 下仍是 bulk string**（%7 Map 是 HELLO 的响应）——一度尝试 Map 化 INFO 已在提交前回退 |
 | 新命令套件覆盖 + RESP3 双端差分 | 已完成 ✅（2026-08-23 `e4a530d`）：py 245→248、cli 86→93（RESET 丢弃 MULTI 端到端、WAITAOF [0,0]、TRACKINGINFO dict、MODULE LIST、FAILOVER 错误）；BoltDB vs Redis 8.2 双端 RESP3 差分抓出 3 个 wire 缺口已修——**MEMORY STATS** RESP3 应为 Map（原 flat array）、**LATENCY HISTOGRAM** RESP3 应为 Map、**LATENCY GRAPH** 无采样应报 "No samples available for event 'x'"（原空数组）；剩余差异均为内容性（Redis 有采样/内置 vectorset 模块，BoltDB 无） |
+
+---
+
+## FULLRESYNC 线性边界（Issue #3，延期至下次迭代）
+
+> **状态：延期（deferred）** — `2026-08-26` 由维护者确认，记入本期 TODO，下次迭代修复。
+> **Issue：** https://github.com/lbp0200/BoltDB/issues/3 — `Implement linearizable FULLRESYNC boundary with commit-seq ↔ repl-offset mapping`
+
+**背景**：全量同步存在 dual-timeline 盲窗（`badger View` 的 `T_view` 与 `snapshotOffset` 捕获之间的写入既不在 RDB 也不在 backlog），当前实现已通过“View 前捕获 snapshotOffset”保证**无丢失写**（见 `docs/failures/snapshot-inconsistency.md`），代价是有界的**微秒级重复窗口**（通常 0 条并发写；对 `INCR/LPUSH` 等非幂等命令可能多重放 1 次）。
+
+**当前保证**：无丢失写、快照一致、无结构性损坏、有界重复（`µs` 级）、最终收敛；详见 `docs/failures/snapshot-inconsistency.md` 的 `Residual: Boundary Duplication Risk` 与 `FULLRESYNC Guarantees`。
+
+**需求（验收线）**：
+1. RDB 快照精确绑定复制偏移
+2. `snapshotOffset → currentOffset` 间的写入在 backlog 可完整回放且不重复
+3. `TestRegressionSnapshotFullresyncOffset` 与严格模式 `TestSoakReplication`（`SOAK_REPL_STRICT_EQUALITY=1`）可恢复硬校验
+
+**草案**：`internal/store/define.go` 新增 `commit-seq → repl-offset` 小表（定期刷盘）；`GenerateRDBWithOffset` 在 `View` 前写入当前 `replOffset` 到 RDB 元信息；从库以 RDB 内偏移为基准去重/裁剪 backlog 头；仅在确认覆盖后裁剪。
+
+**改动预估**：`store` 层新增映射与清表、`replication/rdb.go` 与 `psync.go` 的偏移绑定与去重逻辑、`replication_handler.go` 的 `FULLRESYNC` 时序微调；需配套 `TestSoakReplication` 硬校验回归。
 
 ---
 
