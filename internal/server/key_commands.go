@@ -929,16 +929,24 @@ func (h *Handler) handleSORT(state *connState, args [][]byte, remoteAddr string)
 	}
 
 	// Apply BY pattern - get weights from external keys
+	// Note: BY pattern keys are per-element external lookups; they are not
+	// required to be on the same slot as the source key (cross-slot SORT BY
+	// is allowed in single-node / non-cluster deployment). In cluster mode
+	// Redis requires caller to ensure hash-tag grouping; we document the
+	// limitation and keep the fetch best-effort. Each lookup contributes a
+	// keyspace hit/miss for observability parity.
 	if byPattern != "" && len(values) > 0 {
 		weights := make([]float64, len(values))
 		for idx, val := range values {
 			targetKey := strings.Replace(byPattern, "*", val, 1)
 			weightVal, err := h.Db.Get(targetKey)
 			if err != nil {
+				h.recordKeyspaceMiss()
 				// Redis: BY key not found → weight = 0 (skip, don't error)
 				weights[idx] = 0
 				continue
 			}
+			h.recordKeyspaceHit()
 			if weightVal != "" {
 				if f, err := strconv.ParseFloat(weightVal, 64); err == nil {
 					weights[idx] = f
@@ -1022,10 +1030,12 @@ func (h *Handler) handleSORT(state *connState, args [][]byte, remoteAddr string)
 				targetKey := strings.Replace(pattern, "*", val, 1)
 				targetVal, err := h.Db.Get(targetKey)
 				if err != nil {
+					h.recordKeyspaceMiss()
 					// Redis: GET key not found → empty string (don't error)
 					finalValues = append(finalValues, "")
 					continue
 				}
+				h.recordKeyspaceHit()
 				finalValues = append(finalValues, targetVal)
 			}
 		}
