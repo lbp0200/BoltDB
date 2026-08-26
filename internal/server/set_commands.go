@@ -22,10 +22,12 @@ func (h *Handler) handleSADD(state *connState, args [][]byte, remoteAddr string)
 	for i := 1; i < len(args); i++ {
 		members[i-1] = string(args[i])
 	}
-	h.markDirtyKeys(state, key)
 	count, err := h.Db.SAdd(key, members...)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if count > 0 {
+		h.markDirtyKeys(state, key)
 	}
 	// #nosec G115 - count is bounded by practical data size limits
 	return proto.NewInteger(int64(count))
@@ -44,13 +46,15 @@ func (h *Handler) handleSREM(state *connState, args [][]byte, remoteAddr string)
 	for i := 1; i < len(args); i++ {
 		members[i-1] = string(args[i])
 	}
-	h.markDirtyKeys(state, key)
 	count, err := h.Db.SRem(key, members...)
 	if errors.Is(err, store.ErrWrongType) {
 		return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
 	if err != nil {
 		return wrapLogError(err)
+	}
+	if count > 0 {
+		h.markDirtyKeys(state, key)
 	}
 	// #nosec G115 - count is bounded by practical data size limits
 	return proto.NewInteger(int64(count))

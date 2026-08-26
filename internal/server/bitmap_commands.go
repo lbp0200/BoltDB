@@ -362,10 +362,12 @@ func (h *Handler) handlePFADD(state *connState, args [][]byte, remoteAddr string
 	for i := 1; i < len(args); i++ {
 		elements[i-1] = string(args[i])
 	}
-	h.markDirtyKeys(state, key)
 	changed, err := h.Db.PFAdd(key, elements...)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if changed == 1 {
+		h.markDirtyKeys(state, key)
 	}
 	return proto.NewInteger(changed)
 }
