@@ -81,12 +81,28 @@ func (h *Handler) runPubSubLoop(ctx context.Context, conn net.Conn, reader *bufi
 
 		case req := <-cmdCh:
 			// PubSub 模式下的命令同样计入可观测性（与主 dispatch 路径一致）
+			start := time.Now()
 			if len(req.Args) > 0 {
 				cmd := strings.ToUpper(string(req.Args[0]))
 				h.recordOps()
 				h.incrementCmdCounter(cmd)
 			}
 			resp := h.processPubSubCommand(state, req, remoteAddr)
+			// SLOWLOG：与主路径一致，慢于阈值则入环（SLOWLOG 自身不进日志由上游过滤）
+			if len(req.Args) > 0 {
+				cmd := strings.ToUpper(string(req.Args[0]))
+				if cmd != "SLOWLOG" {
+					elapsed := time.Since(start)
+					fullArgs := req.Args
+					clientName := ""
+					if state.clientInfo != nil {
+						state.mu.Lock()
+						clientName = state.clientInfo.Name
+						state.mu.Unlock()
+					}
+					h.ensureSlowlog().add(elapsed, fullArgs, remoteAddr, clientName)
+				}
+			}
 			switch r := resp.(type) {
 			case *PubSubQuitSignal:
 				_ = proto.WriteRESP(writer, proto.NewSimpleString("OK"))
@@ -488,12 +504,27 @@ func (h *Handler) runMonitorLoop(conn net.Conn, writer *bufio.Writer, state *con
 			}
 
 		case req := <-cmdCh:
+			start := time.Now()
 			if len(req.Args) > 0 {
 				cmd := strings.ToUpper(string(req.Args[0]))
 				h.recordOps()
 				h.incrementCmdCounter(cmd)
 			}
 			resp := h.processMonitorCommand(req, remoteAddr)
+			if len(req.Args) > 0 {
+				cmd := strings.ToUpper(string(req.Args[0]))
+				if cmd != "SLOWLOG" {
+					elapsed := time.Since(start)
+					fullArgs := req.Args
+					clientName := ""
+					if state.clientInfo != nil {
+						state.mu.Lock()
+						clientName = state.clientInfo.Name
+						state.mu.Unlock()
+					}
+					h.ensureSlowlog().add(elapsed, fullArgs, remoteAddr, clientName)
+				}
+			}
 			if _, isQuit := resp.(*PubSubQuitSignal); isQuit {
 				_ = proto.WriteRESP(writer, proto.NewSimpleString("OK"))
 				_ = writer.Flush()

@@ -2,6 +2,7 @@ package server
 
 import (
 	"strings"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
 )
@@ -150,7 +151,10 @@ func (h *Handler) handleEXEC(state *connState, args [][]byte, remoteAddr string)
 	// 必须像非事务路径一样标记 WATCH 脏键 + 触发统计/备份计数：
 	// 否则其它连接 WATCH 的乐观锁不会因本事务的写而失效（watch 正确性漏洞），
 	// 且 rdbChanges/instantaneous_ops 会漏计事务内的写。
+	// SLOWLOG：事务内逐条命令若慢于阈值也需入环（与主路径一致，EXEC 本身已在外层计过一次）。
+	execStart := time.Now()
 	for i, tc := range state.commands {
+		cmdStart := time.Now()
 		isErr := isErrorResponse(results[i])
 		// WATCH 脏标记：仅对成功执行的写操作生效（错误命令不污染 WATCH）。
 		if !isErr {
@@ -212,7 +216,22 @@ func (h *Handler) handleEXEC(state *connState, args [][]byte, remoteAddr string)
 			h.bumpRdbChanges()
 		}
 		h.incrementCmdCounter(tc.Command)
+		if tc.Command != "SLOWLOG" {
+			elapsed := time.Since(cmdStart)
+			// 事务内单条命令的 args 不含命令名，需组装 fullArgs 供 SLOWLOG 展示
+			fullArgs := make([][]byte, 0, len(tc.Args)+1)
+			fullArgs = append(fullArgs, []byte(tc.Command))
+			fullArgs = append(fullArgs, tc.Args...)
+			clientName := ""
+			if state.clientInfo != nil {
+				state.mu.Lock()
+				clientName = state.clientInfo.Name
+				state.mu.Unlock()
+			}
+			h.ensureSlowlog().add(elapsed, fullArgs, remoteAddr, clientName)
+		}
 	}
+	_ = execStart
 
 	// 传播事务中的写命令到从节点。
 	// SPOP 必须规范化为 SREM（与非事务 handleSPOP 一致），否则 slave 独立随机 pop。
