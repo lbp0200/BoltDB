@@ -324,7 +324,6 @@ func (h *Handler) handleZREM(state *connState, args [][]byte, remoteAddr string)
 	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 		return resp
 	}
-	h.markDirtyKeys(state, key)
 	count := 0
 	for i := 1; i < len(args); i++ {
 		member := string(args[i])
@@ -339,6 +338,9 @@ func (h *Handler) handleZREM(state *connState, args [][]byte, remoteAddr string)
 			return wrapLogError(err)
 		}
 		count += int(deleted)
+	}
+	if count > 0 {
+		h.markDirtyKeys(state, key)
 	}
 	return proto.NewInteger(int64(count))
 }
@@ -360,10 +362,12 @@ func (h *Handler) handleZREMRANGEBYRANK(state *connState, args [][]byte, remoteA
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
 	}
-	h.markDirtyKeys(state, key)
 	count, err := h.Db.ZRemRangeByRank(key, start, stop)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if count > 0 {
+		h.markDirtyKeys(state, key)
 	}
 	return proto.NewInteger(count)
 }
@@ -385,10 +389,12 @@ func (h *Handler) handleZREMRANGEBYSCORE(state *connState, args [][]byte, remote
 	if err != nil {
 		return proto.NewError("ERR value is not a valid float")
 	}
-	h.markDirtyKeys(state, key)
 	count, err := h.Db.ZRemRangeByScore(key, min, max, minExclusive, maxExclusive)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if count > 0 {
+		h.markDirtyKeys(state, key)
 	}
 	return proto.NewInteger(count)
 }
@@ -410,10 +416,12 @@ func (h *Handler) handleZPOPMAX(state *connState, args [][]byte, remoteAddr stri
 		}
 		count = c
 	}
-	h.markDirtyKeys(state, key)
 	members, err := h.Db.ZPopMax(key, count)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if len(members) > 0 {
+		h.markDirtyKeys(state, key)
 	}
 	// 返回 member 和 score 的交替数组
 	result := make([][]byte, 0, len(members)*2)
@@ -440,10 +448,12 @@ func (h *Handler) handleZPOPMIN(state *connState, args [][]byte, remoteAddr stri
 		}
 		count = c
 	}
-	h.markDirtyKeys(state, key)
 	members, err := h.Db.ZPopMin(key, count)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if len(members) > 0 {
+		h.markDirtyKeys(state, key)
 	}
 	// 返回 member 和 score 的交替数组
 	result := make([][]byte, 0, len(members)*2)

@@ -273,10 +273,12 @@ func (h *Handler) handleLINSERT(state *connState, args [][]byte, remoteAddr stri
 	if where != "BEFORE" && where != "AFTER" {
 		return proto.NewError("ERR syntax error")
 	}
-	h.markDirtyKeys(state, key)
 	count, err := h.Db.LInsert(key, where, pivot, value)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if count > 0 {
+		h.markDirtyKeys(state, key)
 	}
 	// #nosec G115 - count is bounded by practical data size limits
 	return proto.NewInteger(int64(count))
@@ -365,10 +367,12 @@ func (h *Handler) handleLREM(state *connState, args [][]byte, remoteAddr string)
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
 	}
-	h.markDirtyKeys(state, key)
 	removed, err := h.Db.LRem(key, count, value)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if removed > 0 {
+		h.markDirtyKeys(state, key)
 	}
 	return proto.NewInteger(int64(removed))
 }
@@ -473,10 +477,12 @@ func (h *Handler) handleLPUSHX(state *connState, args [][]byte, remoteAddr strin
 	for i := 1; i < len(args); i++ {
 		values[i-1] = string(args[i])
 	}
-	h.markDirtyKeys(state, key)
 	count, err := h.Db.LPUSHX(key, values...)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if count > 0 {
+		h.markDirtyKeys(state, key)
 	}
 	// #nosec G115 - count is bounded by practical data size limits
 	return proto.NewInteger(int64(count))
@@ -495,10 +501,12 @@ func (h *Handler) handleRPUSHX(state *connState, args [][]byte, remoteAddr strin
 	for i := 1; i < len(args); i++ {
 		values[i-1] = string(args[i])
 	}
-	h.markDirtyKeys(state, key)
 	count, err := h.Db.RPUSHX(key, values...)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if count > 0 {
+		h.markDirtyKeys(state, key)
 	}
 	// #nosec G115 - count is bounded by practical data size limits
 	return proto.NewInteger(int64(count))
