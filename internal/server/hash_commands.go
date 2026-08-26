@@ -331,10 +331,12 @@ func (h *Handler) handleHSETNX(state *connState, args [][]byte, remoteAddr strin
 	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 		return resp
 	}
-	h.markDirtyKeys(state, key)
 	success, err := h.Db.HSetNX(key, field, value)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if success {
+		h.markDirtyKeys(state, key)
 	}
 	return proto.NewInteger(int64(boolToInt(success)))
 }

@@ -266,6 +266,9 @@ func (h *Handler) handleSMOVE(state *connState, args [][]byte, remoteAddr string
 	if err != nil {
 		return wrapStoreError(err)
 	}
+	if success {
+		h.markDirtyKeys(state, source, destination)
+	}
 	return proto.NewInteger(int64(boolToInt(success)))
 }
 

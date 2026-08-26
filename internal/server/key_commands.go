@@ -359,10 +359,12 @@ func (h *Handler) handleEXPIRE(state *connState, args [][]byte, remoteAddr strin
 			return proto.NewError(fmt.Sprintf("ERR unsupported option '%s'", string(args[2])))
 		}
 	}
-	h.markDirtyKeys(state, key)
 	success, err := h.Db.Expire(key, seconds)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if success {
+		h.markDirtyKeys(state, key)
 	}
 	if success && seconds <= 0 {
 		h.recordExpired()
@@ -383,10 +385,12 @@ func (h *Handler) handleEXPIREAT(state *connState, args [][]byte, remoteAddr str
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
 	}
-	h.markDirtyKeys(state, key)
 	success, err := h.Db.ExpireAt(key, timestamp)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if success {
+		h.markDirtyKeys(state, key)
 	}
 	if success && timestamp <= time.Now().Unix() {
 		h.recordExpired()
@@ -407,10 +411,12 @@ func (h *Handler) handlePEXPIRE(state *connState, args [][]byte, remoteAddr stri
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
 	}
-	h.markDirtyKeys(state, key)
 	success, err := h.Db.PExpire(key, milliseconds)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if success {
+		h.markDirtyKeys(state, key)
 	}
 	if success && milliseconds <= 0 {
 		h.recordExpired()
@@ -431,7 +437,6 @@ func (h *Handler) handlePEXPIREAT(state *connState, args [][]byte, remoteAddr st
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
 	}
-	h.markDirtyKeys(state, key)
 	success, err := h.Db.PExpireAt(key, timestamp)
 	if err != nil {
 		return wrapStoreError(err)
@@ -503,10 +508,12 @@ func (h *Handler) handlePERSIST(state *connState, args [][]byte, remoteAddr stri
 	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 		return resp
 	}
-	h.markDirtyKeys(state, key)
 	success, err := h.Db.Persist(key)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if success {
+		h.markDirtyKeys(state, key)
 	}
 	return proto.NewInteger(int64(boolToInt(success)))
 }
@@ -536,10 +543,12 @@ func (h *Handler) handleRENAMENX(state *connState, args [][]byte, remoteAddr str
 	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 		return resp
 	}
-	h.markDirtyKeys(state, key, newKey)
 	success, err := h.Db.RenameNX(key, newKey)
 	if err != nil {
 		return wrapStoreError(err)
+	}
+	if success {
+		h.markDirtyKeys(state, key, newKey)
 	}
 	return proto.NewInteger(int64(boolToInt(success)))
 }
