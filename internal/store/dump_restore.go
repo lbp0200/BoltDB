@@ -549,6 +549,233 @@ func (s *BotreonStore) Restore(key string, serializedData []byte, ttl time.Durat
 		}
 		return nil
 
+	case 15, 5: // STREAM
+		_, err := readRDBString(buf)
+		if err != nil {
+			return fmt.Errorf("ERR invalid RDB format: %v", err)
+		}
+		length, err := readRDBLength(buf)
+		if err != nil {
+			return fmt.Errorf("ERR invalid RDB format: %v", err)
+		}
+		var firstID, lastID string
+		if length > 0 {
+			firstID, err = readRDBString(buf)
+			if err != nil {
+				return fmt.Errorf("ERR invalid RDB format: %v", err)
+			}
+			lastID, err = readRDBString(buf)
+			if err != nil {
+				return fmt.Errorf("ERR invalid RDB format: %v", err)
+			}
+			_ = firstID
+			_ = lastID
+		} else {
+			// 兼容空 stream：仍有占位 first/last
+			if _, err := readRDBString(buf); err != nil {
+				return fmt.Errorf("ERR invalid RDB format: %v", err)
+			}
+			if _, err := readRDBString(buf); err != nil {
+				return fmt.Errorf("ERR invalid RDB format: %v", err)
+			}
+		}
+		numEntries, err := readRDBLength(buf)
+		if err != nil {
+			return fmt.Errorf("ERR invalid RDB format: %v", err)
+		}
+		for i := uint64(0); i < numEntries; i++ {
+			entryID, err := readRDBString(buf)
+			if err != nil {
+				return fmt.Errorf("ERR invalid RDB format: %v", err)
+			}
+			numFields, err := readRDBLength(buf)
+			if err != nil {
+				return fmt.Errorf("ERR invalid RDB format: %v", err)
+			}
+			fields := make(map[string]string, numFields)
+			for j := uint64(0); j < numFields; j++ {
+				fk, err := readRDBString(buf)
+				if err != nil {
+					return fmt.Errorf("ERR invalid RDB format: %v", err)
+				}
+				fv, err := readRDBString(buf)
+				if err != nil {
+					return fmt.Errorf("ERR invalid RDB format: %v", err)
+				}
+				fields[fk] = fv
+			}
+			if _, err := s.XAdd(key, StreamXAddOptions{}, entryID, fields); err != nil {
+				return err
+			}
+		}
+		// type 15 带 groups——DUMP 单键当前不携带 groups（写时为 0），这里若有则同步恢复
+		if typeByte == 15 {
+			numGroups, err := readRDBLength(buf)
+			if err != nil {
+				return fmt.Errorf("ERR invalid RDB format: %v", err)
+			}
+			for gi := uint64(0); gi < numGroups; gi++ {
+				gName, err := readRDBString(buf)
+				if err != nil {
+					return fmt.Errorf("ERR invalid RDB format: %v", err)
+				}
+				lastDelID, err := readRDBString(buf)
+				if err != nil {
+					return fmt.Errorf("ERR invalid RDB format: %v", err)
+				}
+				group := &StreamGroup{Name: gName, LastDeliveredID: lastDelID, Consumers: make(map[string]*StreamConsumer), Pending: make(map[string]*StreamPendingEntry)}
+				nCons, err := readRDBLength(buf)
+				if err != nil {
+					return fmt.Errorf("ERR invalid RDB format: %v", err)
+				}
+				for ci := uint64(0); ci < nCons; ci++ {
+					cName, err := readRDBString(buf)
+					if err != nil {
+						return fmt.Errorf("ERR invalid RDB format: %v", err)
+					}
+					var lastSeen int64
+					if err := binary.Read(buf, binary.LittleEndian, &lastSeen); err != nil {
+						return fmt.Errorf("ERR invalid RDB format: %v", err)
+					}
+					group.Consumers[cName] = &StreamConsumer{Name: cName, LastSeen: lastSeen}
+				}
+				nPend, err := readRDBLength(buf)
+				if err != nil {
+					return fmt.Errorf("ERR invalid RDB format: %v", err)
+				}
+				for pi := uint64(0); pi < nPend; pi++ {
+					pID, err := readRDBString(buf)
+					if err != nil {
+						return fmt.Errorf("ERR invalid RDB format: %v", err)
+					}
+					pCons, err := readRDBString(buf)
+					if err != nil {
+						return fmt.Errorf("ERR invalid RDB format: %v", err)
+					}
+					var dCount, lastDel int64
+					if err := binary.Read(buf, binary.LittleEndian, &dCount); err != nil {
+						return fmt.Errorf("ERR invalid RDB format: %v", err)
+					}
+					if err := binary.Read(buf, binary.LittleEndian, &lastDel); err != nil {
+						return fmt.Errorf("ERR invalid RDB format: %v", err)
+					}
+					group.Pending[pID] = &StreamPendingEntry{ID: pID, Consumer: pCons, DeliveryCount: dCount, LastDelivery: lastDel}
+				}
+				if err := s.XGroupRestore(key, group); err != nil {
+					return err
+				}
+			}
+		}
+		if finalTTL > 0 {
+			if _, err := s.PExpire(key, int64(finalTTL.Milliseconds())); err != nil {
+				return err
+			}
+		}
+		return nil
+
+	case 6: // GEO
+		_, err := readRDBString(buf)
+		if err != nil {
+			return fmt.Errorf("ERR invalid RDB format: %v", err)
+		}
+		length, err := readRDBLength(buf)
+		if err != nil {
+			return fmt.Errorf("ERR invalid RDB format: %v", err)
+		}
+		var geoMembers []GeoMember
+		for i := uint64(0); i < length; i++ {
+			member, err := readRDBString(buf)
+			if err != nil {
+				return fmt.Errorf("ERR invalid RDB format: %v", err)
+			}
+			var lat, lon float64
+			if err := binary.Read(buf, binary.LittleEndian, &lat); err != nil {
+				return fmt.Errorf("ERR invalid RDB format: %v", err)
+			}
+			if err := binary.Read(buf, binary.LittleEndian, &lon); err != nil {
+				return fmt.Errorf("ERR invalid RDB format: %v", err)
+			}
+			geoMembers = append(geoMembers, GeoMember{Member: member, Lat: lat, Lon: lon})
+		}
+		if len(geoMembers) > 0 {
+			if _, err := s.GeoAdd(key, geoMembers); err != nil {
+				return err
+			}
+		}
+		if finalTTL > 0 {
+			if _, err := s.PExpire(key, int64(finalTTL.Milliseconds())); err != nil {
+				return err
+			}
+		}
+		return nil
+
+	case 7: // JSON
+		_, err := readRDBString(buf)
+		if err != nil {
+			return fmt.Errorf("ERR invalid RDB format: %v", err)
+		}
+		val, err := readRDBString(buf)
+		if err != nil {
+			return fmt.Errorf("ERR invalid RDB format: %v", err)
+		}
+		if _, _, err := s.JSONSet(key, "$", val, false, false); err != nil {
+			return err
+		}
+		if finalTTL > 0 {
+			if _, err := s.PExpire(key, int64(finalTTL.Milliseconds())); err != nil {
+				return err
+			}
+		}
+		return nil
+
+	case 9: // HLL
+		_, err := readRDBString(buf)
+		if err != nil {
+			return fmt.Errorf("ERR invalid RDB format: %v", err)
+		}
+		data, err := readRDBBytes(buf)
+		if err != nil {
+			return fmt.Errorf("ERR invalid RDB format: %v", err)
+		}
+		if err := s.RestoreHLL(key, data); err != nil {
+			return err
+		}
+		if finalTTL > 0 {
+			if _, err := s.PExpire(key, int64(finalTTL.Milliseconds())); err != nil {
+				return err
+			}
+		}
+		return nil
+
+	case 8: // TIMESERIES
+		_, err := readRDBString(buf)
+		if err != nil {
+			return fmt.Errorf("ERR invalid RDB format: %v", err)
+		}
+		length, err := readRDBLength(buf)
+		if err != nil {
+			return fmt.Errorf("ERR invalid RDB format: %v", err)
+		}
+		for i := uint64(0); i < length; i++ {
+			var ts int64
+			var v float64
+			if err := binary.Read(buf, binary.LittleEndian, &ts); err != nil {
+				return fmt.Errorf("ERR invalid RDB format: %v", err)
+			}
+			if err := binary.Read(buf, binary.LittleEndian, &v); err != nil {
+				return fmt.Errorf("ERR invalid RDB format: %v", err)
+			}
+			if _, err := s.TSAdd(key, ts, v, TSAddOptions{}); err != nil {
+				return err
+			}
+		}
+		if finalTTL > 0 {
+			if _, err := s.PExpire(key, int64(finalTTL.Milliseconds())); err != nil {
+				return err
+			}
+		}
+		return nil
+
 	default:
 		return fmt.Errorf("ERR unsupported RDB type: %d", typeByte)
 	}
