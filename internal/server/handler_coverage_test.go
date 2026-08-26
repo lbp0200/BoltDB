@@ -757,6 +757,49 @@ func TestExecuteCommand_COPY_Coverage(t *testing.T) {
 	assert.Equal(t, "value", val)
 }
 
+// TestExecuteCommand_COPY_JSON verifies COPY for JSON type (handler path)
+func TestExecuteCommand_COPY_JSON_Coverage(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+	handler.executeCommand(state, "JSON.SET", [][]byte{[]byte("jsrc"), []byte("$"), []byte(`{"a":1,"b":2}`)}, "127.0.0.1:12345")
+	resp := handler.executeCommand(state, "COPY", [][]byte{[]byte("jsrc"), []byte("jdst")}, "127.0.0.1:12345")
+	if _, ok := resp.(*proto.Error); ok {
+		t.Fatalf("COPY json: %v", resp)
+	}
+	resp = handler.executeCommand(state, "JSON.GET", [][]byte{[]byte("jdst")}, "127.0.0.1:12345")
+	bs, ok := resp.(*proto.BulkString)
+	if !ok {
+		t.Fatalf("COPY json GET type: %T %v", resp, resp)
+	}
+	if got := string(*bs); got != `{"a":1,"b":2}` && got != `{"b":2,"a":1}` {
+		t.Fatalf("COPY json mismatch: %q", got)
+	}
+}
+
+// TestExecuteCommand_COPY_STREAM verifies COPY for Stream type
+func TestExecuteCommand_COPY_STREAM_Coverage(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+	resp := handler.executeCommand(state, "XADD", [][]byte{[]byte("ssrc"), []byte("*"), []byte("f"), []byte("v1")}, "127.0.0.1:12345")
+	if _, ok := resp.(*proto.Error); ok {
+		t.Fatalf("XADD: %v", resp)
+	}
+	resp = handler.executeCommand(state, "XADD", [][]byte{[]byte("ssrc"), []byte("*"), []byte("f"), []byte("v2")}, "127.0.0.1:12345")
+	if _, ok := resp.(*proto.Error); ok {
+		t.Fatalf("XADD2: %v", resp)
+	}
+	resp = handler.executeCommand(state, "COPY", [][]byte{[]byte("ssrc"), []byte("sdst")}, "127.0.0.1:12345")
+	if _, ok := resp.(*proto.Error); ok {
+		t.Fatalf("COPY stream: %v", resp)
+	}
+	resp = handler.executeCommand(state, "XLEN", [][]byte{[]byte("sdst")}, "127.0.0.1:12345")
+	if n, ok := resp.(*proto.Integer); !ok || int64(*n) != 2 {
+		t.Fatalf("COPY stream len: %v", resp)
+	}
+}
+
 // TestExecuteCommand_COPY_DB0 verifies COPY with explicit DB 0 is accepted
 // (single-DB server; previously any DB option was rejected).
 func TestExecuteCommand_COPY_DB0_Coverage(t *testing.T) {

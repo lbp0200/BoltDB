@@ -1613,6 +1613,67 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 					zAdd[i] = ZSetMember{Score: m.Score, Member: m.Member}
 				}
 				return s.ZAdd(dstKey, zAdd)
+			case "json":
+				vals, jErr := s.JSONGet(srcKey, "$")
+				if jErr != nil {
+					return jErr
+				}
+				if len(vals) == 0 {
+					return nil
+				}
+				if _, dErr := s.Del(dstKey); dErr != nil {
+					logger.Logger.Warn().Err(dErr).Str("dstKey", dstKey).Msg("COPY: failed to clear json destination")
+				}
+				_, _, setErr := s.JSONSet(dstKey, "$", vals[0], false, false)
+				return setErr
+			case "stream":
+				entries, xErr := s.XRange(srcKey, "-", "+", 0)
+				if xErr != nil {
+					return xErr
+				}
+				if _, dErr := s.Del(dstKey); dErr != nil {
+					return dErr
+				}
+				if len(entries) == 0 {
+					_ = s.CreateEmptyStream(dstKey)
+					return nil
+				}
+				for _, e := range entries {
+					f := make(map[string]string, len(e.Fields))
+					for k, v := range e.Fields {
+						f[k] = string(v)
+					}
+					if _, err := s.XAdd(dstKey, StreamXAddOptions{}, e.ID, f); err != nil {
+						return err
+					}
+				}
+				return nil
+			case "hyperloglog":
+				data, dErr := s.Dump(srcKey)
+				if dErr != nil {
+					return dErr
+				}
+				if _, err := s.Del(dstKey); err != nil {
+					return err
+				}
+				return s.Restore(dstKey, data, 0, false)
+			case "TIMESERIES", "TSDB-TYPE", "TSDB":
+				dps, tsErr := s.TSRange(srcKey, "-", "+", 0)
+				if tsErr != nil {
+					return tsErr
+				}
+				if _, dErr := s.Del(dstKey); dErr != nil {
+					return dErr
+				}
+				if len(dps) == 0 {
+					return nil
+				}
+				for _, dp := range dps {
+					if _, err := s.TSAdd(dstKey, dp.Timestamp, dp.Value, TSAddOptions{}); err != nil {
+						return err
+					}
+				}
+				return nil
 			}
 			return nil
 		}

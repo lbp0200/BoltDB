@@ -502,6 +502,88 @@ func (h *Handler) copySortedSet(srcKey, dstKey string) bool {
 	return err == nil
 }
 
+// copyJSON 复制 JSON（直接复制序列化后的 JSON 字符串，避免类型不匹配）
+func (h *Handler) copyJSON(srcKey, dstKey string) bool {
+	vals, err := h.Db.JSONGet(srcKey, "$")
+	if err != nil || len(vals) == 0 {
+		return false
+	}
+	raw := vals[0]
+	if _, _, err := h.Db.JSONSet(dstKey, "$", raw, false, false); err != nil {
+		return false
+	}
+	return true
+}
+
+// copyStream 复制 Stream（全量 XRange + XAdd 保留原始 ID）
+func (h *Handler) copyStream(srcKey, dstKey string) bool {
+	entries, err := h.Db.XRange(srcKey, "-", "+", 0)
+	if err != nil {
+		return false
+	}
+	if len(entries) == 0 {
+		if _, err := h.Db.Del(dstKey); err != nil {
+			return false
+		}
+		// 建一个空 stream 占位（保持与源一致：空 stream 仍为 stream 类型）
+		_ = h.Db.CreateEmptyStream(dstKey)
+		return true
+	}
+	if _, err := h.Db.Del(dstKey); err != nil {
+		return false
+	}
+	for _, e := range entries {
+		fields := make(map[string]string, len(e.Fields))
+		for k, v := range e.Fields {
+			fields[k] = string(v)
+		}
+		if _, err := h.Db.XAdd(dstKey, store.StreamXAddOptions{}, e.ID, fields); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// copyHLL 复制 HyperLogLog（通过 Dump/Restore 的底层 bytes 更稳妥则走 PF 合并）
+func (h *Handler) copyHLL(srcKey, dstKey string) bool {
+	data, err := h.Db.Dump(srcKey)
+	if err != nil {
+		return false
+	}
+	if _, err := h.Db.Del(dstKey); err != nil {
+		return false
+	}
+	if err := h.Db.Restore(dstKey, data, 0, false); err != nil {
+		return false
+	}
+	return true
+}
+
+// copyTimeSeries 复制 TimeSeries（全量 TSRange + TSAdd 保留原始时间戳）
+func (h *Handler) copyTimeSeries(srcKey, dstKey string) bool {
+	dps, err := h.Db.TSRange(srcKey, "-", "+", 0)
+	if err != nil {
+		return false
+	}
+	if len(dps) == 0 {
+		if _, err := h.Db.Del(dstKey); err != nil {
+			return false
+		}
+		return true
+	}
+	if _, err := h.Db.Del(dstKey); err != nil {
+		return false
+	}
+	// 尝试保留原始时间戳：用 TSAdd 带显式 timestamp（若不可则回退为当前时间）
+	for _, dp := range dps {
+		if _, err := h.Db.TSAdd(dstKey, dp.Timestamp, dp.Value, store.TSAddOptions{}); err != nil {
+			// 若 TSAdd 对已存在 timestamp 报错或类型冲突，则中断
+			return false
+		}
+	}
+	return true
+}
+
 // parseSetOptions 解析 SET 命令的可选修饰符（EX/PX/EXAT/PXAT/NX/XX/GET/KEEPTTL）
 func parseSetOptions(opts [][]byte) (ttl time.Duration, nx, xx, get, keepTTL bool, err error) {
 	for i := 0; i < len(opts); i++ {

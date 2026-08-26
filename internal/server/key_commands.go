@@ -626,6 +626,14 @@ func (h *Handler) handleCOPY(state *connState, args [][]byte, remoteAddr string)
 		copied = h.copySet(srcKey, dstKey)
 	case "zset":
 		copied = h.copySortedSet(srcKey, dstKey)
+	case "json":
+		copied = h.copyJSON(srcKey, dstKey)
+	case "stream":
+		copied = h.copyStream(srcKey, dstKey)
+	case "hyperloglog":
+		copied = h.copyHLL(srcKey, dstKey)
+	case "TIMESERIES":
+		copied = h.copyTimeSeries(srcKey, dstKey)
 	default:
 		return proto.NewError("ERR unknown type")
 	}
