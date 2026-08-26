@@ -136,9 +136,7 @@ func (h *Handler) ensureRunID() string {
 }
 
 func (h *Handler) rdbChangesSinceLastSave() int64 {
-	h.rdbChangesMu.Lock()
-	defer h.rdbChangesMu.Unlock()
-	return h.rdbChanges
+	return atomic.LoadInt64(&h.rdbChanges)
 }
 
 func (h *Handler) bumpRdbChanges() {

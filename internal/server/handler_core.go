@@ -158,9 +158,8 @@ type Handler struct {
 	opsTimestamps []int64 // unix seconds with at least one command
 	opsCounts     []int64 // commands in that second
 
-	// rdbChangesSinceLastSave for INFO Persistence
-	rdbChanges   int64
-	rdbChangesMu sync.Mutex
+	// rdbChangesSinceLastSave for INFO Persistence (read/write via atomic)
+	rdbChanges int64
 
 	// keyspace_hits/misses + expired/evicted for INFO Stats
 	keyspaceHits   int64
