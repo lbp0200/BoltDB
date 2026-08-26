@@ -206,6 +206,16 @@ func (enc *RDBEncoder) WriteSetKeyValue(key string, members []string, expireTime
 
 // WriteJSONKeyValue 写入 JSON 键值对
 func (enc *RDBEncoder) WriteJSONKeyValue(key, value string) error {
+	return enc.WriteJSONKeyValueWithTTL(key, value, 0)
+}
+
+// WriteJSONKeyValueWithTTL 写入 JSON 键值对（附带 TTL 时写入 0xFD 过期头）
+func (enc *RDBEncoder) WriteJSONKeyValueWithTTL(key, value string, expireTimeUnix int64) error {
+	if expireTimeUnix > 0 {
+		enc.buf.WriteByte(0xFD)
+		// #nosec G115
+		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTimeUnix))
+	}
 	enc.buf.WriteByte(7) // JSON type
 	enc.writeString(key)
 	enc.writeString(value)
@@ -214,6 +224,16 @@ func (enc *RDBEncoder) WriteJSONKeyValue(key, value string) error {
 
 // WriteTimeSeriesKeyValue 写入 time series 键值对
 func (enc *RDBEncoder) WriteTimeSeriesKeyValue(key string, points []store.TimeSeriesDataPoint) error {
+	return enc.WriteTimeSeriesKeyValueWithTTL(key, points, 0)
+}
+
+// WriteTimeSeriesKeyValueWithTTL 写入 time series 键值对（附带 TTL）
+func (enc *RDBEncoder) WriteTimeSeriesKeyValueWithTTL(key string, points []store.TimeSeriesDataPoint, expireTimeUnix int64) error {
+	if expireTimeUnix > 0 {
+		enc.buf.WriteByte(0xFD)
+		// #nosec G115
+		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTimeUnix))
+	}
 	enc.buf.WriteByte(8) // TIMESERIES type
 	enc.writeString(key)
 	enc.writeLength(uint64(len(points)))
@@ -245,6 +265,16 @@ func (enc *RDBEncoder) WriteGeoKeyValue(key string, members []store.GeoMember, e
 
 // WriteHLLKeyValue 写入 HyperLogLog 键值对
 func (enc *RDBEncoder) WriteHLLKeyValue(key string, data []byte) error {
+	return enc.WriteHLLKeyValueWithTTL(key, data, 0)
+}
+
+// WriteHLLKeyValueWithTTL 写入 HLL 键值对（附带 TTL）
+func (enc *RDBEncoder) WriteHLLKeyValueWithTTL(key string, data []byte, expireTimeUnix int64) error {
+	if expireTimeUnix > 0 {
+		enc.buf.WriteByte(0xFD)
+		// #nosec G115
+		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTimeUnix))
+	}
 	enc.buf.WriteByte(9) // HLL type
 	enc.writeString(key)
 	enc.writeBytes(data) // encoding byte + registers
@@ -254,6 +284,16 @@ func (enc *RDBEncoder) WriteHLLKeyValue(key string, data []byte) error {
 // WriteStreamKeyValue 写入 stream 键值对（条目 + consumer groups/PEL）。
 // 使用 type 15 (rdbTypeStreamWithGroups)。旧 type 5 仅条目格式仍可由 loader 读取。
 func (enc *RDBEncoder) WriteStreamKeyValue(key string, entries []store.StreamEntry, groups []store.StreamGroup) error {
+	return enc.WriteStreamKeyValueWithTTL(key, entries, groups, 0)
+}
+
+// WriteStreamKeyValueWithTTL 写入 stream 键值对（附带 TTL）
+func (enc *RDBEncoder) WriteStreamKeyValueWithTTL(key string, entries []store.StreamEntry, groups []store.StreamGroup, expireTimeUnix int64) error {
+	if expireTimeUnix > 0 {
+		enc.buf.WriteByte(0xFD)
+		// #nosec G115
+		_ = binary.Write(enc.buf, binary.LittleEndian, uint32(expireTimeUnix))
+	}
 	enc.buf.WriteByte(rdbTypeStreamWithGroups)
 	enc.writeString(key)
 
@@ -496,7 +536,7 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 					logger.Logger.Warn().Str("key", key).Err(gErr).Msg("获取stream groups失败")
 					groups = nil
 				}
-				if err := enc.WriteStreamKeyValue(key, entries, groups); err != nil {
+				if err := enc.WriteStreamKeyValueWithTTL(key, entries, groups, ttl); err != nil {
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入stream值到RDB失败")
 				}
 
@@ -506,7 +546,7 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取JSON值失败")
 					continue
 				}
-				if err := enc.WriteJSONKeyValue(key, value); err != nil {
+				if err := enc.WriteJSONKeyValueWithTTL(key, value, ttl); err != nil {
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入JSON值到RDB失败")
 				}
 
@@ -516,7 +556,7 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取time series值失败")
 					continue
 				}
-				if err := enc.WriteTimeSeriesKeyValue(key, points); err != nil {
+				if err := enc.WriteTimeSeriesKeyValueWithTTL(key, points, ttl); err != nil {
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入time series值到RDB失败")
 				}
 
@@ -536,7 +576,7 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取HLL值失败")
 					continue
 				}
-				if err := enc.WriteHLLKeyValue(key, data); err != nil {
+				if err := enc.WriteHLLKeyValueWithTTL(key, data, ttl); err != nil {
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入HLL值到RDB失败")
 				}
 
