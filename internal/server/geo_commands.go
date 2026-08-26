@@ -56,13 +56,15 @@ parseOpts:
 			Member: string(args[i+2]),
 		})
 	}
-	h.markDirtyKeys(state, key)
 	added, err := h.Db.GeoAddWithOptions(key, opts, members)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
 			return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
 		return wrapLogError(err)
+	}
+	if added > 0 {
+		h.markDirtyKeys(state, key)
 	}
 	return proto.NewInteger(added)
 }
