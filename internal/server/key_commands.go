@@ -148,6 +148,8 @@ func (h *Handler) handleRESTORE(state *connState, args [][]byte, remoteAddr stri
 	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 		return resp
 	}
+	// 必须在成功写入后才污染 WATCH，失败路径（参数错误、Restore 报错）不脏。
+	// 这里先不标记，改为在每次 Restore 成功后标记。
 	// 解析 TTL（毫秒）
 	var ttl time.Duration = 0
 	replace := false
@@ -185,6 +187,7 @@ func (h *Handler) handleRESTORE(state *connState, args [][]byte, remoteAddr stri
 			if err != nil {
 				return wrapStoreError(err)
 			}
+			h.markDirtyKeys(state, key)
 			return proto.OK
 		}
 	}
@@ -200,6 +203,7 @@ func (h *Handler) handleRESTORE(state *connState, args [][]byte, remoteAddr stri
 	if err != nil {
 		return wrapStoreError(err)
 	}
+	h.markDirtyKeys(state, key)
 	return proto.OK
 }
 

@@ -162,6 +162,9 @@ func (h *Handler) handleTIME(state *connState, args [][]byte, remoteAddr string)
 
 // handleFLUSHDB 实现 FLUSHDB 命令
 func (h *Handler) handleFLUSHDB(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	// FLUSHDB 会使所有 WATCH 的 key 失效：标记所有受监视 key 为脏，
+	// 使后续 EXEC 按 Redis 语义返回空（WatchError）。
+	h.markAllWatchDirty()
 	err := h.Db.FlushDB()
 	if err != nil {
 		return wrapStoreError(err)
@@ -171,6 +174,7 @@ func (h *Handler) handleFLUSHDB(state *connState, args [][]byte, remoteAddr stri
 
 // handleFLUSHALL 实现 FLUSHALL 命令
 func (h *Handler) handleFLUSHALL(state *connState, args [][]byte, remoteAddr string) proto.RESP {
+	h.markAllWatchDirty()
 	err := h.Db.FlushDB()
 	if err != nil {
 		return wrapStoreError(err)

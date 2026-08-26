@@ -211,6 +211,23 @@ func (h *Handler) markDirtyKeys(state *connState, keys ...string) {
 	h.watchMu.Unlock()
 }
 
+// markAllWatchDirty 将所有被 WATCH 的 key 标记为脏（用于 FLUSHDB/FLUSHALL）。
+// Redis 语义：清库会使任意 WATCH 的 EXEC 失败。
+func (h *Handler) markAllWatchDirty() {
+	h.watchMu.Lock()
+	defer h.watchMu.Unlock()
+	for key, watchers := range h.watchMonitors {
+		for watcher := range watchers {
+			watcher.mu.Lock()
+			if watcher.dirtyKeys == nil {
+				watcher.dirtyKeys = make(map[string]struct{})
+			}
+			watcher.dirtyKeys[key] = struct{}{}
+			watcher.mu.Unlock()
+		}
+	}
+}
+
 // nilArrayOrNull returns a nil array reply, or the RESP3 Null type ('_')
 // when the client negotiated protocol 3. redis-py 8's RESP3 parser turns
 // '*-1' into an empty list instead of None, so blocking-command timeouts

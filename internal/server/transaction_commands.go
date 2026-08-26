@@ -146,60 +146,60 @@ func (h *Handler) handleEXEC(state *connState, args [][]byte, remoteAddr string)
 	// 否则其它连接 WATCH 的乐观锁不会因本事务的写而失效（watch 正确性漏洞），
 	// 且 rdbChanges/instantaneous_ops 会漏计事务内的写。
 	for i, tc := range state.commands {
-		if isErrorResponse(results[i]) {
-			continue
-		}
-		// WATCH 脏标记：仅对成功执行的写操作生效。
-		// 条件写（SET NX/XX、SETNX/MSETNX/HSETNX）空转返回 Null/0 时未实际写入，
-		// 此时不应污染其它连接的 WATCH（与传播过滤逻辑保持一致）。
-		shouldDirty := isWriteCommand(tc.Command) && shouldPropagateCommand(tc.Command)
-		if tc.Command == "SORT" {
-			hasStore := false
-			for _, a := range tc.Args {
-				if strings.EqualFold(string(a), "STORE") {
-					hasStore = true
-					break
+		isErr := isErrorResponse(results[i])
+		// WATCH 脏标记：仅对成功执行的写操作生效（错误命令不污染 WATCH）。
+		if !isErr {
+			shouldDirty := isWriteCommand(tc.Command) && shouldPropagateCommand(tc.Command)
+			if tc.Command == "SORT" {
+				hasStore := false
+				for _, a := range tc.Args {
+					if strings.EqualFold(string(a), "STORE") {
+						hasStore = true
+						break
+					}
 				}
-			}
-			if !hasStore {
-				shouldDirty = false
-			}
-		}
-		if tc.Command == "SET" {
-			hasNX, hasXX := false, false
-			for _, a := range tc.Args {
-				switch strings.ToUpper(string(a)) {
-				case "NX":
-					hasNX = true
-				case "XX":
-					hasXX = true
-				}
-			}
-			if hasNX || hasXX {
-				if _, isNull := results[i].(*proto.Null); isNull {
-					shouldDirty = false
-				} else if bs, ok := results[i].(*proto.BulkString); ok && bs == nil {
+				if !hasStore {
 					shouldDirty = false
 				}
 			}
-		}
-		if tc.Command == "SETNX" || tc.Command == "MSETNX" || tc.Command == "HSETNX" {
-			if !isPositiveIntegerResp(results[i]) {
-				shouldDirty = false
+			if tc.Command == "SET" {
+				hasNX, hasXX := false, false
+				for _, a := range tc.Args {
+					switch strings.ToUpper(string(a)) {
+					case "NX":
+						hasNX = true
+					case "XX":
+						hasXX = true
+					}
+				}
+				if hasNX || hasXX {
+					if _, isNull := results[i].(*proto.Null); isNull {
+						shouldDirty = false
+					} else if bs, ok := results[i].(*proto.BulkString); ok && bs == nil {
+						shouldDirty = false
+					}
+				}
+			}
+			if tc.Command == "SETNX" || tc.Command == "MSETNX" || tc.Command == "HSETNX" {
+				if !isPositiveIntegerResp(results[i]) {
+					shouldDirty = false
+				}
+			}
+			if tc.Command == "SPOP" {
+				if spopResultToSREM(tc.Args, results[i]) == nil {
+					shouldDirty = false
+				}
+			}
+			if shouldDirty {
+				keys := queuedCommandKeys(tc.Command, tc.Args)
+				if len(keys) > 0 {
+					h.markDirtyKeys(state, keys...)
+				}
 			}
 		}
-		if tc.Command == "SPOP" {
-			if spopResultToSREM(tc.Args, results[i]) == nil {
-				shouldDirty = false
-			}
-		}
-		if shouldDirty {
-			keys := queuedCommandKeys(tc.Command, tc.Args)
-			if len(keys) > 0 {
-				h.markDirtyKeys(state, keys...)
-			}
-		}
-		// 统计：事务内每条成功命令单独计入瞬时 OPS 与备份脏计数。
+		// 统计：事务内每条命令（无论成功/失败）均计入 OPS 与 COMMANDSTATS，
+		// 与非事务路径 executeCommand 的 defer 语义一致；bumpRdbChanges
+		// 仅对写命令计入（与主路径相同，错误写也会留下脏位，等待下次 BGSAVE）。
 		h.recordOps()
 		if isWriteCommand(tc.Command) {
 			h.bumpRdbChanges()
