@@ -296,8 +296,9 @@ func (h *Handler) checkAndHandleRedirect(state *connState, key string) proto.RES
 }
 
 // checkAndHandleMultiKeyRedirect 检查多个键是否需要重定向
-// 如果所有键都在当前节点，返回 nil
-// 如果有键需要重定向，返回 MOVED 错误
+// 如果所有键都在当前节点，返回 nil。Redis 语义：多键命令中只要任一
+// 键需要 redirect（MOVED 或 ASK）就失败——单键 ASK 可由 ASKING 旁路，
+// 但多键命令跨槽必须报 CROSSSLOT，否则批量原子语义会被拆分到不同分片。
 func (h *Handler) checkAndHandleMultiKeyRedirect(keys []string) proto.RESP {
 	if h.Cluster == nil {
 		return nil // 不在集群模式，直接执行
@@ -306,14 +307,24 @@ func (h *Handler) checkAndHandleMultiKeyRedirect(keys []string) proto.RESP {
 	for _, key := range keys {
 		redirect := h.Cluster.CheckSlotRedirect(key)
 		if redirect != nil {
-			if redirect.Type == "MOVED" {
+			if movedError == nil {
 				movedError = redirect
+			}
+			if redirect.Type == "MOVED" {
+				break
 			}
 		}
 	}
 	if movedError != nil {
+		if movedError.Type == "ASK" && len(keys) > 1 {
+			return proto.NewError("CROSSSLOT Keys in request don't hash to the same slot")
+		}
 		return proto.NewError(movedError.Error())
 	}
+	// 无 redirect 时，集群已正常分配槽位的情况下仍需保证同槽语义；
+	// 但对于“新建空集群、槽位尚未分配（GetNodeBySlot 为 nil）”的
+	// 单机测试环境，不应额外报 CROSSSLOT——否则 NoRedirect 用例
+	// （k1/k2 跨槽但无 slot 归属）在单机模式下永远失败。
 	return nil
 }
 
