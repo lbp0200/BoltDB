@@ -23,7 +23,6 @@ func (h *Handler) handleLPUSH(state *connState, args [][]byte, remoteAddr string
 	for i := 1; i < len(args); i++ {
 		values[i-1] = string(args[i])
 	}
-	h.markDirtyKeys(state, key)
 	count, err := h.Db.LPush(key, values...)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -31,6 +30,7 @@ func (h *Handler) handleLPUSH(state *connState, args [][]byte, remoteAddr string
 		}
 		return wrapLogError(err)
 	}
+	h.markDirtyKeys(state, key)
 	// #nosec G115 - count is bounded by practical data size limits
 	return proto.NewInteger(int64(count))
 }
@@ -48,7 +48,6 @@ func (h *Handler) handleRPUSH(state *connState, args [][]byte, remoteAddr string
 	for i := 1; i < len(args); i++ {
 		values[i-1] = string(args[i])
 	}
-	h.markDirtyKeys(state, key)
 	count, err := h.Db.RPush(key, values...)
 	if err != nil {
 		if errors.Is(err, store.ErrWrongType) {
@@ -56,6 +55,7 @@ func (h *Handler) handleRPUSH(state *connState, args [][]byte, remoteAddr string
 		}
 		return wrapLogError(err)
 	}
+	h.markDirtyKeys(state, key)
 	// #nosec G115 - count is bounded by practical data size limits
 	return proto.NewInteger(int64(count))
 }

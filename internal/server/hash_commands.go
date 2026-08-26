@@ -20,8 +20,8 @@ func (h *Handler) handleHSET(state *connState, args [][]byte, remoteAddr string)
 	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 		return resp
 	}
-	h.markDirtyKeys(state, key)
 	count := 0
+	var lastErr error
 	for i := 1; i < len(args); i += 2 {
 		if i+1 >= len(args) {
 			break
@@ -31,9 +31,16 @@ func (h *Handler) handleHSET(state *connState, args [][]byte, remoteAddr string)
 			if errors.Is(err, store.ErrWrongType) {
 				return proto.NewError("WRONGTYPE Operation against a key holding the wrong kind of value")
 			}
-			return wrapLogError(err)
+			lastErr = err
+			break
 		}
 		count++
+	}
+	if lastErr != nil {
+		return wrapLogError(lastErr)
+	}
+	if count > 0 {
+		h.markDirtyKeys(state, key)
 	}
 	return proto.NewInteger(int64(count))
 }
@@ -263,7 +270,6 @@ func (h *Handler) handleHMSET(state *connState, args [][]byte, remoteAddr string
 	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
 		return resp
 	}
-	h.markDirtyKeys(state, key)
 	for i := 1; i < len(args); i += 2 {
 		if i+1 >= len(args) {
 			break
@@ -273,6 +279,7 @@ func (h *Handler) handleHMSET(state *connState, args [][]byte, remoteAddr string
 			return wrapStoreError(err)
 		}
 	}
+	h.markDirtyKeys(state, key)
 	return proto.OK
 }
 
@@ -356,11 +363,11 @@ func (h *Handler) handleHINCRBY(state *connState, args [][]byte, remoteAddr stri
 	if err != nil {
 		return proto.NewError("ERR value is not an integer or out of range")
 	}
-	h.markDirtyKeys(state, key)
 	value, err := h.Db.HIncrBy(key, field, increment)
 	if err != nil {
 		return wrapStoreError(err)
 	}
+	h.markDirtyKeys(state, key)
 	return proto.NewInteger(value)
 }
 
@@ -377,11 +384,11 @@ func (h *Handler) handleHINCRBYFLOAT(state *connState, args [][]byte, remoteAddr
 	if err != nil {
 		return proto.NewError("ERR value is not a valid float")
 	}
-	h.markDirtyKeys(state, key)
 	value, err := h.Db.HIncrByFloat(key, field, increment)
 	if err != nil {
 		return wrapStoreError(err)
 	}
+	h.markDirtyKeys(state, key)
 	return proto.NewBulkString([]byte(fmt.Sprintf("%.10g", value)))
 }
 
