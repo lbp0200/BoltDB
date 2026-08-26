@@ -9,7 +9,10 @@ import (
 	"github.com/lbp0200/BoltDB/internal/logger"
 )
 
-// getKeyValueKey 根据键类型获取值键
+// getKeyValueKey 根据键类型获取值键（用于 TTL/Expire 探测）
+// 注意：Stream/Geo/HLL 的 TTL 探测需返回其 meta/数据键；未覆盖时
+// TTL/Expire 会因 unknown key type 直接报错，导致 EXPIRE 返回错误
+// 而非 0（Redis 语义：键存在但 TTL 不支持应按无 TTL 处理）。
 func (s *BotreonStore) getKeyValueKey(key string, keyType string) ([]byte, error) {
 	switch keyType {
 	case KeyTypeString:
@@ -32,6 +35,12 @@ func (s *BotreonStore) getKeyValueKey(key string, keyType string) ([]byte, error
 	case KeyTypeTimeSeries:
 		// TimeSeries的主键是meta键
 		return tsMetaKey(key), nil
+	case KeyTypeStream:
+		return streamKey(key), nil
+	case KeyTypeGeo:
+		return geoKey(key), nil
+	case KeyTypeHyperLogLog:
+		return []byte(fmt.Sprintf("%s%s", HyperLogLogPrefix, key)), nil
 	default:
 		return nil, fmt.Errorf("unknown key type: %s", keyType)
 	}
