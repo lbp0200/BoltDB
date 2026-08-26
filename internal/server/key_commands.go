@@ -634,6 +634,8 @@ func (h *Handler) handleCOPY(state *connState, args [][]byte, remoteAddr string)
 		copied = h.copyHLL(srcKey, dstKey)
 	case "TIMESERIES":
 		copied = h.copyTimeSeries(srcKey, dstKey)
+	case "GEOHASH":
+		copied = h.copyGeo(srcKey, dstKey)
 	default:
 		return proto.NewError("ERR unknown type")
 	}

@@ -584,6 +584,21 @@ func (h *Handler) copyTimeSeries(srcKey, dstKey string) bool {
 	return true
 }
 
+// copyGeo 复制 GEO（通过 Dump/Restore 保证精度一致）
+func (h *Handler) copyGeo(srcKey, dstKey string) bool {
+	data, err := h.Db.Dump(srcKey)
+	if err != nil {
+		return false
+	}
+	if _, err := h.Db.Del(dstKey); err != nil {
+		return false
+	}
+	if err := h.Db.Restore(dstKey, data, 0, false); err != nil {
+		return false
+	}
+	return true
+}
+
 // parseSetOptions 解析 SET 命令的可选修饰符（EX/PX/EXAT/PXAT/NX/XX/GET/KEEPTTL）
 func parseSetOptions(opts [][]byte) (ttl time.Duration, nx, xx, get, keepTTL bool, err error) {
 	for i := 0; i < len(opts); i++ {

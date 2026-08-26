@@ -1674,6 +1674,15 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 					}
 				}
 				return nil
+			case "GEOHASH":
+				data, gErr := s.Dump(srcKey)
+				if gErr != nil {
+					return gErr
+				}
+				if _, err := s.Del(dstKey); err != nil {
+					return err
+				}
+				return s.Restore(dstKey, data, 0, false)
 			}
 			return nil
 		}
