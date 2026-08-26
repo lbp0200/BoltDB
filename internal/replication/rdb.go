@@ -585,6 +585,8 @@ func readTTLFromValueTxn(txn *badger.Txn, key, keyType string) int64 {
 		valueKey = []byte("TS:" + key + ":meta")
 	case store.KeyTypeHyperLogLog:
 		valueKey = []byte(store.HyperLogLogPrefix + key)
+	case store.KeyTypeStream:
+		valueKey = []byte("stream:" + key + ":meta")
 	}
 	if valueKey == nil {
 		return 0
