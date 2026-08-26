@@ -1127,7 +1127,7 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 					// Sign extend: fill all bits above op.bits with 1s
 					// mask = all 1s for bits >= op.bits (e.g., 0xFF...80 for 8 bits)
 					mask := ^(int64(1) << uint(op.bits)) + 1
-					extractedValue = extractedValue | mask
+					extractedValue |= mask
 				}
 			}
 
@@ -1178,7 +1178,7 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 						default: // WRAP
 							if op.bits < 64 {
 								mod := int64(1) << uint(op.bits)
-								newValue = newValue % mod
+								newValue %= mod
 								if newValue >= int64(1)<<uint(op.bits-1) {
 									newValue -= mod
 								}
@@ -1260,7 +1260,7 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 								}
 							default: // WRAP
 								mod := int64(1) << uint(op.bits)
-								newValue = newValue % mod
+								newValue %= mod
 								if newValue < 0 {
 									newValue += mod
 								}

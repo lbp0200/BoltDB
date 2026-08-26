@@ -54,7 +54,7 @@ func encodeLatLonBits(value, min, max float64, bits uint) uint64 {
 			result = (result << 1) | 1
 			low = mid
 		} else {
-			result = result << 1
+			result <<= 1
 			high = mid
 		}
 	}

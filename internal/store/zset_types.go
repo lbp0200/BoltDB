@@ -39,7 +39,7 @@ func encodeScore(score float64) []byte {
 	bits := math.Float64bits(score)
 	b := make([]byte, 8)
 	if score >= 0 {
-		bits = bits ^ 0x8000000000000000
+		bits ^= 0x8000000000000000
 	} else {
 		bits = ^bits
 	}
@@ -53,7 +53,7 @@ func decodeScore(b []byte) float64 {
 	if bits&0x8000000000000000 == 0 {
 		bits = ^bits
 	} else {
-		bits = bits ^ 0x8000000000000000
+		bits ^= 0x8000000000000000
 	}
 	return math.Float64frombits(bits)
 }
