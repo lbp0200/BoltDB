@@ -167,6 +167,97 @@ func (s *BotreonStore) Dump(key string) ([]byte, error) {
 				writeRDBBytes(buf, scoreBytes)
 			}
 
+		case KeyTypeStream:
+			entries, err := s.XRange(key, "-", "+", 0)
+			if err != nil {
+				return err
+			}
+			// 复用 RDB stream 带 groups 的编码（type 15），groups 为空时也能被 loader 兼容
+			buf.WriteByte(15) // STREAM with groups
+			writeRDBString(buf, key)
+			writeRDBLength(buf, uint64(len(entries)))
+			if len(entries) > 0 {
+				writeRDBString(buf, entries[0].ID)
+				writeRDBString(buf, entries[len(entries)-1].ID)
+			} else {
+				writeRDBString(buf, "0-0")
+				writeRDBString(buf, "0-0")
+			}
+			writeRDBLength(buf, uint64(len(entries)))
+			for _, e := range entries {
+				writeRDBString(buf, e.ID)
+				writeRDBLength(buf, uint64(len(e.Fields)))
+				for fk, fv := range e.Fields {
+					writeRDBString(buf, fk)
+					writeRDBString(buf, fv)
+				}
+			}
+			writeRDBLength(buf, 0) // groups = 0（DUMP 单键不携带 consumer groups，避免跨节点重建歧义）
+
+		case KeyTypeJSON:
+			item, err := txn.Get([]byte(s.jsonKey(key)))
+			if err != nil {
+				return err
+			}
+			raw, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			dec, err := DecompressData(raw)
+			if err != nil {
+				return err
+			}
+			buf.WriteByte(7) // JSON
+			writeRDBString(buf, key)
+			writeRDBString(buf, string(dec))
+
+		case KeyTypeGeo:
+			// 通过 GeoGetAllPositions 获取 lat/lon（注意：返回值为 map[string][2]float64）
+			posMap, err := s.GeoGetAllPositions(key)
+			if err != nil {
+				return err
+			}
+			memberNames, err := s.GeoMembers(key)
+			if err != nil {
+				return err
+			}
+			buf.WriteByte(6) // GEO
+			writeRDBString(buf, key)
+			writeRDBLength(buf, uint64(len(memberNames)))
+			for _, m := range memberNames {
+				writeRDBString(buf, m)
+				pos := posMap[m]
+				_ = binary.Write(buf, binary.LittleEndian, pos[0])
+				_ = binary.Write(buf, binary.LittleEndian, pos[1])
+			}
+
+		case KeyTypeHyperLogLog:
+			hllKey := []byte(HyperLogLogPrefix + key)
+			item, err := txn.Get(hllKey)
+			if err != nil {
+				return err
+			}
+			data, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			buf.WriteByte(9) // HLL
+			writeRDBString(buf, key)
+			writeRDBBytes(buf, data)
+
+		case KeyTypeTimeSeries:
+			points, err := s.TSRange(key, "-", "+", 0)
+			if err != nil {
+				return err
+			}
+			buf.WriteByte(8) // TIMESERIES
+			writeRDBString(buf, key)
+			writeRDBLength(buf, uint64(len(points)))
+			for _, p := range points {
+				_ = binary.Write(buf, binary.LittleEndian, p.Timestamp)
+				_ = binary.Write(buf, binary.LittleEndian, p.Value)
+			}
+
 		default:
 			return fmt.Errorf("ERR unsupported key type: %s", keyType)
 		}
