@@ -95,9 +95,11 @@ func (h *Handler) EnsureSlowlog() {
 
 // EnsureStartTime 保证 Handler.startTime 非零（用于 INFO uptime 真值）。
 func (h *Handler) EnsureStartTime() {
-	if h.startTime.IsZero() {
-		h.startTime = time.Now()
-	}
+	h.startTimeOnce.Do(func() {
+		if h.startTime.IsZero() {
+			h.startTime = time.Now()
+		}
+	})
 }
 
 func (h *Handler) ensureSlowlog() *slowlogState {
@@ -117,18 +119,19 @@ func (h *Handler) uptimeSeconds() int64 {
 }
 
 func (h *Handler) ensureRunID() string {
-	if h.runID != "" {
-		return h.runID
-	}
-	// 40 hex chars like Redis run_id
-	var b [20]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		// fallback to uuid
-		u := uuid.New().String()
-		h.runID = hex.EncodeToString([]byte(u))[:40]
-		return h.runID
-	}
-	h.runID = hex.EncodeToString(b[:])
+	h.runIDOnce.Do(func() {
+		if h.runID == "" {
+			// 40 hex chars like Redis run_id
+			var b [20]byte
+			if _, err := rand.Read(b[:]); err != nil {
+				// fallback to uuid
+				u := uuid.New().String()
+				h.runID = hex.EncodeToString([]byte(u))[:40]
+				return
+			}
+			h.runID = hex.EncodeToString(b[:])
+		}
+	})
 	return h.runID
 }
 
