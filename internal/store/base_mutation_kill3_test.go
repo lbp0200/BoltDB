@@ -326,8 +326,7 @@ func TestRenameHashWithTTL(t *testing.T) {
 
 	ttl, err := s.TTL("rn_hash_ttl_dst")
 	assert.NoError(t, err)
-	// Rename may or may not preserve TTL for Hash keys - just verify the key exists
-	_ = ttl
+	assert.True(t, ttl > 0 && ttl <= 60)
 }
 
 func TestRenameSetWithTTL(t *testing.T) {

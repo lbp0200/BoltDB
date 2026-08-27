@@ -21,8 +21,8 @@ func (s *BotreonStore) getKeyValueKey(key string, keyType string) ([]byte, error
 		// List的主键是length键
 		return []byte(s.listKey(key, "length")), nil
 	case KeyTypeHash:
-		// Hash的主键是count键
-		return []byte(fmt.Sprintf("%s:%s:count", KeyTypeHash, key)), nil
+		// Hash的主键是count键（与 hashCountKey 一致：HASH:key:__count__）
+		return s.hashCountKey(key), nil
 	case KeyTypeSet:
 		// Set的主键是count键
 		return []byte(s.setKey(key, "count")), nil
