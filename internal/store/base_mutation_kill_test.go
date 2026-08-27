@@ -2,8 +2,10 @@ package store
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/dgraph-io/badger/v4"
 	"github.com/zeebo/assert"
 )
 
@@ -231,6 +233,35 @@ func TestNextStartupEmptyStore(t *testing.T) {
 
 	err := s.NextStartup()
 	assert.NoError(t, err)
+}
+
+func TestNextStartupCleanupOrphanedStringData(t *testing.T) {
+	t.Parallel()
+
+	s := setupTestStore(t)
+
+	// 制造孤儿 STRING 数据：直接写入 STRING:orphan_str 无 TYPE_
+	err := s.GetDB().Update(func(txn *badger.Txn) error {
+		return txn.Set([]byte("STRING:orphan_str"), []byte("orphan"))
+	})
+	assert.NoError(t, err)
+
+	err = s.NextStartup()
+	assert.NoError(t, err)
+
+	// 孤儿应被清理
+	err = s.GetDB().View(func(txn *badger.Txn) error {
+		_, err := txn.Get([]byte("STRING:orphan_str"))
+		return err
+	})
+	assert.True(t, errors.Is(err, badger.ErrKeyNotFound))
+
+	// 正常 STRING 不应被误删
+	mustSet(t, s, "startup_keep_str", "keep")
+	assert.NoError(t, s.NextStartup())
+	val, err := s.Get("startup_keep_str")
+	assert.NoError(t, err)
+	assert.Equal(t, "keep", val)
 }
 
 // ---------- Del: multiple key types in sequence ----------

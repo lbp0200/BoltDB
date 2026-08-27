@@ -48,7 +48,7 @@ func (s *BotreonStore) NextStartup() error {
 
 		// 2. 清理孤立数据（没有TYPE_键的数据）
 		// cleanupOrphaned*Data functions always return nil (internal errors use 'continue')
-		_ = cleanupOrphanedData(txn, []byte("string:"))
+		_ = cleanupOrphanedData(txn, []byte("STRING:"))
 		_ = cleanupOrphanedListData(txn)
 		_ = cleanupOrphanedHashData(txn)
 		_ = cleanupOrphanedSetData(txn)
@@ -160,8 +160,8 @@ func cleanupOrphanedData(txn *badger.Txn, dataPrefix []byte) error {
 		keyBytes := item.KeyCopy(nil)
 
 		// 从key中提取实际键名
-		// 格式: string:key
-		key := string(keyBytes[len("string:"):])
+		// 格式: STRING:key（KeyTypeString="STRING"）
+		key := string(keyBytes[len("STRING:"):])
 
 		// 检查TYPE_键是否存在
 		typeKey := TypeOfKeyGet(key)
