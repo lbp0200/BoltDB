@@ -651,11 +651,12 @@ func (h *Handler) handleCOPY(state *connState, args [][]byte, remoteAddr string)
 	if !copied {
 		return proto.NewError("ERR copy failed")
 	}
-	// Preserve source key's TTL on the destination (Redis compat)
-	srcTTL, ttlErr := h.Db.TTL(srcKey)
-	if ttlErr == nil && srcTTL > 0 {
-		// srcTTL is in seconds; set the same expiry on dstKey
-		_, _ = h.Db.Expire(dstKey, int(srcTTL))
+	// Preserve source key's TTL on the destination (Redis compat).
+	// Use PTTL/PExpire to keep millisecond precision; TTL (seconds) truncates sub-second TTLs
+	// (e.g. PEXPIRE 500ms → TTL=0 → Expire 0 would delete the key).
+	srcPTTL, ttlErr := h.Db.PTTL(srcKey)
+	if ttlErr == nil && srcPTTL > 0 {
+		_, _ = h.Db.PExpire(dstKey, srcPTTL)
 	}
 	return proto.NewInteger(1)
 }
