@@ -96,6 +96,9 @@ func (s *BotreonStore) Rename(key, newKey string) error {
 				if err := deleteByPrefix(txn, []byte("geo:"+newKey+":")); err != nil {
 					return err
 				}
+				if err := deleteByPrefix(txn, []byte(fmt.Sprintf("%s%s:", prefixKeySortedSetBytes, newKey))); err != nil {
+					return err
+				}
 				if err := txn.Delete(newTypeKey); err != nil {
 					return err
 				}
