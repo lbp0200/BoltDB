@@ -42,6 +42,7 @@ BadgerDB key prefixes, defined in `internal/store/define.go` and `sorted_set.go`
 `STRING`, `LIST`, `HASH`, `SET`, `JSON`, `TIMESERIES`, `STREAM`, `zset` (SortedSet), `geo:`, `hll:`
 
 > `geo:` / `hll:` / `STREAM` 的内部类型键为 `GEOHASH` / `hyperloglog` / `STREAM`（见 `store.KeyType*`），与前缀一一对应；近期已补齐 `getKeyValueKey` 与 `TYPE`/`COPY`/`DUMP`/`RESTORE` 全链路覆盖，避免 TTL 与迁移盲区。
+> 注意：`GEO` 为双前缀类型（`geo:` + `zset:` 索引），`RENAME`/`DEL`/`COPY`/`NextStartup` 均需同步清理双前缀，避免 `zset:` 孤儿残留；`TIMESERIES`（`TS:`）与 `STREAM`（`stream:`）同理需按前缀闭环处理。
 
 ## Deployment
 
