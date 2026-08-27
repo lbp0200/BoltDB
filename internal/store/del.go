@@ -97,6 +97,9 @@ func (s *BotreonStore) Del(key string) (int64, error) {
 			if err := deleteByPrefix(txn, []byte("geo:"+key+":")); err != nil {
 				return err
 			}
+			if err := deleteByPrefix(txn, []byte(fmt.Sprintf("%s%s:", prefixKeySortedSetBytes, key))); err != nil {
+				return err
+			}
 			if err := txn.Delete(typeKey); err != nil {
 				return err
 			}
