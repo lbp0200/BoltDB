@@ -14,6 +14,7 @@ func (s *BotreonStore) Del(key string) (int64, error) {
 	}
 	typeKey := TypeOfKeyGet(key)
 	var deleted int64
+	var delKeyType string
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		item, err := txn.Get(typeKey)
@@ -28,6 +29,7 @@ func (s *BotreonStore) Del(key string) (int64, error) {
 			return err
 		}
 		keyType := string(valCopy)
+		delKeyType = keyType
 
 		switch keyType {
 		case KeyTypeString:
@@ -111,6 +113,9 @@ func (s *BotreonStore) Del(key string) (int64, error) {
 		deleted = 1
 		return nil
 	}, 30)
+	if err == nil && deleted > 0 && (delKeyType == KeyTypeSortedSet || delKeyType == KeyTypeGeo) {
+		s.markZSetDirty(key)
+	}
 
 	return deleted, err
 }
