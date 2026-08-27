@@ -41,7 +41,7 @@ func (s *BotreonStore) Rename(key, newKey string) error {
 				return err
 			}
 			newKeyType := string(newVal)
-			// 删除新键的所有相关数据
+			// 删除新键的所有相关数据（全类型覆盖，避免旧值残留）
 			switch newKeyType {
 			case KeyTypeString:
 				if err := txn.Delete(newTypeKey); err != nil {
@@ -73,6 +73,41 @@ func (s *BotreonStore) Rename(key, newKey string) error {
 				}
 			case KeyTypeSortedSet:
 				if err := deleteByPrefix(txn, []byte(fmt.Sprintf("%s%s:", prefixKeySortedSetBytes, newKey))); err != nil {
+					return err
+				}
+				if err := txn.Delete(newTypeKey); err != nil {
+					return err
+				}
+			case KeyTypeJSON:
+				if err := txn.Delete([]byte(s.jsonKey(newKey))); err != nil {
+					return err
+				}
+				if err := txn.Delete(newTypeKey); err != nil {
+					return err
+				}
+			case KeyTypeStream:
+				if err := deleteByPrefix(txn, []byte("stream:"+newKey+":")); err != nil {
+					return err
+				}
+				if err := txn.Delete(newTypeKey); err != nil {
+					return err
+				}
+			case KeyTypeGeo:
+				if err := deleteByPrefix(txn, []byte("geo:"+newKey+":")); err != nil {
+					return err
+				}
+				if err := txn.Delete(newTypeKey); err != nil {
+					return err
+				}
+			case KeyTypeTimeSeries:
+				if err := deleteByPrefix(txn, []byte(fmt.Sprintf("%s%s:", prefixTS, newKey))); err != nil {
+					return err
+				}
+				if err := txn.Delete(newTypeKey); err != nil {
+					return err
+				}
+			case KeyTypeHyperLogLog:
+				if err := txn.Delete([]byte(HyperLogLogPrefix + newKey)); err != nil {
 					return err
 				}
 				if err := txn.Delete(newTypeKey); err != nil {
@@ -186,6 +221,122 @@ func (s *BotreonStore) Rename(key, newKey string) error {
 				return err
 			}
 			return txn.Delete(typeKey)
+		case KeyTypeJSON:
+			oldJSONKey := []byte(s.jsonKey(key))
+			oldJSONItem, err := txn.Get(oldJSONKey)
+			if err != nil {
+				return err
+			}
+			jVal, err := oldJSONItem.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			expiresAt := oldJSONItem.ExpiresAt()
+			if err := txn.Set(newTypeKey, []byte(keyType)); err != nil {
+				return err
+			}
+			newJSONKey := []byte(s.jsonKey(newKey))
+			if expiresAt > 0 {
+				nowUnix := uint64(time.Now().Unix())
+				var ttl time.Duration
+				if expiresAt > nowUnix {
+					ttl = time.Duration(expiresAt-nowUnix) * time.Second
+				}
+				if ttl > 0 {
+					e := badger.NewEntry(newJSONKey, jVal).WithTTL(ttl)
+					if err := txn.SetEntry(e); err != nil {
+						return err
+					}
+				} else if err := txn.Set(newJSONKey, jVal); err != nil {
+					return err
+				}
+			} else if err := txn.Set(newJSONKey, jVal); err != nil {
+				return err
+			}
+			if err := txn.Delete(typeKey); err != nil {
+				return err
+			}
+			return txn.Delete(oldJSONKey)
+		case KeyTypeGeo:
+			prefix := []byte("geo:" + key + ":")
+			if err := copyKeysByPrefix(txn, prefix, key, newKey, KeyTypeGeo); err != nil {
+				return err
+			}
+			// GEO additionally stores zset index/data keys (zset:<key>:*) for range queries.
+			zsetPrefix := []byte(fmt.Sprintf("%s%s:", prefixKeySortedSetBytes, key))
+			if err := copyKeysByPrefix(txn, zsetPrefix, key, newKey, KeyTypeSortedSet); err != nil {
+				return err
+			}
+			if err := txn.Set(newTypeKey, []byte(keyType)); err != nil {
+				return err
+			}
+			if err := deleteByPrefix(txn, prefix); err != nil {
+				return err
+			}
+			if err := deleteByPrefix(txn, zsetPrefix); err != nil {
+				return err
+			}
+			return txn.Delete(typeKey)
+		case KeyTypeStream:
+			prefix := []byte("stream:" + key + ":")
+			if err := copyKeysByPrefix(txn, prefix, key, newKey, KeyTypeStream); err != nil {
+				return err
+			}
+			if err := txn.Set(newTypeKey, []byte(keyType)); err != nil {
+				return err
+			}
+			if err := deleteByPrefix(txn, prefix); err != nil {
+				return err
+			}
+			return txn.Delete(typeKey)
+		case KeyTypeTimeSeries:
+			prefix := []byte(fmt.Sprintf("%s%s:", prefixTS, key))
+			if err := copyKeysByPrefix(txn, prefix, key, newKey, KeyTypeTimeSeries); err != nil {
+				return err
+			}
+			if err := txn.Set(newTypeKey, []byte(keyType)); err != nil {
+				return err
+			}
+			if err := deleteByPrefix(txn, prefix); err != nil {
+				return err
+			}
+			return txn.Delete(typeKey)
+		case KeyTypeHyperLogLog:
+			oldHLLKey := []byte(HyperLogLogPrefix + key)
+			oldHLLItem, err := txn.Get(oldHLLKey)
+			if err != nil {
+				return err
+			}
+			hVal, err := oldHLLItem.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			expiresAt := oldHLLItem.ExpiresAt()
+			if err := txn.Set(newTypeKey, []byte(keyType)); err != nil {
+				return err
+			}
+			newHLLKey := []byte(HyperLogLogPrefix + newKey)
+			if expiresAt > 0 {
+				nowUnix := uint64(time.Now().Unix())
+				var ttl time.Duration
+				if expiresAt > nowUnix {
+					ttl = time.Duration(expiresAt-nowUnix) * time.Second
+				}
+				if ttl > 0 {
+					e := badger.NewEntry(newHLLKey, hVal).WithTTL(ttl)
+					if err := txn.SetEntry(e); err != nil {
+						return err
+					}
+				} else if err := txn.Set(newHLLKey, hVal); err != nil {
+					return err
+				}
+			} else if err := txn.Set(newHLLKey, hVal); err != nil {
+				return err
+			}
+			if err := txn.Delete(typeKey); err != nil {
+				return err
+			}
+			return txn.Delete(oldHLLKey)
 		default:
 			if err := txn.Set(newTypeKey, []byte(keyType)); err != nil {
 				return err
@@ -232,16 +383,27 @@ func copyKeysByPrefix(txn *badger.Txn, oldPrefix []byte, oldKey, newKey, keyType
 		oldKeyBytes := item.KeyCopy(nil)
 		oldKeyStr := string(oldKeyBytes)
 
-		// 生成新键
+		// 生成新键：按前缀形态区分三类
 		var newKeyStr string
-		if keyType == KeyTypeSortedSet {
-			// SortedSet使用zset:前缀，格式是zset:oldKey:...
-			// 需要替换为zset:newKey:...
+		switch keyType {
+		case KeyTypeSortedSet:
+			// SortedSet: zset:oldKey:... → zset:newKey:...
 			oldKeyPrefix := fmt.Sprintf("%s%s:", prefixKeySortedSetBytes, oldKey)
 			newKeyStr = fmt.Sprintf("%s%s:%s", prefixKeySortedSetBytes, newKey, oldKeyStr[len(oldKeyPrefix):])
-		} else {
+		case KeyTypeGeo:
+			// GEO: geo:oldKey:... → geo:newKey:...
+			oldKeyPrefix := fmt.Sprintf("geo:%s:", oldKey)
+			newKeyStr = fmt.Sprintf("geo:%s:%s", newKey, oldKeyStr[len(oldKeyPrefix):])
+		case KeyTypeStream:
+			// Stream: stream:oldKey:... → stream:newKey:...
+			oldKeyPrefix := fmt.Sprintf("stream:%s:", oldKey)
+			newKeyStr = fmt.Sprintf("stream:%s:%s", newKey, oldKeyStr[len(oldKeyPrefix):])
+		case KeyTypeTimeSeries:
+			// TS: TS:oldKey:... → TS:newKey:...（prefixTS="TS:"）
+			oldKeyPrefix := fmt.Sprintf("%s%s:", prefixTS, oldKey)
+			newKeyStr = fmt.Sprintf("%s%s:%s", prefixTS, newKey, oldKeyStr[len(oldKeyPrefix):])
+		default:
 			// 其他类型使用TYPE:oldKey:...格式
-			// 需要替换为TYPE:newKey:...
 			oldKeyPrefix := fmt.Sprintf("%s:%s:", keyType, oldKey)
 			newKeyStr = fmt.Sprintf("%s:%s:%s", keyType, newKey, oldKeyStr[len(oldKeyPrefix):])
 		}
