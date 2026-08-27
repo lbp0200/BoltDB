@@ -191,7 +191,7 @@ replMgr.Stop() → cancel() → metricsWg.Wait() → handler.Shutdown() → db.C
 | `internal/metrics/http.go` | HTTP 服务器 + 端点注册 (`AttachHTTP`, `ServeMetrics`) |
 | `internal/metrics/periodic.go` | 定期快照日志写入 (`StartPeriodicSnapshot`) |
 | `internal/store/backpressure.go` | 写背压指标 (`GetRetryMetrics`, `GetQueryBudgetTrips`) |
-| `internal/replication/replicator.go` | 复制偏移 / 从节点计数 |
+| `internal/replication/replication.go` + `commands.go` / `psync.go` | 复制偏移 / 从节点计数 / RDB 备份与 PSYNC |
 | `internal/server/handler_core.go` + `client_commands.go` | 客户端连接统计 |
 | `scripts/soak_dashboard.sh` | 终端实时看板 |
 | `cmd/boltDB/main.go:353-382` | 采集器初始化和端点启动 |
