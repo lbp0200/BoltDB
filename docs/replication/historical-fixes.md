@@ -45,12 +45,13 @@ write with `offset < snapshotOffset` committed to Badger before
 `GetMasterReplOffset()` → guaranteed visible in the MVCC snapshot. Writes with
 `offset >= snapshotOffset` are covered by the backlog.
 
-**Residual:** A microsecond duplicate window now exists (writes in both RDB and
-backlog), bounded and tested.
+**Residual (historical):** A microsecond duplicate window then existed (writes in
+both RDB and backlog), bounded and tested. Closed by Issue #3 (`d5e210d`,
+`store.snapshotMu`) — now zero window.
 
-**Regression guards:**
-- `TestRegressionSnapshotFullresyncOffset`
-- `TestRegressionDuplicateWindowMeasurement`
+**Regression guards (now strict):**
+- `TestRegressionSnapshotFullresyncOffset` (strict)
+- `TestRegressionDuplicateWindowMeasurement` (zero-window)
 
 ---
 
@@ -214,3 +215,4 @@ Added `isPositiveIntegerResp` helper in replication_helper.go.
 | `df46325` | Jun 2026 | Multi-fix | CLIENT KILL leak, write deadline, backoff reset |
 | `f250ad3` | Aug 2026 | Backlog WAL | Never truncated — unbounded growth, multi-GB startup replay |
 | `e322b7c` | Aug 2026 | Replication | Rejected conditional EXPIRE/PEXPIRE propagated as PEXPIREAT (slave TTL drift) |
+| `d5e210d` | Aug 2026 | Replication | Linearizable FULLRESYNC boundary — zero duplicate window (`store.snapshotMu`) |

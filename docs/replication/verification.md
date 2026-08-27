@@ -1,8 +1,8 @@
 # Replication Verification
 
-Replication correctness verification is split into three tiers to prevent the
-known architectural duplicate-window boundary from polluting long-run stability
-analysis.
+Replication correctness verification is split into three tiers to keep
+lifecycle/offset correctness separate from long-run stability analysis
+(the former duplicate-window boundary is now closed — Issue #3).
 
 ## Tier 1: Short Strict Soak (5-15m)
 
@@ -29,14 +29,14 @@ SOAK_REPL_DURATION=6h SOAK_REPL_WRITERS=4 go test -race -timeout 7h \
 
 | Property | Value |
 |----------|-------|
-| Strict equality | OFF (informational comparison — expects duplicate-window drift) |
+| Strict equality | OFF by default (informational); use `SOAK_REPL_STRICT_EQUALITY=1` for strict check (now meaningful — zero window) |
 | Focus | L0 score trajectory, retry semaphore bounds, goroutine plateau, reconnect stability, health score, basin analysis, cross-run evolution |
 | Writers | 4 goroutines, sustained throughput |
 | Lifecycle chaos | Moderate (reduced to prevent FULLRESYNC thrash) |
 | Pass criteria | Degradation invariants hold (see below), health score stable, no regime shift |
 | When to run | Nightly CI soak pipeline, pre-release stability validation |
 
-## Tier 3: Duplicate-Window Regression (30-60s)
+## Tier 3: Duplicate-Window Regression (30-60s) — now zero-window
 
 ```bash
 go test -race -timeout 60s ./cmd/integration/regressions/ \
@@ -45,23 +45,21 @@ go test -race -timeout 60s ./cmd/integration/regressions/ \
 
 | Property | Value |
 |----------|-------|
-| Purpose | Quantify INCR overcount and LPUSH duplicate ratio |
+| Purpose | Assert zero duplicate window (linearizable FULLRESYNC) |
 | Mechanism | High-concurrency writers + forced FULLRESYNC → post-convergence delta |
-| Pass criteria | INCR gap ≤ 2, LPUSH duplicate ratio ≤ 70%, ZSET/HSET exact match |
+| Pass criteria | INCR gap == 0, LPUSH duplicate ratio == 0%, ZSET/HSET exact match |
 | When to run | CI on every replication change |
 
 ### Why Three Tiers
 
-The dual-timeline architecture (Badger MVCC snapshot ≠ replication offset)
-creates a microsecond duplicate window. This window:
+The dual-timeline architecture (Badger MVCC snapshot vs replication offset) is
+now **linearized** by `store.snapshotMu` (Issue #3): FULLRESYNC holds a write
+lock across offset capture + `View`, while normal writes hold a read lock via
+`retryUpdate`. The former duplicate window is closed; the three tiers now
+separate lifecycle/offset correctness from long-run stability analysis:
 
-- **Is harmless** for idempotent commands (SET, HSET, SADD, ZADD)
-- **Is bounded** for non-idempotent commands (INCR off-by-1, LPUSH ~50%)
-- **Would require** commit-seq ↔ repl-offset mapping to eliminate
-
-Long strict equality soak tests WILL show drift from this window, but that drift
-says nothing about L0 stability, backpressure, goroutine management, or compaction.
-The three-tier split ensures each concern has the right verification tool.
+- **Tier 1/3:** strict equality (`t.Errorf` on any divergence)
+- **Tier 2:** degradation invariants (L0, backpressure, goroutine, compaction)
 
 ## Regression Tests
 
@@ -73,9 +71,9 @@ Key replication regression tests:
 
 | Test | What it verifies |
 |------|-----------------|
-| `TestRegressionSnapshotFullresyncOffset` | No lost writes after FULLRESYNC; tolerates residual duplicate window |
+| `TestRegressionSnapshotFullresyncOffset` | No lost writes after FULLRESYNC; zero duplicate window (strict) |
 | `TestRegressionPsyncReconnectNoLoss` | Zero data loss after PSYNC CONTINUE + FULLRESYNC cycles |
-| `TestRegressionDuplicateWindowMeasurement` | INCR gap ≤ 2, LPUSH dup ratio ≤ 70% |
+| `TestRegressionDuplicateWindowMeasurement` | Zero duplicate window: INCR gap == 0, LPUSH dup ratio == 0 |
 
 ## Degradation Invariants
 

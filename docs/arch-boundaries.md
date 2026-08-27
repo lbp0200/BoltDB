@@ -26,41 +26,41 @@ MVCC transaction. This means:
   best-effort point), and any writes that committed between the offset capture
   and the snapshot start appear in both the RDB and the backlog.
 
-### Current Behavior
+### Current Behavior (Fixed — Issue #3, 2026-08-27)
 
-The snapshot offset is captured **before** `db.View()` starts:
+The snapshot offset capture and MVCC `View` are **atomically bound** by
+`store.snapshotMu` (`RWMutex`): FULLRESYNC holds the write lock across
+`GetMasterReplOffset() → GenerateRDBWithSnapshotLock(View)`, while normal
+writes hold a read lock via `retryUpdate`. No write can commit between the
+offset capture and the `View` start, so the two datasets are disjoint.
 
 ```
-snapshotOffset = GetMasterReplOffset()  // captured here
-db.View(func(txn *badger.Txn) error {   // snapshot starts here
-    ...                                  // writes may commit in between
-})
+SnapshotMuLock()                            // WR
+  snapshotOffset = GetMasterReplOffset()    // captured under lock
+  GenerateRDBWithSnapshotLock(View)         // still under WR
+SnapshotMuUnlock()                          // release before network I/O
 backlog.Slice(snapshotOffset, currentOffset)
 ```
 
 Writes with `offset < snapshotOffset` are in the MVCC snapshot → RDB.
 Writes with `offset >= snapshotOffset` are in the backlog.
+**Zero duplicate window** — linearizable offset↔MVCC binding.
 
-**Residual duplicate window:** Writes that committed between
-`GetMasterReplOffset()` and `db.View()` start are in both RDB and backlog.
-This window is typically microseconds (0–1 writes). When a duplicate occurs,
-the slave applies the same write twice, which is safe for all idempotent
-commands (SET, SADD, HSET, etc.).
+Historical note: before the fix, any write that committed between
+`GetMasterReplOffset()` and `db.View()` appeared in both RDB and backlog
+(microsecond window, 0–1 writes, idempotent commands unaffected).
 
-### What a Fix Would Require
+### What the Fix Required (Done)
 
-- Storing a `(replOffset → badgerTS)` mapping at every write
-- Loading the mapping on FULLRESYNC to capture a precise MVCC read timestamp
-- Propagating the timestamp through the backlog write path
-- Handling Badger's MVCC garbage collection to prevent the mapping from
-  referencing a GC'd timestamp
+- `store.snapshotMu` RWMutex + `retryUpdate` read-lock + FULLRESYNC write-lock
+- No `(replOffset → badgerTS)` mapping is needed — the lock achieves the same
+  invariant with lower complexity. The mapping remains a valid alternative but is
+  not implemented.
 
 ### Decision
 
-**Not fixing.** The duplicate window is bounded to microseconds and produces
-only idempotent re-application. The fix would touch every write path, the
-backlog, the RDB snapshot, and PSYNC semantics — architecture-level effort
-for marginal benefit.
+**Fixed.** The linearizable boundary is enforced by the critical-section
+ordering. See `docs/failures/snapshot-inconsistency.md §4`.
 
 ---
 
@@ -108,13 +108,13 @@ These are the same architectural changes that fix boundary #1.
 
 ### Decision
 
-**Not fixing.** Current guarantees:
+**Fixed — Issue #3 (2026-08-27, `store.snapshotMu`).** Current guarantees:
 
 | Property | Status |
 |----------|--------|
 | No lost writes | ✅ Guaranteed — every write is in RDB or backlog |
 | No structural corruption | ✅ Guaranteed — Badger MVCC provides consistent snapshots |
-| Bounded duplicate window | ✅ Guaranteed — microsecond window, idempotent replay |
+| Zero duplicate window | ✅ Guaranteed — linearizable offset↔MVCC binding |
 | Eventual convergence | ✅ Guaranteed — slave catches up to `currentOffset` |
 
 ---
@@ -124,11 +124,10 @@ These are the same architectural changes that fix boundary #1.
 | Scenario | Impact |
 |----------|--------|
 | Slave reconnects after short outage | PSYNC CONTINUE: no snapshot, no gap |
-| Slave reconnects after long outage | FULLRESYNC: duplicate window ≤ few writes |
-| Heavy write load during FULLRESYNC | Same duplicate window; no data loss |
+| Slave reconnects after long outage | FULLRESYNC: zero duplicate window (strict equality) |
+| Heavy write load during FULLRESYNC | Same — zero duplicate window; no data loss |
 | Slave promotes to master (failover) | Offset reset; no gap from prior timeline |
-| Long strict soak (6h+) | Shows duplicate-window drift — expected, not a regression |
+| Long strict soak (6h+) | Strict equality holds; no duplicate-window drift |
 
-The duplicate-window is monitored by `TestRegressionDuplicateWindowMeasurement`
-and bounded by configurable thresholds. Any breach of those thresholds is a
-regression regardless of this architectural boundary.
+`TestRegressionDuplicateWindowMeasurement` now asserts **zero** duplicate window;
+any non-zero gap is a regression.

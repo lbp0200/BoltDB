@@ -567,6 +567,14 @@ func (s *BotreonStore) SaveReplID(id string) error {
 	})
 }
 
+// SaveReplIDLocked 与 SaveReplID 相同，但在 snapshotMu 读锁保护下执行，
+// 用于 FULLRESYNC 临界区内的元数据写入。
+func (s *BotreonStore) SaveReplIDLocked(id string) error {
+	return s.RunWriteLocked(func(txn *badger.Txn) error {
+		return txn.Set(replMetaKey, []byte(id))
+	})
+}
+
 // LoadReplID 从 BadgerDB 读取持久化的复制 ID。
 // 返回空字符串表示没有持久化的 ID（首次启动或旧数据库）。
 func (s *BotreonStore) LoadReplID() (string, error) {
@@ -593,6 +601,16 @@ func (s *BotreonStore) LoadReplID() (string, error) {
 // 确保重启后从节点可以通过 PSYNC CONTINUE 而非 FULLRESYNC 重新连接。
 func (s *BotreonStore) SaveMasterReplOffset(offset int64) error {
 	return s.db.Update(func(txn *badger.Txn) error {
+		buf := make([]byte, 8)
+		binary.BigEndian.PutUint64(buf, uint64(offset))
+		return txn.Set(replOffsetKey, buf)
+	})
+}
+
+// SaveMasterReplOffsetLocked 与 SaveMasterReplOffset 相同，但在 snapshotMu
+// 读锁保护下执行，避免与 FULLRESYNC 快照窗口并发。
+func (s *BotreonStore) SaveMasterReplOffsetLocked(offset int64) error {
+	return s.RunWriteLocked(func(txn *badger.Txn) error {
 		buf := make([]byte, 8)
 		binary.BigEndian.PutUint64(buf, uint64(offset))
 		return txn.Set(replOffsetKey, buf)
@@ -636,6 +654,17 @@ func (s *BotreonStore) SaveBacklog(offset int64, buffer []byte, size int64) erro
 	})
 }
 
+// SaveBacklogLocked 与 SaveBacklog 相同，但在 snapshotMu 读锁保护下执行。
+func (s *BotreonStore) SaveBacklogLocked(offset int64, buffer []byte, size int64) error {
+	buf := make([]byte, 16+len(buffer))
+	binary.BigEndian.PutUint64(buf[0:8], uint64(offset))
+	binary.BigEndian.PutUint64(buf[8:16], uint64(size))
+	copy(buf[16:], buffer)
+	return s.RunWriteLocked(func(txn *badger.Txn) error {
+		return txn.Set(backlogKey, buf)
+	})
+}
+
 // LoadBacklog 从 BadgerDB 读取持久化的 replication backlog。
 // 返回 (offset, buffer, size, error)。buffer 为 nil 表示首次启动或无持久化数据。
 func (s *BotreonStore) LoadBacklog() (int64, []byte, int64, error) {
@@ -669,6 +698,13 @@ func (s *BotreonStore) LoadBacklog() (int64, []byte, int64, error) {
 // DeleteBacklog 删除持久化的 backlog 数据。
 func (s *BotreonStore) DeleteBacklog() error {
 	return s.db.Update(func(txn *badger.Txn) error {
+		return txn.Delete(backlogKey)
+	})
+}
+
+// DeleteBacklogLocked 与 DeleteBacklog 相同，但在 snapshotMu 读锁保护下执行。
+func (s *BotreonStore) DeleteBacklogLocked() error {
+	return s.RunWriteLocked(func(txn *badger.Txn) error {
 		return txn.Delete(backlogKey)
 	})
 }

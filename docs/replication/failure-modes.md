@@ -49,10 +49,10 @@ RDB generation completion and offset capture.
 
 **Commit:** No dedicated commit — intermediate state
 
-### Bug 3 (Current Fix)
+### Bug 3 (Fix)
 
 `snapshotOffset` captured BEFORE `GenerateRDB`. Eliminates lost-write window
-entirely. Residual microsecond duplicate window is bounded and tested.
+entirely. Residual microsecond duplicate window remained (bounded, tested).
 
 **Commit:** `6299525`
 
@@ -60,6 +60,17 @@ entirely. Residual microsecond duplicate window is bounded and tested.
 write with `offset < snapshotOffset` committed before `GetMasterReplOffset()`
 → visible in MVCC snapshot. Writes with `offset >= snapshotOffset` are in the
 backlog.
+
+### Bug 4 — Linearizable Boundary (Issue #3)
+
+`store.snapshotMu` RWMutex atomically binds `GetMasterReplOffset()` →
+`GenerateRDBWithSnapshotLock(View)`. FULLRESYNC holds the write lock across
+the capture+View, normal writes hold a read lock via `retryUpdate`. No write
+can land in both RDB and backlog — **zero duplicate window**.
+
+**Commit:** `d5e210d` (followed by doc sync in this patch)
+
+See `docs/failures/snapshot-inconsistency.md §4` and `docs/arch-boundaries.md §1`.
 
 ---
 
@@ -171,15 +182,15 @@ replMgr.Stop() → close slave TCP conns → ReadRESP unblocks
 
 ---
 
-## Duplicate-Window Residual
+## Duplicate-Window Residual (Closed — Issue #3)
 
-**Status:** ✅ Bounded, measured, documented (design choice)
+**Status:** ✅ Fixed — zero duplicate window (linearizable, `store.snapshotMu`).
 
-**Nature:** The dual-timeline architecture (Badger MVCC timestamp ≠ replication
-offset) creates a microsecond window where a write can appear in both RDB and
-backlog. This is **not a bug** — it's an architectural tradeoff.
+Previously the dual-timeline architecture (Badger MVCC timestamp ≠ replication
+offset) created a microsecond window where a write could appear in both RDB and
+backlog. This is now closed by the RWMutex binding described above.
 
-**Manifestation:**
+**Historical thresholds (pre-fix, for reference):**
 
 | Command | Effect | Threshold |
 |---------|--------|-----------|
@@ -187,10 +198,8 @@ backlog. This is **not a bug** — it's an architectural tradeoff.
 | LPUSH | ~50% duplicate ratio in concurrent floods | ≤ 70% (regression test) |
 | SET / HSET / SADD / ZADD | Duplicate is idempotent — no effect | N/A |
 
-**Detection:** `TestRegressionDuplicateWindowMeasurement` in the regression suite.
-
-**Elimination:** Would require commit-seq ↔ repl-offset mapping in BadgerDB —
-an architecture-level change (see P1.2).
+**Current assertion:** `TestRegressionDuplicateWindowMeasurement` asserts
+**zero** window (`gap == 0`, `dup ratio == 0`).
 
 **See:** [verification.md](verification.md#tier-3-duplicate-window-regression),
-`docs/failures/snapshot-inconsistency.md`
+`docs/failures/snapshot-inconsistency.md §4`.
