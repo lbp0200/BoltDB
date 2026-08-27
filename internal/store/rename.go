@@ -223,7 +223,13 @@ func (s *BotreonStore) Rename(key, newKey string) error {
 			if err := deleteByPrefix(txn, prefix); err != nil {
 				return err
 			}
-			return txn.Delete(typeKey)
+			if err := txn.Delete(typeKey); err != nil {
+				return err
+			}
+			// 失效旧/新两侧的 ZSET rank cache，避免 RENAME 后的脏读。
+			s.markZSetDirty(key)
+			s.markZSetDirty(newKey)
+			return nil
 		case KeyTypeJSON:
 			oldJSONKey := []byte(s.jsonKey(key))
 			oldJSONItem, err := txn.Get(oldJSONKey)
@@ -279,7 +285,13 @@ func (s *BotreonStore) Rename(key, newKey string) error {
 			if err := deleteByPrefix(txn, zsetPrefix); err != nil {
 				return err
 			}
-			return txn.Delete(typeKey)
+			if err := txn.Delete(typeKey); err != nil {
+				return err
+			}
+			// GEO 复用 zset rank cache 前缀，同步失效避免脏读。
+			s.markZSetDirty(key)
+			s.markZSetDirty(newKey)
+			return nil
 		case KeyTypeStream:
 			prefix := []byte("stream:" + key + ":")
 			if err := copyKeysByPrefix(txn, prefix, key, newKey, KeyTypeStream); err != nil {
