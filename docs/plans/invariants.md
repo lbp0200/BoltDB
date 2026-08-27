@@ -251,19 +251,19 @@ ReplicationManager.slaves   ReplicationManager       是                   内�
 
 ### 10.1 类型前缀表
 
-| Redis 类型 | 存储前缀 |
-|------------|---------|
-| String | `STRING:` |
-| List | `LIST:` |
-| Hash | `HASH:` |
-| Set | `SET:` |
-| Sorted Set | `zset:` |
-| JSON | `JSON:` |
-| TimeSeries | `TS:` |
-| Stream | `stream:` |
-| Geo | `geo:` |
-| HyperLogLog | `hll:` |
-| Type 元数据 | `TYPE_` |
+| Redis 类型 | 存储前缀 | 备注 |
+|------------|---------|------|
+| String | `STRING:` |  |
+| List | `LIST:` |  |
+| Hash | `HASH:` | `__count__` 计数键为 TTL 探测锚点 |
+| Set | `SET:` | `count` 键为 TTL 探测锚点 |
+| Sorted Set | `zset:` | `meta` 键为 TTL 探测锚点 |
+| JSON | `JSON:` |  |
+| TimeSeries | `TS:` | `meta` 键为 TTL 探测锚点 |
+| Stream | `stream:` | `meta` 键为 TTL 探测锚点 |
+| Geo | `geo:` + `zset:` | 双前缀：`geo:<key>:` 存坐标索引，`zset:<key>:` 存 rank/index 缓存；`RENAME`/`DEL`/`COPY`/`NextStartup` 均需双前缀闭环清理 |
+| HyperLogLog | `hll:` |  |
+| Type 元数据 | `TYPE_` |  |
 
 ---
 
