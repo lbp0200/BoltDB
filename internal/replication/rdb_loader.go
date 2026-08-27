@@ -488,6 +488,11 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 					}
 				}
 			}
+			if ttl > 0 {
+				if _, err := s.PExpire(key, int64(ttl.Milliseconds())); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("RDB: 设置stream TTL失败")
+				}
+			}
 
 		case 6: // GEO
 			length, err := dec.readLength()
