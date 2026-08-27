@@ -21,6 +21,11 @@ func randomFloat64() float64 {
 }
 
 func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int) error {
+	// 线性 FULLRESYNC 边界：写事务持有 snapshotMu 读锁，FULLRESYNC
+	// 的 snapshotOffset→View 窗口持写锁，消除微秒级重复窗口。
+	s.snapshotMu.RLock()
+	defer s.snapshotMu.RUnlock()
+
 	// 主动背压：在进入 retry 循环前检查 L0 状态
 	bpCfg := s.bpConfig.Load()
 	if bpCfg.Enabled {

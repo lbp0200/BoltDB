@@ -153,12 +153,8 @@ func TestRegressionSnapshotFullresyncOffset(t *testing.T) {
 	sc := redis.NewClient(&redis.Options{Addr: slave.Addr, DialTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second})
 	defer sc.Close()
 
-	// Verification approach:
-	// - Accept a small (<=2 command) offset due to the fundamental race
-	//   between backlog read and AddSlave. Eliminating this requires a
-	//   global write lock during FULLRESYNC, which is not practical.
-	// - DO verify: no structural corruption, no duplicates, no semantic
-	//   drift beyond the known window.
+	// Linearizable boundary (Issue #3): snapshotMu eliminates the
+	// bounded duplicate window. INCR/LIST must now be exact.
 	t.Run("incr", func(t *testing.T) { verifyIncr(ctx, t, mc, sc) })
 	t.Run("list", func(t *testing.T) { verifyList(ctx, t, mc, sc) })
 	t.Run("zset", func(t *testing.T) { verifyZSet(ctx, t, mc, sc) })
@@ -336,12 +332,8 @@ func verifyIncr(ctx context.Context, t *testing.T, mc, sc *redis.Client) {
 			t.Errorf("slave GET %s: %v", key, err)
 			continue
 		}
-		if sv > mv {
-			t.Errorf("INCR %s SLAVE > MASTER: slave=%d master=%d — DOUBLE REPLAY", key, sv, mv)
-		} else if mv-sv > 2 {
-			t.Errorf("INCR %s gap > 2: master=%d slave=%d lost=%d", key, mv, sv, mv-sv)
-		} else if mv != sv {
-			t.Logf("INCR %s off by %d (within known race window)", key, mv-sv)
+		if sv != mv {
+			t.Errorf("INCR %s mismatch: master=%d slave=%d (linearizable boundary requires exact equality)", key, mv, sv)
 		}
 	}
 }
@@ -351,20 +343,12 @@ func verifyList(ctx context.Context, t *testing.T, mc, sc *redis.Client) {
 		key := fmt.Sprintf("t:list:%d", i)
 		mv, _ := mc.LLen(ctx, key).Result()
 		sv, _ := sc.LLen(ctx, key).Result()
-		if sv > mv {
-			t.Errorf("LIST %s SLAVE > MASTER: master=%d slave=%d — DUPLICATE REPLAY", key, mv, sv)
+		if sv != mv {
+			t.Errorf("LIST %s length mismatch: master=%d slave=%d (linearizable boundary requires exact equality)", key, mv, sv)
 			continue
-		}
-		if mv-sv > 2 {
-			t.Errorf("LIST %s length gap > 2: master=%d slave=%d lost=%d", key, mv, sv, mv-sv)
-			continue
-		}
-		if mv != sv {
-			t.Logf("LIST %s off by %d (within known race window)", key, mv-sv)
 		}
 
-		// Check for structural integrity: bounded duplicate detection on slave
-		// Known PreOffset window causes ~1% duplicate. Flag if >5%.
+		// With linearizable boundary duplicates should be zero.
 		se, _ := sc.LRange(ctx, key, 0, -1).Result()
 		seen := make(map[string]int)
 		for _, e := range se {
@@ -376,16 +360,8 @@ func verifyList(ctx context.Context, t *testing.T, mc, sc *redis.Client) {
 				dupCount += count - 1
 			}
 		}
-		total := len(se)
-		if total > 0 {
-			dupRatio := float64(dupCount) / float64(total) * 100
-			if dupRatio > 70.0 {
-				t.Errorf("LIST %s duplicate ratio %.1f%% (%d/%d) exceeds 70%% threshold — UNBOUNDED REPLAY",
-					key, dupRatio, dupCount, total)
-			} else if dupRatio > 0 {
-				t.Logf("LIST %s duplicate ratio %.1f%% (%d/%d) within known RDB View window",
-					key, dupRatio, dupCount, total)
-			}
+		if dupCount > 0 {
+			t.Errorf("LIST %s duplicate entries=%d (linearizable boundary requires 0 duplicates)", key, dupCount)
 		}
 	}
 }

@@ -13,25 +13,23 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// TestRegressionDuplicateWindowMeasurement quantifies the residual duplicate window
-// from BoltDB's dual-timeline architecture (badger MVCC snapshot != replication offset
-// boundary). This window exists because snapshotOffset is captured BEFORE badger
-// db.View(), meaning writes that commit between offset capture and View start appear
-// in both the RDB and the backlog.
+// TestRegressionDuplicateWindowMeasurement validates the linearizable
+// FULLRESYNC boundary (Issue #3). Before the snapshotMu fix, BoltDB had
+// a bounded duplicate window: writes between snapshotOffset capture and
+// View start appeared in both RDB and backlog. With the linearizable
+// boundary that window must be zero.
 //
 // Methodology (matches TestRegressionSnapshotFullresyncOffset):
 //  1. Pre-seed data, connect slave, wait for initial sync (no concurrent writes)
 //  2. Start high-concurrency INCR/LPUSH writers
 //  3. Kill slave connection to trigger FULLRESYNC with writes in flight
 //  4. Wait for convergence (data-based marker)
-//  5. Measure per-key INCR gap and LPUSH duplicate ratio
+//  5. Assert exact INCR/LPUSH equality (zero duplicate window)
 //
-// Expected results:
-//   - INCR: mv - sv <= 2 (lost writes bounded), sv - mv <= 2 (double-replay bounded)
-//   - LPUSH: duplicate ratio <= 70%
-//   - HSET/ZADD: exact match (idempotent — duplicates have no effect)
-//
-// This is the Tier 3 verification in the three-tier soak semantics.
+// Expected results (strict):
+//   - INCR: exact match (was mv-sv <=2, sv-mv <=2)
+//   - LPUSH: zero duplicates (was ratio <=70%)
+//   - HSET/ZADD: exact match
 func TestRegressionDuplicateWindowMeasurement(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping heavy regression in short mode")
@@ -149,22 +147,16 @@ func TestRegressionDuplicateWindowMeasurement(t *testing.T) {
 	t.Logf("dw-measure: LPUSH max_dup_ratio=%.1f%% (threshold=70%%)", metrics.lpushMaxDupRatio*100)
 	t.Logf("dw-measure: HSET match=%v ZSET match=%v", metrics.hsetMatch, metrics.zsetMatch)
 
-	// Assertions
-	if metrics.incrMaxGap > 2 {
-		t.Errorf("dw-measure: INCR max gap %d exceeds threshold 2 (lost writes)", metrics.incrMaxGap)
+	// Strict assertions: linearizable boundary requires exact equality (Issue #3).
+	if metrics.incrMaxGap != 0 {
+		t.Errorf("dw-measure: INCR max gap %d != 0 (linearizable boundary violated)", metrics.incrMaxGap)
 	}
 	netDelta := metrics.incrTotalS - metrics.incrTotalM
-	if netDelta > 2 {
-		t.Errorf("dw-measure: INCR double-replay count %d exceeds threshold 2 — UNBOUNDED REPLAY", netDelta)
-	} else if netDelta < -2 {
-		t.Errorf("dw-measure: INCR lost %d writes exceeds threshold 2 (duplicate window violation)", -netDelta)
-	} else if netDelta > 0 {
-		t.Logf("dw-measure: INCR double-replay count %d (within known duplicate window)", netDelta)
-	} else if netDelta < 0 {
-		t.Logf("dw-measure: INCR lost %d writes (within expected window)", -netDelta)
+	if netDelta != 0 {
+		t.Errorf("dw-measure: INCR total delta %d != 0 (linearizable boundary violated)", netDelta)
 	}
-	if metrics.lpushMaxDupRatio > 0.70 {
-		t.Errorf("dw-measure: LPUSH max duplicate ratio %.1f%% exceeds 70%% threshold — UNBOUNDED REPLAY",
+	if metrics.lpushMaxDupRatio != 0 {
+		t.Errorf("dw-measure: LPUSH max duplicate ratio %.1f%% != 0 (linearizable boundary violated)",
 			metrics.lpushMaxDupRatio*100)
 	}
 	if !metrics.hsetMatch {
@@ -210,13 +202,15 @@ func dwMeasure(ctx context.Context, t *testing.T, mc, sc *redis.Client) dwMetric
 			continue
 		}
 		gap := mv - sv
-		if gap < -2 {
-			t.Errorf("dw-measure: INCR %s double-replay exceeds threshold: slave=%d > master=%d (gap=%d)", key, sv, mv, -gap)
-		} else if gap < 0 {
-			t.Logf("dw-measure: INCR %s double-replay within bounds: slave=%d > master=%d (gap=%d)", key, sv, mv, -gap)
+		if gap != 0 {
+			t.Errorf("dw-measure: INCR %s mismatch: master=%d slave=%d gap=%d (linearizable boundary requires 0)", key, mv, sv, gap)
 		}
-		if gap > m.incrMaxGap {
-			m.incrMaxGap = gap
+		absGap := gap
+		if absGap < 0 {
+			absGap = -absGap
+		}
+		if absGap > m.incrMaxGap {
+			m.incrMaxGap = absGap
 		}
 		m.incrTotalM += mv
 		m.incrTotalS += sv

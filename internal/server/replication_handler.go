@@ -42,29 +42,31 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 	}
 
 	if result.FullResync {
-		// dual-timeline 边界修复：在 badger View 之前捕获 snapshotOffset。
+		// 线性 FULLRESYNC 边界（Issue #3）：用 store.snapshotMu 将
+		// snapshotOffset 捕获与 MVCC View 原子绑定，消除重复窗口。
 		//
-		// 序关系：store.Set()（badger commit）→ PropagateCommand()（offset 递增）
-		// 因此所有 offset < snapshotOffset 的写入在 badger View 开始前已提交，
-		// 一定在 MVCC 快照中可见 → 在 RDB 中。
+		// 旧方案仅靠"先取 offset 再开 View"保证无丢失，但两者之间
+		// 仍有微秒级重复窗口（badger commit 已发生但 offset 尚未递增的
+		// 并发写会同时落在 RDB 与 backlog）。本锁使该窗口为零：
+		// 写路径 retryUpdate() 持读锁，FULLRESYNC 持写锁覆盖整个
+		//   snapshotOffset→View 区间，零并发写入可落入两边。
 		//
-		// 所有 offset >= snapshotOffset 的写入可能/可能不在 RDB 中取决于
-		// badger commit 时序，但它们在 backlog [snapshotOffset, currentOffset)
-		// 中。副本应用 RDB + backlog 后达到 currentOffset 状态。
+		// 原序关系仍成立：
+		//   store.Set()（badger commit）→ PropagateCommand()（offset 递增）
+		// 因此 offset < snapshotOffset 的写入必在 RDB，offset >= 的
+		// 必在 backlog，且无交集。
 		//
-		// 重复窗口（RDB 和 backlog 中都有的写入）仅限于 snapshotOffset 捕获
-		// 到 View 开启之间（微秒级，通常 0 个并发写入）。
-		//
-		// 正确时序：
-		//   [1] snapshotOffset = GetMasterReplOffset()（View 前捕获）
-		//   [2] GenerateRDB（badger View，一致性快照）
-		//   [3] FULLRESYNC 响应使用 snapshotOffset
-		//   [4] 发送 RDB
-		//   [5] 在 slaveConn.mu 保护下：AddSlave + 发送 backlog（snapshotOffset → currentOffset）
-		//   [6] PropagateCommand 发送 currentOffset 之后的所有写入
+		// 时序：
+		//   [1] SnapshotMuLock()
+		//   [2] snapshotOffset = GetMasterReplOffset()
+		//   [3] GenerateRDB 内部 View 全程仍在写锁内（GenerateRDBWithSnapshotLock）
+		//   [4] SnapshotMuUnlock()（RDB 生成完立即释放，不阻塞后续 I/O）
+		//   [5] FULLRESYNC 响应使用 snapshotOffset
+		//   [6] 发送 RDB + backlog [snapshotOffset, currentOffset) + AddSlave
+		h.Db.SnapshotMuLock()
 		snapshotOffset := h.Replication.GetMasterReplOffset()
-
-		rdbData, err := replication.GenerateRDB(h.Db)
+		rdbData, err := replication.GenerateRDBWithSnapshotLock(h.Db)
+		h.Db.SnapshotMuUnlock()
 		if err != nil {
 			logger.Logger.Error().Err(err).Msg("生成RDB数据失败")
 			return proto.NewError("ERR failed to generate RDB")

@@ -429,6 +429,16 @@ func GenerateRDB(s *store.BotreonStore) ([]byte, error) {
 	return rdb, err
 }
 
+// GenerateRDBWithSnapshotLock 在调用方已持有 SnapshotMu 写锁的前提下
+// 生成 RDB。与 replication_handler 中"先取 offset 再调 RDB"的原子
+// 绑定配合使用：同一临界区内 offset 捕获与 View 不会被并发写入穿插，
+// 从而消除 bounded duplicate window。BGSAVE 等不绑定偏移的路径仍用
+// 普通 GenerateRDB。
+func GenerateRDBWithSnapshotLock(s *store.BotreonStore) ([]byte, error) {
+	// 调用方已持写锁，这里直接复用 RDB 逻辑，不再额外加锁。
+	return GenerateRDB(s)
+}
+
 // GenerateRDBWithOffset 生成RDB快照并返回快照对应的复制偏移量。
 //
 // snapshotOffset 在 badger View 事务内、所有数据读取完成后捕获（通过 offsetFn）。
