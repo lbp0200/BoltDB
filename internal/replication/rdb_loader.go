@@ -533,6 +533,11 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 			if _, _, err := s.JSONSet(key, "$", value, false, false); err != nil {
 				logger.Logger.Warn().Str("key", key).Err(err).Msg("存储JSON值失败")
 			}
+			if ttl > 0 {
+				if _, err := s.PExpire(key, int64(ttl.Milliseconds())); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("RDB: 设置JSON TTL失败")
+				}
+			}
 
 		case 9: // HLL
 			data, err := dec.readBytes()
@@ -542,6 +547,11 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 			}
 			if err := s.RestoreHLL(key, data); err != nil {
 				logger.Logger.Warn().Str("key", key).Err(err).Msg("存储HLL值失败")
+			}
+			if ttl > 0 {
+				if _, err := s.PExpire(key, int64(ttl.Milliseconds())); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("RDB: 设置HLL TTL失败")
+				}
 			}
 
 		case 8: // TIMESERIES
@@ -564,6 +574,11 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 				opts := store.TSAddOptions{}
 				if _, err := s.TSAdd(key, timestamp, value, opts); err != nil {
 					logger.Logger.Warn().Str("key", key).Int64("ts", timestamp).Err(err).Msg("RDB加载time series数据点失败")
+				}
+			}
+			if ttl > 0 {
+				if _, err := s.PExpire(key, int64(ttl.Milliseconds())); err != nil {
+					logger.Logger.Warn().Str("key", key).Err(err).Msg("RDB: 设置time series TTL失败")
 				}
 			}
 
