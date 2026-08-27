@@ -524,7 +524,7 @@ func (h *Handler) handleRENAME(state *connState, args [][]byte, remoteAddr strin
 		return proto.NewError("ERR wrong number of arguments for 'RENAME' command")
 	}
 	key, newKey := string(args[0]), string(args[1])
-	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+	if resp := h.checkAndHandleMultiKeyRedirect([]string{key, newKey}); resp != nil {
 		return resp
 	}
 	h.markDirtyKeys(state, key, newKey)
@@ -540,7 +540,7 @@ func (h *Handler) handleRENAMENX(state *connState, args [][]byte, remoteAddr str
 		return proto.NewError("ERR wrong number of arguments for 'RENAMENX' command")
 	}
 	key, newKey := string(args[0]), string(args[1])
-	if resp := h.checkAndHandleRedirect(state, key); resp != nil {
+	if resp := h.checkAndHandleMultiKeyRedirect([]string{key, newKey}); resp != nil {
 		return resp
 	}
 	success, err := h.Db.RenameNX(key, newKey)
