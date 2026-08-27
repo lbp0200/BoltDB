@@ -56,6 +56,9 @@ func (s *BotreonStore) NextStartup() error {
 		_ = cleanupOrphanedStreamData(txn)
 		_ = cleanupOrphanedHLLData(txn)
 		_ = cleanupOrphanedGeoData(txn)
+		_ = cleanupOrphanedJSONData(txn)
+		_ = cleanupOrphanedTSData(txn)
+		_ = cleanupOrphanedGeoZSetData(txn)
 
 		return nil
 	}, 30)
@@ -386,6 +389,88 @@ func cleanupOrphanedGeoData(txn *badger.Txn) error {
 			// 删除整个geo的数据
 			geoPrefix := []byte("geo:" + key + ":")
 			if err := deleteByPrefix(txn, geoPrefix); err != nil {
+				continue
+			}
+		}
+	}
+	return nil
+}
+
+// cleanupOrphanedJSONData 清理没有TYPE_键的 JSON 数据（JSON:<key>）
+func cleanupOrphanedJSONData(txn *badger.Txn) error {
+	iter := txn.NewIterator(badger.DefaultIteratorOptions)
+	defer iter.Close()
+
+	prefix := []byte("JSON:")
+	for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
+		item := iter.Item()
+		keyBytes := item.KeyCopy(nil)
+		key := string(keyBytes[len("JSON:"):])
+		typeKey := TypeOfKeyGet(key)
+		_, err := txn.Get(typeKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			if err := txn.Delete(keyBytes); err != nil {
+				continue
+			}
+		}
+	}
+	return nil
+}
+
+// cleanupOrphanedTSData 清理没有TYPE_键的 TimeSeries 数据（TS:<key>:meta / TS:<key>:data:*）
+func cleanupOrphanedTSData(txn *badger.Txn) error {
+	iter := txn.NewIterator(badger.DefaultIteratorOptions)
+	defer iter.Close()
+
+	prefix := []byte("TS:")
+	for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
+		item := iter.Item()
+		keyBytes := item.KeyCopy(nil)
+		keyStr := string(keyBytes)
+		// 跳过聚合规则键 TS:rule:...（无 TYPE_，不应被清理）
+		if strings.HasPrefix(keyStr, "TS:rule:") {
+			continue
+		}
+		rest := strings.TrimPrefix(keyStr, "TS:")
+		// TS:<key>:meta 或 TS:<key>:data:*
+		sep := strings.Index(rest, ":")
+		if sep < 0 {
+			continue
+		}
+		key := rest[:sep]
+		typeKey := TypeOfKeyGet(key)
+		_, err := txn.Get(typeKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			tsPrefix := []byte(fmt.Sprintf("%s%s:", prefixTS, key))
+			if err := deleteByPrefix(txn, tsPrefix); err != nil {
+				continue
+			}
+		}
+	}
+	return nil
+}
+
+// cleanupOrphanedGeoZSetData 清理 GEO 残留的 zset 前缀（zset:<key>:* 但 TYPE_ 已不存在）
+// GEO 会同时写入 geo:<key>:* 与 zset:<key>:*，若仅清理 geo: 前缀会残留 zset 孤儿。
+func cleanupOrphanedGeoZSetData(txn *badger.Txn) error {
+	iter := txn.NewIterator(badger.DefaultIteratorOptions)
+	defer iter.Close()
+
+	prefix := []byte(prefixKeySortedSetBytes)
+	for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
+		item := iter.Item()
+		keyBytes := item.KeyCopy(nil)
+		keyStr := string(keyBytes)
+		parts := strings.SplitN(keyStr, ":", 3)
+		if len(parts) < 2 {
+			continue
+		}
+		key := parts[1]
+		typeKey := TypeOfKeyGet(key)
+		_, err := txn.Get(typeKey)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			zsetPrefix := []byte(fmt.Sprintf("%s%s:", prefixKeySortedSetBytes, key))
+			if err := deleteByPrefix(txn, zsetPrefix); err != nil {
 				continue
 			}
 		}
