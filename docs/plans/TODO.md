@@ -4,6 +4,25 @@
 
 ## 待办 / 延期中
 
+### 0. 下次继续（2026-08-30 会话遗留，按建议顺序）
+
+1. **定位 1c（dw LIST 偶发 1 元素亏空）** —— 做法已写好在 1c：把 `PropagateCommand` 的
+   `SendCommand` 失败丢弃、与 `readCommandLoop` 的 `isTransientReplicationError` 跳过，
+   两条路径做成可计数指标，在 dw 用例断言"本轮丢弃数 == 0"。一次跑即可判明发送侧还是应用侧。
+   已排除：序列化不等长（14 形态探针）、收敛判据误判（marker 已到而亏空在流中间）。
+2. **push** —— 本会话产出 8 个提交（`ad69da9`…`8eef232`）；但 `origin/main..HEAD` 实际共
+   **42 个未推提交**（会话前已积 34 个）。属对外可见动作，需明确授权后再做。
+3. **reword `088ce37` 与 `14bd901` 的提交信息** —— 两条仍带着"手工摆出的交错即根因"这一
+   过强表述（含 `first byte="\r"`）。文件内容已由 `c84293f`/`f4cec87` 更正，但提交信息未改；
+   且这两个提交不在栈顶，reword 会改写其后 6 个提交的 hash —— 重写历史，需授权。
+4. **Issue #3 补一条更正评论** —— 我已发的那条评论沿用了同一处过强表述；
+   文档侧已改写为实测口径（修复前 ~1.1% 的 FULLRESYNC 窗口通告不可服务 offset，
+   修复后 0/~4900），但外部评论未更正。对外动作，需授权。
+5. **soak 收敛判据** —— `cmd/integration/soak_replication_test.go` 的
+   `waitReplicationConvergence` 仍把"stable lag"当收敛（与回归用例已改掉的同一个洞）。
+6. **µs 重复窗口仍未修**（见 1）：其守卫 `TestFullresyncBoundary_CommittedButUnpropagatedWrite`
+   仍标 Skip；`SOAK_REPL_STRICT_EQUALITY=1` 保持关闭。
+
 ### 1. FULLRESYNC 线性边界（Issue #3 — **实现未达成目标，窗口仍在**）
 
 > **状态（2026-08-29 复核）**：`snapshotMu`（`d5e210d`、`ecaf9df`）已落地，但**没有消除重复窗口**。
