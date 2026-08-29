@@ -104,29 +104,35 @@ func TestRegressionSnapshotFullresyncOffset(t *testing.T) {
 		t.Logf("offset-fix: writer err: %v", e)
 	}
 
-	// Poll for convergence — accept small stable lag (<1KB, typical for in-flight commands)
+	// Poll for convergence. The offset must reach the master's exactly.
+	//
+	// This loop previously accepted "lag stable for 3 samples and < 1000 bytes"
+	// as convergence, which is satisfied by a replica that is simply *not
+	// connected* — e.g. frozen mid exponential reconnect backoff (1/2/4/8/16/32s).
+	// A frozen nonzero lag is a stalled replica, not a converged one: in one run
+	// it declared "converged with stable lag=142", verification then reported a
+	// lost list element, and 2s later the master logged
+	// `PSYNC CONTINUE offset 非命令边界 current_offset=1844104 offset=1843962`
+	// (1844104-1843962 = 142) — i.e. the tail was still to be re-sent.
+	// See docs/failures/repl-offset-boundary-drift.md.
 	mOff := master.GetMasterOffset()
+	sOff := int64(0)
 	converged := false
-	stableLag := int64(-1)
-	stableCount := 0
+	stuckSince := -1
 	for i := 0; i < 40; i++ {
-		sOff := slave.GetSlaveOffset()
+		mOff = master.GetMasterOffset()
+		prev := sOff
+		sOff = slave.GetSlaveOffset()
 		lag := mOff - sOff
 		if lag <= 0 {
 			t.Logf("offset-fix: converged at iter %d (mo=%d so=%d)", i, mOff, sOff)
 			converged = true
 			break
 		}
-		if lag == stableLag {
-			stableCount++
-			if stableCount >= 3 && lag < 1000 {
-				t.Logf("offset-fix: converged with stable lag=%d at iter %d", lag, i)
-				converged = true
-				break
-			}
-		} else {
-			stableLag = lag
-			stableCount = 0
+		if sOff == prev && stuckSince < 0 {
+			stuckSince = i
+		} else if sOff != prev {
+			stuckSince = -1
 		}
 		if i%5 == 0 {
 			t.Logf("offset-fix: waiting %d/40 (mo=%d so=%d lag=%d)", i, mOff, sOff, lag)
@@ -135,9 +141,13 @@ func TestRegressionSnapshotFullresyncOffset(t *testing.T) {
 	}
 	if !converged {
 		mOff = master.GetMasterOffset()
-		sOff := slave.GetSlaveOffset()
-		t.Fatalf("offset-fix: slave failed to converge after 40s: mo=%d so=%d lag=%d",
-			mOff, sOff, mOff-sOff)
+		sOff = slave.GetSlaveOffset()
+		diag := "still draining"
+		if stuckSince >= 0 {
+			diag = fmt.Sprintf("slave offset frozen since iter %d — replica is not applying (reconnect backoff / mis-framed stream)", stuckSince)
+		}
+		t.Fatalf("offset-fix: slave failed to converge after 40s: mo=%d so=%d lag=%d (%s); reconnects=%d",
+			mOff, sOff, mOff-sOff, diag, slave.GetReconnectCount())
 	}
 	recon := slave.GetReconnectCount()
 	t.Logf("offset-fix: convergence ok — reconnects=%d", recon)
