@@ -83,6 +83,68 @@ func TestSlaveReconnector_GoroutineLeak(t *testing.T) {
 	t.Errorf("goroutine leak suspected: before=%d after=%d leaked=%d", before, after, after-before)
 }
 
+// Shutdown invariant (AGENTS.md): after ReplicationManager.Stop() returns, no
+// goroutine may touch the store again — db.Close() happens later in the same
+// sequence (main.go: replMgr.Stop() → cancel() → handler.Shutdown() →
+// backupMgr.Wait() → db.Close()).
+//
+// For a replica that means Stop() must end the SlaveReconnector: the loop only
+// exits on its stopCh, it retries forever (DefaultReconnectConfig.MaxRetries == 0)
+// with a 1s base backoff, and each attempt runs tryReplicate → LoadRDB /
+// executeReplicatedCommand against the store. Stop() used to leave it running,
+// so a shutdown replica kept dialling its master and could apply to a closed
+// store. The existing reconnector tests hide this because they call sr.Stop()
+// explicitly, which proves the reconnector *can* be stopped, not that shutdown
+// stops it.
+func TestReplicationManagerStopStopsSlaveReconnector(t *testing.T) {
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	// A port nobody listens on: every attempt fails fast, so the loop settles
+	// into its backoff timer and the next attempt is deterministic (~1s later).
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.NoError(t, err)
+	deadAddr := ln.Addr().String()
+	assert.NoError(t, ln.Close())
+
+	assert.NoError(t, StartSlaveReplication(rm, testStore, deadAddr))
+
+	// Hold the reconnector itself: a correct Stop() clears rm.slaveReconnector,
+	// after which rm.GetReconnectCount() would report 0 and prove nothing.
+	rm.mu.RLock()
+	sr := rm.slaveReconnector
+	rm.mu.RUnlock()
+	assert.True(t, sr != nil)
+
+	// Wait for the first attempt so the loop is provably inside its backoff.
+	seen := false
+	for i := 0; i < 100 && !seen; i++ {
+		if sr.GetReconnectCount() > 0 {
+			seen = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.True(t, seen)
+
+	countAtStop := sr.GetReconnectCount()
+	rm.Stop()
+
+	// 3s > BaseBackoff(1s): with the reconnector still running the counter is
+	// guaranteed to advance in this window, so a passing assertion here is not a
+	// race lottery.
+	time.Sleep(3 * time.Second)
+
+	if after := sr.GetReconnectCount(); after != countAtStop {
+		t.Errorf("SlaveReconnector kept running after ReplicationManager.Stop(): reconnect attempts %d → %d "+
+			"(it retries forever, and each attempt can reach the store after db.Close)", countAtStop, after)
+	}
+	if state := sr.GetState(); state != SlaveDisconnected {
+		t.Errorf("SlaveReconnector state after Stop() = %v, want SlaveDisconnected", state)
+	}
+}
+
 func TestSlaveReconnector_GetLastOffset(t *testing.T) {
 	t.Parallel()
 	sr := &SlaveReconnector{}

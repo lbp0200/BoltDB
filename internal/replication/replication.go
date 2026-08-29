@@ -562,9 +562,22 @@ func (rm *ReplicationManager) Stop() {
 	}
 	rm.slaves = make(map[string]*SlaveConnection)
 
+	reconnector := rm.slaveReconnector
+	rm.slaveReconnector = nil
+
 	masterConn := rm.masterConn
 	rm.masterConn = nil
 	rm.mu.Unlock()
+
+	// 先停重连器再关连接：reconnectLoop 只认 stopCh，且 MaxRetries=0 意味着它
+	// 会永久重试；每一轮 tryReplicate 都会走到 LoadRDB / executeReplicatedCommand，
+	// 也就是在 db.Close() 之后继续访问 store，违反关机不变量
+	// （replMgr.Stop() → cancel() → handler.Shutdown() → backupMgr.Wait() → db.Close()）。
+	// sr.Stop() 内部 wg.Wait() 而重连循环会取 rm.mu，因此必须在释放 rm.mu 之后调用。
+	// 最坏阻塞约等于一次 dialMaster 超时（5s）加一轮 RDB 应用。
+	if reconnector != nil {
+		reconnector.Stop()
+	}
 
 	// 在 锁外关闭连接，避免与 handlePSyncWithRDB 的锁链死锁
 	for _, slave := range slaves {

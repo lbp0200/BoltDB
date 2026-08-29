@@ -131,3 +131,25 @@ close listener → ServeTCP returns
 - `reconnectLoop` is tracked in `SlaveReconnector.wg`; `replMgr.Stop()` closes
   `stopCh` + master connection
 - NO goroutine should call any DB method after `backupMgr.Wait()` returns
+
+### Replica-side reconnector (contract was previously unimplemented)
+
+The second bullet above did **not** hold until 2026-08-30: `replMgr.Stop()` never
+touched `slaveReconnector`. Only `StopSlaveReplication` (i.e. `SLAVEOF NO ONE`)
+closed `stopCh`, so a server shutting down **while it was a replica** left
+`reconnectLoop` running forever — `DefaultReconnectConfig.MaxRetries == 0` means
+unbounded retries with a 1s base backoff — and each attempt reaches
+`LoadRDB`/`executeReplicatedCommand`, i.e. the store after `db.Close()`.
+Observed in regressions as a backoff ladder continuing ~30s after the test's
+`Close()` had already run.
+
+The reconnector's own tests did not catch it because they call `sr.Stop()`
+explicitly, which proves the reconnector *can* be stopped, not that shutdown
+stops it. `TestReplicationManagerStopStopsSlaveReconnector` now asserts the
+contract through `ReplicationManager.Stop()` (fails pre-fix: attempts 1 → 3
+after `Stop()`; passes post-fix).
+
+Ordering constraint when stopping: `SlaveReconnector.Stop()` does `wg.Wait()`,
+and `reconnectLoop` acquires `rm.mu`, so `Stop()` must release `rm.mu` before
+waiting. Worst-case shutdown latency added is one `dialMaster` timeout (5s) plus
+an in-flight RDB apply.

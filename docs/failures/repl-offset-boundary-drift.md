@@ -131,11 +131,13 @@ needed a boundary-exact end offset, which they now always get.
   "lost element" reports were the gate declaring convergence too early, not a
   delivery loss.
 
-## Open follow-up
+## Follow-up (resolved)
 
-The slave `SlaveReconnector` keeps backing off (retry=3..6, up to 32s) for
-~30s *after* its test closed the server — see `master_addr` entries dated after
-`--- PASS` in a regressions run. Verify that `Close()` stops the reconnector in
-the same shutdown order the real server uses (`replMgr.Stop()` → `cancel()` →
-`handler.Shutdown()` → `db.Close()`); a reconnector that outlives `db.Close()`
-would access a closed store.
+The slave `SlaveReconnector` kept backing off (retry=3..6, up to 32s) for ~30s
+*after* its test closed the server. Root cause was not the harness:
+`ReplicationManager.Stop()` never stopped `slaveReconnector`, so the documented
+shutdown contract ("`replMgr.Stop()` closes `stopCh`") was unimplemented and a
+shutting-down replica could reach the store after `db.Close()`. Fixed by
+stopping the reconnector in `Stop()`; contract, ordering constraint and the new
+guard are recorded in
+[architecture.md → Replica-side reconnector](../replication/architecture.md#replica-side-reconnector-contract-was-previously-unimplemented).
