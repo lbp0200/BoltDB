@@ -116,6 +116,18 @@ Consequence: the tolerances removed from `TestRegressionSnapshotFullresyncOffset
 and `TestRegressionDuplicateWindowMeasurement` in `d5e210d` assert an invariant
 the code does not provide — they will fail/flake under a write storm, and
 `SOAK_REPL_STRICT_EQUALITY=1` must stay off until one of the fixes below lands.
+(Measurement note: the LIST half of those assertions was separately *unsound* —
+it counted birthday collisions in the writer's own value space, so it failed
+even under perfect replication. Fixed to a master↔slave multiset comparison.)
+
+**Bigger sibling bug:** `GetMasterReplOffset()` is a sum of command lengths, not
+the backlog's contiguous watermark, so under concurrent propagation it can point
+*inside* a command — and that value is what `+FULLRESYNC` advertises and what
+`GetRange` slices the ring at. The replica then receives a stream starting
+mid-command, which mis-frames everything after it. That produces both lost
+elements and duplicated/reordered applies at a far higher rate than the
+commit-vs-propagate race above. Proof and fix sketch:
+[repl-offset-boundary-drift.md](repl-offset-boundary-drift.md).
 
 **Candidate fixes** (open decision, none implemented):
 1. **Span the critical section** — hold one `snapshotMu` read lock across

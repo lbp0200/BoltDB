@@ -27,6 +27,33 @@
 - `TestRegressionSnapshotFullresyncOffset` / `TestRegressionDuplicateWindowMeasurement` 的严格相等断言（`sv==mv`、零去重）**不成立**，会 fail/flake
 - `SOAK_REPL_STRICT_EQUALITY=1` 不要开启
 
+### 1b. 复制 offset 落在命令中间（**已定位根因，确定性证明在手，修复待决策**）
+
+> **状态（2026-08-30）**：`masterReplOffset` 是命令长度**求和**（`IncrementReplOffset`），
+> 而 backlog 环在自己的锁下**连续**推进（`Append`）——两者无同步耦合。并发传播时和可以领先/落后于环，
+> 于是 `GetMasterReplOffset()` 可能指向**某条命令内部**。
+> 该值被用于：`+FULLRESYNC` 通告（从节点原样存为 lastOffset）、`GetRange` 切片起点、PSYNC CONTINUE 校验。
+> → 从节点拿到半条命令开头的字节流，`ReadRESP` 全流错位；skip 路径再"推进 offset 但不 apply"→ 静默分叉。
+> 现场证据：`current_offset=1844104 offset=1843962`（差 142），与非命令边界降级日志同源。
+
+**确定性证明**（当前标 Skip）：`internal/replication/repl_offset_boundary_test.go`
+→ `TestMasterReplOffsetAlwaysOnCommandBoundary`（offset=39 落在 A=[0,59)）、
+`TestFullresyncBacklogSliceStartsAtCommandBoundary`（gap 首字节 `"\r"`）。
+
+**修法（3 行级）**：以环水位为唯一真相 —— `GetMasterReplOffset()` 取 `backlog.GetCurrentOffset()`，
+`PropagateCommand` 去掉 `IncrementReplOffset`。必须满足：启动恢复时 `max(persistedOffset, bOff)`
+保证 offset 不回退（崩溃后环为空但持久化 offset 非零）。
+详见 `docs/failures/repl-offset-boundary-drift.md`。
+
+**顺带澄清**：此前报的"stable lag=142 投递缺口"不是投递丢失。把收敛判据从
+"lag 稳定且 <1000 即算收敛"改为"lag 必须归零"后，2/2 次均精确收敛（`mo==so`）且 LIST 多重集完全相等
+——原判据在副本仍落后 142 字节（正待重传）时就宣布收敛，从而把一条元素缺失记在复制账上。
+`cmd/integration/soak_replication_test.go` 的 `waitReplicationConvergence` **仍有同一个洞**，待跟修。
+
+**另一条待查**：从节点的 `SlaveReconnector` 在其测试 `Close()` 之后仍继续退避重连（retry=3..6、最长 32s，
+约 30s），怀疑生命周期未随 shutdown 链收口（AGENTS.md 关机不变量要求 `replMgr.Stop()` → `cancel()` →
+`handler.Shutdown()` → `db.Close()`；重连器若活过 `db.Close()` 就会访问已关闭的 store）。
+
 ### 2. v8.52.0 发布遗留（非阻塞，2 项待观察）
 
 | 项 | 现象 | 下一步 |
