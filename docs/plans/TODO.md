@@ -4,19 +4,28 @@
 
 ## 待办 / 延期中
 
-### 1. FULLRESYNC 线性边界（Issue #3 — 已实现，待验证）
+### 1. FULLRESYNC 线性边界（Issue #3 — **实现未达成目标，窗口仍在**）
 
-> **状态：已实现（2026-08-27）** — `store.snapshotMu` RWMutex 将 `snapshotOffset` 捕获与 MVCC View 原子绑定，消除微秒级重复窗口。
-> **Issue：** https://github.com/lbp0200/BoltDB/issues/3 — `Implement linearizable FULLRESYNC boundary`
+> **状态（2026-08-29 复核）**：`snapshotMu`（`d5e210d`、`ecaf9df`）已落地，但**没有消除重复窗口**。
+> 结论由确定性复现证明（不依赖竞态）：`internal/replication/fullresync_boundary_test.go`
+> → `TestFullresyncBoundary_CommittedButUnpropagatedWrite`（当前 FAIL）。
+> **Issue：** https://github.com/lbp0200/BoltDB/issues/3 — `Implement linearizable FULLRESYNC boundary`（不可关闭）
 
-**实现**：`BotreonStore.snapshotMu`（写锁覆盖 `GetMasterReplOffset()→GenerateRDBWithSnapshotLock(View)`，`retryUpdate` 持读锁）；`replication_handler.go` 在 FULLRESYNC 快照阶段持写锁，RDB 生成完即释放；回归校验收紧为严格相等。
+**根因**：读锁只覆盖 badger 提交，**不覆盖 offset 赋值**。`PropagateCommand()`（`backlog.Append` + `IncrementReplOffset`）
+在 `handler_core.go:808` 于 `executeCommand()` 返回后调用，位于锁外。
+「已提交但未传播」的写入因此同时落在 RDB 与 backlog `[snapshotOffset, current)` 两侧 —— INCR/LPUSH 在从节点翻倍。
+锁把 `offset 捕获 → View 开启` 变成原子，但需要原子的其实是 `commit → offset 赋值`。
 
-**待验证**：
-1. `TestRegressionSnapshotFullresyncOffset` 严格相等（已由本改动收紧 veirfyIncr/verifyList 为 `sv==mv`，零重复）
-2. `TestRegressionDuplicateWindowMeasurement` 零重复（INCR/LPUSH 零容忍）
-3. `TestSoakReplication` 严格模式 `SOAK_REPL_STRICT_EQUALITY=1` 恢复硬校验
+**副作用**：写锁覆盖整个 RDB 生成期 → 全量同步期间**所有写入停摆**（DB 越大停摆越久），且暴露窗口比 §3 更长。
 
-详见 `docs/failures/snapshot-inconsistency.md` §4。
+**待决策的修法**（详见 `docs/failures/snapshot-inconsistency.md` §4）：
+1. 让同一把读锁跨越 `commit → offset 赋值`（须先去掉 `retryUpdate` 内的读锁，否则嵌套 RLock 遇等待中的写者必死锁；需覆盖 janitor/EXEC/SPOP 等全部写路径）—— 漏一处释放即永久冻结写入，风险最高
+2. commitTs ↔ repl-offset 映射表 + 按 View `readTs` 裁剪 gap（正是此前被"锁已足够"这个假设否掉的方案）
+3. 恢复 `d5e210d` 之前有界容忍
+
+**在 1 或 2 落地前必须保持**：
+- `TestRegressionSnapshotFullresyncOffset` / `TestRegressionDuplicateWindowMeasurement` 的严格相等断言（`sv==mv`、零去重）**不成立**，会 fail/flake
+- `SOAK_REPL_STRICT_EQUALITY=1` 不要开启
 
 ### 2. v8.52.0 发布遗留（非阻塞，2 项待观察）
 

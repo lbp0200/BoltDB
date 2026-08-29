@@ -21,8 +21,15 @@ func randomFloat64() float64 {
 }
 
 func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int) error {
-	// 线性 FULLRESYNC 边界：写事务持有 snapshotMu 读锁，FULLRESYNC
-	// 的 snapshotOffset→View 窗口持写锁，消除微秒级重复窗口。
+	// Issue #3：读锁跨越 badger 提交，FULLRESYNC 的 snapshotOffset→View 窗口持写锁。
+	// 它保证提交与快照读取互斥（不会有写入穿插在 offset 捕获与 View 开启之间），
+	// 但不保证提交与 repl-offset 赋值原子——offset 在 PropagateCommand()（server 层，
+	// 锁外）才赋值，所以「已提交未传播」的写入仍会同时出现在 RDB 与 backlog 中。
+	// 见 docs/failures/snapshot-inconsistency.md §4 与 fullresync_boundary_test.go。
+	//
+	// 注意：下面的重试退避和背压 delay 都在持锁期间 sleep（最长 30 次 × 50ms，
+	// ErrBlockedWrites 时单次退避可达 2s）。写者排队会阻塞后续所有 RLock，
+	// 因此一次长退避可以把 FULLRESYNC 乃至整库写入停摆放大到秒级。
 	s.snapshotMu.RLock()
 	defer s.snapshotMu.RUnlock()
 
