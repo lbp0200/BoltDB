@@ -21,9 +21,13 @@ type PSyncResult struct {
 func HandlePSync(rm *ReplicationManager, replId string, offset int64) (*PSyncResult, error) {
 	rm.mu.RLock()
 	currentReplId := rm.replId
-	currentOffset := rm.masterReplOffset
 	backlog := rm.backlog
 	rm.mu.RUnlock()
+
+	// 偏移量即 backlog 的连续水位，与下面所有 range/boundary 判定同源；
+	// 不能再读独立计数器，否则 CONTINUE 会用一个不在命令边界上的
+	// currentOffset 去接受请求（该缺陷正是 repl_offset_boundary_test 证明的）。
+	currentOffset := backlog.GetCurrentOffset()
 
 	// 检查是否可以增量同步
 	// replId 匹配时允许 CONTINUE（offset >= 0），确保重连时

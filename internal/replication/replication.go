@@ -38,7 +38,6 @@ type ReplicationManager struct {
 	backlog          *ReplicationBacklog         // 复制积压缓冲区
 	wal              *BacklogWAL                 // 持久化 WAL（nil = 不使用，向后兼容）
 	walCheckBytes    atomic.Int64                // bytes appended since last WAL size check
-	masterReplOffset int64                       // 主节点复制偏移量
 	replId           string                      // 复制ID(主节点运行ID)
 	store            *store.BotreonStore         // 数据存储
 	stopped          bool                        // 是否已停止
@@ -64,25 +63,29 @@ func NewReplicationManager(store *store.BotreonStore) *ReplicationManager {
 		}
 	}
 
-	// 尝试加载持久化的 masterReplOffset
+	// 读取持久化的 masterReplOffset：仅用于与恢复出的 backlog 水位交叉校验，
+	// 不再作为偏移量的来源。偏移量 = backlog 的连续写入水位（见 GetMasterReplOffset）；
+	// 脱离了 backlog 内容的偏移量没有意义——若把它当作水位种回空的环，
+	// HandlePSync 会用零填充的空环去满足 CONTINUE，等于给从节点发垃圾字节。
 	offset, loadOffsetErr := store.LoadMasterReplOffset()
 	if loadOffsetErr != nil {
 		logger.Logger.Warn().Err(loadOffsetErr).Msg("Failed to load persisted masterReplOffset, starting from 0")
 	}
 
 	rm := &ReplicationManager{
-		role:             RoleMaster,
-		slaves:           make(map[string]*SlaveConnection),
-		backlog:          NewReplicationBacklog(DefaultBacklogSize),
-		masterReplOffset: offset,
-		replId:           replId,
-		store:            store,
+		role:    RoleMaster,
+		slaves:  make(map[string]*SlaveConnection),
+		backlog: NewReplicationBacklog(DefaultBacklogSize),
+		replId:  replId,
+		store:   store,
 	}
 
 	// 尝试加载持久化的 backlog（干净重启时保留，避免 FULLRESYNC）
+	backlogRestored := false
 	if bOff, bBuf, bSize, loadErr := store.LoadBacklog(); loadErr != nil {
 		logger.Logger.Warn().Err(loadErr).Msg("Failed to load persisted backlog")
 	} else if bBuf != nil && int64(len(bBuf)) == bSize {
+		backlogRestored = true
 		rm.backlog.mu.Lock()
 		rm.backlog.offset = bOff
 		rm.backlog.size = bSize
@@ -97,6 +100,18 @@ func NewReplicationManager(store *store.BotreonStore) *ReplicationManager {
 			Int64("size", bSize).
 			Int("bytes", len(bBuf)).
 			Msg("Persisted backlog loaded on startup")
+	}
+
+	switch {
+	case backlogRestored && offset != rm.backlog.GetCurrentOffset():
+		logger.Logger.Warn().
+			Int64("persisted_offset", offset).
+			Int64("backlog_offset", rm.backlog.GetCurrentOffset()).
+			Msg("persisted masterReplOffset disagrees with restored backlog; backlog wins")
+	case !backlogRestored && offset > 0:
+		logger.Logger.Info().
+			Int64("persisted_offset", offset).
+			Msg("no backlog restored (crash or truncated); starting from offset 0, reconnecting slaves will FULLRESYNC")
 	}
 
 	return rm
@@ -191,25 +206,31 @@ func (rm *ReplicationManager) GetReplicationID() string {
 	return rm.replId
 }
 
-// GetMasterReplOffset 获取主节点复制偏移量
+// GetMasterReplOffset 获取主节点复制偏移量。
+//
+// 偏移量就是 backlog 的连续写入水位，二者必须是同一个数：该值会被
+//   - +FULLRESYNC 通告给从节点（从节点原样存为自己的 lastOffset，reconnect.go sendPSYNC）
+//   - 当作 backlog.GetRange 的切片起点（从节点的字节流从它开始）
+//   - 用于 PSYNC CONTINUE 的可用性与命令边界判定
+//
+// 这三处都要求它落在命令边界上。原先另设的 `masterReplOffset += len(cmdBytes)`
+// 计数器做不到：Append 在环锁下连续推进，求和却按完成顺序累加，两者可以分叉
+// （实测：并发传播下 13.5% 的采样读到落后值；在真实 FULLRESYNC 窗口内约 1% 的
+// 通告值切不出整条命令，因为该临界区只阻塞提交、不阻塞传播）。让偏移量等于环
+// 水位后，分叉在结构上不再可能。见 repl_offset_boundary_test.go 与
+// docs/failures/repl-offset-boundary-drift.md。
 func (rm *ReplicationManager) GetMasterReplOffset() int64 {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
-	return rm.masterReplOffset
+	return rm.backlog.GetCurrentOffset()
 }
 
-// SetMasterReplOffset 设置主节点复制偏移量
+// SetMasterReplOffset 将偏移量（= backlog 水位）前移到 offset，不回退。
+// 仅供启动恢复与测试使用；写入路径由 backlog.Append 推进。
 func (rm *ReplicationManager) SetMasterReplOffset(offset int64) {
-	rm.mu.Lock()
-	defer rm.mu.Unlock()
-	rm.masterReplOffset = offset
-}
-
-// IncrementReplOffset 增加复制偏移量
-func (rm *ReplicationManager) IncrementReplOffset(delta int64) {
-	rm.mu.Lock()
-	defer rm.mu.Unlock()
-	rm.masterReplOffset += delta
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	rm.backlog.SetOffset(offset)
 }
 
 // AddSlave 添加从节点连接
@@ -338,10 +359,11 @@ func (rm *ReplicationManager) PropagateCommand(cmd [][]byte) {
 	// 总是将命令添加到backlog并更新offset，无论是否有从节点
 	// 这使得断连期间的写操作不会丢失，重连后可通过PSYNC增量同步
 	cmdBytes := serializeCommand(cmd)
+	// Append 在环锁下把字节写入并前移水位；水位即复制偏移量，因此
+	// "已入 backlog 的字节" 与 "对外通告的偏移量" 不可能再分叉，也不需要
+	// 额外的计数器递增（原先的 IncrementReplOffset(len) 按完成顺序求和，
+	// 并发时会落在命令中间）。
 	cmdOffset := backlog.Append(cmdBytes)
-
-	// 更新复制偏移量（在Slave建立前也必须有正确的offset）
-	rm.IncrementReplOffset(int64(len(cmdBytes)))
 
 	// 如果配置了 WAL，将命令写入持久化日志
 	// 这提供了 crash 恢复能力：即使主节点崩溃，backlog 也可以从 WAL 重建
@@ -500,24 +522,26 @@ func (rm *ReplicationManager) Stop() {
 	}
 	rm.stopped = true
 
-	// 在关闭连接前持久化 masterReplOffset，确保干净重启时偏移量连续
-	// DB 在 Stop() 之后才关闭（main.go 关闭序列），写入安全
+	// 在关闭连接前持久化偏移量与 backlog，确保干净重启时二者一致连续。
+	// DB 在 Stop() 之后才关闭（main.go 关闭序列），写入安全。
+	// 偏移量即 backlog 的写入水位，所以先取水位再落盘；此处已持 rm.mu，
+	// 不能再走 GetMasterReplOffset()（同一 goroutine 上 Lock 后 RLock 会自锁）。
 	if rm.store != nil {
-		offset := rm.masterReplOffset
-		if saveErr := rm.store.SaveMasterReplOffset(offset); saveErr != nil {
-			logger.Logger.Warn().Err(saveErr).Int64("offset", offset).Msg("failed to persist masterReplOffset on shutdown")
-		} else {
-			logger.Logger.Debug().Int64("offset", offset).Msg("masterReplOffset persisted on shutdown")
-		}
-
-		// 在关闭连接前持久化 backlog（环形缓冲区），使干净重启后从节点可以
-		// 通过 PSYNC CONTINUE 增量同步，避免不必要的 FULLRESYNC。
 		rm.backlog.mu.RLock()
 		bOff := rm.backlog.offset
 		bBuf := make([]byte, len(rm.backlog.buffer))
 		copy(bBuf, rm.backlog.buffer)
 		bSize := rm.backlog.size
 		rm.backlog.mu.RUnlock()
+
+		if saveErr := rm.store.SaveMasterReplOffset(bOff); saveErr != nil {
+			logger.Logger.Warn().Err(saveErr).Int64("offset", bOff).Msg("failed to persist masterReplOffset on shutdown")
+		} else {
+			logger.Logger.Debug().Int64("offset", bOff).Msg("masterReplOffset persisted on shutdown")
+		}
+
+		// 持久化 backlog（环形缓冲区），使干净重启后从节点可以通过
+		// PSYNC CONTINUE 增量同步，避免不必要的 FULLRESYNC。
 		if saveErr := rm.store.SaveBacklog(bOff, bBuf, bSize); saveErr != nil {
 			logger.Logger.Warn().Err(saveErr).Msg("failed to persist backlog on shutdown")
 		} else {

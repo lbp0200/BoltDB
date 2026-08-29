@@ -60,13 +60,17 @@ func TestReplicationManager_ReplOffset(t *testing.T) {
 	// 初始 offset 是 0
 	assert.Equal(t, int64(0), rm.GetMasterReplOffset())
 
-	// 设置 offset
+	// offset 即 backlog 水位，可被启动恢复前移（不回退）
 	rm.SetMasterReplOffset(100)
 	assert.Equal(t, int64(100), rm.GetMasterReplOffset())
+	rm.SetMasterReplOffset(50)
+	assert.Equal(t, int64(100), rm.GetMasterReplOffset())
 
-	// 增加 offset
-	rm.IncrementReplOffset(50)
-	assert.Equal(t, int64(150), rm.GetMasterReplOffset())
+	// 传播命令推进 offset，且推进量就是入环字节数
+	rm.PropagateCommand([][]byte{[]byte("SET"), []byte("k"), []byte("v")})
+	advanced := rm.GetMasterReplOffset()
+	assert.True(t, advanced > 100)
+	assert.Equal(t, advanced, rm.GetBacklog().GetCurrentOffset())
 }
 
 func TestReplicationManager_MasterAddr(t *testing.T) {

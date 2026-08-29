@@ -114,13 +114,16 @@ func TestReplicationManagerExtended_Offset(t *testing.T) {
 	// Initial offset should be 0
 	assert.Equal(t, int64(0), rm.GetMasterReplOffset())
 
-	// Set offset
+	// Set offset (moves the backlog watermark forward, never backward)
 	rm.SetMasterReplOffset(100)
 	assert.Equal(t, int64(100), rm.GetMasterReplOffset())
+	rm.SetMasterReplOffset(10)
+	assert.Equal(t, int64(100), rm.GetMasterReplOffset())
 
-	// Increment offset
-	rm.IncrementReplOffset(50)
-	assert.Equal(t, int64(150), rm.GetMasterReplOffset())
+	// Propagating advances it by exactly the bytes appended
+	rm.PropagateCommand([][]byte{[]byte("SET"), []byte("key"), []byte("value")})
+	assert.Equal(t, rm.GetBacklog().GetCurrentOffset(), rm.GetMasterReplOffset())
+	assert.True(t, rm.GetMasterReplOffset() > 100)
 }
 
 // TestReplicationManagerExtended_Backlog tests backlog
@@ -170,7 +173,11 @@ func TestReplicationManager_LoadRDB(t *testing.T) {
 }
 
 // TestReplicationManager_PersistedReplId verifies that NewReplicationManager
-// loads the persisted replId and masterReplOffset from the store (F1a/F1b).
+// loads the persisted replId (F1a) and does NOT resurrect a replication offset
+// whose backlog is gone (F1b). The offset is the backlog's contiguous
+// watermark, so a persisted offset with no restored backlog must not be
+// advertised: HandlePSync would otherwise "serve" CONTINUE out of an empty,
+// zero-filled ring.
 func TestReplicationManager_PersistedReplId(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -190,6 +197,32 @@ func TestReplicationManager_PersistedReplId(t *testing.T) {
 	defer s2.Close()
 	rm := NewReplicationManager(s2)
 	assert.Equal(t, "persisted-repl-id", rm.GetReplicationID())
-	assert.Equal(t, int64(12345), rm.GetMasterReplOffset())
+	assert.Equal(t, int64(0), rm.GetMasterReplOffset())
 	rm.Stop()
+}
+
+// A clean shutdown persists offset and backlog together, so the watermark
+// survives a restart and reconnecting slaves can still CONTINUE.
+func TestReplicationManager_PersistedOffsetWithBacklog(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	s1, err := store.NewBadgerStore(dir)
+	assert.NoError(t, err)
+	rm1 := NewReplicationManager(s1)
+	rm1.SetRole(RoleMaster)
+	for i := 0; i < 4; i++ {
+		rm1.PropagateCommand([][]byte{[]byte("SET"), []byte("k"), []byte("v")})
+	}
+	before := rm1.GetMasterReplOffset()
+	assert.True(t, before > 0)
+	rm1.Stop()
+	assert.NoError(t, s1.Close())
+
+	s2, err := store.NewBadgerStore(dir)
+	assert.NoError(t, err)
+	defer s2.Close()
+	rm2 := NewReplicationManager(s2)
+	defer rm2.Stop()
+	assert.Equal(t, before, rm2.GetMasterReplOffset())
 }

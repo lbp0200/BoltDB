@@ -107,6 +107,19 @@ func (rb *ReplicationBacklog) GetCurrentOffset() int64 {
 	return rb.offset
 }
 
+// SetOffset 将写入水位前移到 offset（不回退）。
+//
+// 仅供启动恢复与测试使用：运行期的水位只由 Append 推进，这样才能保证
+// 它恒等于"已完整写入环的字节数"，即永远落在命令边界上。复制偏移量
+// （GetMasterReplOffset）就是这个水位，不得另设计数器。
+func (rb *ReplicationBacklog) SetOffset(offset int64) {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	if offset > rb.offset {
+		rb.offset = offset
+	}
+}
+
 func (rb *ReplicationBacklog) GetSize() int64 {
 	rb.mu.RLock()
 	defer rb.mu.RUnlock()
