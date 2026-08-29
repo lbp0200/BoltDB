@@ -120,13 +120,14 @@ the code does not provide — they will fail/flake under a write storm, and
 it counted birthday collisions in the writer's own value space, so it failed
 even under perfect replication. Fixed to a master↔slave multiset comparison.)
 
-**Bigger sibling bug:** `GetMasterReplOffset()` is a sum of command lengths, not
-the backlog's contiguous watermark, so under concurrent propagation it can point
-*inside* a command — and that value is what `+FULLRESYNC` advertises and what
-`GetRange` slices the ring at. The replica then receives a stream starting
-mid-command, which mis-frames everything after it. That produces both lost
-elements and duplicated/reordered applies at a far higher rate than the
-commit-vs-propagate race above. Proof and fix sketch:
+**Bigger sibling bug (fixed 2026-08-30):** `GetMasterReplOffset()` used to be a
+sum of command lengths, maintained separately from the backlog's contiguous
+watermark, so it could point *inside* a command — and that value is what
+`+FULLRESYNC` advertises and what `GetRange` slices the ring at. The replica
+then received a stream starting mid-command, mis-framing everything after it.
+Measured at ~1.1% of joins pre-fix, 0 post-fix — an order of magnitude more
+frequent than the commit-vs-propagate race above, and the explanation for the
+`非命令边界` downgrade logs. Proof, numbers and the change list:
 [repl-offset-boundary-drift.md](repl-offset-boundary-drift.md).
 
 **Candidate fixes** (open decision, none implemented):

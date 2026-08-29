@@ -1,5 +1,9 @@
 # Replication Offset Boundary Drift
 
+**Status: fixed (2026-08-30).** The replication offset is now the backlog's
+contiguous write watermark — one source of truth instead of two. See
+"Fix (implemented)" below.
+
 ## Symptoms
 
 - Master log: `PSYNC CONTINUE offset 非命令边界，降级为全量同步
@@ -50,43 +54,73 @@ Three consumers assume the value is boundary-exact:
 `currentOffset = GetMasterReplOffset()`, so both the advertised offset and the
 gap slice inherit the hazard.
 
-## Evidence (deterministic, no racing)
+## Evidence (measured)
 
-`internal/replication/repl_offset_boundary_test.go` — both tests currently
-`t.Skip`ped as known-open defects:
+`internal/replication/repl_offset_boundary_test.go` →
+`TestFullresyncAdvertisedOffsetIsServable` drives the handler's real FULLRESYNC
+sequence (snapshot lock → advertise → generate RDB → slice the ring) while four
+writers propagate, and requires the advertised offset to slice out whole
+commands:
 
-```
-master repl offset diverged from the backlog watermark: offset=39 watermark=98
-GetMasterReplOffset()=39 is not a command boundary (A=[0,59), B=[59,98))
-FULLRESYNC gap-fill stream starts mid-command: snapshotOffset=61 ... first byte="\r"
-```
+| build | unservable windows | rate |
+|---|---|---|
+| pre-fix (`088ce37`) | 10/545, 0/486, 8/548 | **~1.1%** of joins |
+| post-fix | 0/1628, 0/1620, 0/1759 | **0** over ~4.9k windows |
 
-Field evidence: `1844104 - 1843962 = 142` — the same value the regression loop
+The observed bad first bytes were `'\n'` and `'3'` — the tail of a RESP array
+header, i.e. exactly a mid-command start. At ~1% per join this matches the
+field log (one `非命令边界` downgrade within ~6 storm joins).
+
+Field arithmetic: `1844104 - 1843962 = 142`, the same value the regression loop
 had recorded as `stable lag=142`.
 
-## Fix (not implemented — decision pending)
+### Correction of an earlier claim
 
-Make the backlog watermark the single source of truth: derive
-`GetMasterReplOffset()` from `backlog.GetCurrentOffset()` and drop
-`IncrementReplOffset` from `PropagateCommand`. The ring offset is advanced
-under `rb.mu` together with the bytes it indexes, so it is boundary-exact by
-construction.
+The first version of this analysis "proved" the defect with a hand-arranged
+interleaving (two `Append`s, then the length-sums in the opposite order) and
+reported `offset=39` inside `[0,59)`. That interleaving is *possible* but the
+runtime almost never produces it: a tight sampler over 20000 reads saw the
+counter below the ring 2700 times and **mid-command 0 times**, because a lag by
+a whole suffix command is still a boundary. The rate only appears when the
+sampling window is the real one — the FULLRESYNC critical section blocks
+*commits* but not `PropagateCommand`, so the counter drifts for the whole RDB
+generation. Numbers above are from that shape. The mid-command framing was
+overstated; the divergence and its consequence were not.
 
-Constraints the fix must respect:
+## Fix (implemented)
 
-- **Never move backwards.** On startup `masterReplOffset` is restored from
-  `LoadMasterReplOffset()` while the ring is restored from `LoadBacklog()`;
-  after a crash the ring is empty but the persisted offset is not. Seeding the
-  ring to `max(persistedOffset, backlogOffset)` (or rejecting a lower value)
-  keeps `INFO master_repl_offset` monotonic and preserves PSYNC CONTINUE.
-- `cmdOffset` from `Append` stays as the per-command offset for live push and
-  the WAL.
-- `CatchUpAndEnableSlave`'s loop and the propMu/Ready handshake are unchanged:
-  they only need a boundary-exact end offset.
+The offset **is** the backlog watermark; the parallel counter is gone.
+
+- `backlog.SetOffset(o)` — forward-only watermark move, for restore/tests.
+- `GetMasterReplOffset()` → `backlog.GetCurrentOffset()`;
+  `SetMasterReplOffset()` → `backlog.SetOffset()`.
+- `masterReplOffset` field and `IncrementReplOffset` deleted;
+  `PropagateCommand` advances the offset only via `backlog.Append`.
+- `HandlePSync` no longer reads the field directly — the CONTINUE check and the
+  byte range now come from the same number (they previously compared a request
+  against the counter while ranging the ring).
+- `Stop()` persists `SaveMasterReplOffset(bOff)` from the same ring read as
+  `SaveBacklog`, so the two persisted values cannot disagree. It reads under
+  `rb.mu` directly because `Stop()` already holds `rm.mu` (Lock-then-RLock on
+  the same goroutine would self-deadlock).
+
+Semantics deliberately changed: a persisted offset whose backlog was **not**
+restored is no longer resurrected as the watermark (crash or truncated
+`LoadBacklog` ⇒ watermark 0 ⇒ reconnecting slaves FULLRESYNC). Seeding an empty
+ring to the old value would let `HandlePSync` satisfy a CONTINUE out of
+zero-filled bytes. `TestReplicationManager_PersistedReplId` was updated to that
+expectation and `TestReplicationManager_PersistedOffsetWithBacklog` added for
+the clean-restart path, which still preserves the offset.
+
+`CatchUpAndEnableSlave` and the propMu/Ready handshake are untouched: they only
+needed a boundary-exact end offset, which they now always get.
 
 ## Prevention
 
-- Unskip both tests in `repl_offset_boundary_test.go` when the fix lands.
+- `TestFullresyncAdvertisedOffsetIsServable` is the permanent guard; do not
+  reframe it as `GetMasterReplOffset() == backlog.GetCurrentOffset()` — with
+  concurrent writers those two reads are not an atomic pair, so that assertion
+  tests the sampler, not the implementation.
 - Convergence gates must require `lag == 0`. `TestRegressionSnapshotFullresyncOffset`
   now does; **`waitReplicationConvergence` in `cmd/integration/soak_replication_test.go`
   still accepts "stable lag" as converged** and shares this blind spot
