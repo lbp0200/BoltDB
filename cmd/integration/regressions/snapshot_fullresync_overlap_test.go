@@ -16,27 +16,24 @@ import (
 // TestRegressionSnapshotFullresyncOffset verifies that FULLRESYNC snapshot
 // + backlog replay produces a converged replication state.
 //
-// The bug: handler.go previously captured the replication offset BEFORE
-// the RDB snapshot and sent NO backlog. Commands during RDB generation
-// were never sent to the slave — data loss.
+// The original bug: the handler captured the replication offset BEFORE the RDB
+// snapshot and sent no backlog, so commands arriving during RDB generation were
+// never sent — data loss. Current code captures snapshotOffset under the
+// snapshotMu write lock and then sends backlog [snapshotOffset, currentOffset)
+// before registering the slave (replication_handler.go).
 //
-// Fix: capture snapshotOffset AFTER GenerateRDB returns (PostOffset).
-// The backlog from snapshotOffset to currentOffset covers writes during
-// RDB send (not generation). Under slaveConn.mu, backlog and slave
-// registration are atomic, preventing PropagateCommand interleaving.
+// Verification here is multiset-based (see verifyList/verifyIncr): after the
+// writers quiesce and the offsets converge, master and slave must hold
+// identical data. A slave-side extra copy is a double-apply; a missing copy is
+// a lost write.
 //
-// KNOWN LIMITATION: writes committed during RDB generation (badger View)
-// are NOT in the RDB (committed after View start) and NOT in the backlog
-// (committed before PostOffset). These writes are permanently lost for
-// this FULLRESYNC cycle. A subsequent FULLRESYNC recovers them. The loss
-// window equals the RDB generation duration (~100ms test, up to seconds
-// production). For non-idempotent types (LIST, INCR), this manifests as
-// small gaps (<1% in test).
-//
-// Structural invariants verified: no cross-key corruption, bounded loss,
-// no goroutine leaks, replication converges after chaos stops.
-//
-// Failure doc: docs/failures/snapshot-inconsistency.md
+// NOTE: the duplicate window is NOT zero — snapshotMu does not span
+// commit → repl-offset assignment, so a committed-but-unpropagated write lands
+// in both RDB and backlog. That interleaving is reproduced deterministically
+// in internal/replication/fullresync_boundary_test.go; the storm below only
+// hits it at roughly the in-flight-write probability per FULLRESYNC, so a clean
+// run here does not certify the boundary.
+// See docs/failures/snapshot-inconsistency.md §4 and Issue #3.
 func TestRegressionSnapshotFullresyncOffset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping heavy regression in short mode")
@@ -77,11 +74,11 @@ func TestRegressionSnapshotFullresyncOffset(t *testing.T) {
 	var writeWg sync.WaitGroup
 	writeWg.Add(8)
 	go writeIncr(ctx, &writeWg, stop, master.Client, errCh)
-	go writeList(ctx, &writeWg, stop, master.Client, errCh)
+	go writeList(ctx, &writeWg, stop, master.Client, errCh, 0)
 	go writeZSet(ctx, &writeWg, stop, master.Client, errCh)
 	go writeHash(ctx, &writeWg, stop, master.Client, errCh)
 	go writeIncr(ctx, &writeWg, stop, master.Client, errCh)
-	go writeList(ctx, &writeWg, stop, master.Client, errCh)
+	go writeList(ctx, &writeWg, stop, master.Client, errCh, 1)
 	go writeZSet(ctx, &writeWg, stop, master.Client, errCh)
 	go writeHash(ctx, &writeWg, stop, master.Client, errCh)
 
@@ -241,9 +238,14 @@ func writeIncr(ctx context.Context, wg *sync.WaitGroup, stop <-chan struct{}, c 
 	}
 }
 
-func writeList(ctx context.Context, wg *sync.WaitGroup, stop <-chan struct{}, c *redis.Client, errCh chan<- error) {
+// writeList pushes globally-unique values so that any repetition observed on
+// the slave is unambiguously a double-apply (see verifyList). The `id` must
+// differ per goroutine: with a shared seed two writers emit the same value
+// sequence, which makes the master itself contain duplicates.
+func writeList(ctx context.Context, wg *sync.WaitGroup, stop <-chan struct{}, c *redis.Client, errCh chan<- error, id int) {
 	defer wg.Done()
-	rng := rand.New(rand.NewSource(200))
+	rng := rand.New(rand.NewSource(int64(200 + id)))
+	seq := 0
 	for {
 		select {
 		case <-stop:
@@ -251,7 +253,8 @@ func writeList(ctx context.Context, wg *sync.WaitGroup, stop <-chan struct{}, c 
 		default:
 		}
 		key := fmt.Sprintf("t:list:%d", rng.Intn(5))
-		val := fmt.Sprintf("v:%d", rng.Intn(100000))
+		val := fmt.Sprintf("v:%d:%d", id, seq)
+		seq++
 		if err := c.LPush(ctx, key, val).Err(); err != nil {
 			select {
 			case errCh <- err:
@@ -338,30 +341,63 @@ func verifyIncr(ctx context.Context, t *testing.T, mc, sc *redis.Client) {
 	}
 }
 
+// verifyList compares the master and slave list multisets element-by-element.
+//
+// Writers emit globally-unique values and are quiesced plus offset-converged
+// before this runs, so the multisets must be identical: an extra copy on the
+// slave is a double-apply (duplicate window), a missing copy is a lost write.
+//
+// This replaces an earlier check that counted repeated values *inside* the
+// slave list — with values drawn from a bounded random space that count is
+// dominated by birthday collisions the master produces too (~950 expected at
+// n≈13.8k over a 100k space), so it failed even under perfect replication.
 func verifyList(ctx context.Context, t *testing.T, mc, sc *redis.Client) {
 	for i := 0; i < 5; i++ {
 		key := fmt.Sprintf("t:list:%d", i)
-		mv, _ := mc.LLen(ctx, key).Result()
-		sv, _ := sc.LLen(ctx, key).Result()
-		if sv != mv {
-			t.Errorf("LIST %s length mismatch: master=%d slave=%d (linearizable boundary requires exact equality)", key, mv, sv)
-			continue
+		mLen, _ := mc.LLen(ctx, key).Result()
+		sLen, _ := sc.LLen(ctx, key).Result()
+
+		me, _ := mc.LRange(ctx, key, 0, -1).Result()
+		se, _ := sc.LRange(ctx, key, 0, -1).Result()
+
+		mcount := make(map[string]int, len(me))
+		for _, e := range me {
+			mcount[e]++
+		}
+		scount := make(map[string]int, len(se))
+		for _, e := range se {
+			scount[e]++
 		}
 
-		// With linearizable boundary duplicates should be zero.
-		se, _ := sc.LRange(ctx, key, 0, -1).Result()
-		seen := make(map[string]int)
-		for _, e := range se {
-			seen[e]++
-		}
-		dupCount := 0
-		for _, count := range seen {
-			if count > 1 {
-				dupCount += count - 1
+		extra := 0   // slave has more copies than master → double-apply
+		missing := 0 // master has copies the slave never got → lost write
+		lost := 0    // values absent from one side entirely
+		for v, n := range mcount {
+			switch d := scount[v] - n; {
+			case d > 0:
+				extra += d
+			case d < 0:
+				missing += -d
+			}
+			if scount[v] == 0 {
+				lost++
 			}
 		}
-		if dupCount > 0 {
-			t.Errorf("LIST %s duplicate entries=%d (linearizable boundary requires 0 duplicates)", key, dupCount)
+		for v, n := range scount {
+			if _, ok := mcount[v]; !ok {
+				extra += n
+				lost++
+			}
+		}
+
+		t.Logf("LIST %s master_len=%d slave_len=%d extra=%d missing=%d values_only_one_side=%d",
+			key, mLen, sLen, extra, missing, lost)
+
+		if extra > 0 {
+			t.Errorf("LIST %s: slave has %d extra element copies not on master (double-apply → duplicate window is non-zero)", key, extra)
+		}
+		if missing > 0 {
+			t.Errorf("LIST %s: slave is missing %d element copies present on master (lost write → snapshot/backlog boundary)", key, missing)
 		}
 	}
 }
