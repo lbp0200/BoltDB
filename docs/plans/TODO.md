@@ -53,12 +53,39 @@
 此前报的"stable lag=142 投递缺口"已澄清为**判据误判**（非投递丢失）：判据改为 lag 必须归零后，
 2/2 次精确收敛（`mo==so`）且 LIST 主从多重集完全相等。
 
-**仍未收口的两条**：
+**仍未收口的一条**：
 1. `cmd/integration/soak_replication_test.go` 的 `waitReplicationConvergence` 仍把"stable lag"当收敛，
    与回归用例刚改掉的同一个洞（副本退避中/落后于待重传尾部时会被判为已收敛）。
-2. 从节点 `SlaveReconnector` 在其测试 `Close()` 之后仍继续退避重连（retry=3..6、最长 32s、约 30s），
-   怀疑未随关机链收口（AGENTS.md 要求 `replMgr.Stop()` → `cancel()` → `handler.Shutdown()` → `db.Close()`；
-   重连器若活过 `db.Close()` 就会访问已关闭的 store）。
+
+~~2. 从节点 `SlaveReconnector` 在其测试 `Close()` 之后仍继续退避重连~~ → **已查清并修复（2026-08-30）**：
+不是测试工装问题（框架 cleanup 确实按 `replMgr.Stop()` → `h.Shutdown()` → `backupMgr.Wait()` → `db.Close()` 走），
+而是 `ReplicationManager.Stop()` 从未停 `slaveReconnector` —— 只有 `StopSlaveReplication`（`SLAVEOF NO ONE`）会关 `stopCh`。
+`MaxRetries=0` 即无限重试，每一轮 `tryReplicate` 都会走到 `LoadRDB`/`executeReplicatedCommand`，
+也就是**在 `db.Close()` 之后访问 store**，直接违反 `docs/replication/architecture.md` 已写明的关机契约
+（该契约第二条此前只是文档，未实现）。既有的 `TestSlaveReconnector_GoroutineLeak`/`_StartStop`
+之所以漏掉，是因为它们**显式调用 `sr.Stop()`**，测的是"能被停"而不是"关机会停"。
+守卫：`TestReplicationManagerStopStopsSlaveReconnector`（修复前 Stop 后重连次数 1→3，修复后不变）。
+
+### 1c. dw 回归偶报 1 个 LIST 元素亏空（**未定位；已排除两条假设**）
+
+> **现象**（远程 `-race`，`TestRegressionDuplicateWindowMeasurement`）：5 个 INCR key 全部 `gap=0`，
+> 但 `dw:list:1 master_len=2019 slave_len=2018 → missing_on_slave=1`，且此时
+> `converged at iter 13 (mo=1341949 so=1341905)` —— **从节点 offset 仍差 44 字节**。
+> 本会话修复前也出现过同形状（`dw:list:3 master_len=2114 slave_len=2113`），非新引入回归。
+>
+> **已排除**：
+> 1. 收敛判据误判（overlap 用例那条已证为判据问题，但 dw 用的是 marker 判据，marker 已到、
+>    而亏空在中间位置，无法用"尾部未送达"解释——流是有序的，中间挖不掉洞而不破坏帧）。
+> 2. 解析→再序列化不等长：`TestReplicatedCommandRoundTripsByteIdentically` 覆盖 14 种形态
+>    （空值、空 key、二进制、内嵌 CRLF、UTF-8、多参数、marker 形状、8KB 长值…）全部字节等同。
+>
+> **剩余怀疑对象**：`PropagateCommand` 里"发送失败只 warn 不重投"（`slave.SendCommand` 返回错误即丢弃，
+> 依赖对端读侧发现断连）与 `readCommandLoop` 的 `isTransientReplicationError` 分支
+> （**推进 offset 但不 apply**，为保字节锁步而刻意丢数据）。后者按设计就会造成"offset 对得上、数据少了"。
+>
+> **下一步建议**：把这两条路径的丢弃事件计数导出为可观测指标（目前只有 warn 日志），
+> 在 dw 用例里断言"本轮丢弃计数 == 0"；这样一次跑就能判定亏空到底出自发送侧还是应用侧。
+> 在定位前不要收紧 dw 的 lag==0 判据（会让用例常红且无法区分成因）。
 
 ### 2. v8.52.0 发布遗留（非阻塞，2 项待观察）
 
