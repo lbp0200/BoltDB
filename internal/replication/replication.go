@@ -457,6 +457,9 @@ func (rm *ReplicationManager) maybeTruncateBacklogWAL(written int64) {
 // Ready=false, then sets Ready under propMu so gap-fill never races with
 // live PropagateCommand for the same offsets.
 // Slave must already be in rm.slaves (AddSlave) with Ready=false.
+// On error Ready stays false; the caller must RemoveSlave — installing a
+// not-ready slave at startOffset after a failed GetRange/write skips the
+// failed range on the next loop and leaves a hole.
 func (rm *ReplicationManager) CatchUpAndEnableSlave(slave *SlaveConnection, startOffset int64) error {
 	backlog := rm.GetBacklog()
 	for {

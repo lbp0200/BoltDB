@@ -112,12 +112,21 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 					Int64("snapshot_offset", snapshotOffset).
 					Int64("current_offset", currentOffset).
 					Msg("发送FULLRESYNC backlog数据失败")
+				// RDB already on the wire — do not write ERR (would desync
+				// ReadRESP) and do not AddSlave. Returning nil lets
+				// handleConnection close the conn so the replica reconnects
+				// instead of being installed at currentOffset with a hole.
+				return nil
 			}
 		}
 
 		h.Replication.AddSlave(slaveConn)
 		if err := h.Replication.CatchUpAndEnableSlave(slaveConn, currentOffset); err != nil {
 			logger.Logger.Error().Err(err).Msg("FULLRESYNC slave catch-up failed")
+			h.Replication.RemoveSlave(slaveConn.ID)
+			// Same as SendBacklogData fail: handshake bytes are already on
+			// the wire, so close rather than write ERR or take over.
+			return nil
 		}
 
 		logger.Logger.Info().
@@ -162,13 +171,15 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 				Int64("start_offset", result.Offset).
 				Int64("end_offset", currentOffset).
 				Msg("发送CONTINUE backlog数据失败")
-			return proto.NewError("ERR failed to send CONTINUE backlog")
+			// +CONTINUE already flushed — do not write ERR after it.
+			return nil
 		}
 
 		h.Replication.AddSlave(slaveConn)
 		if err := h.Replication.CatchUpAndEnableSlave(slaveConn, currentOffset); err != nil {
 			logger.Logger.Error().Err(err).Msg("CONTINUE slave catch-up failed")
-			return proto.NewError("ERR failed to finish CONTINUE catch-up")
+			h.Replication.RemoveSlave(slaveConn.ID)
+			return nil
 		}
 
 		logger.Logger.Info().

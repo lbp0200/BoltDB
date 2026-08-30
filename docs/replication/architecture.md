@@ -64,6 +64,13 @@ a FULLRESYNC is triggered:
 the lost-write window that was present in earlier versions (see
 [failure-modes.md](failure-modes.md)).
 
+If `SendBacklogData` or `CatchUpAndEnableSlave` fails after the RDB (or
+`+CONTINUE`) is already on the wire, the master must **not** write `-ERR`
+(the replica's `ReadRESP` would desync on the extra error) and must **not**
+install the slave at `currentOffset`. Returning nil closes the TCP connection
+so the replica reconnects. Installing after a failed range skip used to leave
+a frozen offset hole (see TODO §1c `--full` LIST deficit).
+
 ## Backlog
 
 The backlog is a fixed-size ring buffer of replicated commands. Default size:

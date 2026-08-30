@@ -6,9 +6,13 @@
 
 ### 0. 下次继续（2026-08-30）
 
-1. **1c LIST 亏空仍待 `missing>0` 那次** —— 计数器已落地。2 次远程 `-race -v`：
-   `send_drop=0` 与 `send_drop=1`，`apply_skip=0`，LIST 都全等。`send_drop=1`
-   被 backlog/FULLRESYNC 收回。下次亏空时读这两个计数。不要收紧 dw 的 lag==0。
+1. **1c LIST 亏空：FULLRESYNC catch-up 失败曾被吞掉** —— `--full` 那次
+   `send_drop=0 apply_skip=0` 且 `lag=44` 冻住，形状像增量尾没发出去。
+   旧代码：RDB 后 `SendBacklogData`/`CatchUpAndEnableSlave` 失败只打日志，
+   仍 `AddSlave`，下一次 gap-fill 从 `currentOffset` 起跳过失败区间。
+   已改为失败则不安装 / `RemoveSlave` 并 `return nil`（不写 ERR，避免
+   ReadRESP 错位）。守卫：`TestCatchUpAndEnableSlave_*`。还没跑 `--full`，
+   未宣称 1c 已关。
 2. **push** —— 属对外可见动作，需明确授权后再做。
 3. **reword `088ce37` 与 `14bd901` 的提交信息** —— 两条仍带着"手工摆出的交错即根因"这一
    过强表述（含 `first byte="\r"`）。文件内容已由 `c84293f`/`f4cec87` 更正，但提交信息未改；
