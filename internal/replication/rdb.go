@@ -430,12 +430,9 @@ func GenerateRDB(s *store.BotreonStore) ([]byte, error) {
 }
 
 // GenerateRDBWithSnapshotLock 在调用方已持有 SnapshotMu 写锁的前提下
-// 生成 RDB。与 replication_handler 中"先取 offset 再开 View"的绑定配合，
-// 消除 offset 捕获与 View 开启之间的子窗口。
-// 注意：它不消除重复窗口——repl offset 在 PropagateCommand()（写锁之外）
-// 才赋值，已提交未传播的写入仍会同时进入 RDB 与 backlog。
-// 详见 docs/failures/snapshot-inconsistency.md §4。BGSAVE 等不绑定偏移的
-// 路径仍用普通 GenerateRDB。
+// 生成 RDB。与 processRequest 读锁（commit → PropagateCommand）配合，
+// FULLRESYNC 看不到已提交未传播的写入。BGSAVE 等不绑定偏移的路径仍用
+// 普通 GenerateRDB。
 func GenerateRDBWithSnapshotLock(s *store.BotreonStore) ([]byte, error) {
 	// 调用方已持写锁，这里直接复用 RDB 逻辑，不再额外加锁。
 	return GenerateRDB(s)

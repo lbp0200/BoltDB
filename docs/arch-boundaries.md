@@ -26,37 +26,23 @@ MVCC transaction. This means:
   best-effort point), and any writes that committed between the offset capture
   and the snapshot start appear in both the RDB and the backlog.
 
-### Current Behavior (Issue #3 — **invariant NOT achieved**, 2026-08-29)
+### Current Behavior (Issue #3 — closed on the client write path, 2026-08-30)
 
-`store.snapshotMu` binds `snapshotOffset` capture to the MVCC `View`
-(FULLRESYNC write lock across `GetMasterReplOffset() → GenerateRDBWithSnapshotLock`).
-That closes the old "commit between offset capture and View open" sub-window.
-It does **not** serialise `badger commit → PropagateCommand` (`backlog.Append`).
-A write that has committed but not yet been appended is visible in the RDB and
-then also lands in backlog `[snapshotOffset, current)` — INCR/LPUSH double-apply.
+`processRequest` holds `snapshotMu.RLock` across `executeCommand` (commit) and
+`PropagateCommand` (`backlog.Append`). FULLRESYNC holds the write lock across
+`GetMasterReplOffset() → View`. A committed-but-unpropagated write cannot be
+visible in the snapshot.
+
+`retryUpdate` no longer takes the read lock (nested RLock deadlocks when a
+writer is queued). `EXEC` is fenced even though it is not `isWriteCommand`.
+
 See `docs/failures/snapshot-inconsistency.md` §4 and
-`TestFullresyncBoundary_CommittedButUnpropagatedWrite` (currently Skip, fails
-by construction).
-
-```
-retryUpdate: commit → RUnlock
-FULLRESYNC:  SnapshotMuLock → snapshotOffset → View sees W → Unlock
-writer:      PropagateCommand(W) → offset >= snapshotOffset
-⇒ W ∈ RDB AND W ∈ backlog gap
-```
-
-### What landed (insufficient)
-
-- `store.snapshotMu` RWMutex + `retryUpdate` read-lock + FULLRESYNC write-lock
-- The `(commitTs → repl-offset)` mapping was rejected on the false assumption
-  that the lock already achieved linearizability. That mapping is the remaining
-  localised candidate (TODO §1 option 2).
+`TestFullresyncBoundary_FenceBlocksSnapshotWriteLock`.
 
 ### Decision
 
-**Not fixed.** Do not close Issue #3. Do not enable `SOAK_REPL_STRICT_EQUALITY=1`.
-Keep `TestFullresyncBoundary_CommittedButUnpropagatedWrite` skipped until a
-fix that spans `commit → offset` (or trims the gap by `readTs`) lands.
+**Fixed on the client write path.** Direct `store.*` calls that skip
+`processRequest` are still unfenced (tests / internal metadata).
 
 ---
 
@@ -104,15 +90,14 @@ These are the same architectural changes that fix boundary #1.
 
 ### Decision
 
-**Not fixed.** `snapshotMu` did not make FULLRESYNC linearizable (see boundary #1).
-Current guarantees:
+**Fixed on the client write path** (same fence as boundary #1). Current guarantees:
 
 | Property | Status |
 |----------|--------|
 | No lost writes | yes — every write is in RDB or backlog |
 | No structural corruption | yes — Badger MVCC consistent snapshots |
-| Zero duplicate window | **no** — committed-but-unpropagated writes land in both |
-| Eventual convergence | yes — slave catches up to `currentOffset` (modulo Issue #3 extras) |
+| Zero duplicate window | yes — commit → offset under snapshotMu.RLock |
+| Eventual convergence | yes — slave catches up to `currentOffset` |
 
 ---
 
@@ -121,11 +106,10 @@ Current guarantees:
 | Scenario | Impact |
 |----------|--------|
 | Slave reconnects after short outage | PSYNC CONTINUE: no snapshot, no gap |
-| Slave reconnects after long outage | FULLRESYNC: bounded duplicate window still open (Issue #3) |
-| Heavy write load during FULLRESYNC | Same window; INCR/LPUSH can double-apply once |
+| Slave reconnects after long outage | FULLRESYNC: client writes not double-applied |
+| Heavy write load during FULLRESYNC | Writes stall for RDB generation; no duplicate window |
 | Slave promotes to master (failover) | Offset reset; no gap from prior timeline |
-| Long strict soak (6h+) | Do not enable `SOAK_REPL_STRICT_EQUALITY=1` |
+| Long strict soak (6h+) | `SOAK_REPL_STRICT_EQUALITY=1` is meaningful |
 
-`TestRegressionDuplicateWindowMeasurement` asserts exact INCR/LIST equality as a
-*probe*, not a certificate of the boundary — the deterministic proof that the
-window is non-zero is `TestFullresyncBoundary_CommittedButUnpropagatedWrite`.
+`TestFullresyncBoundary_FenceBlocksSnapshotWriteLock` is the deterministic
+certificate; dw / overlap regressions remain storm probes.

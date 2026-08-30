@@ -14,34 +14,24 @@
    过强表述（含 `first byte="\r"`）。文件内容已由 `c84293f`/`f4cec87` 更正，但提交信息未改；
    且这两个提交不在栈顶，reword 会改写其后提交的 hash —— 重写历史，需授权。
 4. **Issue #3 补一条更正评论** —— 外部评论仍沿用过强表述；文档侧已改写为实测口径。需授权。
-5. **µs 重复窗口仍未修**（见 1）：`TestFullresyncBoundary_CommittedButUnpropagatedWrite`
-   仍标 Skip；`SOAK_REPL_STRICT_EQUALITY=1` 保持关闭。
+5. **Issue #3 客户端写路径已收口** —— 守卫不再 Skip。`SOAK_REPL_STRICT_EQUALITY=1`
+   可以开来做 soak，默认仍关。
 
 ~~soak 收敛判据~~ → 已改，见 §1b：`replicationOffsetsConverged`（`lag <= 0`）。
 
-### 1. FULLRESYNC 线性边界（Issue #3 — **实现未达成目标，窗口仍在**）
+### 1. FULLRESYNC 线性边界（Issue #3 — **2026-08-30 已收口客户端写路径**）
 
-> **状态（2026-08-29 复核）**：`snapshotMu`（`d5e210d`、`ecaf9df`）已落地，但**没有消除重复窗口**。
-> 结论由确定性复现证明（不依赖竞态）：`internal/replication/fullresync_boundary_test.go`
-> → `TestFullresyncBoundary_CommittedButUnpropagatedWrite`（当前 FAIL）。
-> **Issue：** https://github.com/lbp0200/BoltDB/issues/3 — `Implement linearizable FULLRESYNC boundary`（不可关闭）
-
-**根因**：读锁只覆盖 badger 提交，**不覆盖 offset 赋值**。`PropagateCommand()`（`backlog.Append`，水位即 offset）
-在 `handler_core.go` 于 `executeCommand()` 返回后调用，位于锁外。
-「已提交但未传播」的写入因此同时落在 RDB 与 backlog `[snapshotOffset, current)` 两侧 —— INCR/LPUSH 在从节点翻倍。
-锁把 `offset 捕获 → View 开启` 变成原子，但需要原子的其实是 `commit → offset 赋值`。
-（`IncrementReplOffset` 已删除，见 §1b；双计数器问题与本窗口不是同一件事。）
-
-**副作用**：写锁覆盖整个 RDB 生成期 → 全量同步期间**所有写入停摆**（DB 越大停摆越久），且暴露窗口比 §3 更长。
-
-**待决策的修法**（详见 `docs/failures/snapshot-inconsistency.md` §4）：
-1. 让同一把读锁跨越 `commit → offset 赋值`（须先去掉 `retryUpdate` 内的读锁，否则嵌套 RLock 遇等待中的写者必死锁；需覆盖 janitor/EXEC/SPOP 等全部写路径）—— 漏一处释放即永久冻结写入，风险最高
-2. commitTs ↔ repl-offset 映射表 + 按 View `readTs` 裁剪 gap（正是此前被"锁已足够"这个假设否掉的方案）
-3. 恢复 `d5e210d` 之前有界容忍
-
-**在 1 或 2 落地前必须保持**：
-- `TestRegressionSnapshotFullresyncOffset` / `TestRegressionDuplicateWindowMeasurement` 的严格相等断言（`sv==mv`、零去重）**不成立**，会 fail/flake
-- `SOAK_REPL_STRICT_EQUALITY=1` 不要开启
+> **状态**：`processRequest` 持 `snapshotMu.RLock` 跨越 `executeCommand`（提交）与
+> `PropagateCommand`（`backlog.Append` = offset）；FULLRESYNC 持写锁跨越
+> `snapshotOffset` 捕获与 View。已提交未传播的写入对快照不可见。
+> `retryUpdate` 不再 RLock（嵌套读锁在写者排队时会死锁）。EXEC 单独加栏。
+> **Issue：** https://github.com/lbp0200/BoltDB/issues/3
+>
+> 守卫：`TestFullresyncBoundary_CommittedButUnpropagatedWrite`、
+> `TestFullresyncBoundary_FenceBlocksSnapshotWriteLock`。
+>
+> 写锁仍覆盖整个 RDB 生成期 → 全量同步期间写入停摆（DB 越大越久）。
+> 不经 `processRequest` 的 `store.*` 直写仍无栏（非客户端复制路径）。
 
 ### 1b. 复制 offset 落在命令中间（**已修复 2026-08-30**）
 

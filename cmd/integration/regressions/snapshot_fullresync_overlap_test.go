@@ -27,13 +27,9 @@ import (
 // identical data. A slave-side extra copy is a double-apply; a missing copy is
 // a lost write.
 //
-// NOTE: the duplicate window is NOT zero — snapshotMu does not span
-// commit → repl-offset assignment, so a committed-but-unpropagated write lands
-// in both RDB and backlog. That interleaving is reproduced deterministically
-// in internal/replication/fullresync_boundary_test.go; the storm below only
-// hits it at roughly the in-flight-write probability per FULLRESYNC, so a clean
-// run here does not certify the boundary.
-// See docs/failures/snapshot-inconsistency.md §4 and Issue #3.
+// processRequest holds snapshotMu.RLock across commit and PropagateCommand,
+// so FULLRESYNC cannot observe a committed-but-unpropagated write.
+// Deterministic guard: internal/replication/fullresync_boundary_test.go.
 func TestRegressionSnapshotFullresyncOffset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping heavy regression in short mode")
@@ -160,8 +156,7 @@ func TestRegressionSnapshotFullresyncOffset(t *testing.T) {
 	sc := redis.NewClient(&redis.Options{Addr: slave.Addr, DialTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second})
 	defer sc.Close()
 
-	// Linearizable boundary (Issue #3): snapshotMu eliminates the
-	// bounded duplicate window. INCR/LIST must now be exact.
+	// Linearizable boundary (Issue #3): commit → offset is under snapshotMu.RLock.
 	t.Run("incr", func(t *testing.T) { verifyIncr(ctx, t, mc, sc) })
 	t.Run("list", func(t *testing.T) { verifyList(ctx, t, mc, sc) })
 	t.Run("zset", func(t *testing.T) { verifyZSet(ctx, t, mc, sc) })

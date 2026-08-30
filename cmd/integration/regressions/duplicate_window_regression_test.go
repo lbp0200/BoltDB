@@ -158,12 +158,9 @@ func TestRegressionDuplicateWindowMeasurement(t *testing.T) {
 	// values (an earlier revision counted repeats inside the slave list, which
 	// birthday collisions on the master make unsatisfiable).
 	//
-	// They are still a weak probe for the duplicate window: that window only
-	// catches writes sitting between commit and PropagateCommand at the instant
-	// snapshotOffset is read, i.e. roughly one FULLRESYNC in several hundred at
-	// this write rate. A pass here does not certify the boundary — see
-	// internal/replication/fullresync_boundary_test.go for the deterministic
-	// proof that the window is non-zero (Issue #3).
+	// Storm probe for Issue #3. The deterministic certificate is
+	// internal/replication/fullresync_boundary_test.go (fence spans commit →
+	// offset). A pass here is necessary but the unit test is the proof.
 	if applySkip != 0 {
 		t.Errorf("dw-measure: repl_apply_skip_count=%d != 0 (readCommandLoop skipped apply but advanced offset — silent data loss)", applySkip)
 	}

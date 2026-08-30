@@ -726,6 +726,15 @@ func (h *Handler) processRequest(req *proto.Array, reader *bufio.Reader, remoteA
 		return resp
 	}
 
+	// Issue #3：读锁跨越 executeCommand（badger 提交）与下面的
+	// PropagateCommand（offset = backlog.Append）。FULLRESYNC 持写锁
+	// 捕获 snapshotOffset 并开 View，因此看不到已提交未传播的写入。
+	// EXEC 不在 isWriteCommand 里，但其内会提交并逐条传播，必须同样加栏。
+	if h.Db != nil && (isWriteCommand(cmd) || cmd == "EXEC") {
+		h.Db.SnapshotMuRLock()
+		defer h.Db.SnapshotMuRUnlock()
+	}
+
 	resp := h.executeCommand(state, cmd, args[1:], remoteAddr)
 	if resp == nil {
 		logger.Logger.Error().

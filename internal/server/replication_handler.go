@@ -42,23 +42,10 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 	}
 
 	if result.FullResync {
-		// Issue #3：store.snapshotMu 把 snapshotOffset 捕获与 MVCC View
-		// 原子绑定，消除了「offset 已取、View 未开、新写入抢先提交」这一子窗口。
-		//
-		// 但它没有消除重复窗口：需要原子的是 commit → offset 赋值，而 offset
-		// 在 PropagateCommand() 里赋值，调用点在 executeCommand() 返回之后
-		// （handler_core.go processRequest），位于 retryUpdate 读锁之外。
-		// 因此「已提交未传播」的写入会同时落在 RDB 与 backlog 两侧：
-		//
-		//   A: retryUpdate → commit → RUnlock      （数据对 View 可见）
-		//   B: SnapshotMuLock → snapshotOffset → View（含 A）→ Unlock
-		//   A: PropagateCommand → offset >= snapshotOffset → 进 backlog
-		//
-		// 确定性复现：internal/replication/fullresync_boundary_test.go。
-		// 修法与权衡见 docs/failures/snapshot-inconsistency.md §4。
-		//
-		// 无丢失这一半仍然成立：序关系 store.Set()（badger commit）→
-		// PropagateCommand()（offset 递增）保证 offset < snapshotOffset 的写入必在 RDB。
+		// Issue #3：processRequest 持 snapshotMu 读锁跨越 executeCommand
+		// （commit）与 PropagateCommand（offset = backlog.Append）。这里持写锁
+		// 跨越 snapshotOffset 捕获与 MVCC View，因此看不到已提交未传播的写入。
+		// 守卫：internal/replication/fullresync_boundary_test.go。
 		//
 		// 时序：
 		//   [1] SnapshotMuLock()

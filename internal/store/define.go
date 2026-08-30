@@ -139,12 +139,13 @@ type BotreonStore struct {
 	scanBookmarkSeq atomic.Uint64
 	scanBookmarkMu  sync.Mutex
 
-	// snapshotMu 将 FULLRESYNC 的 MVCC 快照与复制偏移量精确绑定。
+	// snapshotMu 将 commit → repl-offset 与 FULLRESYNC 的 snapshotOffset→View
+	// 绑在同一把锁上（Issue #3）。
 	//
-	// - FULLRESYNC 持有写锁的整个窗口：GetMasterReplOffset() → db.View() → 持锁
-	//   结束。期间所有写事务被阻塞在 RunWriteLocked 外，无法在 snapshotOffset
-	//   捕获后、View 开启前插入，使 RDB 与 backlog 边界零重复。
-	// - 普通写路径持有读锁，互不阻塞，并发写入仍并行。
+	// - FULLRESYNC 持写锁：GetMasterReplOffset() → GenerateRDB View。
+	// - 客户端写路径在 processRequest 持读锁，跨越 badger 提交与
+	//   PropagateCommand（backlog.Append = offset）。读锁互不阻塞，写者
+	//   排队时新的读会被挡住，因此不存在「已提交未传播」的可见窗口。
 	snapshotMu sync.RWMutex
 }
 
@@ -937,8 +938,6 @@ func (s *BotreonStore) RunValueLogGC(discardRatio float64) (int, error) {
 // snapshotMu 相关：线性 FULLRESYNC 边界的同步原语。
 
 // ViewWithSnapshotLock 在 snapshotMu 写锁保护下执行 View。
-// FULLRESYNC 快照用此方法，保证 snapshotOffset 捕获与 MVCC View 之间
-// 不会有并发写入插入，从而消除 bounded duplicate window。
 func (s *BotreonStore) ViewWithSnapshotLock(fn func(txn *badger.Txn) error) error {
 	s.snapshotMu.Lock()
 	defer s.snapshotMu.Unlock()
@@ -958,3 +957,8 @@ func (s *BotreonStore) RunWriteLocked(fn func(txn *badger.Txn) error) error {
 // 场景（FULLRESYNC：先捕获偏移再开 View）。调用方负责配对 Unlock。
 func (s *BotreonStore) SnapshotMuLock()   { s.snapshotMu.Lock() }
 func (s *BotreonStore) SnapshotMuUnlock() { s.snapshotMu.Unlock() }
+
+// SnapshotMuRLock / SnapshotMuRUnlock 给写路径跨越 commit → offset 赋值。
+// 必须与 FULLRESYNC 的写锁配对；禁止在已持有读锁时再 RLock（写者排队会死锁）。
+func (s *BotreonStore) SnapshotMuRLock()   { s.snapshotMu.RLock() }
+func (s *BotreonStore) SnapshotMuRUnlock() { s.snapshotMu.RUnlock() }
