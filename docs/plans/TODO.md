@@ -30,6 +30,11 @@
 > 守卫：`TestFullresyncBoundary_CommittedButUnpropagatedWrite`、
 > `TestFullresyncBoundary_FenceBlocksSnapshotWriteLock`。
 >
+> **风暴回归（2026-08-30，远程 `-race`）**：
+> `TestRegressionDuplicateWindowMeasurement` PASS — INCR/LIST 全等，
+> marker 时 `lag=0 send_drop=0 apply_skip=0`。
+> `TestRegressionSnapshotFullresyncOffset`、`TestRegressionPsyncReconnectNoLoss` PASS。
+>
 > 写锁仍覆盖整个 RDB 生成期 → 全量同步期间写入停摆（DB 越大越久）。
 > 不经 `processRequest` 的 `store.*` 直写仍无栏（非客户端复制路径）。
 
