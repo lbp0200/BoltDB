@@ -28,7 +28,10 @@
 > **Issue：** https://github.com/lbp0200/BoltDB/issues/3
 >
 > 守卫：`TestFullresyncBoundary_CommittedButUnpropagatedWrite`、
-> `TestFullresyncBoundary_FenceBlocksSnapshotWriteLock`。
+> `TestFullresyncBoundary_FenceBlocksSnapshotWriteLock`、
+> `TestProcessRequest_WriteFenceBlocksFullresyncLock`、
+> `TestProcessRequest_EXECFenceBlocksFullresyncLock`
+> （后两条走真实 `processRequest`，栏从 handler 拿掉会立刻红）。
 >
 > **风暴回归（2026-08-30，远程 `-race`）**：
 > `TestRegressionDuplicateWindowMeasurement` PASS — INCR/LIST 全等，

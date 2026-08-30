@@ -2,6 +2,7 @@ package server
 
 import (
 	"testing"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/lbp0200/BoltDB/internal/replication"
@@ -205,6 +206,90 @@ func TestProcessRequest_WrongTypeDoesNotAdvanceOffset(t *testing.T) {
 	assert.False(t, isErrorResponse(resp))
 	afterOK := handler.Replication.GetMasterReplOffset()
 	assert.True(t, afterOK > afterWrong)
+}
+
+// TestProcessRequest_WriteFenceBlocksFullresyncLock is the production-path
+// Issue #3 guard: processRequest SET must take snapshotMu.RLock, so a FULLRESYNC
+// write lock already held blocks the SET. If the fence is removed from
+// processRequest (retryUpdate no longer RLocks), SET would finish under the WR.
+func TestProcessRequest_WriteFenceBlocksFullresyncLock(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+	handler.Replication = replication.NewReplicationManager(handler.Db)
+	defer handler.Replication.Stop()
+
+	handler.Db.SnapshotMuLock()
+	done := make(chan proto.RESP, 1)
+	go func() {
+		req := &proto.Array{Args: [][]byte{[]byte("SET"), []byte("fence:k"), []byte("v")}}
+		done <- handler.processRequest(req, nil, "127.0.0.1:1", nil, nil, state)
+	}()
+	select {
+	case resp := <-done:
+		t.Fatalf("processRequest SET returned while FULLRESYNC write lock held (%v) — Issue #3 fence missing", resp)
+	case <-time.After(80 * time.Millisecond):
+	}
+	handler.Db.SnapshotMuUnlock()
+	select {
+	case resp := <-done:
+		assert.False(t, isErrorResponse(resp))
+	case <-time.After(2 * time.Second):
+		t.Fatal("processRequest SET did not complete after write lock release")
+	}
+}
+
+func TestProcessRequest_EXECFenceBlocksFullresyncLock(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+	handler.Replication = replication.NewReplicationManager(handler.Db)
+	defer handler.Replication.Stop()
+
+	multi := handler.processRequest(&proto.Array{Args: [][]byte{[]byte("MULTI")}}, nil, "127.0.0.1:1", nil, nil, state)
+	assert.False(t, isErrorResponse(multi))
+	queued := handler.processRequest(&proto.Array{Args: [][]byte{[]byte("SET"), []byte("exec:k"), []byte("v")}}, nil, "127.0.0.1:1", nil, nil, state)
+	assert.False(t, isErrorResponse(queued))
+
+	handler.Db.SnapshotMuLock()
+	done := make(chan proto.RESP, 1)
+	go func() {
+		done <- handler.processRequest(&proto.Array{Args: [][]byte{[]byte("EXEC")}}, nil, "127.0.0.1:1", nil, nil, state)
+	}()
+	select {
+	case resp := <-done:
+		t.Fatalf("processRequest EXEC returned while FULLRESYNC write lock held (%v) — EXEC fence missing", resp)
+	case <-time.After(80 * time.Millisecond):
+	}
+	handler.Db.SnapshotMuUnlock()
+	select {
+	case resp := <-done:
+		assert.False(t, isErrorResponse(resp))
+	case <-time.After(2 * time.Second):
+		t.Fatal("processRequest EXEC did not complete after write lock release")
+	}
+}
+
+func TestProcessRequest_ReadDoesNotTakeWriteFence(t *testing.T) {
+	t.Parallel()
+	handler, state := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	set := handler.processRequest(&proto.Array{Args: [][]byte{[]byte("SET"), []byte("ro:k"), []byte("v")}}, nil, "127.0.0.1:1", nil, nil, state)
+	assert.False(t, isErrorResponse(set))
+
+	handler.Db.SnapshotMuLock()
+	defer handler.Db.SnapshotMuUnlock()
+	done := make(chan proto.RESP, 1)
+	go func() {
+		done <- handler.processRequest(&proto.Array{Args: [][]byte{[]byte("GET"), []byte("ro:k")}}, nil, "127.0.0.1:1", nil, nil, state)
+	}()
+	select {
+	case resp := <-done:
+		assert.False(t, isErrorResponse(resp))
+	case <-time.After(2 * time.Second):
+		t.Fatal("GET blocked on snapshotMu write lock — reads must not take the Issue #3 fence")
+	}
 }
 
 func TestIsWriteCommand_CaseSensitivity(t *testing.T) {
