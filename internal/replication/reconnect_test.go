@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"net"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -792,4 +793,157 @@ func TestSlaveReconnector_sendPSYNC_WithReplId(t *testing.T) {
 	assert.False(t, fullResync)
 	assert.Equal(t, "existing-replid", sr.lastReplId)
 	<-done
+}
+
+// TestSlaveReconnector_readCommandLoop_StallForcesReconnect 守卫 §1c 自愈机制：
+// 主节点通告的 offset 高于已应用 offset、且数据流空闲超过 stallTimeout 时，
+// readCommandLoop 必须返回错误（触发重连，PSYNC CONTINUE 重放缺失尾巴）。
+func TestSlaveReconnector_readCommandLoop_StallForcesReconnect(t *testing.T) {
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	sr := NewSlaveReconnector(rm, testStore, "127.0.0.1:6379")
+	sr.stallTimeout = 200 * time.Millisecond
+	sr.state.Store(int32(SlaveConnected))
+
+	// 排水 goroutine：消费从节点发出的 REPLCONF GETACK（net.Pipe 同步写，
+	// 对端不读会阻塞 GETACK 发送器）。测试体末尾显式 serverEnd.Close()
+	// 解除其阻塞后等待退出（不能依赖 defer 顺序：LIFO 下 Close 会晚于等待）。
+	drainDone := make(chan struct{})
+	go func() {
+		buf := make([]byte, 512)
+		for {
+			if _, err := serverEnd.Read(buf); err != nil {
+				close(drainDone)
+				return
+			}
+		}
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sr.readCommandLoop(mc)
+	}()
+
+	// 喂一条数据命令（推进 lastOffset、记录 lastDataTime）
+	_, err := serverEnd.Write([]byte("*3\r\n$3\r\nSET\r\n$2\r\nk1\r\n$2\r\nv1\r\n"))
+	assert.NoError(t, err)
+
+	var offset int64
+	for i := 0; i < 50; i++ {
+		offset = sr.lastOffset.Load()
+		if offset > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.True(t, offset > 0)
+
+	// 空闲超过 stallTimeout 后收到主节点更高 offset 通告 → 判定停滞
+	time.Sleep(250 * time.Millisecond)
+	_, err = serverEnd.Write([]byte("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$7\r\n9999999\r\n"))
+	assert.NoError(t, err)
+
+	select {
+	case err := <-done:
+		assert.Error(t, err)
+		assert.True(t, strings.Contains(err.Error(), "replication stalled"))
+	case <-time.After(3 * time.Second):
+		t.Fatal("readCommandLoop did not force reconnect on stall")
+	}
+
+	close(sr.stopCh)
+	serverEnd.Close()
+	select {
+	case <-drainDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("drain goroutine did not exit")
+	}
+}
+
+// TestSlaveReconnector_readCommandLoop_NoStallWhenDataFlows 负例：数据流仍在
+// 到达时，即使主节点通告更高 offset 也不得误判停滞（避免正常追赶期重连风暴）。
+func TestSlaveReconnector_readCommandLoop_NoStallWhenDataFlows(t *testing.T) {
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	sr := NewSlaveReconnector(rm, testStore, "127.0.0.1:6379")
+	sr.stallTimeout = 2 * time.Second // 足够大：只要 ACK 紧跟数据到达即不触发
+	sr.state.Store(int32(SlaveConnected))
+
+	drainDone := make(chan struct{})
+	go func() {
+		buf := make([]byte, 512)
+		for {
+			if _, err := serverEnd.Read(buf); err != nil {
+				close(drainDone)
+				return
+			}
+		}
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sr.readCommandLoop(mc)
+	}()
+
+	_, err := serverEnd.Write([]byte("*3\r\n$3\r\nSET\r\n$2\r\nk1\r\n$2\r\nv1\r\n"))
+	assert.NoError(t, err)
+
+	var offset int64
+	for i := 0; i < 50; i++ {
+		offset = sr.lastOffset.Load()
+		if offset > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.True(t, offset > 0)
+
+	// 数据刚到达即收到更高 offset 通告 → 不触发停滞
+	_, err = serverEnd.Write([]byte("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$7\r\n9999999\r\n"))
+	assert.NoError(t, err)
+	time.Sleep(100 * time.Millisecond)
+
+	close(sr.stopCh)
+	clientEnd.Close()
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("readCommandLoop did not return on stop")
+	}
+
+	serverEnd.Close()
+	select {
+	case <-drainDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("drain goroutine did not exit")
+	}
 }

@@ -118,10 +118,17 @@ func TestRegressionDuplicateWindowMeasurement(t *testing.T) {
 		sOff = slave.GetSlaveOffset()
 		v, err := slave.Client.Get(ctx, markerKey).Result()
 		if err == nil && v == "done" {
-			t.Logf("dw-measure: marker visible at iter %d (mo=%d so=%d lag=%d send_drop=%d apply_skip=%d)",
-				i, mOff, sOff, mOff-sOff, master.ReplSendDropCount(), slave.ReplApplySkipCount())
-			converged = true
-			break
+			if sOff >= mOff {
+				t.Logf("dw-measure: marker visible and offsets converged at iter %d (mo=%d so=%d lag=%d send_drop=%d apply_skip=%d)",
+					i, mOff, sOff, mOff-sOff, master.ReplSendDropCount(), slave.ReplApplySkipCount())
+				converged = true
+				break
+			}
+			// marker 可见但从节点 offset 仍落后：可能是尾巴缺口（命令已入
+			// backlog 但投递静默中断）。停滞检测（readCommandLoop + GETACK）
+			// 会触发重连自愈，这里继续等待 offset 收敛，避免在缺口未补齐时
+			// 测量出假亏空。
+			t.Logf("dw-measure: marker visible but slave behind (mo=%d so=%d lag=%d) — waiting for tail catch-up", mOff, sOff, mOff-sOff)
 		}
 		if i%10 == 0 {
 			t.Logf("dw-measure: waiting for convergence marker %d/60 (mo=%d so=%d)", i, mOff, sOff)
@@ -146,6 +153,13 @@ func TestRegressionDuplicateWindowMeasurement(t *testing.T) {
 	metrics := dwMeasure(ctx, t, mc, sc)
 	sendDrop := master.ReplSendDropCount()
 	applySkip := slave.ReplApplySkipCount()
+
+	// Re-read offsets at measure time — the poll-loop values are stale
+	// (captured before the marker GET), which can mask a still-caught-up
+	// replica or a genuine tail gap.
+	freshMo := master.GetMasterOffset()
+	freshSo := slave.GetSlaveOffset()
+	t.Logf("dw-measure: fresh offsets at measure (mo=%d so=%d lag=%d)", freshMo, freshSo, freshMo-freshSo)
 
 	t.Logf("dw-measure: ===== DUPLICATE WINDOW MEASUREMENTS =====")
 	t.Logf("dw-measure: INCR max_gap=%d (threshold=0)", metrics.incrMaxGap)
@@ -272,6 +286,7 @@ func dwMeasure(ctx context.Context, t *testing.T, mc, sc *redis.Client) dwMetric
 				extra += d
 			} else if d < 0 {
 				missing += -d
+				t.Logf("dw-measure: MISSING value %q on slave: master_count=%d slave_count=%d (list=%s)", v, n, scount[v], key)
 			}
 		}
 		for v, n := range scount {

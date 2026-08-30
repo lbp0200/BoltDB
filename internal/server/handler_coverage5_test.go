@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"net"
 	"testing"
@@ -612,4 +613,50 @@ func TestProcessPubSubCommand_PUBSUB_SHARDCHANNELS(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, 1, len(arr.Args))
 	assert.Equal(t, "{s}one", string(arr.Args[0]))
+}
+
+// TestHandleSlaveReplicationConnection_RepliesToGetAck 守卫：从节点发
+// REPLCONF GETACK * 时，主节点必须回复携带自身 offset 的 REPLCONF ACK
+// （从节点 readCommandLoop 据此检测投递停滞的尾巴缺口，见 TODO §1c）。
+func TestHandleSlaveReplicationConnection_RepliesToGetAck(t *testing.T) {
+	t.Parallel()
+
+	handler, _ := setupTestHandler(t)
+	defer handler.Db.Close()
+
+	handler.Replication = replication.NewReplicationManager(handler.Db)
+	defer handler.Replication.Stop()
+	handler.Replication.SetMasterReplOffset(12345)
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	slaveConn := replication.NewSlaveConnection(clientEnd)
+	handler.wg.Add(1)
+	done := make(chan struct{})
+	go func() {
+		handler.handleSlaveReplicationConnection(context.Background(), slaveConn)
+		close(done)
+	}()
+
+	_, err := serverEnd.Write([]byte("*2\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n"))
+	assert.NoError(t, err)
+
+	resp, err := proto.ReadRESP(bufio.NewReader(serverEnd))
+	assert.NoError(t, err)
+	if len(resp.Args) != 3 {
+		t.Fatalf("GETACK reply has %d args, want 3", len(resp.Args))
+	}
+	assert.Equal(t, "REPLCONF", string(resp.Args[0]))
+	assert.Equal(t, "ACK", string(resp.Args[1]))
+	assert.Equal(t, "12345", string(resp.Args[2]))
+
+	serverEnd.Close()
+	slaveConn.Close()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handleSlaveReplicationConnection did not return after close")
+	}
 }

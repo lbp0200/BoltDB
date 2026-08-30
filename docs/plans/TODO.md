@@ -83,45 +83,50 @@
 之所以漏掉，是因为它们**显式调用 `sr.Stop()`**，测的是"能被停"而不是"关机会停"。
 守卫：`TestReplicationManagerStopStopsSlaveReconnector`（修复前 Stop 后重连次数 1→3，修复后不变）。
 
-### 1c. dw 回归偶报 1 个 LIST 元素亏空（**计数器已落地；待 dw 实测归因**）
+### 1c. dw 回归偶报 1 个元素亏空（**已定位并修复 2026-08-31**）
 
-> **现象**（远程 `-race`，`TestRegressionDuplicateWindowMeasurement`）：5 个 INCR key 全部 `gap=0`，
-> 但 `dw:list:1 master_len=2019 slave_len=2018 → missing_on_slave=1`，且此时
-> `converged at iter 13 (mo=1341949 so=1341905)` —— **从节点 offset 仍差 44 字节**。
-> 本会话修复前也出现过同形状（`dw:list:3 master_len=2114 slave_len=2113`），非新引入回归。
+> **现象**（远程 `-race`，`TestRegressionDuplicateWindowMeasurement`）：偶发（约 1/5~1/10 批次）
+> `missing_on_slave=1`（LIST 少 1 元素）或单个 INCR `gap=1`，且 marker 可见时
+> `lag=29~95`（如 `mo=1370053 so=1370024 lag=29`、`mo=1357062 so=1357018 lag=44`）。
 >
-> **已排除**：
-> 1. 收敛判据误判（overlap 用例那条已证为判据问题，但 dw 用的是 marker 判据，marker 已到、
->    而亏空在中间位置，无法用"尾部未送达"解释——流是有序的，中间挖不掉洞而不破坏帧）。
-> 2. 解析→再序列化不等长：`TestReplicatedCommandRoundTripsByteIdentically` 覆盖 14 种形态
->    （空值、空 key、二进制、内嵌 CRLF、UTF-8、多参数、marker 形状、8KB 长值…）全部字节等同。
+> **定位（2026-08-31，fresh-offset 重读证明是真尾巴缺口）**：
+> 测试原在 phase-5 打印**轮询循环里的陈旧 mo/so**（marker GET 之前捕获），把真实落后
+> 掩盖成了"lag 冻结"。改为 measure 时重读后确认：**从节点 offset 确实落后主节点一条命令
+> （29 字节 ≈ 一条 INCR），且 `send_drop=0 apply_skip=0`、单次 CONTINUE、读循环健康
+> （无第二次 EOF）**。两条丢弃路径、offset 边界机制、catch-up 竞态全部排除。
 >
-> **剩余怀疑对象**：`PropagateCommand` 里"发送失败只 warn 不重投"（`slave.SendCommand` 返回错误即丢弃，
-> 依赖对端读侧发现断连）与 `readCommandLoop` 的 `isTransientReplicationError` 分支
-> （**推进 offset 但不 apply**，为保字节锁步而刻意丢数据）。后者按设计就会造成"offset 对得上、数据少了"。
+> **成因**：收敛 marker（writeWg.Wait() 之后设置，理论上应是 backlog 最后一条）可见于
+> 从节点，但从节点 lastOffset 仍低于主节点水位——即 **backlog 中 marker 之后还有命令**：
+> CLIENT KILL 窗口内停顿的 in-flight 写入（客户端超时/错误返回后，服务端仍在处理），
+> 在 marker 之后才完成 append。该尾巴命令从未投递到从节点：live push 静默丢失（无
+> 写错误 → 无 send_drop；从节点根本没收到 → 无 apply_skip），读循环无错误 → 无重连，
+> 且系统无任何"主节点水位 vs 从节点已应用位置"的核对机制 → 缺口永久存在。
 >
-> **已落地（2026-08-30）**：两条丢弃路径现为原子计数器，经 `INFO replication` /
-> Prometheus / dw 用例可读：
-> - 主：`repl_send_drop_count` / `GetReplSendDropCount()` — live `SendCommand` 失败
-> - 从：`repl_apply_skip_count` / `GetReplApplySkipCount()` — skip apply 仍推进 offset
+> **修复（2026-08-31）**：
+> 1. **从节点 → 主节点 GETACK**：`readCommandLoop` 每 1s 发 `REPLCONF GETACK *`；
+>    主节点 `handleSlaveReplicationConnection` 回复 `REPLCONF ACK <masterOffset>`
+>    （RESP 数组，与从节点 ACK 同构，从节点 ReadRESP 可直接解析）。
+> 2. **停滞检测 + 强制重连自愈**：从节点解析该回复，若 `masterOffset > lastOffset`
+>    且数据流空闲超过 `replStallTimeout`（2s）→ 返回错误强制重连，PSYNC CONTINUE
+>    从 lastOffset 重放缺失尾巴（幂等安全：续传不重叠）。
+> 3. **关键设计**：仅"落后且空闲"触发——正常追赶期数据持续流动不触发（避免重连风暴）；
+>    主节点**不**按 ACK 落后补推（ACK 是已应用位置，补推会 double-apply 非幂等命令）。
+> 4. **dw 判据收紧**（此前明确"定位前不收紧"）：收敛要求 marker 可见 **且** `so >= mo`；
+>    phase-5 重读 fresh offsets。
 >
-> dw 断言 `apply_skip == 0`；LIST 亏空时把两个计数打进失败信息，一次跑即可判明
-> 发送侧 / 应用侧 / 两条都不是。`send_drop` 不单独断言为 0（CLIENT KILL 期间 live
-> push 失败在设计上可能发生，命令仍在 backlog）。
+> **守卫**：
+> - `TestSlaveReconnector_readCommandLoop_StallForcesReconnect`（落后+空闲 → 强制重连）
+> - `TestSlaveReconnector_readCommandLoop_NoStallWhenDataFlows`（数据流动 → 不误判）
+> - `TestHandleSlaveReplicationConnection_RepliesToGetAck`（主节点正确回 ACK <offset>）
 >
-> **实测（2026-08-30，远程 `-race -v`）**：
-> 1. 未复现亏空。`send_drop=0 apply_skip=0`，INCR/LIST/HSET 全等，`mo==so=1358224`。
-> 2. 仍未复现。`send_drop=1 apply_skip=0`，LIST 全等，`mo==so=1378327`（send_drop 被 backlog/FULLRESYNC 收回）。
-> 3. **`--full` 套件复现（2026-08-30 16:00）**：`dw:list:2 master_len=1789 slave_len=1788 missing=1`，
->    INCR 全等。marker 可见时 **`lag=44` 且测完仍是 `mo=1106155 so=1106111`**（冻住，2s drain 没追上）。
->    **`send_drop=0 apply_skip=0`** —— 两条丢弃路径都不是成因。
->    同形状：marker 已在从节点（多半来自 RDB），增量尾 44 字节未 apply（约一条 LPUSH）。
->    同场 `TestRegressionSnapshotFullresyncOffset` 也冻在 `lag=170` 30s+。
->
-> 在定位前不要收紧 dw 的 lag==0 判据（会让用例常红且无法区分成因）。
+> **实测（2026-08-31，远程 `-race`）**：dw 回归 10/10 全绿（含 `send_drop=1`/`send_drop=3`
+> 轮——修复前 send_drop 轮偶发亏空，修复后均收敛 `lag=0`）；`internal/replication`（44s）、
+> `internal/server`（40s）全包绿；`TestRegressionPsyncReconnectNoLoss`、
+> `TestRegressionSnapshotFullresyncOffset` PASS。
 >
 > **一键验证**：
 > `bash scripts/remote-test.sh -race -timeout 180s -v ./cmd/integration/regressions/ -run TestRegressionDuplicateWindowMeasurement`
+> `bash scripts/remote-test.sh -race -short -timeout 600s ./internal/replication/... ./internal/server/...`
 
 ### 2. v8.52.0 发布遗留（非阻塞，2 项待观察）
 

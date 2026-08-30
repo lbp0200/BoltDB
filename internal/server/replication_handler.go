@@ -277,6 +277,26 @@ func (h *Handler) handleSlaveReplicationConnection(ctx context.Context, slave *r
 			}
 		}
 
+		// 处理 REPLCONF GETACK * — 从节点周期性查询主节点 offset，
+		// 用于检测"命令已入 backlog 但投递静默中断"的尾巴缺口
+		// （docs/plans/TODO.md §1c：dw 回归偶发 1 元素亏空，两个丢弃
+		// 计数器均为 0 时仍可能发生）。回复与从节点 ACK 同构的
+		// RESP 数组命令，使从节点 readCommandLoop 能直接解析。
+		if cmd == "REPLCONF" && len(req.Args) >= 2 &&
+			strings.ToUpper(string(req.Args[1])) == "GETACK" {
+			masterOffset := h.Replication.GetMasterReplOffset()
+			ackResp := fmt.Sprintf("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$%d\r\n%d\r\n",
+				len(strconv.FormatInt(masterOffset, 10)), masterOffset)
+			if err := slave.WriteAndFlush([]byte(ackResp)); err != nil {
+				logger.Logger.Debug().
+					Str("slave_id", slave.ID).
+					Err(err).
+					Msg("回复 GETACK 失败")
+				return
+			}
+			continue
+		}
+
 		// 其他命令（理论上不应该有）
 		logger.Logger.Warn().
 			Str("slave_id", slave.ID).

@@ -34,6 +34,12 @@ var DefaultReconnectConfig = ReconnectConfig{
 	ResetAfter:  30 * time.Second,
 }
 
+// replStallTimeout: 主节点通告的 offset 高于已应用 offset、且数据流空闲超过
+// 该时长时，判定复制流停滞（命令已入 backlog 但投递静默中断——无读错误、
+// 无 send_drop/apply_skip，见 docs/plans/TODO.md §1c），readCommandLoop
+// 返回错误强制重连，由 PSYNC CONTINUE 重放缺失区间自愈。
+const replStallTimeout = 2 * time.Second
+
 type ReconnectConfig struct {
 	MaxRetries  int
 	BaseBackoff time.Duration
@@ -57,6 +63,14 @@ type SlaveReconnector struct {
 	connectedSince time.Time
 
 	reconnectCount atomic.Int64
+
+	// masterWater: 主节点对周期 REPLCONF GETACK * 的回复（REPLCONF ACK）
+	// 中通告的 offset。与 lastDataTime 一起用于检测投递停滞的尾巴缺口。
+	masterWater atomic.Int64
+	// lastDataTime: 最近一次收到数据命令（非 PING/REPLCONF/SELECT）的时间。
+	lastDataTime atomic.Int64
+	// stallTimeout: 停滞判定阈值，测试可缩短；默认 replStallTimeout。
+	stallTimeout time.Duration
 }
 
 func NewSlaveReconnector(rm *ReplicationManager, store *store.BotreonStore, masterAddr string) *SlaveReconnector {
@@ -299,11 +313,34 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 	// 从 stopCh 派生 context，使阻塞操作（如 XReadGroup）可被 shutdown 取消
 	replCtx, replCancel := context.WithCancel(context.Background())
 	defer replCancel()
+
+	// 停滞检测的空闲时钟从连接建立起算，避免 0 值（1970）被误判为"早已空闲"。
+	sr.lastDataTime.Store(time.Now().UnixNano())
+
 	go func() {
 		select {
 		case <-sr.stopCh:
 			replCancel()
 		case <-replCtx.Done():
+		}
+	}()
+
+	// 周期向主节点发 REPLCONF GETACK *，主节点以 REPLCONF ACK <offset>
+	// 回复（见 replication_handler.go handleSlaveReplicationConnection 的
+	// GETACK 分支）。readCommandLoop 用该回复检测投递停滞的尾巴缺口。
+	// replCtx 取消（readCommandLoop 返回 / shutdown）时本 goroutine 退出。
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := sr.writeRespToMaster(mc, []byte("*2\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n")); err != nil {
+					return
+				}
+			case <-replCtx.Done():
+				return
+			}
 		}
 	}()
 
@@ -353,10 +390,40 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 			continue
 		}
 
+		// 处理 REPLCONF ACK <offset> — 主节点对我们 GETACK 的回复，通告其当前
+		// offset（= backlog 水位）。若主节点水位高于已应用 offset 且数据流
+		// 空闲超过 stallTimeout，说明有条目在投递中静默丢失（无读错误、无
+		// send_drop/apply_skip 计数），返回错误强制重连，PSYNC CONTINUE
+		// 会从 lastOffset 重放缺失区间。
+		if cmd == "REPLCONF" && len(req.Args) >= 3 &&
+			strings.ToUpper(string(req.Args[1])) == "ACK" {
+			if masterOffset, err := strconv.ParseInt(string(req.Args[2]), 10, 64); err == nil {
+				sr.masterWater.Store(masterOffset)
+				slaveOffset := sr.lastOffset.Load()
+				lastData := time.Unix(0, sr.lastDataTime.Load())
+				stall := sr.stallTimeout
+				if stall <= 0 {
+					stall = replStallTimeout
+				}
+				if masterOffset > slaveOffset && time.Since(lastData) > stall {
+					logger.Logger.Warn().
+						Int64("master_offset", masterOffset).
+						Int64("slave_offset", slaveOffset).
+						Dur("idle", time.Since(lastData)).
+						Msg("复制流停滞：主节点水位高于已应用 offset 且数据流空闲，强制重连")
+					return fmt.Errorf("replication stalled: master at %d, slave at %d", masterOffset, slaveOffset)
+				}
+			}
+			continue
+		}
+
 		// 处理 SELECT — 忽略数据库选择，不推进 offset（master 不追踪 SELECT）
 		if cmd == "SELECT" {
 			continue
 		}
+
+		// 到达此处即数据命令：记录最近数据到达时间（停滞检测用）。
+		sr.lastDataTime.Store(time.Now().UnixNano())
 
 		cmdBytes := serializeCommand(req.Args)
 
