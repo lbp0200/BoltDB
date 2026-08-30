@@ -1347,7 +1347,7 @@ func TestClusterMigrateSlot(t *testing.T) {
 // TestClusterMigrateRoundTripStability migrates a slot A→B then B→A with
 // rewritten values. Lightweight multi-round consistency oracle (not full soak).
 func TestClusterMigrateRoundTripStability(t *testing.T) {
-	t.Parallel()
+	// Gossip/MOVED under suite load; do not Parallel with other cluster tests.
 	if testing.Short() {
 		t.Skip("skipping migrate round-trip stability in short mode")
 	}
@@ -1876,7 +1876,7 @@ func TestClusterMigrateSlotUnderLoad(t *testing.T) {
 // TestClusterFailover verifies that PFAIL reports from multiple nodes
 // trigger FAIL promotion and slot reassignment.
 func TestClusterFailover(t *testing.T) {
-	t.Parallel()
+	// Gossip FAIL promotion is timing-sensitive; do not Parallel under suite load.
 	if testing.Short() {
 		t.Skip("skipping failover test in short mode")
 	}
@@ -1913,34 +1913,30 @@ func TestClusterFailover(t *testing.T) {
 		}
 	}
 
-	// Now simulate node1 being failed: mark it as PFAIL via gossip from node2 and node3
-	// We directly add PFAIL to node1's gossip payload by building payloads manually
-	// that include PFAIL for node1's ID
+	// P5: FAIL promotion needs local PFAIL plus a peer gossip report.
+	// Do not use BuildGossipPayload here — that includes a fresh PongRecv for
+	// the still-alive node1 and would recover PFAIL before the report is counted.
+	node3.handler.Cluster.MarkNodePFail(node1.nodeID)
+	node3.handler.Cluster.Bus.ApplyGossipPayloadFrom(node2.nodeID, &cluster.GossipPayload{
+		PFail: []string{node1.nodeID},
+	})
 
-	// Have node2 "report" node1 as PFAIL by building a payload with PFAIL
-	node2.handler.Cluster.MarkNodePFail(node1.nodeID)
-
-	// Build payload and inject as if received from node2
-	payload := node2.handler.Cluster.Bus.BuildGossipPayload()
-
-	// Apply on node3 as if node2 reported it.
-	// This should promote node1 to FAIL (threshold=1 in any cluster size for first report,
-	// since totalNodes may be 2 from node3's perspective).
-	node3.handler.Cluster.Bus.ApplyGossipPayloadFrom(node2.nodeID, payload)
-
-	// Verify node1 is marked FAIL on node3
-	n1onNode3 := node3.handler.Cluster.GetNodeByID(node1.nodeID)
+	deadline := time.Now().Add(5 * time.Second)
+	var n1onNode3 *cluster.Node
+	for time.Now().Before(deadline) {
+		n1onNode3 = node3.handler.Cluster.GetNodeByID(node1.nodeID)
+		if n1onNode3 != nil && n1onNode3.IsFailed() {
+			break
+		}
+		node3.handler.Cluster.Bus.ApplyGossipPayloadFrom(node2.nodeID, &cluster.GossipPayload{
+			PFail: []string{node1.nodeID},
+		})
+		time.Sleep(100 * time.Millisecond)
+	}
 	if n1onNode3 == nil {
 		t.Fatal("node1 should exist on node3")
 	}
-	hasFAIL := false
-	for _, f := range n1onNode3.Flags {
-		if f == cluster.FlagFail {
-			hasFAIL = true
-			break
-		}
-	}
-	if !hasFAIL {
+	if !n1onNode3.IsFailed() {
 		t.Fatalf("node1 should be marked FAIL on node3 after PFAIL report from node2. Flags: %v", n1onNode3.Flags)
 	}
 	t.Logf("node1 promoted to FAIL on node3: flags=%v slots reassigned", n1onNode3.Flags)

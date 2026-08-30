@@ -747,7 +747,7 @@ func TestPropagation_ReadOnly(t *testing.T) {
 
 // TestReplicationChaos_Load 测试复制在持续写入下的稳定性
 func TestReplicationChaos_Load(t *testing.T) {
-	t.Parallel()
+	// Must not t.Parallel: leak check uses process-wide NumGoroutine.
 	master, slave, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 

@@ -720,6 +720,16 @@ func (c *Cluster) MigrateSlot(slot uint32, targetNodeID string, copyKeys bool) e
 			return fmt.Errorf("dump key %s: %w", key, err)
 		}
 
+		askingCmd := &proto.Array{Args: [][]byte{[]byte("ASKING")}}
+		if err := proto.WriteRESP(conn, askingCmd); err != nil {
+			_ = conn.Close()
+			return fmt.Errorf("write ASKING for key %s: %w", key, err)
+		}
+		if _, err := proto.ReadRESP(reader); err != nil {
+			_ = conn.Close()
+			return fmt.Errorf("read ASKING response for key %s: %w", key, err)
+		}
+
 		// 构建 RESTORE 命令
 		restoreCmd := &proto.Array{
 			Args: [][]byte{

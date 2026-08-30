@@ -109,9 +109,31 @@ func newMigrateConn(addr string) (*migrateConn, error) {
 	}, nil
 }
 
+func (mc *migrateConn) sendAsking() error {
+	cmd := &proto.Array{Args: [][]byte{[]byte("ASKING")}}
+	if err := proto.WriteRESP(mc.conn, cmd); err != nil {
+		return fmt.Errorf("write ASKING: %w", err)
+	}
+	resp, err := proto.ReadRESP(mc.reader)
+	if err != nil {
+		return fmt.Errorf("read ASKING response: %w", err)
+	}
+	msg := restoreResponseMsg(resp)
+	if msg != "" && msg != "OK" {
+		return fmt.Errorf("ASKING: %s", msg)
+	}
+	return nil
+}
+
 func (mc *migrateConn) sendRestore(key string, data []byte) error {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
+
+	// IMPORTING slots MOVED unless the connection first sends ASKING.
+	// MIGRATESLOT is not a Redis client, so it must ASK itself.
+	if err := mc.sendAsking(); err != nil {
+		return err
+	}
 
 	// Do NOT use REPLACE. During MIGRATING, ASKING clients may write newer
 	// values on the IMPORTING target; REPLACE would clobber them with a stale

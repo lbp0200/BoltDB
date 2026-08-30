@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -283,15 +284,7 @@ func TestSoakReplication(t *testing.T) {
 	wg.Wait()
 	close(errCh)
 	<-errsDone
-	if len(errs) > 0 {
-		t.Errorf("soak-repl: %d errors during run (first 10 shown):", len(errs))
-		for i, err := range errs {
-			if i >= 10 {
-				break
-			}
-			t.Errorf("  %v", err)
-		}
-	}
+	reportSoakWriterErrors(t, "soak-repl", errs)
 
 	// Wait for replication to stabilize after chaos
 	// Barrier: connected slave + master/slave offsets match (lag <= 0)
@@ -443,15 +436,7 @@ func TestSoakReplicationShortStrict(t *testing.T) {
 	wg.Wait()
 	close(errCh)
 	<-errsDone
-	if len(errs) > 0 {
-		t.Errorf("soak-repl-short: %d errors during run (first 10 shown):", len(errs))
-		for i, err := range errs {
-			if i >= 10 {
-				break
-			}
-			t.Errorf("  %v", err)
-		}
-	}
+	reportSoakWriterErrors(t, "soak-repl-short", errs)
 
 	converged := waitReplicationConvergence(ctx, master, slave, 120*time.Second, t)
 	if !converged {
@@ -504,6 +489,58 @@ func getSoakReplWriters() int {
 		return 20
 	}
 	return n
+}
+
+// reportSoakWriterErrors fails on real writer errors. Client cancel/deadline
+// at soakCtx expiry is expected (writers in flight when the timer fires) and
+// is only logged — offsets/datasets are the correctness oracle.
+func reportSoakWriterErrors(t *testing.T, prefix string, errs []error) {
+	t.Helper()
+	var hard []error
+	for _, err := range errs {
+		if soakShutdownClientErr(err) {
+			continue
+		}
+		hard = append(hard, err)
+	}
+	if n := len(errs) - len(hard); n > 0 {
+		t.Logf("%s: ignoring %d client deadline/cancel at soak end", prefix, n)
+	}
+	if len(hard) == 0 {
+		return
+	}
+	t.Errorf("%s: %d errors during run (first 10 shown):", prefix, len(hard))
+	for i, err := range hard {
+		if i >= 10 {
+			break
+		}
+		t.Errorf("  %v", err)
+	}
+}
+
+func TestSoakShutdownClientErr(t *testing.T) {
+	t.Parallel()
+	if !soakShutdownClientErr(fmt.Errorf("INCR soak:cnt:21: %w", context.DeadlineExceeded)) {
+		t.Fatal("wrapped deadline must be treated as soak-end noise")
+	}
+	if !soakShutdownClientErr(context.Canceled) {
+		t.Fatal("canceled must be treated as soak-end noise")
+	}
+	if soakShutdownClientErr(fmt.Errorf("SET soak:str:1: WRONGTYPE")) {
+		t.Fatal("real writer errors must still fail the soak")
+	}
+}
+
+func soakShutdownClientErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	s := err.Error()
+	return strings.Contains(s, "context deadline exceeded") ||
+		strings.Contains(s, "context canceled")
 }
 
 func runSoakReplWriter(ctx context.Context, master *redis.Client, id int, errCh chan<- error) {
