@@ -136,8 +136,8 @@
 
 | 边界 | 原因 |
 |------|------|
-| commit-seq ↔ repl-offset 映射（Issue #3 草案） | 已由 `snapshotMu` 临界区实现线性绑定，无需额外映射表；详见 `docs/failures/snapshot-inconsistency.md` §4 |
-| 完全线性化 FULLRESYNC | ✅ 已实现（2026-08-27 `snapshotMu`）；严格校验待远程验证 |
+| commit-seq ↔ repl-offset 映射（Issue #3 草案） | 已由 `processRequest` 读锁跨越 commit→Append 实现线性绑定，无需映射表；详见 `docs/failures/snapshot-inconsistency.md` §4 |
+| 完全线性化 FULLRESYNC | ✅ 已实现（2026-08-30）；远程 dw / overlap / PSYNC / strict soak PASS；`./cmd/integration/ -short` 全绿 |
 | EVAL / SCRIPT (Lua) | Lua 沙箱逃逸风险 + 维护成本，非定位 |
 | FUNCTION / FCALL / FCALL_RO | 随 Lua 排除（FUNCTION 是 Lua 引擎的容器命令） |
 | HEXPIRE 系列（12 个：HEXPIRE/HEXPIREAT/HEXPIRETIME/HPEXPIRE/HPEXPIREAT/HPEXPIRETIME/HPERSIST/HPTTL/HTTL/HSETEX/HGETEX/HGETDEL） | Hash 字段级 TTL（Redis 7+）：需要 Hash 存储格式变更（字段级过期元数据），风险高收益低，明确不做 |
