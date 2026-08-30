@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"net"
 	"testing"
 	"time"
 
@@ -180,19 +181,47 @@ func TestLastSave(t *testing.T) {
 	assert.True(t, timestamp > 0)
 }
 
-// TestShutdown 测试 SHUTDOWN 命令
+// TestShutdown sends SHUTDOWN NOSAVE to a live BoltDB server. The shared
+// TestMain handler has no OnShutdown hook and must stay up for later tests,
+// so this probe uses a private listener. The command replies +OK then the
+// hook closes the listener (same shape as production: OK, then ServeTCP
+// returns). A client error from the subsequent drop is acceptable; asserting
+// that an error *must* occur was wrong — the reply is OK.
 func TestShutdown(t *testing.T) {
-	setupTest(t)
-	defer teardownTest(t)
+	srv := StartIsolatedServer(t)
 
-	ctx := context.Background()
+	hook := make(chan struct{})
+	srv.Handler.OnShutdown = func() {
+		select {
+		case <-hook:
+		default:
+			close(hook)
+		}
+		_ = srv.listener.Close()
+	}
 
-	// SHUTDOWN - 注意：这会关闭服务器
-	// 由于测试环境，我们不实际执行关闭
-	// 只验证命令被识别
-	result, err := sharedClient.Do(ctx, "SHUTDOWN", "NOSAVE").Result()
-	assert.Error(t, err) // 应该返回错误（连接断开）
-	assert.Nil(t, result)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	result, err := srv.Client.Do(ctx, "SHUTDOWN", "NOSAVE").Result()
+	if err != nil {
+		t.Logf("SHUTDOWN NOSAVE: client error after close (ok): %v", err)
+	} else if s, ok := result.(string); !ok || s != "OK" {
+		t.Fatalf("SHUTDOWN NOSAVE: got %v (%T), want OK", result, result)
+	}
+
+	select {
+	case <-hook:
+	case <-time.After(2 * time.Second):
+		t.Fatal("SHUTDOWN did not invoke OnShutdown")
+	}
+
+	dialer := net.Dialer{Timeout: 500 * time.Millisecond}
+	conn, derr := dialer.DialContext(ctx, "tcp", srv.Addr)
+	if derr == nil {
+		_ = conn.Close()
+		t.Fatal("listener still accepting after SHUTDOWN")
+	}
 }
 
 // TestClientKill 测试 CLIENT KILL 命令
