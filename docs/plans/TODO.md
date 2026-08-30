@@ -111,12 +111,12 @@
 >
 > **实测（2026-08-30，远程 `-race -v`）**：
 > 1. 未复现亏空。`send_drop=0 apply_skip=0`，INCR/LIST/HSET 全等，`mo==so=1358224`。
->    CLIENT KILL 没打出 send_drop。
-> 2. （北京时间 07:43 再跑）仍未复现亏空。`send_drop=1 apply_skip=0`，LIST 五把 key
->    全等（`missing_on_slave=0`），INCR 全等，`mo==so=1378327`。CLIENT KILL 窗口
->    打出 1 次 live `SendCommand` flush 失败（`use of closed network connection`），
->    数据仍对齐——send_drop 被 backlog/FULLRESYNC 收回。亏空仍待下次 `missing>0`
->    时读这两个计数。
+> 2. 仍未复现。`send_drop=1 apply_skip=0`，LIST 全等，`mo==so=1378327`（send_drop 被 backlog/FULLRESYNC 收回）。
+> 3. **`--full` 套件复现（2026-08-30 16:00）**：`dw:list:2 master_len=1789 slave_len=1788 missing=1`，
+>    INCR 全等。marker 可见时 **`lag=44` 且测完仍是 `mo=1106155 so=1106111`**（冻住，2s drain 没追上）。
+>    **`send_drop=0 apply_skip=0`** —— 两条丢弃路径都不是成因。
+>    同形状：marker 已在从节点（多半来自 RDB），增量尾 44 字节未 apply（约一条 LPUSH）。
+>    同场 `TestRegressionSnapshotFullresyncOffset` 也冻在 `lag=170` 30s+。
 >
 > 在定位前不要收紧 dw 的 lag==0 判据（会让用例常红且无法区分成因）。
 >
