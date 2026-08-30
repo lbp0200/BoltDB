@@ -229,7 +229,7 @@ func nodeForSlot(slot uint32, nodeCount int) int {
 //	SOAK_CLUSTER_DURATION=3h go test -race -timeout 4h ./cmd/integration/ -run TestClusterSoak
 //	SOAK_CLUSTER_NODES=5 SOAK_CLUSTER_WRITERS=20 go test -race -timeout 30m ./cmd/integration/ -run TestClusterSoak
 func TestClusterSoak(t *testing.T) {
-	t.Parallel()
+	// Must not t.Parallel: leak check uses process-wide NumGoroutine.
 	if testing.Short() {
 		t.Skip("skipping cluster soak test in short mode")
 	}
@@ -509,6 +509,10 @@ func runClusterSlotChaos(ctx context.Context, t *testing.T, env *clusterSoakEnv,
 				// Correct: source redirected to destination
 				// Write to destination directly (parse MOVED addr)
 				if _, err := dstNode.client.Set(ctx, key, val, 0).Result(); err != nil {
+					if strings.Contains(err.Error(), "MOVED") {
+						// Gossip may not have converged; dest can still redirect.
+						continue
+					}
 					errCh <- fmt.Errorf("SET after MOVED: %w", err)
 				}
 			} else if err != nil {
