@@ -27,10 +27,10 @@
 
 | # | Invariant | Source | Violation |
 |---|-----------|--------|-----------|
-| R1 | `masterReplOffset` 严格单调递增，永不为负 | `replication.go:90` `IncrementReplOffset` | 复制状态不一致 |
-| R2 | `masterReplOffset` == `backlog.internalOffset` 始终相等 | `replication.go:194-211` Append 与 IncrementReplOffset 配对调用 | 部分同步偏移量计算错误 |
-| R3 | 复制偏移量增量 == `len(serialized RESP)` | `replication.go:211` `IncrementReplOffset(len(cmdBytes))` | 主从 offset 不同步 |
-| R4 | 每个 PropagateCommand 调用恰好增加一次 offset | `replication.go:179-212` | offset 漂移 |
+| R1 | `GetMasterReplOffset()` 单调不减、永不为负 | `replication.go` `GetMasterReplOffset` | 复制状态不一致 |
+| R2 | 偏移量即 backlog 环水位：`GetMasterReplOffset() == backlog.GetCurrentOffset()`，不另设计数器 | `replication.go` `PropagateCommand` → `backlog.Append` | offset 落在命令中间（见 `repl-offset-boundary-drift.md`） |
+| R3 | 每次 `Append` 的增量 == `len(serializeCommand(cmd))` | `PropagateCommand` | 主从 offset 不同步 |
+| R4 | 每个 `PropagateCommand` 恰好 `Append` 一次（无 slave 时也如此） | `replication.go` `PropagateCommand` | offset 漂移 |
 
 ### 1.2 Propagation Rules
 
@@ -78,14 +78,13 @@
 ### 2.2 Offset 关系
 
 ```
-backlog.internalOffset == masterReplOffset        (单调字节计数器)
-backlog.writePosition    = offset % size           (回绕写位置,≠ offset)
-backlog.availableStart   = max(0, offset - size)   (可读范围下限)
-replication.offset       = backlog.internalOffset  (全局单调计数器)
+GetMasterReplOffset()  == backlog.GetCurrentOffset()  (同一水位，不是两个计数器)
+backlog.writePosition     = offset % size                (回绕写位置, ≠ offset)
+backlog.availableStart    = max(0, offset - size)        (可读范围下限)
 
-关键：backlog position != replication offset
-       backlog position 是环形缓冲区中的写指针，会回绕
-       replication offset 是单调计数器，永不回绕
+关键：环形写指针会回绕；复制 offset 是单调水位，永不回绕。
+禁止再引入与 Append 并行的长度求和计数器（`IncrementReplOffset` 已删除；
+见 docs/failures/repl-offset-boundary-drift.md）。
 ```
 
 ---

@@ -13,13 +13,13 @@ Unlike single-threaded Redis, BoltDB has two independent timelines:
 | Timeline | Mechanism | Granularity |
 |----------|-----------|-------------|
 | MVCC snapshot | BadgerDB transaction version | Per-write commit timestamp |
-| Replication offset | `masterReplOffset` counter | Per-propagated command byte count |
+| Replication offset | backlog write watermark (`GetMasterReplOffset` = `backlog.GetCurrentOffset`) | Per-propagated command bytes |
 
 This duality is the source of both flexibility and complexity.
 The write ordering invariant that connects them is:
 
 ```
-store.Set() (badger commit) → PropagateCommand() (offset increment)
+store.Set() (badger commit) → PropagateCommand() (backlog.Append = offset)
 ```
 
 Any write that committed to BadgerDB before `GetMasterReplOffset()` was called is
@@ -77,7 +77,8 @@ Key interactions:
 ## Slave Offset Tracking
 
 The slave maintains `lastOffset` tracking the last byte offset acknowledged from
-the master. This must match `masterReplOffset` byte-for-byte for PSYNC to work.
+the master. This must match `GetMasterReplOffset()` (the backlog watermark)
+byte-for-byte for PSYNC to work.
 
 **Commands NOT counted in offset (by either master or slave):**
 - PING

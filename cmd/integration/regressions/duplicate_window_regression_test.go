@@ -118,7 +118,8 @@ func TestRegressionDuplicateWindowMeasurement(t *testing.T) {
 		sOff = slave.GetSlaveOffset()
 		v, err := slave.Client.Get(ctx, markerKey).Result()
 		if err == nil && v == "done" {
-			t.Logf("dw-measure: converged at iter %d (mo=%d so=%d)", i, mOff, sOff)
+			t.Logf("dw-measure: marker visible at iter %d (mo=%d so=%d lag=%d send_drop=%d apply_skip=%d)",
+				i, mOff, sOff, mOff-sOff, master.ReplSendDropCount(), slave.ReplApplySkipCount())
 			converged = true
 			break
 		}

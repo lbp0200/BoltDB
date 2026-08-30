@@ -132,7 +132,7 @@ frequent than the commit-vs-propagate race above, and the explanation for the
 
 **Candidate fixes** (open decision, none implemented):
 1. **Span the critical section** — hold one `snapshotMu` read lock across
-   `commit → backlog.Append/IncrementReplOffset`. Requires removing the read
+   `commit → backlog.Append` (offset is the ring watermark). Requires removing the read
    lock from `retryUpdate` (a nested `RLock` deadlocks once a writer queues) and
    wrapping every writer, including background ones (expiry janitor, `EXEC`,
    `SPOP` normalisation). Highest risk of a write freeze from a missed release.

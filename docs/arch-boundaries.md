@@ -15,7 +15,7 @@ BoltDB has two independent timelines:
 | Timeline | Mechanism | Granularity |
 |----------|-----------|-------------|
 | MVCC snapshot | BadgerDB transaction version | Per-write commit timestamp |
-| Replication offset | `masterReplOffset` counter | Per-propagated command byte count |
+| Replication offset | backlog write watermark (`GetMasterReplOffset`) | Per-propagated command bytes |
 
 There is no persistent mapping from a replication offset to a specific Badger
 MVCC transaction. This means:
@@ -26,41 +26,37 @@ MVCC transaction. This means:
   best-effort point), and any writes that committed between the offset capture
   and the snapshot start appear in both the RDB and the backlog.
 
-### Current Behavior (Fixed — Issue #3, 2026-08-27)
+### Current Behavior (Issue #3 — **invariant NOT achieved**, 2026-08-29)
 
-The snapshot offset capture and MVCC `View` are **atomically bound** by
-`store.snapshotMu` (`RWMutex`): FULLRESYNC holds the write lock across
-`GetMasterReplOffset() → GenerateRDBWithSnapshotLock(View)`, while normal
-writes hold a read lock via `retryUpdate`. No write can commit between the
-offset capture and the `View` start, so the two datasets are disjoint.
+`store.snapshotMu` binds `snapshotOffset` capture to the MVCC `View`
+(FULLRESYNC write lock across `GetMasterReplOffset() → GenerateRDBWithSnapshotLock`).
+That closes the old "commit between offset capture and View open" sub-window.
+It does **not** serialise `badger commit → PropagateCommand` (`backlog.Append`).
+A write that has committed but not yet been appended is visible in the RDB and
+then also lands in backlog `[snapshotOffset, current)` — INCR/LPUSH double-apply.
+See `docs/failures/snapshot-inconsistency.md` §4 and
+`TestFullresyncBoundary_CommittedButUnpropagatedWrite` (currently Skip, fails
+by construction).
 
 ```
-SnapshotMuLock()                            // WR
-  snapshotOffset = GetMasterReplOffset()    // captured under lock
-  GenerateRDBWithSnapshotLock(View)         // still under WR
-SnapshotMuUnlock()                          // release before network I/O
-backlog.Slice(snapshotOffset, currentOffset)
+retryUpdate: commit → RUnlock
+FULLRESYNC:  SnapshotMuLock → snapshotOffset → View sees W → Unlock
+writer:      PropagateCommand(W) → offset >= snapshotOffset
+⇒ W ∈ RDB AND W ∈ backlog gap
 ```
 
-Writes with `offset < snapshotOffset` are in the MVCC snapshot → RDB.
-Writes with `offset >= snapshotOffset` are in the backlog.
-**Zero duplicate window** — linearizable offset↔MVCC binding.
-
-Historical note: before the fix, any write that committed between
-`GetMasterReplOffset()` and `db.View()` appeared in both RDB and backlog
-(microsecond window, 0–1 writes, idempotent commands unaffected).
-
-### What the Fix Required (Done)
+### What landed (insufficient)
 
 - `store.snapshotMu` RWMutex + `retryUpdate` read-lock + FULLRESYNC write-lock
-- No `(replOffset → badgerTS)` mapping is needed — the lock achieves the same
-  invariant with lower complexity. The mapping remains a valid alternative but is
-  not implemented.
+- The `(commitTs → repl-offset)` mapping was rejected on the false assumption
+  that the lock already achieved linearizability. That mapping is the remaining
+  localised candidate (TODO §1 option 2).
 
 ### Decision
 
-**Fixed.** The linearizable boundary is enforced by the critical-section
-ordering. See `docs/failures/snapshot-inconsistency.md §4`.
+**Not fixed.** Do not close Issue #3. Do not enable `SOAK_REPL_STRICT_EQUALITY=1`.
+Keep `TestFullresyncBoundary_CommittedButUnpropagatedWrite` skipped until a
+fix that spans `commit → offset` (or trims the gap by `readTs`) lands.
 
 ---
 
@@ -108,14 +104,15 @@ These are the same architectural changes that fix boundary #1.
 
 ### Decision
 
-**Fixed — Issue #3 (2026-08-27, `store.snapshotMu`).** Current guarantees:
+**Not fixed.** `snapshotMu` did not make FULLRESYNC linearizable (see boundary #1).
+Current guarantees:
 
 | Property | Status |
 |----------|--------|
-| No lost writes | ✅ Guaranteed — every write is in RDB or backlog |
-| No structural corruption | ✅ Guaranteed — Badger MVCC provides consistent snapshots |
-| Zero duplicate window | ✅ Guaranteed — linearizable offset↔MVCC binding |
-| Eventual convergence | ✅ Guaranteed — slave catches up to `currentOffset` |
+| No lost writes | yes — every write is in RDB or backlog |
+| No structural corruption | yes — Badger MVCC consistent snapshots |
+| Zero duplicate window | **no** — committed-but-unpropagated writes land in both |
+| Eventual convergence | yes — slave catches up to `currentOffset` (modulo Issue #3 extras) |
 
 ---
 
@@ -124,10 +121,11 @@ These are the same architectural changes that fix boundary #1.
 | Scenario | Impact |
 |----------|--------|
 | Slave reconnects after short outage | PSYNC CONTINUE: no snapshot, no gap |
-| Slave reconnects after long outage | FULLRESYNC: zero duplicate window (strict equality) |
-| Heavy write load during FULLRESYNC | Same — zero duplicate window; no data loss |
+| Slave reconnects after long outage | FULLRESYNC: bounded duplicate window still open (Issue #3) |
+| Heavy write load during FULLRESYNC | Same window; INCR/LPUSH can double-apply once |
 | Slave promotes to master (failover) | Offset reset; no gap from prior timeline |
-| Long strict soak (6h+) | Strict equality holds; no duplicate-window drift |
+| Long strict soak (6h+) | Do not enable `SOAK_REPL_STRICT_EQUALITY=1` |
 
-`TestRegressionDuplicateWindowMeasurement` now asserts **zero** duplicate window;
-any non-zero gap is a regression.
+`TestRegressionDuplicateWindowMeasurement` asserts exact INCR/LIST equality as a
+*probe*, not a certificate of the boundary — the deterministic proof that the
+window is non-zero is `TestFullresyncBoundary_CommittedButUnpropagatedWrite`.

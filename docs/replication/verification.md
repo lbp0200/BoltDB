@@ -71,9 +71,9 @@ Key replication regression tests:
 
 | Test | What it verifies |
 |------|-----------------|
-| `TestRegressionSnapshotFullresyncOffset` | No lost writes after FULLRESYNC; zero duplicate window (strict) |
+| `TestRegressionSnapshotFullresyncOffset` | FULLRESYNC convergence probe (offset catch-up); not a certificate of Issue #3 |
 | `TestRegressionPsyncReconnectNoLoss` | Zero data loss after PSYNC CONTINUE + FULLRESYNC cycles |
-| `TestRegressionDuplicateWindowMeasurement` | Zero duplicate window: INCR gap == 0, LPUSH dup ratio == 0 |
+| `TestRegressionDuplicateWindowMeasurement` | INCR/LIST multiset probe + send_drop/apply_skip; Issue #3 window is proven separately by `TestFullresyncBoundary_CommittedButUnpropagatedWrite` |
 
 ## Degradation Invariants
 

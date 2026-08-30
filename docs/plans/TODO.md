@@ -26,10 +26,11 @@
 > → `TestFullresyncBoundary_CommittedButUnpropagatedWrite`（当前 FAIL）。
 > **Issue：** https://github.com/lbp0200/BoltDB/issues/3 — `Implement linearizable FULLRESYNC boundary`（不可关闭）
 
-**根因**：读锁只覆盖 badger 提交，**不覆盖 offset 赋值**。`PropagateCommand()`（`backlog.Append` + `IncrementReplOffset`）
-在 `handler_core.go:808` 于 `executeCommand()` 返回后调用，位于锁外。
+**根因**：读锁只覆盖 badger 提交，**不覆盖 offset 赋值**。`PropagateCommand()`（`backlog.Append`，水位即 offset）
+在 `handler_core.go` 于 `executeCommand()` 返回后调用，位于锁外。
 「已提交但未传播」的写入因此同时落在 RDB 与 backlog `[snapshotOffset, current)` 两侧 —— INCR/LPUSH 在从节点翻倍。
 锁把 `offset 捕获 → View 开启` 变成原子，但需要原子的其实是 `commit → offset 赋值`。
+（`IncrementReplOffset` 已删除，见 §1b；双计数器问题与本窗口不是同一件事。）
 
 **副作用**：写锁覆盖整个 RDB 生成期 → 全量同步期间**所有写入停摆**（DB 越大停摆越久），且暴露窗口比 §3 更长。
 
