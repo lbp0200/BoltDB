@@ -4,24 +4,20 @@
 
 ## 待办 / 延期中
 
-### 0. 下次继续（2026-08-30 会话遗留，按建议顺序）
+### 0. 下次继续（2026-08-30）
 
-1. **定位 1c（dw LIST 偶发 1 元素亏空）** —— 做法已写好在 1c：把 `PropagateCommand` 的
-   `SendCommand` 失败丢弃、与 `readCommandLoop` 的 `isTransientReplicationError` 跳过，
-   两条路径做成可计数指标，在 dw 用例断言"本轮丢弃数 == 0"。一次跑即可判明发送侧还是应用侧。
-   已排除：序列化不等长（14 形态探针）、收敛判据误判（marker 已到而亏空在流中间）。
-2. **push** —— 本会话产出 8 个提交（`ad69da9`…`8eef232`）；但 `origin/main..HEAD` 实际共
-   **42 个未推提交**（会话前已积 34 个）。属对外可见动作，需明确授权后再做。
+1. **1c LIST 亏空仍待 `missing>0` 那次** —— 计数器已落地。2 次远程 `-race -v`：
+   `send_drop=0` 与 `send_drop=1`，`apply_skip=0`，LIST 都全等。`send_drop=1`
+   被 backlog/FULLRESYNC 收回。下次亏空时读这两个计数。不要收紧 dw 的 lag==0。
+2. **push** —— 属对外可见动作，需明确授权后再做。
 3. **reword `088ce37` 与 `14bd901` 的提交信息** —— 两条仍带着"手工摆出的交错即根因"这一
    过强表述（含 `first byte="\r"`）。文件内容已由 `c84293f`/`f4cec87` 更正，但提交信息未改；
-   且这两个提交不在栈顶，reword 会改写其后 6 个提交的 hash —— 重写历史，需授权。
-4. **Issue #3 补一条更正评论** —— 我已发的那条评论沿用了同一处过强表述；
-   文档侧已改写为实测口径（修复前 ~1.1% 的 FULLRESYNC 窗口通告不可服务 offset，
-   修复后 0/~4900），但外部评论未更正。对外动作，需授权。
-5. **soak 收敛判据** —— `cmd/integration/soak_replication_test.go` 的
-   `waitReplicationConvergence` 仍把"stable lag"当收敛（与回归用例已改掉的同一个洞）。
-6. **µs 重复窗口仍未修**（见 1）：其守卫 `TestFullresyncBoundary_CommittedButUnpropagatedWrite`
+   且这两个提交不在栈顶，reword 会改写其后提交的 hash —— 重写历史，需授权。
+4. **Issue #3 补一条更正评论** —— 外部评论仍沿用过强表述；文档侧已改写为实测口径。需授权。
+5. **µs 重复窗口仍未修**（见 1）：`TestFullresyncBoundary_CommittedButUnpropagatedWrite`
    仍标 Skip；`SOAK_REPL_STRICT_EQUALITY=1` 保持关闭。
+
+~~soak 收敛判据~~ → 已改，见 §1b：`replicationOffsetsConverged`（`lag <= 0`）。
 
 ### 1. FULLRESYNC 线性边界（Issue #3 — **实现未达成目标，窗口仍在**）
 
@@ -72,9 +68,11 @@
 此前报的"stable lag=142 投递缺口"已澄清为**判据误判**（非投递丢失）：判据改为 lag 必须归零后，
 2/2 次精确收敛（`mo==so`）且 LIST 主从多重集完全相等。
 
-**仍未收口的一条**：
+~~**仍未收口的一条**：
 1. `cmd/integration/soak_replication_test.go` 的 `waitReplicationConvergence` 仍把"stable lag"当收敛，
-   与回归用例刚改掉的同一个洞（副本退避中/落后于待重传尾部时会被判为已收敛）。
+   与回归用例刚改掉的同一个洞（副本退避中/落后于待重传尾部时会被判为已收敛）。~~
+   → **已改（2026-08-30）**：成功条件只剩 `lag <= 0`（`replicationOffsetsConverged`）；
+   冻结正 lag 超时失败。守卫 `TestReplicationOffsetsConverged`。
 
 ~~2. 从节点 `SlaveReconnector` 在其测试 `Close()` 之后仍继续退避重连~~ → **已查清并修复（2026-08-30）**：
 不是测试工装问题（框架 cleanup 确实按 `replMgr.Stop()` → `h.Shutdown()` → `backupMgr.Wait()` → `db.Close()` 走），
@@ -85,7 +83,7 @@
 之所以漏掉，是因为它们**显式调用 `sr.Stop()`**，测的是"能被停"而不是"关机会停"。
 守卫：`TestReplicationManagerStopStopsSlaveReconnector`（修复前 Stop 后重连次数 1→3，修复后不变）。
 
-### 1c. dw 回归偶报 1 个 LIST 元素亏空（**未定位；已排除两条假设**）
+### 1c. dw 回归偶报 1 个 LIST 元素亏空（**计数器已落地；待 dw 实测归因**）
 
 > **现象**（远程 `-race`，`TestRegressionDuplicateWindowMeasurement`）：5 个 INCR key 全部 `gap=0`，
 > 但 `dw:list:1 master_len=2019 slave_len=2018 → missing_on_slave=1`，且此时
@@ -102,9 +100,28 @@
 > 依赖对端读侧发现断连）与 `readCommandLoop` 的 `isTransientReplicationError` 分支
 > （**推进 offset 但不 apply**，为保字节锁步而刻意丢数据）。后者按设计就会造成"offset 对得上、数据少了"。
 >
-> **下一步建议**：把这两条路径的丢弃事件计数导出为可观测指标（目前只有 warn 日志），
-> 在 dw 用例里断言"本轮丢弃计数 == 0"；这样一次跑就能判定亏空到底出自发送侧还是应用侧。
+> **已落地（2026-08-30）**：两条丢弃路径现为原子计数器，经 `INFO replication` /
+> Prometheus / dw 用例可读：
+> - 主：`repl_send_drop_count` / `GetReplSendDropCount()` — live `SendCommand` 失败
+> - 从：`repl_apply_skip_count` / `GetReplApplySkipCount()` — skip apply 仍推进 offset
+>
+> dw 断言 `apply_skip == 0`；LIST 亏空时把两个计数打进失败信息，一次跑即可判明
+> 发送侧 / 应用侧 / 两条都不是。`send_drop` 不单独断言为 0（CLIENT KILL 期间 live
+> push 失败在设计上可能发生，命令仍在 backlog）。
+>
+> **实测（2026-08-30，远程 `-race -v`）**：
+> 1. 未复现亏空。`send_drop=0 apply_skip=0`，INCR/LIST/HSET 全等，`mo==so=1358224`。
+>    CLIENT KILL 没打出 send_drop。
+> 2. （北京时间 07:43 再跑）仍未复现亏空。`send_drop=1 apply_skip=0`，LIST 五把 key
+>    全等（`missing_on_slave=0`），INCR 全等，`mo==so=1378327`。CLIENT KILL 窗口
+>    打出 1 次 live `SendCommand` flush 失败（`use of closed network connection`），
+>    数据仍对齐——send_drop 被 backlog/FULLRESYNC 收回。亏空仍待下次 `missing>0`
+>    时读这两个计数。
+>
 > 在定位前不要收紧 dw 的 lag==0 判据（会让用例常红且无法区分成因）。
+>
+> **一键验证**：
+> `bash scripts/remote-test.sh -race -timeout 180s -v ./cmd/integration/regressions/ -run TestRegressionDuplicateWindowMeasurement`
 
 ### 2. v8.52.0 发布遗留（非阻塞，2 项待观察）
 
