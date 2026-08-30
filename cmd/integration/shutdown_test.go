@@ -20,7 +20,7 @@ import (
 // TestGracefulShutdown 优雅关闭验证:
 // 高并发写入 + 阻塞操作 + pubsub → shutdown → no leak
 func TestGracefulShutdown(t *testing.T) {
-	t.Parallel()
+	// Must not t.Parallel: leak check uses process-wide NumGoroutine.
 	skipHeavyIntegrationInShort(t)
 	db, err := store.NewBotreonStore(t.TempDir())
 	assert.NoError(t, err)

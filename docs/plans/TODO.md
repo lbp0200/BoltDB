@@ -6,10 +6,10 @@
 
 ### 0. 下次继续（2026-08-30）
 
-1. **1c / 写风暴 lag**：catch-up 失败已中止安装；隔离 dw/overlap PASS。
-   写风暴隔离仍红：`lag≈1.2MB`（刚好超过 backlog），RDB 发送期间放锁
-   导致环被写穿。改为写锁覆盖 RDB **发送**；failover 测试先关 listener
-   再 Shutdown（修 wg.Add/Wait data race）。未宣称 1c / `--full` 已关。
+1. **1c / `--full`**：写风暴隔离已 PASS（lag=0）。`--full` 里
+   `TestGracefulShutdown` 报 leak 是 `t.Parallel` + 进程级 `NumGoroutine`
+   （soak 的 goroutine 算进泄漏）。已去掉泄漏用例的 Parallel。未宣称
+   `--full` 已关。
 2. **push** —— 属对外可见动作，需明确授权后再做。
 3. **reword `088ce37` 与 `14bd901` 的提交信息** —— 两条仍带着"手工摆出的交错即根因"这一
    过强表述（含 `first byte="\r"`）。文件内容已由 `c84293f`/`f4cec87` 更正，但提交信息未改；

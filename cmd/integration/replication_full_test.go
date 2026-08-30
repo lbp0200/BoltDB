@@ -789,7 +789,7 @@ func TestReplicationChaos_Load(t *testing.T) {
 
 // TestReplicationChaos_RapidWrite 测试高速写入下的 slave 同步正确性
 func TestReplicationChaos_RapidWrite(t *testing.T) {
-	t.Parallel()
+	// Must not t.Parallel: leak check uses process-wide NumGoroutine.
 	master, slave, cleanup := setupMasterSlaveServer(t)
 	defer cleanup()
 
