@@ -1,5 +1,31 @@
 # Changelog
 
+## v8.57.0 (2026-08-30) — FULLRESYNC 线性边界 + offset=backlog + 发版门禁转绿
+
+> **客户端写路径用 `snapshotMu` 把 commit 和 `backlog.Append` 绑在同一栏上（Issue #3）；复制偏移量就是 backlog 水位。FULLRESYNC 写锁覆盖 RDB 发送，catch-up 失败不再带着缺口装从节点。远程 `--full`（`-race` 1800s）exit 0。**
+
+### 复制正确性
+
+- **Issue #3 客户端写栏**：`processRequest` 读锁跨越 `executeCommand` 与 `PropagateCommand`；FULLRESYNC 写锁跨越 snapshotOffset 捕获与 View。EXEC 同样加栏。
+- **offset = backlog 水位**：删除独立的 `IncrementReplOffset` 求和；`GetMasterReplOffset()` 即环的连续写入位置，避免 FULLRESYNC 通告落在命令中间。
+- **RDB 发送期间持写锁**：避免 1MB 环在发送窗口被写穿（`offset too old` → 从节点冻在约 backlog 大小的 lag）。
+- **catch-up 失败中止安装**：RDB/`+CONTINUE` 已在线上时不写 `-ERR`，不把从节点装在跳过失败区间的 `currentOffset`。
+- **`Stop()` 停 `SlaveReconnector`**：关机不再在 `db.Close()` 之后继续 `LoadRDB`。
+- **MIGRATESLOT RESTORE 先发 ASKING**：IMPORTING 槽不再对内部 RESTORE 回 MOVED。
+- **cluster gossip `lastSave` atomic CAS**：并发 `handleBusConn` 不再 data race。
+
+### 可观测性 / 测试
+
+- `repl_send_drop_count` / `repl_apply_skip_count` 经 INFO 与 dw 回归可读。
+- soak 收敛只认 `lag <= 0`；进程级 goroutine 泄漏检查不再 `t.Parallel`。
+- soak 结束时刻的 writer `context deadline exceeded` 不再当数据错误（offset 收敛仍是 oracle）。
+- CLUSTER SLOTS 起止槽位按 Integer 断言；`TestShutdown` 走独立 listener。
+
+### 发版验证
+
+- `bash scripts/remote-test.sh --full`：`./internal/...`、`cmd/integration`、`cmd/integration/regressions` 全部 ok。
+- `golangci-lint run --timeout 5m`：0 issues。
+
 ## v8.52.0 (2026-08-06) — 复制 WAL 有界化 + Value Log GC + FLUSHDB 系统 key 保护
 
 > **修复 backlog WAL 只写不删导致的多 GB 无界增长（线上 3 节点共 106GB，重启吞 38GB）；新增 DEBUG GC 命令回收 vlog 垃圾（node2 实测 32GB → 1.1MB）；修复 FLUSHDB 误删复制元数据与集群配置导致的重启脑裂（replId 丢失 + 全槽位认领）。**

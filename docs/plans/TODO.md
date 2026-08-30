@@ -6,9 +6,9 @@
 
 ### 0. 下次继续（2026-08-30）
 
-1. **1c / `--full`**：写风暴隔离 PASS（lag=0）。泄漏检查已去 Parallel。
-   Cluster soak 隔离红：`ClusterBus.saveIfDirty` 无锁读写 `lastSave`
-   （data race）；slot chaos 后 dest 仍 MOVED 不算硬失败。未宣称 `--full` 已关。
+1. **`--full` 已绿（2026-08-30）**：远程 `-race -timeout 1800s ./internal/... ./cmd/integration/...` exit 0。
+   版本已 bump 到 8.57.0。未 push / 未 tag（需授权）。
+   1c LIST 亏空未单独立项关闭；本轮 regressions 包在 `--full` 中 PASS。
 2. **push** —— 属对外可见动作，需明确授权后再做。
 3. **reword `088ce37` 与 `14bd901` 的提交信息** —— 两条仍带着"手工摆出的交错即根因"这一
    过强表述（含 `first byte="\r"`）。文件内容已由 `c84293f`/`f4cec87` 更正，但提交信息未改；
