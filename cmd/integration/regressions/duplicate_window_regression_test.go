@@ -143,12 +143,15 @@ func TestRegressionDuplicateWindowMeasurement(t *testing.T) {
 	defer sc.Close()
 
 	metrics := dwMeasure(ctx, t, mc, sc)
+	sendDrop := master.ReplSendDropCount()
+	applySkip := slave.ReplApplySkipCount()
 
 	t.Logf("dw-measure: ===== DUPLICATE WINDOW MEASUREMENTS =====")
 	t.Logf("dw-measure: INCR max_gap=%d (threshold=0)", metrics.incrMaxGap)
 	t.Logf("dw-measure: INCR total_master=%d total_slave=%d", metrics.incrTotalM, metrics.incrTotalS)
 	t.Logf("dw-measure: LPUSH extra_on_slave=%d missing_on_slave=%d (threshold=0/0)", metrics.lpushExtra, metrics.lpushMissing)
 	t.Logf("dw-measure: HSET match=%v ZSET match=%v", metrics.hsetMatch, metrics.zsetMatch)
+	t.Logf("dw-measure: drop-paths send_drop=%d apply_skip=%d (mo=%d so=%d)", sendDrop, applySkip, mOff, sOff)
 
 	// Exact-equality assertions. These are sound now that writers emit unique
 	// values (an earlier revision counted repeats inside the slave list, which
@@ -160,18 +163,31 @@ func TestRegressionDuplicateWindowMeasurement(t *testing.T) {
 	// this write rate. A pass here does not certify the boundary — see
 	// internal/replication/fullresync_boundary_test.go for the deterministic
 	// proof that the window is non-zero (Issue #3).
+	if applySkip != 0 {
+		t.Errorf("dw-measure: repl_apply_skip_count=%d != 0 (readCommandLoop skipped apply but advanced offset — silent data loss)", applySkip)
+	}
+	if sendDrop != 0 {
+		t.Logf("dw-measure: repl_send_drop_count=%d (live SendCommand failed; command remains in backlog)", sendDrop)
+	}
+
 	if metrics.incrMaxGap != 0 {
-		t.Errorf("dw-measure: INCR max gap %d != 0 (boundary violated)", metrics.incrMaxGap)
+		t.Errorf("dw-measure: INCR max gap %d != 0 (boundary violated; send_drop=%d apply_skip=%d)", metrics.incrMaxGap, sendDrop, applySkip)
 	}
 	netDelta := metrics.incrTotalS - metrics.incrTotalM
 	if netDelta != 0 {
-		t.Errorf("dw-measure: INCR total delta %d != 0 (boundary violated)", netDelta)
+		t.Errorf("dw-measure: INCR total delta %d != 0 (boundary violated; send_drop=%d apply_skip=%d)", netDelta, sendDrop, applySkip)
 	}
 	if metrics.lpushExtra != 0 {
-		t.Errorf("dw-measure: LPUSH %d extra element copies on slave (double-apply: write present in both RDB and backlog)", metrics.lpushExtra)
+		t.Errorf("dw-measure: LPUSH %d extra element copies on slave (double-apply: write present in both RDB and backlog; send_drop=%d apply_skip=%d)", metrics.lpushExtra, sendDrop, applySkip)
 	}
 	if metrics.lpushMissing != 0 {
-		t.Errorf("dw-measure: LPUSH %d element copies missing on slave (lost write at the snapshot/backlog boundary)", metrics.lpushMissing)
+		t.Errorf("dw-measure: LPUSH %d element copies missing on slave (lost write at the snapshot/backlog boundary; send_drop=%d apply_skip=%d)", metrics.lpushMissing, sendDrop, applySkip)
+		if sendDrop != 0 && applySkip == 0 {
+			t.Errorf("dw-measure: LIST deficit with send_drop=%d apply_skip=0 — send-side drop is the remaining suspect (backlog/FULLRESYNC may not have recovered it)", sendDrop)
+		}
+		if sendDrop == 0 && applySkip == 0 {
+			t.Errorf("dw-measure: LIST deficit with both drop-paths at 0 — hole is not from SendCommand failure or transient apply skip")
+		}
 	}
 	if !metrics.hsetMatch {
 		t.Errorf("dw-measure: HSET datasets do not match (idempotent commands must match exactly)")

@@ -93,6 +93,14 @@ func prometheusText(s Snapshot) string {
 	b.WriteString("# TYPE boltdb_reconnect_count counter\n")
 	fmt.Fprintf(&b, "boltdb_reconnect_count %d\n", s.ReconnectCount)
 
+	b.WriteString("# HELP boltdb_repl_send_drop_count Live replica SendCommand failures (command remains in backlog)\n")
+	b.WriteString("# TYPE boltdb_repl_send_drop_count counter\n")
+	fmt.Fprintf(&b, "boltdb_repl_send_drop_count %d\n", s.ReplSendDrop)
+
+	b.WriteString("# HELP boltdb_repl_apply_skip_count Replica apply skipped while still advancing offset\n")
+	b.WriteString("# TYPE boltdb_repl_apply_skip_count counter\n")
+	fmt.Fprintf(&b, "boltdb_repl_apply_skip_count %d\n", s.ReplApplySkip)
+
 	// Backlog
 	b.WriteString("# HELP boltdb_backlog_size Replication backlog size bytes\n")
 	b.WriteString("# TYPE boltdb_backlog_size gauge\n")

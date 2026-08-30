@@ -372,6 +372,8 @@ func main() {
 	collector.MasterReplOffsetFn = replMgr.GetMasterReplOffset
 	collector.SlaveReplOffsetFn = replMgr.GetSlaveReplOffset
 	collector.ReconnectCountFn = replMgr.GetReconnectCount
+	collector.ReplSendDropFn = replMgr.GetReplSendDropCount
+	collector.ReplApplySkipFn = replMgr.GetReplApplySkipCount
 	collector.SlaveCountFn = replMgr.GetSlaveCount
 	collector.BacklogSizeFn = func() int64 { return replMgr.GetBacklog().GetSize() }
 	collector.BacklogAvailFn = func() int64 { return replMgr.GetBacklog().GetAvailableLength() }

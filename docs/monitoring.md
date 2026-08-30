@@ -76,6 +76,8 @@ INFO metric endpoint enabled addr=:6338
 | `boltdb_replication_lag` | gauge | 主从复制延迟（`master_offset - slave_offset`，仅 slave 角色有意义） |
 | `boltdb_slave_count` | gauge | 当前连接的从节点数量 |
 | `boltdb_reconnect_count` | counter | 从节点累计重连次数 |
+| `boltdb_repl_send_drop_count` | counter | 主节点 live `SendCommand` 失败次数（命令仍在 backlog，不一定丢数据） |
+| `boltdb_repl_apply_skip_count` | counter | 从节点跳过 apply 但仍推进 offset 的次数（非幂等命令即静默丢数据） |
 
 ### 复制 Backlog
 

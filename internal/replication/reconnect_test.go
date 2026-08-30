@@ -689,6 +689,72 @@ func TestSlaveReconnector_readCommandLoop_MultipleCommands(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestSlaveReconnector_readCommandLoop_ApplySkipIncrementsCount(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	sr := NewSlaveReconnector(rm, testStore, "127.0.0.1:6379")
+	sr.state.Store(int32(SlaveConnected))
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sr.readCommandLoop(mc)
+	}()
+
+	// JSON.CLEAR on a missing key returns store.ErrKeyNotFound, which
+	// isTransientReplicationError treats as skippable: offset advances,
+	// store is unchanged, applySkipCount increments.
+	skipCmd := [][]byte{[]byte("JSON.CLEAR"), []byte("nosuch")}
+	skipBytes := serializeCommand(skipCmd)
+	_, err := serverEnd.Write(skipBytes)
+	assert.NoError(t, err)
+
+	for i := 0; i < 50; i++ {
+		if rm.GetReplApplySkipCount() == 1 && sr.lastOffset.Load() == int64(len(skipBytes)) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.Equal(t, int64(1), rm.GetReplApplySkipCount())
+	assert.Equal(t, int64(len(skipBytes)), sr.lastOffset.Load())
+
+	setCmd := [][]byte{[]byte("SET"), []byte("after-skip"), []byte("ok")}
+	setBytes := serializeCommand(setCmd)
+	_, err = serverEnd.Write(setBytes)
+	assert.NoError(t, err)
+
+	for i := 0; i < 50; i++ {
+		if _, gerr := testStore.Get("after-skip"); gerr == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	val, gerr := testStore.Get("after-skip")
+	assert.NoError(t, gerr)
+	assert.Equal(t, "ok", val)
+	assert.Equal(t, int64(1), rm.GetReplApplySkipCount())
+	assert.Equal(t, int64(len(skipBytes)+len(setBytes)), sr.lastOffset.Load())
+
+	close(sr.stopCh)
+	clientEnd.Close()
+	err = <-done
+	assert.NoError(t, err)
+}
+
 func TestSlaveReconnector_sendPSYNC_WithReplId(t *testing.T) {
 	t.Parallel()
 	serverEnd, clientEnd := net.Pipe()

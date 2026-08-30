@@ -16,6 +16,8 @@ type Collector struct {
 	MasterReplOffsetFn func() int64
 	SlaveReplOffsetFn  func() int64
 	ReconnectCountFn   func() int64
+	ReplSendDropFn     func() int64
+	ReplApplySkipFn    func() int64
 	SlaveCountFn       func() int
 	BacklogSizeFn      func() int64
 	BacklogAvailFn     func() int64
@@ -68,6 +70,8 @@ func (c *Collector) refresh() Snapshot {
 	slaveOff := int64(0)
 	lag := int64(0)
 	reconns := int64(0)
+	sendDrop := int64(0)
+	applySkip := int64(0)
 	slaveN := 0
 	blSize := int64(0)
 	blAvail := int64(0)
@@ -80,6 +84,12 @@ func (c *Collector) refresh() Snapshot {
 	}
 	if c.ReconnectCountFn != nil {
 		reconns = c.ReconnectCountFn()
+	}
+	if c.ReplSendDropFn != nil {
+		sendDrop = c.ReplSendDropFn()
+	}
+	if c.ReplApplySkipFn != nil {
+		applySkip = c.ReplApplySkipFn()
 	}
 	if c.SlaveCountFn != nil {
 		slaveN = c.SlaveCountFn()
@@ -151,6 +161,8 @@ func (c *Collector) refresh() Snapshot {
 		SlaveReplOffset:  slaveOff,
 		ReplicationLag:   lag,
 		ReconnectCount:   reconns,
+		ReplSendDrop:     sendDrop,
+		ReplApplySkip:    applySkip,
 		SlaveCount:       slaveN,
 		BacklogSize:      blSize,
 		BacklogAvailable: blAvail,

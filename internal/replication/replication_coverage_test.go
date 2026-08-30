@@ -624,6 +624,28 @@ func TestPropagateCommand_WithSlaves(t *testing.T) {
 	// Offset should increase (if slave is ready)
 	// Note: actual behavior depends on implementation
 	t.Logf("Offset before: %d, after: %d", initialOffset, rm.GetMasterReplOffset())
+	assert.Equal(t, int64(0), rm.GetReplSendDropCount())
+}
+
+func TestPropagateCommand_SendFailureIncrementsDropCount(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	conn := newMockConn()
+	conn.writeErr = fmt.Errorf("write boom")
+	slaveConn := NewSlaveConnection(conn)
+	slaveConn.SetReady(true)
+	rm.AddSlave(slaveConn)
+
+	assert.Equal(t, int64(0), rm.GetReplSendDropCount())
+	rm.PropagateCommand([][]byte{[]byte("SET"), []byte("k"), []byte("v")})
+	assert.Equal(t, int64(1), rm.GetReplSendDropCount())
+	assert.Equal(t, int64(0), rm.GetReplApplySkipCount())
+
+	// Command is still in the backlog even though live push failed.
+	assert.True(t, rm.GetMasterReplOffset() > 0)
 }
 
 // TestReplicationManager_MultipleSlaves tests managing multiple slaves

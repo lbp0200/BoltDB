@@ -51,6 +51,8 @@ func TestCollector_Snapshot_WithAllFunctions(t *testing.T) {
 	c.MasterReplOffsetFn = func() int64 { return 1000 }
 	c.SlaveReplOffsetFn = func() int64 { return 900 }
 	c.ReconnectCountFn = func() int64 { return 7 }
+	c.ReplSendDropFn = func() int64 { return 4 }
+	c.ReplApplySkipFn = func() int64 { return 2 }
 	c.SlaveCountFn = func() int { return 3 }
 	c.BacklogSizeFn = func() int64 { return 50000 }
 	c.BacklogAvailFn = func() int64 { return 30000 }
@@ -75,6 +77,8 @@ func TestCollector_Snapshot_WithAllFunctions(t *testing.T) {
 	assert.Equal(t, int64(900), s.SlaveReplOffset)
 	assert.Equal(t, int64(100), s.ReplicationLag)
 	assert.Equal(t, int64(7), s.ReconnectCount)
+	assert.Equal(t, int64(4), s.ReplSendDrop)
+	assert.Equal(t, int64(2), s.ReplApplySkip)
 	assert.Equal(t, 3, s.SlaveCount)
 
 	assert.Equal(t, int64(50000), s.BacklogSize)

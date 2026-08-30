@@ -14,6 +14,7 @@ import (
 type mockConn struct {
 	readBuffer  []byte
 	writeBuffer []byte
+	writeErr    error
 	closed      bool
 	localAddr   net.Addr
 	remoteAddr  net.Addr
@@ -38,6 +39,9 @@ func (m *mockConn) Read(b []byte) (n int, err error) {
 }
 
 func (m *mockConn) Write(b []byte) (n int, err error) {
+	if m.writeErr != nil {
+		return 0, m.writeErr
+	}
 	m.writeBuffer = append(m.writeBuffer, b...)
 	return len(b), nil
 }

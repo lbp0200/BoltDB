@@ -366,9 +366,11 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 				// 命令字节已从主节点流中消费，必须推进 offset 与主节点保持锁步：
 				// 否则从节点 lastOffset 落后，重连时 PSYNC CONTINUE 取到错位字节流，
 				// ReadRESP 误把 key 名当命令名（如 K:HASH:47）→ 无限重同步循环。
+				sr.rm.applySkipCount.Add(1)
 				logger.Logger.Warn().Err(err).
 					Str("cmd", cmd).
 					Int64("offset", currentOffset).
+					Int64("apply_skip_count", sr.rm.applySkipCount.Load()).
 					Msg("复制命令暂时失败，跳过（已推进 offset 保持字节级对齐）")
 				sr.lastOffset.Add(int64(len(cmdBytes)))
 				continue

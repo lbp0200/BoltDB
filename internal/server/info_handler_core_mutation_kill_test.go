@@ -247,6 +247,8 @@ func TestBuildInfoResponse_ReplicationMasterRole(t *testing.T) {
 	assert.True(t, strings.Contains(resp, "master_repl_offset:"))
 	assert.True(t, strings.Contains(resp, "second_repl_offset:-1"))
 	assert.True(t, strings.Contains(resp, "repl_backlog_active:1"))
+	assert.True(t, strings.Contains(resp, "repl_send_drop_count:0"))
+	assert.True(t, strings.Contains(resp, "repl_apply_skip_count:0"))
 }
 
 // TestBuildInfoResponse_ReplicationSlaveRole 验证 slave 角色输出
@@ -280,6 +282,8 @@ func TestBuildInfoResponse_ReplicationSlaveRole(t *testing.T) {
 	assert.True(t, strings.Contains(resp, "connected_slaves:0"))
 	assert.True(t, strings.Contains(resp, "slave_repl_offset:"))
 	assert.True(t, strings.Contains(resp, "repl_backlog_active:0"))
+	assert.True(t, strings.Contains(resp, "repl_send_drop_count:0"))
+	assert.True(t, strings.Contains(resp, "repl_apply_skip_count:0"))
 }
 
 // TestBuildInfoResponse_ReplicationSlaveNoMasterAddr 验证 slave 无 master 地址时

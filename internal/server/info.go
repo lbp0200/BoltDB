@@ -106,6 +106,10 @@ func (h *Handler) buildInfoResponse(section string) string {
 				builder.WriteString("master_repl_offset:0\n")
 				builder.WriteString("second_repl_offset:-1\n")
 			}
+			// BoltDB-specific drop-path counters (TODO §1c). Extra INFO
+			// keys are ignored by Sentinel / redis-cli parsers.
+			builder.WriteString("repl_send_drop_count:" + strconv.FormatInt(h.Replication.GetReplSendDropCount(), 10) + "\n")
+			builder.WriteString("repl_apply_skip_count:" + strconv.FormatInt(h.Replication.GetReplApplySkipCount(), 10) + "\n")
 		}
 		builder.WriteString("\n")
 	}

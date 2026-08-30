@@ -133,6 +133,8 @@ func TestReplicationManager_PropagateCommand(t *testing.T) {
 	cmd := [][]byte{[]byte("SET"), []byte("key"), []byte("value")}
 	rm.PropagateCommand(cmd)
 
+	assert.Equal(t, int64(0), rm.GetReplSendDropCount())
+
 	// offset 应该增加了（即使没有从节点）
 	cmdBytes := serializeCommand(cmd)
 	t.Logf("offset after propagate (no slaves): %d", rm.GetMasterReplOffset())

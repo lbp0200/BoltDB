@@ -43,6 +43,13 @@ type ReplicationManager struct {
 	stopped          bool                        // 是否已停止
 	slaveReconnector *SlaveReconnector           // 从节点自动重连器
 	tlsConfig        *tls.Config                 // TLS 配置（nil = 不使用 TLS）
+
+	// Drop-path counters for diagnosing silent replica divergence
+	// (docs/plans/TODO.md §1c). Live SendCommand failures leave the
+	// command in the backlog (catch-up / FULLRESYNC can still recover);
+	// apply skips advance replica offset without mutating the store.
+	sendDropCount  atomic.Int64
+	applySkipCount atomic.Int64
 }
 
 // NewReplicationManager 创建新的复制管理器
@@ -303,6 +310,21 @@ func (rm *ReplicationManager) GetReconnectCount() int64 {
 	return 0
 }
 
+// GetReplSendDropCount is the number of times PropagateCommand dropped a
+// live push because SlaveConnection.SendCommand returned an error. The
+// command is still in the backlog; this is not by itself a lost write.
+func (rm *ReplicationManager) GetReplSendDropCount() int64 {
+	return rm.sendDropCount.Load()
+}
+
+// GetReplApplySkipCount is the number of times readCommandLoop skipped
+// executeReplicatedCommand (isTransientReplicationError) while still
+// advancing lastOffset. That combination is silent data loss for any
+// non-idempotent command.
+func (rm *ReplicationManager) GetReplApplySkipCount() int64 {
+	return rm.applySkipCount.Load()
+}
+
 // SetRole 设置角色
 func (rm *ReplicationManager) SetRole(role string) {
 	rm.mu.Lock()
@@ -382,9 +404,11 @@ func (rm *ReplicationManager) PropagateCommand(cmd [][]byte) {
 	for _, slave := range slaves {
 		if slave.IsReady() {
 			if err := slave.SendCommand(cmdBytes, cmdOffset); err != nil {
+				rm.sendDropCount.Add(1)
 				logger.Logger.Warn().
 					Str("slave_id", slave.ID).
 					Err(err).
+					Int64("send_drop_count", rm.sendDropCount.Load()).
 					Msg("传播命令到从节点失败")
 				// handleSlaveReplicationConnection 会在断连时清理
 			}

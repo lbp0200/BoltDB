@@ -142,6 +142,24 @@ func startRegressionWithDB(t *testing.T, db *store.BotreonStore, backupDir strin
 	}
 }
 
+// ReplSendDropCount is the number of live replica SendCommand failures
+// observed by this server (PropagateCommand drop path).
+func (s *RegressionServer) ReplSendDropCount() int64 {
+	if s.replMgr == nil {
+		return 0
+	}
+	return s.replMgr.GetReplSendDropCount()
+}
+
+// ReplApplySkipCount is the number of replica apply skips that still
+// advanced offset (isTransientReplicationError path).
+func (s *RegressionServer) ReplApplySkipCount() int64 {
+	if s.replMgr == nil {
+		return 0
+	}
+	return s.replMgr.GetReplApplySkipCount()
+}
+
 // NewMonitor 创建指定间隔的 PressureMonitor
 func (s *RegressionServer) NewMonitor(interval time.Duration) *monitor.PressureMonitor {
 	return monitor.NewPressureMonitor(s.DB, s.replMgr)
