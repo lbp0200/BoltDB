@@ -5,6 +5,7 @@ import (
 	"context"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -108,6 +109,25 @@ func TestNewClusterBus(t *testing.T) {
 	assert.NotNil(t, bus.ctx)
 	assert.NotNil(t, bus.peers)
 	assert.Equal(t, cluster, bus.cluster)
+}
+
+func TestClusterBusSaveIfDirtyConcurrent(t *testing.T) {
+	t.Parallel()
+	cl, cleanup := setupTestCluster(t)
+	defer cleanup()
+	bus := NewClusterBus(cl, context.Background())
+
+	var wg sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				bus.saveIfDirty(true)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestClusterBusStartStop(t *testing.T) {

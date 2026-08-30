@@ -12,6 +12,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lbp0200/BoltDB/internal/logger"
@@ -79,7 +80,7 @@ type ClusterBus struct {
 	addr     string
 	tlsCfg   *tls.Config
 
-	lastSave time.Time
+	lastSaveUnix atomic.Int64
 }
 
 func NewClusterBus(cluster *Cluster, ctx context.Context) *ClusterBus {
@@ -609,11 +610,14 @@ func (b *ClusterBus) saveIfDirty(dirty bool) {
 	if !dirty {
 		return
 	}
-	// Throttle: at most once per 30s
-	if time.Since(b.lastSave) < 30*time.Second {
+	now := time.Now().UnixNano()
+	last := b.lastSaveUnix.Load()
+	if last != 0 && now-last < int64(30*time.Second) {
 		return
 	}
-	b.lastSave = time.Now()
+	if !b.lastSaveUnix.CompareAndSwap(last, now) {
+		return
+	}
 	if err := b.cluster.SaveConfig(); err != nil {
 		logger.Logger.Warn().Err(err).Msg("cluster gossip: failed to persist learned state")
 	}
