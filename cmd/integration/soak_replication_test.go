@@ -294,8 +294,8 @@ func TestSoakReplication(t *testing.T) {
 	}
 
 	// Wait for replication to stabilize after chaos
-	// Barrier: connected slave + offset convergence + stable samples
-	converged := waitReplicationConvergence(ctx, master, slave, 120*time.Second, 3, t)
+	// Barrier: connected slave + master/slave offsets match (lag <= 0)
+	converged := waitReplicationConvergence(ctx, master, slave, 120*time.Second, t)
 	if !converged {
 		t.Logf("soak-repl: WARN — replication convergence barrier not met; dataset comparison may show false divergence")
 	} else {
@@ -453,7 +453,7 @@ func TestSoakReplicationShortStrict(t *testing.T) {
 		}
 	}
 
-	converged := waitReplicationConvergence(ctx, master, slave, 120*time.Second, 3, t)
+	converged := waitReplicationConvergence(ctx, master, slave, 120*time.Second, t)
 	if !converged {
 		t.Logf("soak-repl-short: WARN — replication convergence barrier not met; dataset comparison may show false divergence")
 	} else {
@@ -796,16 +796,46 @@ func scanKeysWithRetry(client *redis.Client, label string) ([]string, error) {
 	}
 }
 
-// waitReplicationConvergence polls master/slave INFO replication until:
-// 1. Slave is connected (connected_slaves > 0)
-// 2. Offset lag converges within tolerance
-// 3. Lag stays stable over N consecutive samples
-// Returns false if timeout is reached.
-func waitReplicationConvergence(ctx context.Context, master, slave *redis.Client, timeout time.Duration, stableSamples int, t *testing.T) bool {
+// replicationOffsetsConverged is the soak post-run success rule: the replica
+// offset has caught the master. A lag that stays at a positive constant is a
+// stalled replica (reconnect backoff, mis-framed stream), not success — the
+// same hole the snapshot-overlap regression already closed. See
+// docs/failures/repl-offset-boundary-drift.md (stable lag=142).
+func replicationOffsetsConverged(masterOffset, slaveOffset int64) bool {
+	return masterOffset-slaveOffset <= 0
+}
+
+func TestReplicationOffsetsConverged(t *testing.T) {
+	t.Parallel()
+
+	if !replicationOffsetsConverged(100, 100) {
+		t.Fatal("lag==0 must count as converged")
+	}
+	if !replicationOffsetsConverged(0, 0) {
+		t.Fatal("zero offsets must count as converged")
+	}
+	if !replicationOffsetsConverged(50, 60) {
+		t.Fatal("negative lag (replica ahead) must count as converged")
+	}
+
+	// Former waiter returned true after N identical positive lags. Field
+	// case from docs/failures/repl-offset-boundary-drift.md: mo=1844104
+	// so=1843962, declared "converged with stable lag=142".
+	const formerStableSamples = 3
+	const mo, so int64 = 1844104, 1843962
+	for i := 0; i < formerStableSamples; i++ {
+		if replicationOffsetsConverged(mo, so) {
+			t.Fatalf("frozen lag=%d treated as converged at sample %d/%d", mo-so, i+1, formerStableSamples)
+		}
+	}
+}
+
+// waitReplicationConvergence polls master/slave INFO replication until the
+// replica is connected and replicationOffsetsConverged is true. A frozen
+// positive lag is never treated as success; timeout with lag > 0 is failure.
+func waitReplicationConvergence(ctx context.Context, master, slave *redis.Client, timeout time.Duration, t *testing.T) bool {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
-	var prevLag int64 = -1
-	stableCount := 0
 
 	for time.Now().Before(deadline) {
 		mInfo, err := master.Info(ctx, "replication").Result()
@@ -828,22 +858,10 @@ func waitReplicationConvergence(ctx context.Context, master, slave *redis.Client
 			continue
 		}
 		sOff := parseSlaveReplOffset(sInfo)
-		lag := mOff - sOff
 
-		if lag <= 0 {
+		if replicationOffsetsConverged(mOff, sOff) {
 			t.Logf("converge-barrier: fully converged (mo=%d so=%d)", mOff, sOff)
 			return true
-		}
-
-		if lag == prevLag {
-			stableCount++
-			if stableCount >= stableSamples {
-				t.Logf("converge-barrier: stable lag=%d over %d samples (mo=%d so=%d)", lag, stableSamples, mOff, sOff)
-				return true
-			}
-		} else {
-			prevLag = lag
-			stableCount = 0
 		}
 
 		time.Sleep(500 * time.Millisecond)
@@ -851,6 +869,7 @@ func waitReplicationConvergence(ctx context.Context, master, slave *redis.Client
 
 	mInfo, _ := master.Info(ctx, "replication").Result()
 	sInfo, _ := slave.Info(ctx, "replication").Result()
+	t.Logf("converge-barrier: TIMEOUT — frozen positive lag is not convergence")
 	t.Logf("converge-barrier: TIMEOUT — master info: %s", summarizeReplInfo(mInfo))
 	t.Logf("converge-barrier: TIMEOUT — slave info: %s", summarizeReplInfo(sInfo))
 	return false
@@ -1410,7 +1429,9 @@ func summarizeReplInfo(info string) string {
 			strings.Contains(line, "master_link_status:") ||
 			strings.Contains(line, "repl_backlog_active:") ||
 			strings.Contains(line, "repl_backlog_size:") ||
-			strings.Contains(line, "slave_read_repl_offset:") {
+			strings.Contains(line, "slave_read_repl_offset:") ||
+			strings.Contains(line, "repl_send_drop_count:") ||
+			strings.Contains(line, "repl_apply_skip_count:") {
 			relevant = append(relevant, line)
 		}
 	}

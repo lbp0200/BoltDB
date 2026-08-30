@@ -122,10 +122,9 @@ needed a boundary-exact end offset, which they now always get.
   concurrent writers those two reads are not an atomic pair, so that assertion
   tests the sampler, not the implementation.
 - Convergence gates must require `lag == 0`. `TestRegressionSnapshotFullresyncOffset`
-  now does; **`waitReplicationConvergence` in `cmd/integration/soak_replication_test.go`
-  still accepts "stable lag" as converged** and shares this blind spot
-  (a replica frozen in reconnect backoff, or parked behind a mis-framed tail,
-  looks converged).
+  now does; `waitReplicationConvergence` in `cmd/integration/soak_replication_test.go`
+  uses the same rule via `replicationOffsetsConverged` (a frozen positive lag
+  is a stalled replica, not success). Guard: `TestReplicationOffsetsConverged`.
 - Tightening that gate exposed the mask: with `lag == 0` required, 2/2 runs
   converged exactly (`mo == so`) with perfect list multisets, i.e. the earlier
   "lost element" reports were the gate declaring convergence too early, not a
