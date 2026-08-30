@@ -352,8 +352,8 @@ func TestSoakReplication(t *testing.T) {
 //   - Offset tracking accuracy through reconnect cycles
 //   - No structural corruption after FULLRESYNC cycles
 //
-// Default duration: 10 minutes (suitable for moderate stress without stability drift).
-// For longer stability analysis (L0/retry/goroutine/basin), use TestSoakReplication.
+// Default duration: soakReplDefaultDuration (30s). For longer stability
+// analysis (L0/retry/goroutine/basin), use TestSoakReplication.
 //
 // Usage:
 //
@@ -369,7 +369,7 @@ func TestSoakReplicationShortStrict(t *testing.T) {
 
 	t.Logf("soak-repl-short: duration=%v, writers=%d, strictEquality=ON", duration, writers)
 	t.Logf("soak-repl-short: validates lifecycle/deterministic replay correctness")
-	t.Logf("soak-repl-short: set SOAK_REPL_DURATION (default=10m) to extend")
+	t.Logf("soak-repl-short: set SOAK_REPL_DURATION (default=%v) to extend", soakReplDefaultDuration)
 
 	env := setupSoakReplication(t)
 	defer env.cleanup()

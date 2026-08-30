@@ -14,8 +14,9 @@
    过强表述（含 `first byte="\r"`）。文件内容已由 `c84293f`/`f4cec87` 更正，但提交信息未改；
    且这两个提交不在栈顶，reword 会改写其后提交的 hash —— 重写历史，需授权。
 4. **Issue #3 补一条更正评论** —— 外部评论仍沿用过强表述；文档侧已改写为实测口径。需授权。
-5. **Issue #3 客户端写路径已收口** —— 守卫不再 Skip。`SOAK_REPL_STRICT_EQUALITY=1`
-   可以开来做 soak，默认仍关。
+5. **Issue #3 客户端写路径已收口** —— 守卫不再 Skip。
+   `TestSoakReplicationShortStrict`（严格相等默认开）远程 `-race` PASS：
+   409 keys 全等，`mo==so=910512`，`send_drop=0 apply_skip=0`。
 
 ~~soak 收敛判据~~ → 已改，见 §1b：`replicationOffsetsConverged`（`lag <= 0`）。
 
