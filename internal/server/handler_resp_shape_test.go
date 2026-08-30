@@ -460,7 +460,7 @@ func TestRESPShape_CLUSTER_SLOTS(t *testing.T) {
 
 	// CLUSTER SLOTS with single-node returns:
 	// NestedArray [
-	//   NestedArray [BulkString("0"), BulkString("4"), NestedArray [BulkString(ip), BulkString(port), BulkString(nodeID)]]
+	//   NestedArray [Integer(0), Integer(4), NestedArray [BulkString(ip), Integer(port), BulkString(nodeID)]]
 	// ]
 	resp := handler.executeCommand(state, "CLUSTER", [][]byte{[]byte("SLOTS")}, "127.0.0.1:12345")
 

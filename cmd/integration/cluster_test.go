@@ -560,7 +560,11 @@ func TestClusterBoundary_Slots(t *testing.T) {
 		t.Fatal("CLUSTER SLOTS should return non-empty array")
 	}
 
-	// Verify slot structure: [startSlot, endSlot, [ip, port, nodeId]]
+	// Verify slot structure: [start, end, [ip, port, nodeId]]
+	// Redis 6+ CLUSTER SLOTS: start/end are integers (go-redis → int64),
+	// not BulkString. The previous string/[]byte check inverted the contract
+	// and failed against the live integer encoding.
+	var coveredStart, coveredEnd int64 = -1, -1
 	for i, slotEntry := range slotsArr {
 		entry, ok := slotEntry.([]interface{})
 		if !ok {
@@ -569,29 +573,50 @@ func TestClusterBoundary_Slots(t *testing.T) {
 		if len(entry) < 3 {
 			t.Fatalf("slot entry %d should have at least 3 elements (got %d)", i, len(entry))
 		}
-		// Element 0: start slot (string from go-redis, originally BulkString)
-		if _, ok := entry[0].(string); !ok {
-			if _, ok := entry[0].([]byte); !ok {
-				t.Errorf("slot entry %d element 0 should be string/[]byte (got %T)", i, entry[0])
-			}
+		start, ok := entry[0].(int64)
+		if !ok {
+			t.Errorf("slot entry %d element 0 (start) should be int64 (got %T)", i, entry[0])
+			continue
 		}
-		// Element 1: end slot (string from go-redis, originally BulkString)
-		if _, ok := entry[1].(string); !ok {
-			if _, ok := entry[1].([]byte); !ok {
-				t.Errorf("slot entry %d element 1 should be string/[]byte (got %T)", i, entry[1])
-			}
+		end, ok := entry[1].(int64)
+		if !ok {
+			t.Errorf("slot entry %d element 1 (end) should be int64 (got %T)", i, entry[1])
+			continue
 		}
-		// Element 2: node info array ([ip, port, nodeID])
+		if start < 0 || end >= 16384 || start > end {
+			t.Errorf("slot entry %d range [%d,%d] out of bounds", i, start, end)
+		}
+		if coveredStart < 0 || start < coveredStart {
+			coveredStart = start
+		}
+		if end > coveredEnd {
+			coveredEnd = end
+		}
 		nodeInfo, ok := entry[2].([]interface{})
 		if !ok {
 			t.Errorf("slot entry %d element 2 should be []interface{} (got %T)", i, entry[2])
-		} else if len(nodeInfo) >= 3 {
-			if _, ok := nodeInfo[0].(string); !ok {
-				if _, ok := nodeInfo[0].([]byte); !ok {
-					t.Errorf("slot entry %d node info[0] should be string/[]byte (got %T)", i, nodeInfo[0])
-				}
+			continue
+		}
+		if len(nodeInfo) < 3 {
+			t.Errorf("slot entry %d node info should have >=3 elements (got %d)", i, len(nodeInfo))
+			continue
+		}
+		if _, ok := nodeInfo[0].(string); !ok {
+			if _, ok := nodeInfo[0].([]byte); !ok {
+				t.Errorf("slot entry %d node info[0] (ip) should be string/[]byte (got %T)", i, nodeInfo[0])
 			}
 		}
+		if _, ok := nodeInfo[1].(int64); !ok {
+			t.Errorf("slot entry %d node info[1] (port) should be int64 (got %T)", i, nodeInfo[1])
+		}
+		if _, ok := nodeInfo[2].(string); !ok {
+			if _, ok := nodeInfo[2].([]byte); !ok {
+				t.Errorf("slot entry %d node info[2] (id) should be string/[]byte (got %T)", i, nodeInfo[2])
+			}
+		}
+	}
+	if coveredStart > 0 || coveredEnd < 4 {
+		t.Errorf("CLUSTER SLOTS after ADDSLOTS 0-4 should cover [0,4], got [%d,%d]", coveredStart, coveredEnd)
 	}
 }
 
