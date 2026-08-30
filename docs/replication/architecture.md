@@ -64,12 +64,18 @@ a FULLRESYNC is triggered:
 the lost-write window that was present in earlier versions (see
 [failure-modes.md](failure-modes.md)).
 
-If `SendBacklogData` or `CatchUpAndEnableSlave` fails after the RDB (or
-`+CONTINUE`) is already on the wire, the master must **not** write `-ERR`
-(the replica's `ReadRESP` would desync on the extra error) and must **not**
-install the slave at `currentOffset`. Returning nil closes the TCP connection
-so the replica reconnects. Installing after a failed range skip used to leave
-a frozen offset hole (see TODO §1c `--full` LIST deficit).
+The `snapshotMu` write lock is held through **RDB generation and the RDB
+send**. Releasing it before the send let concurrent writes wrap the 1 MB
+backlog past `snapshotOffset`, so `GetRange` failed with `offset too old`.
+Catch-up abort then closed the connection and the replica FULLRESYNC-looped
+under load (`TestRegressionConcurrentFullresyncWriteStorm`, slave lag ~1 MB
+frozen). After the send, the lock drops and `CatchUpAndEnableSlave` covers
+only commands that committed post-send.
+
+If `CatchUpAndEnableSlave` fails after the RDB (or `+CONTINUE`) is already
+on the wire, the master must **not** write `-ERR` (the replica's `ReadRESP`
+would desync on the extra error) and must **not** leave the slave installed.
+Returning nil closes the TCP connection so the replica reconnects.
 
 ## Backlog
 

@@ -75,6 +75,17 @@ func TestRegressionConcurrentFullresyncWriteStorm(t *testing.T) {
 	<-loadDone
 	close(errCh)
 
+	// Drain replica apply after writers stop. The 20s sleep above overlapped
+	// the load, so lag can still be ~1MB of queued commands at this point.
+	for i := 0; i < 60; i++ {
+		lag := master.GetMasterOffset() - slave.GetSlaveOffset()
+		if lag <= 5000 {
+			t.Logf("concurrent-fr-write: post-load drain ok at iter %d (lag=%d)", i, lag)
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
 	errCount := 0
 	for err := range errCh {
 		if errCount == 0 {

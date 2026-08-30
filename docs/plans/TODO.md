@@ -6,13 +6,10 @@
 
 ### 0. 下次继续（2026-08-30）
 
-1. **1c LIST 亏空：FULLRESYNC catch-up 失败曾被吞掉** —— `--full` 那次
-   `send_drop=0 apply_skip=0` 且 `lag=44` 冻住，形状像增量尾没发出去。
-   旧代码：RDB 后 `SendBacklogData`/`CatchUpAndEnableSlave` 失败只打日志，
-   仍 `AddSlave`，下一次 gap-fill 从 `currentOffset` 起跳过失败区间。
-   已改为失败则不安装 / `RemoveSlave` 并 `return nil`（不写 ERR，避免
-   ReadRESP 错位）。守卫：`TestCatchUpAndEnableSlave_*`。还没跑 `--full`，
-   未宣称 1c 已关。
+1. **1c / 写风暴 lag**：catch-up 失败已中止安装；隔离 dw/overlap PASS。
+   写风暴隔离仍红：`lag≈1.2MB`（刚好超过 backlog），RDB 发送期间放锁
+   导致环被写穿。改为写锁覆盖 RDB **发送**；failover 测试先关 listener
+   再 Shutdown（修 wg.Add/Wait data race）。未宣称 1c / `--full` 已关。
 2. **push** —— 属对外可见动作，需明确授权后再做。
 3. **reword `088ce37` 与 `14bd901` 的提交信息** —— 两条仍带着"手工摆出的交错即根因"这一
    过强表述（含 `first byte="\r"`）。文件内容已由 `c84293f`/`f4cec87` 更正，但提交信息未改；

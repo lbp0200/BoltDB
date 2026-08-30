@@ -64,10 +64,18 @@ func TestRegressionFailoverOscillation(t *testing.T) {
 	// --- Phase 2: kill master, trigger failover ---
 	// Start writers in background to generate load during failover
 	errCh := make(chan error, 100)
-	go master.RunLoad(ctx, 4, 90*time.Second, errCh)
+	loadDone := make(chan struct{})
+	go func() {
+		master.RunLoad(ctx, 4, 90*time.Second, errCh)
+		close(loadDone)
+	}()
 
 	t.Log("failover-osc: phase 2 — killing master to trigger failover")
-	// Simulate master crash: stop replication, close listener, shutdown handler
+	// Close the listener first so ServeTCP's Accept loop exits before
+	// Shutdown's WaitGroup.Wait (otherwise Accept → wg.Add races Wait).
+	if master.Listener != nil {
+		_ = master.Listener.Close()
+	}
 	master.replMgr.Stop()
 	master.Handler.Shutdown()
 	_ = master.Client.Close()
@@ -103,7 +111,7 @@ func TestRegressionFailoverOscillation(t *testing.T) {
 	t.Log("failover-osc: phase 4 — convergence wait (15s)")
 	time.Sleep(15 * time.Second)
 
-	// Drain errors
+	<-loadDone
 	close(errCh)
 	errCount := 0
 	for err := range errCh {

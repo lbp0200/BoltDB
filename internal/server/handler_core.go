@@ -375,6 +375,10 @@ func (h *Handler) ServeTCP(l net.Listener) error {
 			}
 			return err
 		}
+		if h.shuttingDown.Load() != 0 {
+			_ = conn.Close()
+			continue
+		}
 		h.wg.Add(1)
 		go h.handleConnection(conn)
 	}

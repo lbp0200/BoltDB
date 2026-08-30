@@ -50,27 +50,34 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 		// 时序：
 		//   [1] SnapshotMuLock()
 		//   [2] snapshotOffset = GetMasterReplOffset()
-		//   [3] GenerateRDB 内部 View 全程仍在写锁内（GenerateRDBWithSnapshotLock）
-		//   [4] SnapshotMuUnlock()（RDB 生成完立即释放，不阻塞后续 I/O）
-		//   [5] FULLRESYNC 响应使用 snapshotOffset
-		//   [6] 发送 RDB + backlog [snapshotOffset, currentOffset) + AddSlave
+		//   [3] GenerateRDB 内部 View 全程仍在写锁内
+		//   [4] 发送 FULLRESYNC + RDB（仍持写锁，避免 1MB backlog 在
+		//       网络发送期间被写穿，GetRange 变成 offset too old）
+		//   [5] SnapshotMuUnlock()
+		//   [6] AddSlave + CatchUpAndEnableSlave(snapshotOffset)
 		h.Db.SnapshotMuLock()
+		locked := true
+		unlock := func() {
+			if locked {
+				h.Db.SnapshotMuUnlock()
+				locked = false
+			}
+		}
+		defer unlock()
+
 		snapshotOffset := h.Replication.GetMasterReplOffset()
 		rdbData, err := replication.GenerateRDBWithSnapshotLock(h.Db)
-		h.Db.SnapshotMuUnlock()
 		if err != nil {
 			logger.Logger.Error().Err(err).Msg("生成RDB数据失败")
 			return proto.NewError("ERR failed to generate RDB")
 		}
 
-		// 发送FULLRESYNC响应（使用 snapshotOffset）
 		response := fmt.Sprintf("+FULLRESYNC %s %d\r\n", result.ReplId, snapshotOffset)
 		if _, err := writer.WriteString(response); err != nil {
 			logger.Logger.Error().Err(err).Msg("发送FULLRESYNC失败")
 			return proto.NewError("ERR failed to send FULLRESYNC")
 		}
 
-		// 发送RDB数据（Bulk String格式）
 		rdbHeader := fmt.Sprintf("$%d\r\n", len(rdbData))
 		if _, err := writer.WriteString(rdbHeader); err != nil {
 			logger.Logger.Error().Err(err).Msg("发送RDB header失败")
@@ -92,43 +99,19 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 			return proto.NewError("ERR failed to flush writer")
 		}
 
-		// 创建从节点连接并发送 backlog（snapshotOffset → currentOffset）
-		// Ready 保持 false，直到 CatchUpAndEnableSlave 完成 gap-fill，
-		// 避免 live SendCommand 与 gap-fill 对同一 offset 双发（非幂等命令翻倍）。
-		//
-		// 正确时序：
-		//   [1] currentOffset = GetMasterReplOffset()（AddSlave 前捕获）
-		//   [2] SendBacklogData(snapshotOffset → currentOffset)（AddSlave 前发送）
-		//   [3] AddSlave(slaveConn) — Ready=false，PropagateCommand 只写 backlog
-		//   [4] CatchUpAndEnableSlave：gap-fill 后原子 SetReady(true)
+		// Writes were fenced through the RDB send, so snapshotOffset is still
+		// the live watermark. CatchUp covers commands that land after unlock.
+		unlock()
+
 		slaveConn := replication.NewSlaveConnection(conn)
-		backlog := h.Replication.GetBacklog()
-
-		currentOffset := h.Replication.GetMasterReplOffset()
-
-		if currentOffset > snapshotOffset {
-			if err := replication.SendBacklogData(slaveConn, backlog, snapshotOffset, currentOffset); err != nil {
-				logger.Logger.Error().Err(err).
-					Int64("snapshot_offset", snapshotOffset).
-					Int64("current_offset", currentOffset).
-					Msg("发送FULLRESYNC backlog数据失败")
-				// RDB already on the wire — do not write ERR (would desync
-				// ReadRESP) and do not AddSlave. Returning nil lets
-				// handleConnection close the conn so the replica reconnects
-				// instead of being installed at currentOffset with a hole.
-				return nil
-			}
-		}
-
 		h.Replication.AddSlave(slaveConn)
-		if err := h.Replication.CatchUpAndEnableSlave(slaveConn, currentOffset); err != nil {
+		if err := h.Replication.CatchUpAndEnableSlave(slaveConn, snapshotOffset); err != nil {
 			logger.Logger.Error().Err(err).Msg("FULLRESYNC slave catch-up failed")
 			h.Replication.RemoveSlave(slaveConn.ID)
-			// Same as SendBacklogData fail: handshake bytes are already on
-			// the wire, so close rather than write ERR or take over.
 			return nil
 		}
 
+		currentOffset := h.Replication.GetMasterReplOffset()
 		logger.Logger.Info().
 			Str("slave_addr", remoteAddr).
 			Str("repl_id", result.ReplId).

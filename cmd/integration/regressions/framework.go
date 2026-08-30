@@ -30,12 +30,13 @@ import (
 
 // RegressionServer 持有一次回归测试的完整服务器环境
 type RegressionServer struct {
-	DB      *store.BotreonStore
-	Handler *server.Handler
-	Client  *redis.Client
-	Addr    string
-	T       *testing.T
-	Cleanup func()
+	DB       *store.BotreonStore
+	Handler  *server.Handler
+	Client   *redis.Client
+	Addr     string
+	Listener net.Listener
+	T        *testing.T
+	Cleanup  func()
 
 	replMgr *replication.ReplicationManager
 	ownDB   bool // cleanup 时是否关闭 DB
@@ -132,13 +133,14 @@ func startRegressionWithDB(t *testing.T, db *store.BotreonStore, backupDir strin
 	}
 
 	return &RegressionServer{
-		DB:      db,
-		Handler: h,
-		Client:  client,
-		Addr:    addr,
-		T:       t,
-		Cleanup: cleanup,
-		replMgr: replMgr,
+		DB:       db,
+		Handler:  h,
+		Client:   client,
+		Addr:     addr,
+		Listener: listener,
+		T:        t,
+		Cleanup:  cleanup,
+		replMgr:  replMgr,
 	}
 }
 
