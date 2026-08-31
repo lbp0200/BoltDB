@@ -206,6 +206,16 @@
 > `TestSlaveReconnector_readCommandLoop_NoStallDuringDrainAfterPreviousConvergence`。
 > 验证：守卫 10/10 绿（远端 -race）+ dw 修复验证批 + --full（后续）。
 >
+> **扩展修复（同日）**：--full 复跑确认**冻结仍复现**（SnapshotFullresyncOffset：排水推进到
+> lag=162 后尾巴停滞 40s、停滞检测全程失敏（未收敛不武装）、无恢复 → 收敛超时）——
+> 即"无收敛排水停滞"形状。**扩展修复**：停滞检查增加**排水冻结检测**——未收敛
+> （追赶排水期）时仅**超长空闲**（> `replDrainStallTimeout`=10s）才判定冻结并强制重连自愈
+> （瞬态发送停顿 idle=2.55s 不误判、真冻结 10s+ 触发）；已收敛（武装）仍按 2s 阈值。
+> 守卫：`TestSlaveReconnector_readCommandLoop_DrainFreezeForcesReconnect`（未收敛 +
+> 超长空闲 → 重连）+ `NoStallDuringDrainAfterPreviousConvergence`（瞬态空闲不误判）。
+> 至此 §1c 两类形状（16k 缺失 = 武装泄漏误触发降级；冻结 = 排水尾滞失敏无恢复）
+> 均有明确机制与修复。
+>
 > 另记（同日 tier-A 门禁）：`guard_bench.sh --server` 在本地 Mac M 系列上偶发误报——
 > `BenchmarkParseScore` 噪声达 125~212ns/op（±40%），`+12%` 级"回归"为测量噪声而非
 > 真实回归（server 基线 `testdata/bench_baseline_server.txt` 系 2026-07-18 生成，仅 5

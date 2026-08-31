@@ -1042,3 +1042,83 @@ func TestSlaveReconnector_readCommandLoop_NoStallDuringDrainAfterPreviousConverg
 		t.Fatal("drain goroutine did not exit")
 	}
 }
+
+// TestSlaveReconnector_readCommandLoop_DrainFreezeForcesReconnect 守卫 §1c
+// 扩展修复（2026-09-01 捕获轮：lag=162 冻结 40s 收敛超时）：追赶排水期
+// 未收敛时，瞬态发送停顿（idle=2.55s）不判停滞；但超长空闲（超过
+// drainStallTimeout）即排水冻结（尾巴投递中断），必须强制重连由 PSYNC
+// 重放缺失尾巴自愈。
+func TestSlaveReconnector_readCommandLoop_DrainFreezeForcesReconnect(t *testing.T) {
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	sr := NewSlaveReconnector(rm, testStore, "127.0.0.1:6379")
+	sr.stallTimeout = 2 * time.Second             // 已武装阈值（本测试不武装，不触发）
+	sr.drainStallTimeout = 200 * time.Millisecond // 排水冻结阈值（未收敛时）
+	sr.state.Store(int32(SlaveConnected))
+
+	drainDone := make(chan struct{})
+	go func() {
+		buf := make([]byte, 512)
+		for {
+			if _, err := serverEnd.Read(buf); err != nil {
+				close(drainDone)
+				return
+			}
+		}
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sr.readCommandLoop(mc)
+	}()
+
+	// 喂一条数据命令（推进 lastOffset、记录 lastDataTime）
+	_, err := serverEnd.Write([]byte("*3\r\n$3\r\nSET\r\n$2\r\nk1\r\n$2\r\nv1\r\n"))
+	assert.NoError(t, err)
+
+	var offset int64
+	for i := 0; i < 50; i++ {
+		offset = sr.lastOffset.Load()
+		if offset > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.True(t, offset > 0)
+
+	// 未收敛（跳过 ACK 收敛步骤——模拟排水期）+ 空闲超过 drainStallTimeout
+	// 后收到主节点更高 offset 通告 → 排水冻结，强制重连自愈。
+	time.Sleep(250 * time.Millisecond)
+	_, err = serverEnd.Write([]byte("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$7\r\n9999999\r\n"))
+	assert.NoError(t, err)
+
+	select {
+	case err := <-done:
+		assert.Error(t, err)
+		assert.True(t, strings.Contains(err.Error(), "replication stalled"))
+	case <-time.After(3 * time.Second):
+		t.Fatal("readCommandLoop did not force reconnect on drain freeze")
+	}
+
+	close(sr.stopCh)
+	serverEnd.Close()
+	select {
+	case <-drainDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("drain goroutine did not exit")
+	}
+}
