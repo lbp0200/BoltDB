@@ -182,6 +182,12 @@
 > 假设排除（真实 dw 列表 ~5500 < 7000）——RDB 内容路径在真实规模下完整，机制确证在
 > 负载/时序相关的 FULLRESYNC 协调或排水侧。
 >
+> **再再再追加（同日 RDB 传输帧验证）**：RDB 传输为**长度头 `$<len>\r\n` + 精确读取**
+> （主节点 replication_handler.go:81 发送、从节点 `ReadBulkString` 按长度读；短读 →
+> io.ErrUnexpectedEOF → "read RDB failed" → 重连，可见非静默）——**传输截断理论排除**。
+> 至此 RDB 侧全链路（写入/链结构/读取/编码/加载/传输帧）均已排查无 bug；机制仍指向
+> 负载/时序相关的 FULLRESYNC 协调或排水侧。
+>
 > 另记（同日 tier-A 门禁）：`guard_bench.sh --server` 在本地 Mac M 系列上偶发误报——
 > `BenchmarkParseScore` 噪声达 125~212ns/op（±40%），`+12%` 级"回归"为测量噪声而非
 > 真实回归（server 基线 `testdata/bench_baseline_server.txt` 系 2026-07-18 生成，仅 5
