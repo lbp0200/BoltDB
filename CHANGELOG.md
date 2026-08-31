@@ -1,5 +1,20 @@
 # Changelog
 
+## v8.57.3 (2026-09-01) — 停滞检测武装重置 + 排水冻结检测（§1c 定案）
+
+> **定案并修复 §1c 尾巴数据丢失/冻结的两类形状：①武装时钟跨连接泄漏 → 排水期停滞误触发 → 强制重连 → PSYNC 非命令边界 → 降级第二次 FULLRESYNC → 数据丢失（捕获轮：5,731 缺失值、send_drop=1、offset 收敛）；②排水尾滞失敏无恢复 → 40s 收敛超时冻结（lag=162）。两者均已消除。**
+
+### 复制正确性
+
+- **武装时钟连接级重置（79968c1）**：`lastConvergedTime` 在每个连接建立时归零——上一连接/上一测试迭代的收敛不再为当前连接排水期的瞬时停顿武装停滞检测 → 消除误触发 → 降级链（16k 缺失形状）。
+- **排水冻结检测（a538964）**：未收敛（追赶排水期）时仅**超长空闲**（> `replDrainStallTimeout`=10s）才判定冻结并强制重连自愈——瞬态发送停顿（idle=2.55s）不误判、真冻结（lag=162 停 40s）触发恢复 → 消除收敛超时冻结。
+
+### 发版验证
+
+- 停滞守卫 13/13（远端 `-race`，含新增 `DrainFreezeForcesReconnect` / `NoStallDuringDrainAfterPreviousConvergence`）。
+- dw 回归 15/15（0 缺失）；`TestRegressionSnapshotFullresyncOffset` 复跑 iter 17 收敛 + 结构验证通过（0 FAIL）。
+- `golangci-lint run --timeout 5m`：0 issues。
+
 ## v8.57.2 (2026-08-31) — 停滞检测武装化 + GETACK 格式修复
 
 > **修复 6a886f6 引入的两处缺陷：GETACK 请求 RESP 头元素数错误（`*2` 头带 3 元素 → 主节点每秒解析出未知命令日志刷屏）；停滞检测在追赶排水期把突发性发送间隙误判为停滞，强制重连触发 FULLRESYNC 降级导致从节点数据损坏（TestRegressionSnapshotFullresyncOffset ~1/12 复现）。**
