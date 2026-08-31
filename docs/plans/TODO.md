@@ -124,6 +124,20 @@
 > `internal/server`（40s）全包绿；`TestRegressionPsyncReconnectNoLoss`、
 > `TestRegressionSnapshotFullresyncOffset` PASS。
 >
+> **后续观测（2026-08-31）**：`TestRegressionSnapshotFullresyncOffset` 在 `--full` 与隔离复跑中
+> 出现偶发失败（主机 192.168.1.251，约 1/10 轮；主机 10.1.2.16 未复现）：**offset 精确收敛
+> （so==mo）但 4 个 LIST 值零重叠（missing=1295~1772）、HASH 字段为 0**——结构校验失败。
+> A/B 同主机（10.1.2.16）对照：提交前（`6a886f6^`）0/15、提交后（`6a886f6`）0/12 均无失败。
+> **归因**：间歇性、主机/时序相关 flake，**无证据表明提交 `6a886f6` 引入**——该主机对此测试
+> 有既有偶发史（旧 §1c 记"同场冻在 lag=170 30s+"）；且修复机制（GETACK 停滞检测）仅
+> 在"落后且空闲 2s"时触发，失败轮 offset 已收敛（so==mo），检测不会触发。**待办**：
+> 192.168.1.251 恢复可达后补跑提交前 A 态对照，彻底闭合跨主机判定。
+>
+> 另记（同日 tier-A 门禁）：`guard_bench.sh --server` 在本地 Mac M 系列上偶发误报——
+> `BenchmarkParseScore` 噪声达 125~212ns/op（±40%），`+12%` 级"回归"为测量噪声而非
+> 真实回归（server 基线 `testdata/bench_baseline_server.txt` 系 2026-07-18 生成，仅 5
+> 样本）。tier-A 的 -race 阶段需经 remote-test.sh 执行（本机禁跑）。
+>
 > **一键验证**：
 > `bash scripts/remote-test.sh -race -timeout 180s -v ./cmd/integration/regressions/ -run TestRegressionDuplicateWindowMeasurement`
 > `bash scripts/remote-test.sh -race -short -timeout 600s ./internal/replication/... ./internal/server/...`
