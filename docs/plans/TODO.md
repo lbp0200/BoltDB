@@ -170,6 +170,14 @@
 > 断链 → 短列表且无错误），与散落缺失签名吻合。**下次复现的验证方向**：FULLRESYNC 后
 > 对比 RDB 长度键与实载列表长度；若确认链断，检查 LPush 的 linkNodes/节点写入。
 >
+> **再追加（同日 RDB 往返验证，负面结论）**：确定性 RDB 往返测试（2 列表 × 3000 值
+> LPush → GenerateRDB → LoadRDBWithStore → LRANGE 对比）**本地全过**（0.62s，零缺失、
+> 零错位）——RDB 内容路径（链读取/编码/加载）在无负载场景**不丢值**，确定性 RDB bug
+> **排除**。结合 run #4 实证（FULLRESYNC 后缺失、offset 收敛、INCR 完整、加载零错误），
+> **机制收窄到 FULLRESYNC 协调/排水侧的负载相关路径**（传输中断 / offset 交接间隙 /
+> 排水应用），且与冻结同为"offset 收敛但数据不完整"类——下次复现优先抓
+> FULLRESYNC 通告 offset 与 RDB 实际覆盖、排水起始点的对齐。
+>
 > 另记（同日 tier-A 门禁）：`guard_bench.sh --server` 在本地 Mac M 系列上偶发误报——
 > `BenchmarkParseScore` 噪声达 125~212ns/op（±40%），`+12%` 级"回归"为测量噪声而非
 > 真实回归（server 基线 `testdata/bench_baseline_server.txt` 系 2026-07-18 生成，仅 5
