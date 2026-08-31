@@ -188,6 +188,13 @@
 > 至此 RDB 侧全链路（写入/链结构/读取/编码/加载/传输帧）均已排查无 bug；机制仍指向
 > 负载/时序相关的 FULLRESYNC 协调或排水侧。
 >
+> **再再再再追加（同日 offset 交接链审查）**：FULLRESYNC offset 交接链逐环节验证均正确——
+> 主节点 [2] `snapshotOffset` 在写锁内捕获（replication_handler.go:68）、RDB 视图同锁内
+> （:69）、`+FULLRESYNC` 通告偏移 = 同一 S（:75）、解锁后排水自 S 起（:107-108）；
+> 从节点 `lastOffset.Store(S)`（reconnect.go:306）→ LoadRDB → 排水 [S, mo)。
+> **RDB（≤ S）与排水（[S, mo)）之间结构性不存在缺口/重叠**——交接链无缺陷，机制
+> 确证不在交接处；剩余候选唯有负载/时序相关的排水-应用交互（与冻结同区）。
+>
 > 另记（同日 tier-A 门禁）：`guard_bench.sh --server` 在本地 Mac M 系列上偶发误报——
 > `BenchmarkParseScore` 噪声达 125~212ns/op（±40%），`+12%` 级"回归"为测量噪声而非
 > 真实回归（server 基线 `testdata/bench_baseline_server.txt` 系 2026-07-18 生成，仅 5
