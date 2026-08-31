@@ -178,6 +178,10 @@
 > 排水应用），且与冻结同为"offset 收敛但数据不完整"类——下次复现优先抓
 > FULLRESYNC 通告 offset 与 RDB 实际覆盖、排水起始点的对齐。
 >
+> **再再追加（同日规模验证，7000 值/列表 × 2 往返本地全过 1.98s）**：规模相关 bug
+> 假设排除（真实 dw 列表 ~5500 < 7000）——RDB 内容路径在真实规模下完整，机制确证在
+> 负载/时序相关的 FULLRESYNC 协调或排水侧。
+>
 > 另记（同日 tier-A 门禁）：`guard_bench.sh --server` 在本地 Mac M 系列上偶发误报——
 > `BenchmarkParseScore` 噪声达 125~212ns/op（±40%），`+12%` 级"回归"为测量噪声而非
 > 真实回归（server 基线 `testdata/bench_baseline_server.txt` 系 2026-07-18 生成，仅 5
