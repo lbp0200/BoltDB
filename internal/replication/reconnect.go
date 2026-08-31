@@ -40,6 +40,12 @@ var DefaultReconnectConfig = ReconnectConfig{
 // 返回错误强制重连，由 PSYNC CONTINUE 重放缺失区间自愈。
 const replStallTimeout = 2 * time.Second
 
+// replStallArmWindow: 停滞检测的武装窗口。仅在"近期（该窗口内）曾与主节点
+// 收敛（ACK 显示 masterOffset <= lastOffset）"后才判定停滞——追赶排水期的
+// 空闲间隙是突发性发送停顿，不是投递丢失；收敛后主节点水位前进但数据流
+// 空闲超过 replStallTimeout 才是真实的尾巴投递缺口（TODO §1c）。
+const replStallArmWindow = 30 * time.Second
+
 type ReconnectConfig struct {
 	MaxRetries  int
 	BaseBackoff time.Duration
@@ -71,6 +77,10 @@ type SlaveReconnector struct {
 	lastDataTime atomic.Int64
 	// stallTimeout: 停滞判定阈值，测试可缩短；默认 replStallTimeout。
 	stallTimeout time.Duration
+	// lastConvergedTime: 最近一次与主节点收敛（ACK 显示 masterOffset <=
+	// lastOffset）的时刻。停滞检测仅在该时刻落在 replStallArmWindow 内时
+	// 才武装（避免追赶排水期的瞬时发送停顿被误判为停滞）。
+	lastConvergedTime atomic.Int64
 }
 
 func NewSlaveReconnector(rm *ReplicationManager, store *store.BotreonStore, masterAddr string) *SlaveReconnector {
@@ -405,7 +415,11 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 				if stall <= 0 {
 					stall = replStallTimeout
 				}
-				if masterOffset > slaveOffset && time.Since(lastData) > stall {
+				if masterOffset <= slaveOffset {
+					// 已收敛：记录收敛时刻（停滞检测的武装前提）。
+					sr.lastConvergedTime.Store(time.Now().UnixNano())
+				} else if time.Since(time.Unix(0, sr.lastConvergedTime.Load())) < replStallArmWindow &&
+					time.Since(lastData) > stall {
 					logger.Logger.Warn().
 						Int64("master_offset", masterOffset).
 						Int64("slave_offset", slaveOffset).

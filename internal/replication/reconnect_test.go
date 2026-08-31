@@ -852,6 +852,12 @@ func TestSlaveReconnector_readCommandLoop_StallForcesReconnect(t *testing.T) {
 	}
 	assert.True(t, offset > 0)
 
+	// 先模拟收敛（ACK 通告 offset == lastOffset），武装停滞检测：
+	// 追赶排水期的空闲间隙不判停滞，只有"收敛后主节点水位前进且数据流
+	// 空闲超过 stallTimeout"才判定尾巴投递缺口。
+	_, err = serverEnd.Write([]byte("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$2\r\n29\r\n"))
+	assert.NoError(t, err)
+
 	// 空闲超过 stallTimeout 后收到主节点更高 offset 通告 → 判定停滞
 	time.Sleep(250 * time.Millisecond)
 	_, err = serverEnd.Write([]byte("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$7\r\n9999999\r\n"))
