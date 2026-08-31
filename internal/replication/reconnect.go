@@ -326,6 +326,11 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 
 	// 停滞检测的空闲时钟从连接建立起算，避免 0 值（1970）被误判为"早已空闲"。
 	sr.lastDataTime.Store(time.Now().UnixNano())
+	// 武装时钟也从连接建立起算：上一连接（或上一测试迭代）的收敛不得为
+	// 本连接排水期的瞬时发送停顿武装停滞检测——否则排水期误判会强制重连、
+	// PSYNC 偏移撞非命令边界而降级 FULLRESYNC，引发从节点数据丢失
+	// （§1c 捕获轮 2026-09-01：5,731 缺失值 + send_drop=1）。
+	sr.lastConvergedTime.Store(0)
 
 	go func() {
 		select {

@@ -953,3 +953,92 @@ func TestSlaveReconnector_readCommandLoop_NoStallWhenDataFlows(t *testing.T) {
 		t.Fatal("drain goroutine did not exit")
 	}
 }
+
+// TestSlaveReconnector_readCommandLoop_NoStallDuringDrainAfterPreviousConvergence
+// 守卫 §1c 修复（2026-09-01 捕获轮：5,731 缺失值 + send_drop=1）：
+// 上一连接（或上一测试迭代）的收敛不得为当前连接排水期的瞬时停顿武装
+// 停滞检测。若武装时钟跨连接泄漏，排水期停顿会被误判为停滞 → 强制重连 →
+// PSYNC 偏移撞非命令边界 → 降级 FULLRESYNC → 从节点数据丢失。
+func TestSlaveReconnector_readCommandLoop_NoStallDuringDrainAfterPreviousConvergence(t *testing.T) {
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	sr := NewSlaveReconnector(rm, testStore, "127.0.0.1:6379")
+	sr.stallTimeout = 200 * time.Millisecond
+	sr.state.Store(int32(SlaveConnected))
+	// 模拟上一连接/迭代的收敛（武装泄漏场景）：修复前会为本次排水期武装
+	// 停滞检测；修复后 readCommandLoop 连接建立时重置为 0。
+	sr.lastConvergedTime.Store(time.Now().UnixNano())
+
+	drainDone := make(chan struct{})
+	go func() {
+		buf := make([]byte, 512)
+		for {
+			if _, err := serverEnd.Read(buf); err != nil {
+				close(drainDone)
+				return
+			}
+		}
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sr.readCommandLoop(mc)
+	}()
+
+	// 喂一条数据命令（推进 lastOffset、记录 lastDataTime）
+	_, err := serverEnd.Write([]byte("*3\r\n$3\r\nSET\r\n$2\r\nk1\r\n$2\r\nv1\r\n"))
+	assert.NoError(t, err)
+
+	var offset int64
+	for i := 0; i < 50; i++ {
+		offset = sr.lastOffset.Load()
+		if offset > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.True(t, offset > 0)
+
+	// 排水期停顿超过 stallTimeout 后收到主节点更高 offset 通告：
+	// 本连接尚未收敛 → 不得判定停滞（修复前会误判 → 强制重连）。
+	time.Sleep(250 * time.Millisecond)
+	_, err = serverEnd.Write([]byte("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$7\r\n9999999\r\n"))
+	assert.NoError(t, err)
+
+	select {
+	case err := <-done:
+		t.Fatalf("readCommandLoop exited during drain (err=%v): stale convergence must not arm stall detection", err)
+	case <-time.After(500 * time.Millisecond):
+		// 仍在运行 = 未误判停滞
+	}
+
+	close(sr.stopCh)
+	clientEnd.Close()
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("readCommandLoop did not return on stop")
+	}
+
+	serverEnd.Close()
+	select {
+	case <-drainDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("drain goroutine did not exit")
+	}
+}

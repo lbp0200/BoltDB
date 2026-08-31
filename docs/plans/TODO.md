@@ -195,6 +195,17 @@
 > **RDB（≤ S）与排水（[S, mo)）之间结构性不存在缺口/重叠**——交接链无缺陷，机制
 > 确证不在交接处；剩余候选唯有负载/时序相关的排水-应用交互（与冻结同区）。
 >
+> **机制定案（2026-09-01 02:05 捕获轮，已修复）**：并发负载（--full 与 dw -count=30 同机
+> 争用）下 dw 回归第 14 轮失败（**5,731 缺失值、send_drop=1、EXTRA=0、so==mo 收敛**）。
+> 机制链：**武装时钟跨连接泄漏**——`lastConvergedTime` 连接建立时不重置，上一连接/上一
+> 测试迭代的收敛（30s 武装窗内）为当前连接排水期的瞬时停顿武装停滞检测 → 排水期停滞
+> 误触发（idle=2.55s、lag=44）→ 强制重连 → PSYNC offset 撞 `StartsAtCommandBoundary`
+> → "非命令边界"降级**第二次 FULLRESYNC** → 数据丢失（offset 收敛但数据不完整）。
+> **修复**：连接建立时 `lastConvergedTime.Store(0)`——排水期停顿不再武装、无排水期误触发、
+> 无降级链；停滞检测仍覆盖"收敛后尾巴冻结"（本连接收敛后）。守卫：
+> `TestSlaveReconnector_readCommandLoop_NoStallDuringDrainAfterPreviousConvergence`。
+> 验证：守卫 10/10 绿（远端 -race）+ dw 修复验证批 + --full（后续）。
+>
 > 另记（同日 tier-A 门禁）：`guard_bench.sh --server` 在本地 Mac M 系列上偶发误报——
 > `BenchmarkParseScore` 噪声达 125~212ns/op（±40%），`+12%` 级"回归"为测量噪声而非
 > 真实回归（server 基线 `testdata/bench_baseline_server.txt` 系 2026-07-18 生成，仅 5
