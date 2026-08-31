@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — 停滞检测武装化 + GETACK 格式修复
+## v8.57.2 (2026-08-31) — 停滞检测武装化 + GETACK 格式修复
 
 > **修复 6a886f6 引入的两处缺陷：GETACK 请求 RESP 头元素数错误（`*2` 头带 3 元素 → 主节点每秒解析出未知命令日志刷屏）；停滞检测在追赶排水期把突发性发送间隙误判为停滞，强制重连触发 FULLRESYNC 降级导致从节点数据损坏（TestRegressionSnapshotFullresyncOffset ~1/12 复现）。**
 
