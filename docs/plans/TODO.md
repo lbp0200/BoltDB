@@ -161,6 +161,15 @@
 > 负载 flake）与 `TestRegressionSplitBrainConvergenceHarden`（tier-A 已知不可靠家族）。
 > **根治修复暂缓**：待冻结捕获定案后再设计；武装修复为现行缓解。
 >
+> **追加（同日 run #4 --full 带探测）**：dw 回归失败暴露 **16,270 个散落缺失 LIST 值**
+> （list0-4: 1581/3620/3695/3699/3675；EXTRA=0、so==mo 收敛、INCR gap=0、
+> send_drop/apply_skip=0）——INCR 走批量 SetStringBatch 完整而 LIST 逐元素 RPush 缺失，
+> 两者同流 ⇒ 排水必完整，**缺失在 RDB 侧**。加载侧无任何逐元素错误日志（"存储列表值失败"/
+> "读取列表元素失败"均 0 次 ⇒ RPush 丢值假设排除）；读取侧原子写入 + 栏内读取不可能
+> 不一致 ⇒ **收窄至 `readListInTxn` 链式跟随的静默提前终止**（visited 环检测 / `:next`
+> 断链 → 短列表且无错误），与散落缺失签名吻合。**下次复现的验证方向**：FULLRESYNC 后
+> 对比 RDB 长度键与实载列表长度；若确认链断，检查 LPush 的 linkNodes/节点写入。
+>
 > 另记（同日 tier-A 门禁）：`guard_bench.sh --server` 在本地 Mac M 系列上偶发误报——
 > `BenchmarkParseScore` 噪声达 125~212ns/op（±40%），`+12%` 级"回归"为测量噪声而非
 > 真实回归（server 基线 `testdata/bench_baseline_server.txt` 系 2026-07-18 生成，仅 5
