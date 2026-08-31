@@ -141,7 +141,7 @@
 >   边界检查误报，需定向探测）；② 停滞重连的恢复路径必须避免经 FULLRESYNC 降级破坏数据
 >   （恢复设计决策）；③ GETACK 畸形格式修复（`*2`→`*3`，低风险）。
 >
-> **武装修复（2026-08-31 晚，commit 待提交）**：停滞检测增加**"近期曾收敛"武装前提**
+> **武装修复（2026-08-31 晚，commit `75f6024`）**：停滞检测增加**"近期曾收敛"武装前提**
 > （`replStallArmWindow`=30s：仅当 ACK 显示 `masterOffset <= lastOffset` 后、再遇
 > 落后+空闲才判定停滞）——消除追赶排水期误判。效果：**数据损坏消失**（隔离 8 轮 +
 > dw + 守卫全绿、无停滞 WARN），**但 --full 下 SnapshotFullresyncOffset 以新形状失败**：
@@ -150,6 +150,16 @@
 > 的最后 43~242 字节静默停投），根因（主节点投递洞 vs 从节点应用阻塞）仍未定——恢复
 > 设计需在"防损坏（武装）"与"防冻结（及时重连）"之间平衡，建议定向探测冻结机制后
 > 再定恢复方案。
+>
+> **冻结探测调查（2026-08-31 深夜，探测已移除）**：为定案"投递洞 vs 应用阻塞"，临时加了
+> **从节点看门狗**（readCommandLoop 单 goroutine：长时间无"读完成"时，lastApply >= lastRead
+> → 读卡死（主节点未投递）；否则 → 应用卡死（store 阻塞））与**主节点 catch-up 轮次日志**
+> （DWDBG catchup round/ready，-v 下验证可见）。**结果**：2 次额外 --full（带探测）均未复现
+> 冻结（~1/3 --full 罕见）；full_fix 冻结轮（探测前）证据指向**从节点侧停止**（主节点视角
+> 健康：连接存活、ACK 回复持续、catch-up 完成）。**机制未定案**；看门狗设计如上，下次复现
+> 时可快速恢复。另观测到两个无关 --full flake：`TestReplicationNewCommands`（隔离 PASS，
+> 负载 flake）与 `TestRegressionSplitBrainConvergenceHarden`（tier-A 已知不可靠家族）。
+> **根治修复暂缓**：待冻结捕获定案后再设计；武装修复为现行缓解。
 >
 > 另记（同日 tier-A 门禁）：`guard_bench.sh --server` 在本地 Mac M 系列上偶发误报——
 > `BenchmarkParseScore` 噪声达 125~212ns/op（±40%），`+12%` 级"回归"为测量噪声而非
