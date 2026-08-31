@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — 停滞检测武装化 + GETACK 格式修复
+
+> **修复 6a886f6 引入的两处缺陷：GETACK 请求 RESP 头元素数错误（`*2` 头带 3 元素 → 主节点每秒解析出未知命令日志刷屏）；停滞检测在追赶排水期把突发性发送间隙误判为停滞，强制重连触发 FULLRESYNC 降级导致从节点数据损坏（TestRegressionSnapshotFullresyncOffset ~1/12 复现）。**
+
+### 复制正确性
+
+- **GETACK 请求格式修复（a43bb70）**：发送器 RESP 头 `*2` → `*3`（REPLCONF/GETACK/* 三元素），主节点解析不再残留 `$1\r\n*\r\n` 垃圾 → 消除每秒"未知命令 cmd=*"日志刷屏；守卫测试同步修正。
+- **停滞检测武装化（75f6024）**：仅"近期曾收敛（30s 内 ACK 显示 masterOffset <= lastOffset）"后才判定停滞——追赶排水期的发送间隙不再误判，**消除强制重连 → FULLRESYNC 降级 → 从节点数据损坏**（INCR -1 / LIST 值全异 / HASH 空）。
+- 残余已知问题（详见 docs/plans/TODO.md §1c）：追赶期/排水末段最后 43~242 字节静默停投的冻结仍罕见复现（修复后 4 次 --full 中 1 次，以收敛超时形状出现，无数据损坏）；"投递洞 vs 应用阻塞"未定案，根治暂缓，看门狗探测设计已记录。
+
+### 发版验证
+
+- 守卫（停滞检测 ×2 + GETACK 回复）+ dw 回归 + 8 轮隔离 SnapshotFullresyncOffset：全绿。
+- `--full`（`-race` 1800s）：修复后 4 次运行，3 次全绿、1 次含 2 个无关 flake（`TestReplicationNewCommands` 负载 flake、`TestRegressionSplitBrainConvergenceHarden` 已知不可靠家族）。
+- `golangci-lint run --timeout 5m`：0 issues。
+
 ## v8.57.0 (2026-08-30) — FULLRESYNC 线性边界 + offset=backlog + 发版门禁转绿
 
 > **客户端写路径用 `snapshotMu` 把 commit 和 `backlog.Append` 绑在同一栏上（Issue #3）；复制偏移量就是 backlog 水位。FULLRESYNC 写锁覆盖 RDB 发送，catch-up 失败不再带着缺口装从节点。远程 `--full`（`-race` 1800s）exit 0。**
