@@ -335,7 +335,7 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 		for {
 			select {
 			case <-ticker.C:
-				if err := sr.writeRespToMaster(mc, []byte("*2\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n")); err != nil {
+				if err := sr.writeRespToMaster(mc, []byte("*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n")); err != nil {
 					return
 				}
 			case <-replCtx.Done():

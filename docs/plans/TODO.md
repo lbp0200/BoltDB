@@ -124,14 +124,22 @@
 > `internal/server`（40s）全包绿；`TestRegressionPsyncReconnectNoLoss`、
 > `TestRegressionSnapshotFullresyncOffset` PASS。
 >
-> **后续观测（2026-08-31）**：`TestRegressionSnapshotFullresyncOffset` 在 `--full` 与隔离复跑中
-> 出现偶发失败（主机 192.168.1.251，约 1/10 轮；主机 10.1.2.16 未复现）：**offset 精确收敛
-> （so==mo）但 4 个 LIST 值零重叠（missing=1295~1772）、HASH 字段为 0**——结构校验失败。
-> A/B 同主机（10.1.2.16）对照：提交前（`6a886f6^`）0/15、提交后（`6a886f6`）0/12 均无失败。
-> **归因**：间歇性、主机/时序相关 flake，**无证据表明提交 `6a886f6` 引入**——该主机对此测试
-> 有既有偶发史（旧 §1c 记"同场冻在 lag=170 30s+"）；且修复机制（GETACK 停滞检测）仅
-> 在"落后且空闲 2s"时触发，失败轮 offset 已收敛（so==mo），检测不会触发。**待办**：
-> 192.168.1.251 恢复可达后补跑提交前 A 态对照，彻底闭合跨主机判定。
+> **后续观测（2026-08-31，归因修订）**：`TestRegressionSnapshotFullresyncOffset` 偶发失败
+> **并非主机相关 flake——在 10.1.2.16 上亦复现**（B 态 1/12，与 192.168.1.251 的 ~1/10 一致），
+> 且与提交 `6a886f6` 的 GETACK/停滞检测机制**强相关**（旧结论"无证据表明引入"已收回）：
+> - **失败轮机制链（实测日志）**：`复制流停滞` WARN（lag=242、idle=2763ms）→ 强制重连 →
+>   PSYNC offset 撞 `backlog.StartsAtCommandBoundary` → **`PSYNC CONTINUE offset 非命令边界，
+>   降级为全量同步`** → FULLRESYNC → 结构校验失败（INCR -1、LIST 值全异、HASH 空），
+>   且 so==mo 仍收敛——**§1c 尾巴静默投递缺口在 CONTINUE 追赶/排水路径上的再现**，
+>   降级 FULLRESYNC 的排水尾仍会丢，且该路径破坏整体数据。
+> - **6a886f6 的实缺陷**：GETACK 发送器 RESP 头 `*2` 但携带 3 元素（REPLCONF/GETACK/*），
+>   主节点 ReadRESP 只读 2 个，残留 `$1\r\n*\r\n` 被解析为未知命令 → 每秒
+>   `WRN 从节点发送了未知命令 cmd=*`（日志刷屏；守卫测试用了同样的畸形字节，掩盖了问题）。
+> - **A/B 同主机（10.1.2.16）**：提交前（`6a886f6^`）0/23、提交后（`6a886f6`）1/24——
+>   失败仅随该提交出现。
+> - **开放项**：① 为何从节点 lastOffset=3902871 未过命令边界（从节点字节记账漂移 vs
+>   边界检查误报，需定向探测）；② 停滞重连的恢复路径必须避免经 FULLRESYNC 降级破坏数据
+>   （恢复设计决策）；③ GETACK 畸形格式修复（`*2`→`*3`，低风险）。
 >
 > 另记（同日 tier-A 门禁）：`guard_bench.sh --server` 在本地 Mac M 系列上偶发误报——
 > `BenchmarkParseScore` 噪声达 125~212ns/op（±40%），`+12%` 级"回归"为测量噪声而非

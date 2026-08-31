@@ -640,7 +640,7 @@ func TestHandleSlaveReplicationConnection_RepliesToGetAck(t *testing.T) {
 		close(done)
 	}()
 
-	_, err := serverEnd.Write([]byte("*2\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n"))
+	_, err := serverEnd.Write([]byte("*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n"))
 	assert.NoError(t, err)
 
 	resp, err := proto.ReadRESP(bufio.NewReader(serverEnd))
