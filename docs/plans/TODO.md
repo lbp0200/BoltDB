@@ -242,6 +242,13 @@
 > （loaded==rdb_len）+ FlushDB 链已排除——机制候选收窄至恢复期 RDB 加载与排水应用
 > 的交互/覆盖时序）。
 >
+> **流程验证追加（2026-09-02 04:41）**：从侧 FULLRESYNC 流（tryReplicate）=
+> ReadBulkString → LoadRDB（内含 FlushDB，rdb_loader.go:141）→ 之后才进入
+> readCommandLoop 排水——**严格顺序、无加载/排水重叠**——"恢复期交互/覆盖"候选在
+> 流程层面不被支持；损失机制在代码层面仍未定位（顺序正确 + 加载完整性已验 +
+> 各候选排除）——下一步收窄至**主侧排水发送路径的字节级审计**（FULLRESYNC#2 的
+> [S2, so] 区间内容 vs 从侧实际应用的命令集逐字节比对）。
+>
 > 另记（同日 tier-A 门禁）：`guard_bench.sh --server` 在本地 Mac M 系列上偶发误报——
 > `BenchmarkParseScore` 噪声达 125~212ns/op（±40%），`+12%` 级"回归"为测量噪声而非
 > 真实回归（server 基线 `testdata/bench_baseline_server.txt` 系 2026-07-18 生成，仅 5
