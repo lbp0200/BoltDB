@@ -228,6 +228,12 @@
 > FULLRESYNC 的 FlushDB 链 / store 侧）。**下一步**：恢复路径重设计（排水冻结恢复不
 > 打断可恢复排水；降级路径 FULLRESYNC 链探针——本轮探针已清理还原）。
 >
+> **时间线探针追加（2026-09-02 04:05）**：排水期 LLEN 采样 + 应用计数（44 采样
+> **全部 applied==llen**——物化正常、无 LLEN 骤降）——**FlushDB 链与 store 侧非物化
+> 均排除**；损失维持"排水#2 应用后效果丢失"结论（缺失 ~1,838/2,000 每列表 ≈
+> 应用计数）——机制未获更细定位，候选收窄至恢复路径交互（强制重连/降级时刻
+> 的 in-flight 数据交接；重连后 PSYNC 重放的排水区间与已应用区间的字节级对齐）。
+>
 > 另记（同日 tier-A 门禁）：`guard_bench.sh --server` 在本地 Mac M 系列上偶发误报——
 > `BenchmarkParseScore` 噪声达 125~212ns/op（±40%），`+12%` 级"回归"为测量噪声而非
 > 真实回归（server 基线 `testdata/bench_baseline_server.txt` 系 2026-07-18 生成，仅 5
