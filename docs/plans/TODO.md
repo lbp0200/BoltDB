@@ -271,6 +271,11 @@
 > （复制写路径与读路径的存储级隔离 / 恢复路径重设计——见上）。30s 阈值作为
 > 部分缓解保留；真冻结检测（40s 收敛窗内触发）不受影响。
 >
+> **无回归验证（2026-09-02 06:21）**：30s 阈值下守卫测试（停滞/冻结 4 守卫）远端
+> `-race` **全 PASS**（3.4s）+ `TestRegressionSnapshotFullresyncOffset` 独立运行 **PASS**
+> （52.3s，integrity 子测试通过）——**真冻结检测 30s 兼容确认**（40s 收敛窗内仍
+> 触发自愈），30s 修复无回归。
+>
 > **流程验证追加（2026-09-02 04:41）**：从侧 FULLRESYNC 流（tryReplicate）=
 > ReadBulkString → LoadRDB（内含 FlushDB，rdb_loader.go:141）→ 之后才进入
 > readCommandLoop 排水——**严格顺序、无加载/排水重叠**——"恢复期交互/覆盖"候选在
