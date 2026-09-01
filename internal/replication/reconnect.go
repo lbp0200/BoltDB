@@ -50,7 +50,10 @@ const replStallArmWindow = 30 * time.Second
 // 发送停顿（数百毫秒~数秒）是常态，不判停滞；超过该时长仍无数据到达即
 // 排水冻结（尾巴投递中断——TODO §1c 捕获轮 2026-09-01：lag=162 冻结 40s、
 // 收敛超时），强制重连由 PSYNC 重放缺失尾巴自愈。
-const replDrainStallTimeout = 10 * time.Second
+// 30s = 2026-09-02 §1c 根因定案后的阈值：store 读争用（复制期间外部读——
+// A/B 对照确认）引发的排水数据间隙可达 ~10-21s（10s 阈值误判触发降级丢失），
+// 30s 放行读争用间隙 + 真冻结（40s+ 收敛超时）仍在收敛窗内触发自愈。
+const replDrainStallTimeout = 30 * time.Second
 
 type ReconnectConfig struct {
 	MaxRetries  int
