@@ -216,6 +216,18 @@
 > 至此 §1c 两类形状（16k 缺失 = 武装泄漏误触发降级；冻结 = 排水尾滞失敏无恢复）
 > 均有明确机制与修复。
 >
+> **长期验证追加（2026-09-02）——残留确凿**：并发负载（--full -p=2 等价的包间争用）下
+> dw 回归 **6/6 批次全部复现** 16k 缺失（失败率 2/15~5/15；--full 下 dw 亦 FAIL：9,380 缺失 +
+> 5 停滞 WARN + 4 降级；同轮 SnapshotFullresyncOffset 73.7s 失败、split-brain 家族仍失败、
+> TestClusterSoak 失败）——**修复（武装重置 + 排水冻结检测）对"负载间隙（10.5s→20-21s，
+> 随争用增长）触发排水冻结误判 → 强制重连 → PSYNC 非命令边界 → 降级第二次 FULLRESYNC →
+> 数据丢失"链不足**，阈值调优本质脆弱（间隙分布与冻结检测重叠）。
+> **机制精炼（探针证据）**：①RDB 生成遍历完整（short-walk 0）②RDB 加载完整
+> （loaded==rdb_len）③**排水#2 应用计数 ≈ 缺失值**（dw_apply ~1,400-2,000/列表 vs 缺失
+> ~1,700/列表）——命令已到达并执行但效果从 store 丢失（应用后丢失；候选：后续
+> FULLRESYNC 的 FlushDB 链 / store 侧）。**下一步**：恢复路径重设计（排水冻结恢复不
+> 打断可恢复排水；降级路径 FULLRESYNC 链探针——本轮探针已清理还原）。
+>
 > 另记（同日 tier-A 门禁）：`guard_bench.sh --server` 在本地 Mac M 系列上偶发误报——
 > `BenchmarkParseScore` 噪声达 125~212ns/op（±40%），`+12%` 级"回归"为测量噪声而非
 > 真实回归（server 基线 `testdata/bench_baseline_server.txt` 系 2026-07-18 生成，仅 5
@@ -234,8 +246,24 @@
 
 ---
 
-## 架构边界（已决策：不做）
+### 3. split-brain 家族 flake（**已定位：负载敏感时序，非真 bug** — 2026-09-01）
 
+**现象**：--full（-p=2 包并行）下间歇失败（6 次/3 次 --full：TestSplitBrainConvergenceReplay、
+TestRegressionSplitBrainConvergence(Harden)、TestRegressionFailoverOscillationScenarioD）。
+
+**定位（A/B 证据）**：独立运行 4/4 PASS；与 regressions 同机并发（-p=2 等价的包间争用）
+复现间歇失败（首轮 2/3 FAIL、次轮 3/3 PASS；移除 t.Parallel() 后仍复现 2/3 FAIL）——
+**负载敏感时序扰动**（gossip HelloInterval 500ms + 收敛断言（MinAgreedFraction=1.0、
+HEALTH>0.50、重连数≤5）在争用下间歇越界），非共识逻辑缺陷。
+
+**处置**：①三个重测试移除 `t.Parallel()`（包内串行，降低包内争用；独立验证 4/4 PASS）；
+②包间争用（-p=2 记忆守卫的刻意并行，改 -p=1 将拉长门禁至 ~55-60min）残留——家族
+维持 documented-unreliable 状态（tier-A 跳过模式已有处理），发版验证以定向包
+（regressions/守卫/dw）为准。
+
+---
+
+## 架构边界（已决策：不做）
 | 边界 | 原因 |
 |------|------|
 | commit-seq ↔ repl-offset 映射（Issue #3 草案） | 已由 `processRequest` 读锁跨越 commit→Append 实现线性绑定，无需映射表；详见 `docs/failures/snapshot-inconsistency.md` §4 |

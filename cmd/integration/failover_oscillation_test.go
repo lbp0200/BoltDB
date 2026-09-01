@@ -835,7 +835,9 @@ func TestRegressionFailoverOscillationScenarioC(t *testing.T) {
 // This test kills the high-offset slave BEFORE the master, verifying that
 // the sentinel correctly falls back to the lower-offset live slave.
 func TestRegressionFailoverOscillationScenarioD(t *testing.T) {
-	t.Parallel()
+	// 重测试（master+slave+sentinels+gossip）：串行执行，避免与同包其他
+	// 并行测试争用导致 gossip/收敛时序扰动（--full -p=2 下间歇 flake，
+	// 独立运行 4/4 PASS、并发负载下复现——见 TODO §3）。
 	skipHeavyIntegrationInShort(t)
 	t.Logf("\n========== SCENARIO D: Dead slave selection + failover cooldown ==========")
 

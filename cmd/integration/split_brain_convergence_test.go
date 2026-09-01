@@ -146,7 +146,9 @@ func (ct *convergenceTracker) logMetrics(t *testing.T) {
 }
 
 func TestSplitBrainConvergenceReplay(t *testing.T) {
-	t.Parallel()
+	// 重测试（master+slave+3 sentinels+gossip）：串行执行，避免与同包其他
+	// 并行测试争用导致 gossip/收敛时序扰动（--full -p=2 下间歇 flake，
+	// 独立运行 4/4 PASS、并发负载下复现——见 TODO §3）。
 	skipHeavyIntegrationInShort(t)
 	// ========================================================================
 	// SETUP: 1 master + 1 slave + 3 sentinels + partition proxy + PressureMonitor
