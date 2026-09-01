@@ -284,6 +284,11 @@
 > （documented-unreliable，非 §1c）。**结论：30s 阈值缓解读争用误判的多数情况，
 > 但残留间隙无上界——完整修复仍需存储级读写隔离（见上）。**
 >
+> **最终门禁验证（2026-09-02 07:46）**：tier-A PR-gate **全绿**（store/server 基准均在
+> 10% 阈值内、单测 12 包全 ok、Fast integration 通过）+ **Redis 三套兼容 100%**
+> （py 247/247、node 122/122、cli）+ lint 0 issues——当前 main（`63b5c8c` 30s 修复 +
+> 文档链至 `dda7408`）门禁与兼容健康确认；工作区干净、与 origin/main 同步。
+>
 > **流程验证追加（2026-09-02 04:41）**：从侧 FULLRESYNC 流（tryReplicate）=
 > ReadBulkString → LoadRDB（内含 FlushDB，rdb_loader.go:141）→ 之后才进入
 > readCommandLoop 排水——**严格顺序、无加载/排水重叠**——"恢复期交互/覆盖"候选在
