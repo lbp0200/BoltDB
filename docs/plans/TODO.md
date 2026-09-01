@@ -276,6 +276,14 @@
 > （52.3s，integrity 子测试通过）——**真冻结检测 30s 兼容确认**（40s 收敛窗内仍
 > 触发自愈），30s 修复无回归。
 >
+> **--full 验证（2026-09-02 06:54）——30s 修复部分有效再确认**：当前 main（30s 阈值）
+> 的 --full（-p=2 最强争用）下 dw 回归仍 FAIL（81.8s、9,274 缺失、1 停滞 + 2 降级——
+> 对照 10s 时代 --full：9,380 缺失、5 停滞 + 4 降级）——**停滞 5→1（-80%）、降级
+> 4→2——30s 修复在最强争用下仍部分有效，但残留（阈值超限间隙）仍在**；另
+> TestRegressionSplitBrainConvergenceHarden FAIL（20.8s）——已知负载敏感 flake 家族
+> （documented-unreliable，非 §1c）。**结论：30s 阈值缓解读争用误判的多数情况，
+> 但残留间隙无上界——完整修复仍需存储级读写隔离（见上）。**
+>
 > **流程验证追加（2026-09-02 04:41）**：从侧 FULLRESYNC 流（tryReplicate）=
 > ReadBulkString → LoadRDB（内含 FlushDB，rdb_loader.go:141）→ 之后才进入
 > readCommandLoop 排水——**严格顺序、无加载/排水重叠**——"恢复期交互/覆盖"候选在
