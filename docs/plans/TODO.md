@@ -340,6 +340,17 @@
 > 与主侧流边界的**结构性不一致**（算术根待运行期逐命令长度埋点定位）为残留根因
 > 的最后形态——完整修复仍未落地（入册待续）。探针已清理。
 >
+> **环读错位候选否决（2026-09-03 03:00）**：排水路径 `SendBacklogData` →
+> `GetRange(start,end)` 逐字节 `buffer[(start+i)%size]` 读取——**回绕由取模透明
+> 处理、与 Append 写入位置（offset%size）自洽——排水流与 backlog 字节一致、
+> 无错位**。发散根代码级排除闭合：主侧 backlog 序列化（replication.go:383）、
+> 排水直发原始字节（SendBacklogData/GetRange）、从侧按帧精确消费（ReadRESP
+> io.ReadFull）、从侧重序列化同函数（reconnect.go:474/497）——**五环节全部验证
+> 精确、无不对称——发散的存在性矛盾在代码级不可解**。**最终定论**：从侧 offset
+> 推进与主侧流边界的发散，其算术根仅在运行期可见（逐命令记录从侧重序列化
+> 长度 vs 实际消费字节——定位发散的命令类型/时机），代码级静态分析已穷尽；
+> 完整修复依赖该运行期定位（入册待续——下步：从侧消费字节埋点对照）。
+>
 > **流程验证追加（2026-09-02 04:41）**：从侧 FULLRESYNC 流（tryReplicate）=
 > ReadBulkString → LoadRDB（内含 FlushDB，rdb_loader.go:141）→ 之后才进入
 > readCommandLoop 排水——**严格顺序、无加载/排水重叠**——"恢复期交互/覆盖"候选在
