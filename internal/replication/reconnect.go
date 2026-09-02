@@ -53,6 +53,9 @@ const replStallArmWindow = 30 * time.Second
 // 30s = 2026-09-02 §1c 根因定案后的阈值：store 读争用（复制期间外部读——
 // A/B 对照确认）引发的排水数据间隙可达 ~10-21s（10s 阈值误判触发降级丢失），
 // 30s 放行读争用间隙 + 真冻结（40s+ 收敛超时）仍在收敛窗内触发自愈。
+// 2026-09-03 实证：阈值调参路径定性失败（30s→40s 验证 3/15 FAIL vs 30s 基线
+// 2/15——间隙随阈值增长无上界）——30s 为已知最佳调参；完整修复需存储级
+// 读写隔离或恢复路径重设计（TODO §1c 记录）。
 const replDrainStallTimeout = 30 * time.Second
 
 type ReconnectConfig struct {
