@@ -322,6 +322,24 @@
 > 误判重连的数据丢失）——具体设计仍未定（见上候选评估）。当前 main 保持 30s
 > 阈值（63b5c8c 部分缓解——2/15 为已知最佳调参状态）。
 >
+> **恢复路径聚焦定案（2026-09-03 02:55）——丢失链 + 偏移发散（字节级实证）**：
+> 丢失链实证定链：**误判（armed=false idle≈30-40s / armed=true idle≈2.4s——读争用
+> 间隙触发）→ 强制重连 → PSYNC 于从侧 watermark → 主侧 `StartsAtCommandBoundary`
+> 检查失败（watermark 落主侧流命令中间）→ 降级 FULLRESYNC#2 → 数据丢失**（降级后
+> offset 收敛 mo==so 但数据仍缺——丢失在恢复的 RDB/排水内容层面）。**字节级探针
+> （降级点 dump watermark±12 字节）决定性证据**：watermark 落命令中间的**参数起始**
+> （如 `…hset…$9\r\n[d]w:hset:1…`、`…$31\r[\n]dw:converge:…`——恰在 `$N\r\n` 之后）——
+> 从侧 offset 推进（len(serializeCommand(req.Args))）与主侧流真实边界**累积分发**。
+> **代码级闭合矛盾**：主侧 backlog=serializeCommand(cmd)（replication.go:383）、
+> 排水直发 backlog 原始字节（SendBacklogData）、从侧 ReadRESP 按帧精确消费
+> （io.ReadFull）、从侧重序列化同函数——四者闭合应无发散——但实证发散存在
+> （算术根不可定：残差假设穷尽——解析/序列化/发送路径均无不对称）。**修复候选**：
+> ①从侧按实际消费字节推进（候选 A——发散消除的根修复——需解析器改造波及 12+
+> 调用点且代码级分析示其为 no-op——价值不确定）；②边界回退重放（双重应用——否决）。
+> **定论**：阈值调参（上）与恢复路径边界检查均非完整修复所在——从侧 offset 推进
+> 与主侧流边界的**结构性不一致**（算术根待运行期逐命令长度埋点定位）为残留根因
+> 的最后形态——完整修复仍未落地（入册待续）。探针已清理。
+>
 > **流程验证追加（2026-09-02 04:41）**：从侧 FULLRESYNC 流（tryReplicate）=
 > ReadBulkString → LoadRDB（内含 FlushDB，rdb_loader.go:141）→ 之后才进入
 > readCommandLoop 排水——**严格顺序、无加载/排水重叠**——"恢复期交互/覆盖"候选在
