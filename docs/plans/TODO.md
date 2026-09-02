@@ -375,6 +375,11 @@
 > 间隙显现——流级错位的时机收窄到**末次 ACK 之后、PSYNC 之前的应用段**。
 > 完整修复仍不可置信落地（入册待续）。探针已清理。
 >
+> **当前 main 健康快照（2026-09-03 03:37）**：85e2f14（文档链：2a35170→8a6ac84→
+> 71cab80→85e2f14——均为 §1c 定论记录，代码未变——30s 阈值已验状态）——兼容
+> 套件 **py 247/247 + node 122/122（100%）** + 复制守卫 PsyncReconnectNoLoss（30.1s
+> ok）+ SnapshotFullresyncOffset（50.8s ok）——**全绿、无新发现**。
+>
 > **流程验证追加（2026-09-02 04:41）**：从侧 FULLRESYNC 流（tryReplicate）=
 > ReadBulkString → LoadRDB（内含 FlushDB，rdb_loader.go:141）→ 之后才进入
 > readCommandLoop 排水——**严格顺序、无加载/排水重叠**——"恢复期交互/覆盖"候选在
