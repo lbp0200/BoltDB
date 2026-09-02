@@ -63,6 +63,9 @@ func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int) e
 			return nil
 		}
 		if errors.Is(err, badger.ErrConflict) {
+			s.retryMu.Lock()
+			s.retryMetrics.conflicts++
+			s.retryMu.Unlock()
 			baseBackoff := time.Duration(1<<uint(i)) * time.Millisecond
 			if baseBackoff > 50*time.Millisecond {
 				baseBackoff = 50 * time.Millisecond

@@ -154,6 +154,7 @@ type RetryMetrics struct {
 	WritesBlocked int64
 	L0Rejected    int64
 	L0Delayed     int64
+	Conflicts     int64
 	LastL0Score   float64
 }
 
@@ -166,6 +167,7 @@ func (s *BotreonStore) GetRetryMetrics() RetryMetrics {
 		WritesBlocked: s.retryMetrics.writesBlocked,
 		L0Rejected:    s.retryMetrics.l0Rejected,
 		L0Delayed:     s.retryMetrics.l0Delayed,
+		Conflicts:     s.retryMetrics.conflicts,
 		LastL0Score:   s.l0ScoreCached(),
 	}
 }

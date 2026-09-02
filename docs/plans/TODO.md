@@ -289,6 +289,19 @@
 > （py 247/247、node 122/122、cli）+ lint 0 issues——当前 main（`63b5c8c` 30s 修复 +
 > 文档链至 `dda7408`）门禁与兼容健康确认；工作区干净、与 origin/main 同步。
 >
+> **结构修复代码级穷尽调查（2026-09-03 02:00）——修复定夺的边界**：badger v4.9.6
+> 代码级追查定案：store 读（`db.View` 只读事务——无 conflictKeys/pendingWrites）与写
+> （`db.Update` 读写事务——冲突检测提交）**均经 oracle `readTs()` 分配 readTs**（txn.go:
+> 83-93——readMark.Begin + txnMark.WaitForMark——**读事务创建等待在途写刷盘**）；写提交
+> 的 `hasConflict`（txn.go:126-151——自身 reads vs 近期提交事务写入）→ `ErrConflict` →
+> retryUpdate 退避（1-50ms）。**修复候选评估**：①`DetectConflicts=false`——**否决**
+> （keyLockMgr 覆盖不全——set/json/geo 等大量读写改写操依赖冲突检测保读改写安全——
+> 数据完整性风险）；②阈值调参——已做（30s 部分有效，逼近 40s 收敛窗上限）；
+> ③恢复路径重设计——未定。**修复阻塞点**：读扰动写路径的**确切运行链需写路径埋点
+> 实证**（读创建 readTs 等待 vs 提交冲突 vs oracle 锁——观测基础设施缺失：INFO 无
+> 重试指标、collector.Snapshot 无服务端消费）；badger 共享 oracle/提交机制使读写隔离
+> 属架构级改造。已加 retryMetrics.conflicts 计数（运行期可见性——供后续实证使用）。
+>
 > **流程验证追加（2026-09-02 04:41）**：从侧 FULLRESYNC 流（tryReplicate）=
 > ReadBulkString → LoadRDB（内含 FlushDB，rdb_loader.go:141）→ 之后才进入
 > readCommandLoop 排水——**严格顺序、无加载/排水重叠**——"恢复期交互/覆盖"候选在

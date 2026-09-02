@@ -120,6 +120,7 @@ type BotreonStore struct {
 		writesBlocked int64
 		l0Rejected    int64
 		l0Delayed     int64
+		conflicts     int64
 	}
 
 	// 错误注入（仅测试用，nil = 禁用）
