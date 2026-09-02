@@ -351,6 +351,20 @@
 > 长度 vs 实际消费字节——定位发散的命令类型/时机），代码级静态分析已穷尽；
 > 完整修复依赖该运行期定位（入册待续——下步：从侧消费字节埋点对照）。
 >
+> **运行期定位定论（2026-09-03 03:20）——发散悖论**：实施消费字节计数（ReadRESP
+> Array.Consumed——数组头/元素头/body 精确累计）+ 从侧逐命令对照（re-serialized
+> vs 实际消费）——dw 运行（dw_mm1：11 PASS + 4 FAIL + 4 降级）**全程 0 条失配**——
+> 每条数据命令的 re-serialized 长度 == 实际消费（从侧解析自洽）。叠加已验证的
+> 精确链接：主侧序列化、排水环读（取模）、从侧按帧消费、从侧重序列化同函数、
+> ReadBulkString 精确消费（$len 行 + length+2）、**FULLRESYNC RDB-vs-S 原子一致**
+> （replication_handler.go:58-69——snapshotMu 写锁内捕获 snapshotOffset + 生成 RDB，
+> fullresync_boundary_test 守卫）——**七环节全部精确——但从侧 watermark 仍在主侧
+> backlog 落命令中间（字节证据）——发散悖论**：从侧累计消费 == 自身流位置，而
+> 该位置在主侧流中非边界——**唯一剩余解释：从侧收到的流 ≠ 主侧 backlog 的
+> [S, mo) 字节序列（某处流级错位——运行期仅见）**。完整修复仍需更深运行期
+> 对照（主侧逐命令发送记录 vs 从侧逐命令消费记录——对齐定位错位点）——入册
+> 待续。探针已清理还原。
+>
 > **流程验证追加（2026-09-02 04:41）**：从侧 FULLRESYNC 流（tryReplicate）=
 > ReadBulkString → LoadRDB（内含 FlushDB，rdb_loader.go:141）→ 之后才进入
 > readCommandLoop 排水——**严格顺序、无加载/排水重叠**——"恢复期交互/覆盖"候选在
