@@ -375,3 +375,20 @@ NoLoss 66.5s）+ golangci-lint 0 issues。调试插桩（badger 补丁副本 + g
   三套 + RESP 形状（§6）；风险最高项 = 复制语义改变面（兼容套件全覆盖）+ 双轨一致性
   （换算表核验）。**实施须先补 commit-ts 回传（观察 1）的小步改造并单独验证**。
 
+**观察 1 深化（2026-09-03——commit-ts 回传的设计定案分析）**：链路已实证：processRequest
+（handler_core.go:710——RLock 区 738-739 跨 execute→propagate）→ executeCommand
+（handler_dispatch.go:50 分发）→ 命令方法 → store 方法（~100 方法无 ctx 参数）→
+retryUpdate → commitTS（ts 深埋于此——同 goroutine）。每命令 1:1:1（命令↔提交↔传播）。
+**每命令 ts 关联机制评估**：
+1. **store 方法返回 ts**——写方法族签名全改（~50+）——NO。
+2. **单字段 last-commit 捕获**——并发 RLock 持有者下竞态实证（A-commit-6 → B-commit-7 →
+   A-propagate 读到 7——错误/重复 ts——backlog ts 键碰撞）——NO。
+3. **预分配 + ts 流穿执行链**（processRequest 预分配 → executeCommand → 命令方法 →
+   store 方法——需 ctx/签名穿透全链）——API 面大——待裁。
+4. **goroutine 局部捕获**——Go 无原生 goroutine-local；runtime-gid hack 的写路径成本
+   （C5 敏感）——NO。
+**推荐**：ctx 流穿（Go 标准请求上下文——processRequest 建每请求 ts 槽 → ctx 携带穿透
+  分发/命令/store 方法链 → commitTS 消费）——代价 = 写方法族 ctx 参数机械性增补（面大
+  但机械——可分文件增量）——或备选：提交-传播对串行化（写吞吐成本——C5 敏感）。实施
+  前需裁 ctx-流穿 vs 串行化的吞吐权衡。
+
