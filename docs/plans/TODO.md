@@ -9,9 +9,10 @@
    声明"）与 §1b 自我更正记录纠正——历史自纠正；reword 会重写其后全部 67 个提交 hash
    （含 §1c 定论链）并需 force-push——措辞修正的收益 < 历史重写成本。保留此裁决以防
    将来再议。
-2. **Issue #3 补一条更正评论** —— 外部评论仍沿用过强表述；文档侧已改写实测口径。
-   Issue 在 GitHub（github.com/lbp0200/BoltDB——AtomGit 上无此仓库）——本地工具无
-   GitHub API 凭据——**需用户手动**（GitHub 网页/持凭据客户端发评论）。
+2. **Issue #3 更正评论** —— ✅ **已发布（2026-09-03，gh CLI）**：更正 2026-08-29
+   "Verification result" 评论的过强表述（"2 losses = delivery gap"实为收敛判据误判——
+   判据收紧 lag==0 后 2/2 精确收敛；commit-seq 映射已被锁绑定收口否定——严格断言全绿）。
+   评论：https://github.com/lbp0200/BoltDB/issues/3#issuecomment-5520004674
 
 ### 1c-残留. 复制读争用残留的完整修复（架构级——2026-09-03 调查链收口）
 
