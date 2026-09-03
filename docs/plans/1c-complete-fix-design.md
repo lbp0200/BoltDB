@@ -268,3 +268,7 @@
 自愈 CONTINUE（无降级 → 丢失链断）；④ 从侧重放按 ts 确认——重续边界由引擎保证；
 ⑤ FULLRESYNC = 引擎快照（badger backup at ts——若 badger managed 下可生成一致快照）+
 排水 [ts, now)。验证协议沿用 §7（dw A/B 门槛 ≤1/15）。
+>
+> **A4 已立项（2026-09-03）**——分阶段实施计划、范围、风险与回滚见
+> [a4-engine-seq-replication.md](a4-engine-seq-replication.md)（S0 引擎研究 → S1 双轨记账
+> → S2 复制切换 → S3 快照全量——每阶段独立开关可回滚）。
