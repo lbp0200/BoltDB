@@ -12,6 +12,8 @@ func (s *BotreonStore) Del(key string) (int64, error) {
 	if err := s.checkErrorInjector("Del"); err != nil {
 		return 0, err
 	}
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	typeKey := TypeOfKeyGet(key)
 	var deleted int64
 	var delKeyType string
@@ -123,6 +125,8 @@ func (s *BotreonStore) Del(key string) (int64, error) {
 // DelString 删除字符串键
 func (s *BotreonStore) DelString(key string) error {
 	logFuncTag := "BotreonStoreDelString"
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	bKey := []byte(key)
 	badgerTypeKey := TypeOfKeyGet(key)
 	badgerValueKey := s.stringKey(string(bKey))
