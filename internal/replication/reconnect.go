@@ -71,13 +71,16 @@ type SlaveReconnector struct {
 	config     ReconnectConfig
 	masterAddr string
 
-	state          atomic.Int32
-	stopCh         chan struct{}
-	closeOnce      sync.Once
-	wg             sync.WaitGroup
-	conn           atomic.Pointer[MasterConnection]
-	lastReplId     string
-	lastOffset     atomic.Int64
+	state      atomic.Int32
+	stopCh     chan struct{}
+	closeOnce  sync.Once
+	wg         sync.WaitGroup
+	conn       atomic.Pointer[MasterConnection]
+	lastReplId string
+	lastOffset atomic.Int64
+	// lastAppliedTS: 已应用 feed 条目（REPLLOG）的直接主侧 ts 水位——S2 feed 协议
+	// 相位（a4 §10 附7）——ACK-ts（applied 语义）与 PSYNC (replId, ts) 的数据源。
+	lastAppliedTS  atomic.Uint64
 	connectedSince time.Time
 
 	reconnectCount atomic.Int64
@@ -465,6 +468,42 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 
 		// 处理 SELECT — 忽略数据库选择，不推进 offset（master 不追踪 SELECT）
 		if cmd == "SELECT" {
+			continue
+		}
+
+		// 处理 REPLLOG — S2 log-key 增量流条目（a4 §10 附7 feed 传输设计——协议相位）：
+		// wire 形态 REPLLOG <ts> <cmd> <arg>...——拆出 ts + 全命令 → apply →
+		// lastAppliedTS 推进（字节 lastOffset 同步推进——backlog 影子双轨对齐）。
+		if cmd == feedEntryCommand {
+			ts, feedCmd, err := feedEntryParse(req.Args)
+			if err != nil {
+				return fmt.Errorf("invalid %s feed entry: %w", feedEntryCommand, err)
+			}
+			sr.lastDataTime.Store(time.Now().UnixNano())
+			cmdBytes := serializeCommand(req.Args)
+			feedCmdBytes := make([][]byte, len(feedCmd))
+			for i, c := range feedCmd {
+				feedCmdBytes[i] = []byte(c)
+			}
+			if err := executeReplicatedCommand(sr.store, feedCmdBytes, replCtx); err != nil {
+				currentOffset := sr.lastOffset.Load()
+				if isTransientReplicationError(err, feedCmd[0], currentOffset) {
+					sr.rm.applySkipCount.Add(1)
+					logger.Logger.Warn().Err(err).
+						Str("cmd", feedCmd[0]).
+						Uint64("ts", ts).
+						Msg("feed 命令暂时失败，跳过（已推进 offset 保持字节级对齐）")
+					sr.lastOffset.Add(int64(len(cmdBytes)))
+					continue
+				}
+				logger.Logger.Error().Err(err).
+					Str("cmd", feedCmd[0]).
+					Uint64("ts", ts).
+					Msg("执行 feed 命令失败，重新同步")
+				return fmt.Errorf("execute feed command failed: %w", err)
+			}
+			sr.lastAppliedTS.Store(ts)
+			sr.lastOffset.Add(int64(len(cmdBytes)))
 			continue
 		}
 
