@@ -474,3 +474,28 @@ D 写路径开销未可观测**。
 并发无倒挂）+ ts 重放守卫（日志键回放 == 字节 backlog 回放事件级等价）+ dw A/B ≤1/15
 （§7 协议）+ 兼容三套 + RESP 形状。回滚 = 配置化开关切回字节记账（双轨影子已就位——
 无数据迁移）。风险最高项 = 复制语义改变面（兼容套件全覆盖）+ 双轨一致性（换算表核验）。
+
+### 分级-2 落点深化（2026-09-04——代码级映射——D2/D3 具体改造面）
+
+- **PSYNC 侧（psync.go HandlePSync + reconnect.go sendPSYNC）**——现 (replId, 字节
+  offset) 三决策点：① CONTINUE 范围 = offset ∈ [backlogStart, currentOffset]（含空
+  backlog 重启特例）→ ts 化 = ts ∈ [logStartTS, currentTS]（REPLLOG_ 前缀扫描键界——
+  空 = 无日志键，特例自然消解）；② StartsAtCommandBoundary(offset) 字节边界校验（防
+  K:HASH:47 类误帧降级 FULLRESYNC）→ ts 化退役（每 ts 即命令边界——整数比较）；
+  ③ FULLRESYNC 应答 Offset = currentOffset → currentTS。slave 侧 resume = lastOffset
+  （sendPSYNC 发送）→ lastAppliedTS（CONTIUE 后维持 + 落盘持久化）。
+- **ACK 侧（reconnect.go——一字节水三用途）**：① GETACK 应答 = slave lastOffset（防
+  主超时 keepalive）→ 语义与 ts 无关（保留字节或改 lastAppliedTS 均可——推荐后者统
+  一）；② masterWater = 主侧 ACK 回复通告（backlog 水位）→ 主侧 currentTS；③ 停滞判据
+  = masterWater > slaveOffset 且 idle > stall（armed/收敛窗 + drainStall 双阈值——
+  §1c 相关）→ masterTS > slaveTS + 同 idle 判据（判据单位换 ts——语义不变——B2 排水
+  判据自然覆盖）。字段拆：masterWater 三用途共字段——ts 化需按语义分流（keepalive
+  可字节可 ts——判据水位必须 ts）。
+- **排水判据（主侧——B2）**：字节 masterWater 推进 → min(全从侧确认 ts) 推进（D5 保留
+  水位同源——附 6 观察 2）。
+- **换算表（过渡期双轨核验）**：offset↔ts 双向映射 = 每 backlog 条目起始字节偏移 ↔ 其
+  命令日志键 ts（backlog 条目与日志键值同 RESP 格式——解析对齐即可建表）——守卫重写
+  （4 守卫 + ts 单调/重放）以表核验双轨一致（分级-3 backlog 退役前的验证锚）。
+- **顺序建议**：先 ACK 判据 ts 化（从侧自算 lastAppliedTS——主侧 ACK 回复带 currentTS
+  ——换算表核验双轨）→ 后 PSYNC (replId, ts)（slave 需 lastAppliedTS 持久化）→ 排水
+  判据 ts 推进 → 分级-3 backlog 退役。
