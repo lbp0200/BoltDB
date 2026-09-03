@@ -156,19 +156,26 @@ type RetryMetrics struct {
 	L0Delayed     int64
 	Conflicts     int64
 	LastL0Score   float64
+	// 慢写分桶（阶段 0 观测）：单次 db.Update 尝试 >10ms/50ms/100ms 的次数。
+	SlowWrite10ms  int64
+	SlowWrite50ms  int64
+	SlowWrite100ms int64
 }
 
 func (s *BotreonStore) GetRetryMetrics() RetryMetrics {
 	s.retryMu.Lock()
 	defer s.retryMu.Unlock()
 	return RetryMetrics{
-		ActiveRetries: s.retryMetrics.activeRetries,
-		TotalRetries:  s.retryMetrics.totalRetries,
-		WritesBlocked: s.retryMetrics.writesBlocked,
-		L0Rejected:    s.retryMetrics.l0Rejected,
-		L0Delayed:     s.retryMetrics.l0Delayed,
-		Conflicts:     s.retryMetrics.conflicts,
-		LastL0Score:   s.l0ScoreCached(),
+		ActiveRetries:  s.retryMetrics.activeRetries,
+		TotalRetries:   s.retryMetrics.totalRetries,
+		WritesBlocked:  s.retryMetrics.writesBlocked,
+		L0Rejected:     s.retryMetrics.l0Rejected,
+		L0Delayed:      s.retryMetrics.l0Delayed,
+		Conflicts:      s.retryMetrics.conflicts,
+		LastL0Score:    s.l0ScoreCached(),
+		SlowWrite10ms:  s.retryMetrics.slowWrite10ms,
+		SlowWrite50ms:  s.retryMetrics.slowWrite50ms,
+		SlowWrite100ms: s.retryMetrics.slowWrite100ms,
 	}
 }
 

@@ -121,6 +121,11 @@ type BotreonStore struct {
 		l0Rejected    int64
 		l0Delayed     int64
 		conflicts     int64
+		// 慢写分桶（阶段 0 观测——1c-complete-fix-design.md §6）：单次 db.Update
+		// 尝试的延迟分桶。仅慢路径（>10ms）在 retryMu 下自增——快速路径零锁开销。
+		slowWrite10ms  int64 // 10-50ms
+		slowWrite50ms  int64 // 50-100ms
+		slowWrite100ms int64 // >100ms
 	}
 
 	// 错误注入（仅测试用，nil = 禁用）

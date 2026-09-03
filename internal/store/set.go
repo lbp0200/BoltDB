@@ -55,7 +55,9 @@ func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int) e
 
 	var err error
 	for i := 0; i < maxRetries; i++ {
+		attemptStart := time.Now()
 		err = s.db.Update(fn)
+		s.recordUpdateLatency(time.Since(attemptStart))
 		if err == nil {
 			s.retryMu.Lock()
 			s.retryMetrics.activeRetries--
@@ -97,6 +99,24 @@ func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int) e
 	s.retryMetrics.activeRetries--
 	s.retryMu.Unlock()
 	return fmt.Errorf("max retries exhausted (%d): %w", maxRetries, err)
+}
+
+// recordUpdateLatency 记录单次 db.Update 尝试的慢写分桶（阶段 0 观测——零开销设计：
+// 快速路径（≤10ms）仅一次时间差比较即返回，无锁；仅慢写（>10ms）在 retryMu 下自增，
+// 避免给写路径（C5：对任何额外扰动极度敏感——1c-complete-fix-design.md §2）增加常规锁开销）。
+func (s *BotreonStore) recordUpdateLatency(d time.Duration) {
+	if d <= 10*time.Millisecond {
+		return
+	}
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	if d > 100*time.Millisecond {
+		s.retryMetrics.slowWrite100ms++
+	} else if d > 50*time.Millisecond {
+		s.retryMetrics.slowWrite50ms++
+	} else {
+		s.retryMetrics.slowWrite10ms++
+	}
 }
 
 // setKey 方法用于生成存储在 Badger 数据库中的键

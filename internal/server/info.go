@@ -137,6 +137,18 @@ func (h *Handler) buildInfoResponse(section string) string {
 		builder.WriteString("keyspace_misses:" + strconv.FormatInt(atomic.LoadInt64(&h.keyspaceMisses), 10) + "\n")
 		builder.WriteString("expired_keys:" + strconv.FormatInt(atomic.LoadInt64(&h.expiredKeys), 10) + "\n")
 		builder.WriteString("evicted_keys:" + strconv.FormatInt(atomic.LoadInt64(&h.evictedKeys), 10) + "\n")
+		if h.Db != nil {
+			// 写路径健康（阶段 0 观测——1c-complete-fix-design.md §6）：store
+			// 写路径的冲突/背压/慢写计数（GetRetryMetrics——零开销计数器）。
+			rm := h.Db.GetRetryMetrics()
+			builder.WriteString("store_write_conflicts:" + strconv.FormatInt(rm.Conflicts, 10) + "\n")
+			builder.WriteString("store_write_l0_rejected:" + strconv.FormatInt(rm.L0Rejected, 10) + "\n")
+			builder.WriteString("store_write_l0_delayed:" + strconv.FormatInt(rm.L0Delayed, 10) + "\n")
+			builder.WriteString("store_write_blocked:" + strconv.FormatInt(rm.WritesBlocked, 10) + "\n")
+			builder.WriteString("store_write_slow_10ms:" + strconv.FormatInt(rm.SlowWrite10ms, 10) + "\n")
+			builder.WriteString("store_write_slow_50ms:" + strconv.FormatInt(rm.SlowWrite50ms, 10) + "\n")
+			builder.WriteString("store_write_slow_100ms:" + strconv.FormatInt(rm.SlowWrite100ms, 10) + "\n")
+		}
 		builder.WriteString("\n")
 	}
 
