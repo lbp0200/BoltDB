@@ -206,3 +206,36 @@
 - **有效读隔离的唯一形态 = 架构级解耦（A4：badger managed mode / 独立读 oracle——C1
   约束下深改）——已列为远期架构项**。A1b **否决——不入阶段 1 实施队列**；阶段 1 残留
   候选仅 B2（需阶段 0 数据——判别"慢推进 vs 执行阻塞"后定判据）。
+
+## 11. kvrocks（成熟引擎级复制）架构对照——A4/层 D 的目标参考（2026-09-03）
+
+> 研读对象：`kvrocks/`（工作目录内 apache/kvrocks 完整克隆，HEAD `5e79e708`——C++/
+> RocksDB——326 源文件）。为何研读：BoltDB §1c 残留的快速修复空间已穷尽——对照成熟
+> 引擎级 Redis 兼容实现，为 A4（引擎级改造）与层 D（发散定位）提供目标架构。
+
+**kvrocks 复制架构三要点**（`src/cluster/replication.h/cc` + `src/storage/storage.h`）：
+
+1. **引擎级复制（非命令字节流）**：主侧 `FeedSlaveThread` 从 `next_repl_seq` 流式推送
+   RocksDB **WAL 写批**（引擎级 Put/Delete——与 redis 命令解耦）；从侧 `ReplicationThread`
+   状态机（auth→PSYNC→全量→增量批循环→ACK seq）重放引擎批。
+2. **offset = RocksDB 序列号**（`batch.sequence + Count()` 推进——离散整数）——从侧 ACK
+   已应用 seq、`WAIT` 按 seq 唤醒。**无字节长度记账——"offset 落命令中间"的结构性发散
+   在数学上不可能**（对照 BoltDB §1c 悖论——backlog 字节 + lastOffset 字节计数）。
+3. **全量同步 = RocksDB checkpoint**（meta + SST 文件传输——checkpoint 含 `latest_seq`——
+   从侧 ingest SST + 自该 seq 起增量）——**一致性由引擎 checkpoint 保证——无需应用层
+   锁绑定快照视图与 offset**（对照 BoltDB 的 snapshotMu 绑定 + FULLRESYNC 边界）。存储层
+   快照读（seqno）与 WAL/memtable 写并发——无 badger 式共享 oracle 互斥。
+
+**对 BoltDB §1c 路线的启示**：
+
+| 路线图项 | 启示 |
+|---------|------|
+| 层 D 发散悖论 | **架构级答案**：把复制记账从"命令字节长度"迁移到"引擎写序列"——发散类问题消失（kvrocks 证明该模型大规模可行） |
+| 误判→降级→丢失链 | 引擎序列记账下边界检查平凡化（整数比较恒真）——**误判重连退化为自愈 CONTINUE——不再降级 FULLRESYNC#2——丢失链断开**（误判可留——丢失才是 bug） |
+| A2 批量应用 | 复制单位天然 = 写批（多命令一个批 = 一个确认单位） |
+| A4 读隔离/引擎改造 | ① 快照读不阻塞写为成熟引擎标配（换/升级引擎优先考察序列分配机制）；② checkpoint 全量可免应用层锁绑定 |
+| 恢复路径（层 C） | 从侧按写批/seq 应用确认——重续边界由引擎保证——无"半条命令"语义 |
+
+**落地判定**：BoltDB 的对应改造 = 复制记账引擎序列化（触及复制核心 + 存储层接口）——
+架构级、非 quick fix——作为 A4 方向的具体目标入册；可行性探针（badger 是否能提供与
+写事务原子绑定的单调序列）为下一步的验证起点（见 §12 修复方案）。
