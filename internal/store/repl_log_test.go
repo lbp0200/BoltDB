@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/binary"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/dgraph-io/badger/v4"
@@ -137,5 +138,41 @@ func TestReplLogSuccessOnly(t *testing.T) {
 	}
 	if got := len(replLogEntries(t, s)); got != before+1 {
 		t.Fatalf("successful SET did not write exactly one log entry: before %d after %d", before, got)
+	}
+}
+
+// TestReplLogTSMonotonicUnderConcurrentWrites 并发写压下日志键 ts 单调实证（ts 单调
+// 守卫种子——a4 §10 附7 验证门槛）：多 goroutine 并发 SET（不同键——per-key 锁无串行
+// 化）——ts 源串行分配（提交序即 ts 序）不得倒挂——日志键 ts 严格升序 + 无重复。
+// 以 -race 运行同时验证 ts 分配路径无共享竞态。
+func TestReplLogTSMonotonicUnderConcurrentWrites(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	const workers = 8
+	const perWorker = 25
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < perWorker; i++ {
+				k := fmt.Sprintf("conc:%d:%d", w, i)
+				if err := s.Set(k, "v"); err != nil {
+					t.Errorf("concurrent SET %s: %v", k, err)
+					return
+				}
+			}
+		}(w)
+	}
+	wg.Wait()
+
+	entries := replLogEntries(t, s)
+	if len(entries) != workers*perWorker {
+		t.Fatalf("log entries = %d, want %d", len(entries), workers*perWorker)
+	}
+	for i := 1; i < len(entries); i++ {
+		if entries[i][0] <= entries[i-1][0] {
+			t.Fatalf("log ts not strictly ascending at %d: %d <= %d (ordering violated under concurrency)", i, entries[i][0], entries[i-1][0])
+		}
 	}
 }
