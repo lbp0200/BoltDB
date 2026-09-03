@@ -524,3 +524,18 @@ D 写路径开销未可观测**。
   流）——实际首步 = **commit-ts 回传打通**（store 提交 ts → PropagateCommand → backlog
   条目 ts）——ACK 判据 ts 化随其后（从侧以条目 ts 更新 lastAppliedTS——主侧 ACK 回复
   带 currentTS）。
+
+### 回传代码面勘察（2026-09-04——commit-ts 回传的可行面修正）
+
+- **现状**：commitTS（ts_source.go:101）与 retryUpdate（set.go:23）均 **error-only 返回**
+  （ts 无逃逸通道）——store 写方法多返回（error/int64/string）但均无 ts；821/346
+  PropagateCommand 调用点仅传命令参数（ts 到达需经执行链携带）。
+- **回传可行面（修正"两调用点"乐观低估）**：ts 到达 821 需执行链携带——store 方法
+  （~99 retryUpdate 点签名加 ts 返回）+ handler 层（277 dispatch 的处理器签名）——
+  量级 ≈ ctx 流穿（数千签名）——非小步；共享捕获（单字段/最近 log 键查）均竞态
+  （cf21964 实证——A-commit-6→B-commit-7→A-propagate 读 7）。
+- **推荐修正（分级 2/3 重排）**：ACK/PSYNC ts 语义改走 **分级-3 log-key 增量流**（键 ts
+  天然携带——**零回传**）——分级-2 并入分级-3（log-key 增量流先行 = 含 ACK/PSYNC ts
+  语义 + 从侧 lastAppliedTS 跟踪——backlog 影子同流并行 + 换算表验证——后退役）。
+  回传仅在 backlog 影子需**内联条目 ts**（(offset, ts, cmd)）时才必要——且换算表可用
+  探针式事件对齐（log-key ↔ backlog 条目）构建——回传或可全免（实施时复核）。
