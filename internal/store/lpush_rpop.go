@@ -59,7 +59,7 @@ func (s *BotreonStore) LPush(key string, values ...string) (int, error) {
 		}
 		finalLength = length
 		return s.listUpdateMeta(txn, key, length, start, end)
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("LPUSH"), []byte(key)))
 
 	s.notifyBlockingPop(key, values[0])
 
@@ -117,7 +117,7 @@ func (s *BotreonStore) RPush(key string, values ...string) (int, error) {
 		}
 		finalLength = length
 		return s.listUpdateMeta(txn, key, length, start, end)
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("RPUSH"), []byte(key)))
 
 	s.notifyBlockingPop(key, values[0])
 
@@ -190,7 +190,7 @@ func (s *BotreonStore) RPop(key string) (string, error) {
 		}
 
 		return s.listUpdateMeta(txn, key, length-1, start, newEnd)
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("RPOP"), []byte(key)))
 	return value, err
 }
 
@@ -260,7 +260,7 @@ func (s *BotreonStore) LPop(key string) (string, error) {
 		}
 
 		return s.listUpdateMeta(txn, key, length-1, newStart, end)
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("LPOP"), []byte(key)))
 	return value, err
 }
 
@@ -278,7 +278,7 @@ func (s *BotreonStore) LPUSHX(key string, values ...string) (int, error) {
 		}
 		finalLength = length
 		return nil
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("LPUSHX"), []byte(key)))
 	if err == nil && finalLength > 0 && len(values) > 0 {
 		s.notifyBlockingPop(key, values[0])
 	}
@@ -299,7 +299,7 @@ func (s *BotreonStore) RPUSHX(key string, values ...string) (int, error) {
 		}
 		finalLength = length
 		return nil
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("RPUSHX"), []byte(key)))
 	if err == nil && finalLength > 0 && len(values) > 0 {
 		s.notifyBlockingPop(key, values[len(values)-1])
 	}
@@ -323,7 +323,7 @@ func (s *BotreonStore) RPopLPush(source, destination string) (string, error) {
 		}
 		value = popped
 		return s.listPushInTxn(txn, destination, value, true)
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("RPOPLPUSH"), []byte(source), []byte(destination)))
 	return value, err
 }
 
@@ -425,7 +425,7 @@ func (s *BotreonStore) LMPop(keys []string, modifier string, count int) (string,
 			}
 
 			return s.listUpdateMeta(txn, key, currentLength, currentStart, currentEnd)
-		}, 30)
+		}, 30, encodePropagateCommand([]byte("LMPOP"), []byte(key)))
 		s.keyLockMgr.Unlock(key)
 		if err != nil {
 			return "", nil, err
