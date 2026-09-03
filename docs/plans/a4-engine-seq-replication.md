@@ -143,6 +143,36 @@ FULLRESYNC#2 → 数据丢失。30s 阈值（`63b5c8c`）为已知最佳部分�
     确定性有序——**不同 key 的并发写也串行**——吞吐形态变化（需压测确认可接受）。
   - **C. S1 暂不切引擎**：非 managed 下用户态 ts 源 + 并行记录（双轨——字节记账 + 冲突
     检测原样保留——复制零影响）——引擎 ts 切换推迟（managed 并发控制另行设计）。
-- **建议**：C 先行（S1 的"ts 源 + 并行记录"目标达成且零正确性风险——为 S2 铺数据），
-  managed 切换的并发控制作为独立子课题（A/B 选型后再动引擎）。
+
+**用户裁决（2026-09-03）：选 A——应用层 key 锁先行（kvrocks 式）**。kvrocks 对照查证
+（`src/common/lock_manager.h`）确认：kvrocks 从不依赖引擎冲突检测——RocksDB 默认盲写——
+读-改-写命令在**应用层按 key 加锁**（哈希分片互斥锁池 `LockManager` + RAII `LockGuard` +
+多 key 排序取锁防死锁）——引擎层无需关心并发。BoltDB 切 managed 前须补付同样的账。
+C（暂不切引擎）降为后备（若 A 实施中发现不可绕障碍）。详见 §10 S1-A 设计。
+
+## 10. S1-A 设计：应用层 key 锁层（kvrocks 式——managed 切换前置）
+
+**目标**：切 OpenManaged 前，为读-改-写（RMW）命令提供应用层互斥——managed 模式禁用
+badger 冲突检测后，RMW 命令不丢更新（§9 阻断的解除）。
+
+**参考**：kvrocks `LockManager`（src/common/lock_manager.h——实证）——哈希分片互斥锁池
+（2^N 把锁）+ RAII `LockGuard` + 多 key `MultiGet` **排序取锁防死锁**（同 key 不去重不
+重复锁——不同顺序的获取者按哈希序排队）——引擎层盲写、并发全在应用层。
+
+**BoltDB 适配设计**：
+1. **Store 级 KeyLockManager**（Go）：`sync.Mutex` 分片池（N=2^8？——可配置）——按 key
+   哈希取锁——`Lock(keys...)`/`Unlock`——排序获取（防死锁——同 kvrocks）。
+2. **锁覆盖范围 = RMW 命令的读写 key 集**：仅"写值依赖读值"的命令需锁（INCR/DECR/INCRBY
+   族、GETSET/GETDEL、APPEND、SETRANGE、LPUSH/RPOP 等 list 族、SADD 依赖成员集的去重
+   语义、ZADD/ZINCRBY、HSET 的 hash、流/XADD、LINSERT...——实施时按分类枚举定稿）；
+   **盲写命令（SET 类——写值与读无关）不需要锁**——并发 last-wins 即正确 Redis 语义。
+3. **集成点**：RMW 命令在 `retryUpdate` 调用前取 key 锁、提交后释放（命令层显式取锁——
+   retryUpdate 保持透明）——过渡期与 badger 乐观重试**双保险并存**（字节记账不动——
+   现有测试全绿 = 无行为回归的证明）。
+4. **阶段切分**：S1-A1 锁层落地（零行为变化——纯并发控制补充——store 全绿验证）→
+   S1-A2 切 OpenManaged + ts 源（§8 坏点 #2 约束：临界区串行分配）+ 写路径 CommitAt 化
+   （key 锁接管 RMW 并发——冲突检测退役）→ S1-A3 读路径核对（View 假定读 ts——121 处
+   不动——P2 实证）→ 验证（§6 协议 + 慢写遥测对照）。
+5. **回滚**：S1-A1 独立提交（纯增量——可随时撤）；S1-A2 前保留 git 基线（回字节记账 =
+   撤 OpenManaged 单点）。
 
