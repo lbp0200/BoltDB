@@ -204,3 +204,23 @@ FLUSHDB 全库清与写并发的互斥为独立问题（需全库写锁——不
 **实现落点**：清单驱动锁注册表（命令名 → key 参数位映射——server 分发层按命令元数据
 取锁——避免逐个命令方法埋锁——见 §10 设计点 3 的修订）。
 
+### §10 附 2：既有锁层审计（2026-09-03——§10 设计假设的纠正）
+
+**重大发现**：store **已有** `KeyLockManager`（`keylock.go`——`sync.RWMutex` 256 分片池——
+`NewKeyLockManager(256)` + `keyLockMgr` 字段 define.go:85——"Key-level locking for atomic
+operations"）——**非绿地**。§10 的绿地假设错误——设计改为**既有层审计 + 补差**。
+
+**既有覆盖（6 文件——36 处引用）**：string.go（INCR 族/INCRBYFLOAT/APPEND/GETSET...）、
+hash.go、linsert.go/list_types.go/lpush_rpop.go/ltrim.go（list 族 RMW）——模式 =
+方法级 `s.keyLockMgr.Lock(key)` + `defer Unlock` 包住 retryUpdate。
+
+**覆盖 gap（审计确认——A/B 清单命令在以下文件均无锁）**：set.go（SADD/SREM/SPOP/SMOVE/
+*STORE）、zadd_zrem.go/zrange.go/zinter_store.go（ZADD/ZINCRBY/ZREM/ZPOP*/Z*STORE）、
+rename.go（RENAME/RENAMENX）、del.go（DEL/EXPIRE/PERSIST 族）、hyperloglog.go
+（PFADD/PFMERGE）、xtrim.go + stream（XADD/XDEL/XTRIM/XCLAIM/XACK/XGROUP*）、geo/TS/JSON
+ 变体、BITFIELD/SETBIT、MSETNX——（按 §10 附清单 A+B 全量补差）。
+
+**修订后的 S1-A1 路线**：① 补差实施 = 按既有模式给 gap 命令方法加锁（方法级 wrap——
+逐方法编辑——~10+ 文件）→ ② store 全包绿（零行为回归证明）→ ③ S1-A2 切引擎（key 锁
+接管并发——冲突检测退役——§8 坏点 #4 解除验证：并发 INCR 原子性新测试）。
+
