@@ -181,6 +181,8 @@ func (s *BotreonStore) JSONGet(key string, paths ...string) ([]string, error) {
 // JSONDel implements JSON.DEL command
 // JSON.DEL key [path ...]
 func (s *BotreonStore) JSONDel(key string, paths ...string) (int64, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	// Default to root path (delete entire key)
 	if len(paths) == 0 {
 		paths = []string{"$"}

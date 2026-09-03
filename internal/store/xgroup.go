@@ -138,6 +138,8 @@ func (s *BotreonStore) XGroupDelConsumer(key, group, consumer string) (int64, er
 
 // XGroupDestroy destroys a consumer group
 func (s *BotreonStore) XGroupDestroy(key, group string) error {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		groupKey := streamGroupDataKey(key, group)
 		return txn.Delete(groupKey)

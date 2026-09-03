@@ -905,6 +905,8 @@ func (s *BotreonStore) GeoRemove(key string, members ...string) (int64, error) {
 	if len(members) == 0 {
 		return 0, nil
 	}
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	var removed int64
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		removed = 0 // reset each attempt; stale value must not survive conflict retry
