@@ -26,7 +26,7 @@ func (s *BotreonStore) ZUnionStore(destination string, keys []string, weights []
 		count = int64(len(memberScores))
 		notify = count > 0
 		return nil
-	}, 20)
+	}, 20, encodePropagateCommand([]byte("ZUNIONSTORE"), []byte(destination)))
 	if err == nil && notify {
 		s.notifyBlockingZPop(destination)
 	}
@@ -56,7 +56,7 @@ func (s *BotreonStore) ZInterStore(destination string, keys []string, weights []
 		count = int64(len(memberScores))
 		notify = count > 0
 		return nil
-	}, 20)
+	}, 20, encodePropagateCommand([]byte("ZINTERSTORE"), []byte(destination)))
 	if err == nil && notify {
 		s.notifyBlockingZPop(destination)
 	}
@@ -86,7 +86,7 @@ func (s *BotreonStore) ZDiffStore(destination string, keys []string) (int64, err
 		count = int64(len(members))
 		notify = count > 0
 		return nil
-	}, 20)
+	}, 20, encodePropagateCommand([]byte("ZDIFFSTORE"), []byte(destination)))
 	if err == nil && notify {
 		s.notifyBlockingZPop(destination)
 	}

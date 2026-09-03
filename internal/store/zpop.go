@@ -35,7 +35,7 @@ func (s *BotreonStore) ZPopMax(zSetName string, count int) ([]ZSetMember, error)
 			}
 		}
 		return nil
-	}, 20)
+	}, 20, encodePropagateCommand([]byte("ZPOPMAX"), []byte(zSetName)))
 	s.markZSetDirty(zSetName)
 	return results, err
 }
@@ -68,7 +68,7 @@ func (s *BotreonStore) ZPopMin(zSetName string, count int) ([]ZSetMember, error)
 			}
 		}
 		return nil
-	}, 20)
+	}, 20, encodePropagateCommand([]byte("ZPOPMIN"), []byte(zSetName)))
 	s.markZSetDirty(zSetName)
 	return results, err
 }

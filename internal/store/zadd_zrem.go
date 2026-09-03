@@ -23,7 +23,7 @@ func (s *BotreonStore) ZAdd(zSetName string, members []ZSetMember) error {
 		var err error
 		addedNewMember, err = zAddMembersInTxn(txn, zSetName, members)
 		return err
-	}, 20)
+	}, 20, encodePropagateCommand([]byte("ZADD"), []byte(zSetName)))
 	if err == nil && addedNewMember {
 		s.notifyBlockingZPop(zSetName)
 	}
@@ -63,7 +63,7 @@ func (s *BotreonStore) ZAddWithOptions(zSetName string, opts ZAddOptions, member
 		var err error
 		changed, addedNewMember, err = zAddMembersInTxnOpts(txn, zSetName, opts, members)
 		return err
-	}, 20)
+	}, 20, encodePropagateCommand([]byte("ZADD"), []byte(zSetName)))
 	if err == nil && addedNewMember {
 		s.notifyBlockingZPop(zSetName)
 	}
@@ -381,7 +381,7 @@ func (s *BotreonStore) ZSetDel(zSetName string) error {
 	defer s.keyLockMgr.Unlock(zSetName)
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		return zSetDelInTxn(txn, zSetName)
-	}, 20)
+	}, 20, encodePropagateCommand([]byte("DEL"), []byte(zSetName)))
 }
 
 // ZRem 删除成员
@@ -397,7 +397,7 @@ func (s *BotreonStore) ZRem(zSetName, member string) (int64, error) {
 		}
 		deleted = n
 		return nil
-	}, 20)
+	}, 20, encodePropagateCommand([]byte("ZREM"), []byte(zSetName)))
 	if err != nil {
 		return 0, err
 	}
@@ -509,7 +509,7 @@ func (s *BotreonStore) ZRemRangeByRank(zSetName string, start, stop int64) (int6
 			removed += n
 		}
 		return nil
-	}, 20)
+	}, 20, encodePropagateCommand([]byte("ZREMRANGEBYRANK"), []byte(zSetName)))
 	s.markZSetDirty(zSetName)
 	return removed, err
 }
@@ -533,7 +533,7 @@ func (s *BotreonStore) ZRemRangeByScore(zSetName string, minScore, maxScore floa
 			removed += n
 		}
 		return nil
-	}, 20)
+	}, 20, encodePropagateCommand([]byte("ZREMRANGEBYSCORE"), []byte(zSetName)))
 	s.markZSetDirty(zSetName)
 	return removed, err
 }
