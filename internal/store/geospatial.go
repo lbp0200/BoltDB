@@ -674,6 +674,8 @@ func (s *BotreonStore) GeoSearchBox(key string, centerLon, centerLat, width, hei
 // shape selects the search geometry: "RADIUS" (circle) or "BOX" (BYBOX, where
 // radius carries the box width and boxHeight carries the box height).
 func (s *BotreonStore) GeoSearchStore(dstKey, srcKey string, centerLon, centerLat float64, radius float64, unit string, count int, storeDist bool, shape string, boxHeight float64) (int64, error) {
+	unlock := s.keyLockMgr.LockMulti([]string{dstKey, srcKey})
+	defer unlock()
 	radiusM := convertGeoRadiusToMeters(radius, unit)
 	var added int64
 	var addedNewMember bool

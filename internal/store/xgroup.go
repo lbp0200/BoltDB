@@ -10,6 +10,8 @@ import (
 
 // XGroupCreate creates a consumer group
 func (s *BotreonStore) XGroupCreate(key, group, startID string) error {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		metaKey := streamKey(key)
 		typeKey := TypeOfKeyGet(key)
@@ -57,6 +59,8 @@ func (s *BotreonStore) XGroupCreate(key, group, startID string) error {
 // XGroupCreateConsumer explicitly creates a consumer in a group.
 // Redis XGROUP CREATECONSUMER 语义：返回 1 = 消费者新建，0 = 已存在。
 func (s *BotreonStore) XGroupCreateConsumer(key, group, consumer string) (int64, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	var created int64
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		created = 0
@@ -98,6 +102,8 @@ func (s *BotreonStore) XGroupCreateConsumer(key, group, consumer string) (int64,
 
 // XGroupDelConsumer removes a consumer from a group
 func (s *BotreonStore) XGroupDelConsumer(key, group, consumer string) (int64, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	var removed int64
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		removed = 0
@@ -148,6 +154,8 @@ func (s *BotreonStore) XGroupDestroy(key, group string) error {
 
 // XGroupSetID sets the last delivered ID for a group
 func (s *BotreonStore) XGroupSetID(key, group, id string) error {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		groupKey := streamGroupDataKey(key, group)
 		item, err := txn.Get(groupKey)
@@ -177,6 +185,8 @@ func (s *BotreonStore) XGroupSetID(key, group, id string) error {
 // XGroupRestore restores a full consumer group (including consumers + PEL)
 // for RDB FULLRESYNC. Overwrites any existing group with the same name.
 func (s *BotreonStore) XGroupRestore(key string, group *StreamGroup) error {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	if group == nil || group.Name == "" {
 		return nil
 	}

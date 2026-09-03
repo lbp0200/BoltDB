@@ -302,6 +302,8 @@ func (s *BotreonStore) JSONMGet(path string, keys ...string) ([]string, error) {
 // JSONArrAppend implements JSON.ARRAPPEND command
 // JSON.ARRAPPEND key path value [value ...]
 func (s *BotreonStore) JSONArrAppend(key, path string, values ...string) (int64, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	if path != "$" && path != "." {
 		return 0, errors.New("ERR path must be '$' or '.'")
 	}
@@ -470,6 +472,8 @@ func (s *BotreonStore) JSONObjKeys(key, path string) ([]string, error) {
 // JSONNumIncrBy implements JSON.NUMINCRBY command
 // JSON.NUMINCRBY key path increment
 func (s *BotreonStore) JSONNumIncrBy(key, path string, increment float64) (float64, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	if path != "$" && path != "." {
 		return 0, errors.New("ERR path must be '$' or '.'")
 	}
@@ -539,6 +543,8 @@ func (s *BotreonStore) JSONNumIncrBy(key, path string, increment float64) (float
 // JSONNumMultBy implements JSON.NUMMULTBY command
 // JSON.NUMMULTBY key path multiplier
 func (s *BotreonStore) JSONNumMultBy(key, path string, multiplier float64) (float64, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	if path != "$" && path != "." {
 		return 0, errors.New("ERR path must be '$' or '.'")
 	}
@@ -608,6 +614,8 @@ func (s *BotreonStore) JSONNumMultBy(key, path string, multiplier float64) (floa
 // JSONClear implements JSON.CLEAR command
 // JSON.CLEAR key [path]
 func (s *BotreonStore) JSONClear(key, path string) (int64, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	if path == "" {
 		path = "$"
 	}

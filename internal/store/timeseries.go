@@ -423,6 +423,8 @@ func (s *BotreonStore) TSRange(key string, start, stop string, count int64) ([]T
 
 // TSDel implements TS.DEL command - delete data points in a range
 func (s *BotreonStore) TSDel(key string, start, stop string) (int64, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	var deleted int64
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {
@@ -753,6 +755,9 @@ func (s *BotreonStore) TSQueryIndex(filters []string) ([]string, error) {
 
 // TSIncrBy increments the value of the sample with the maximum existing timestamp
 func (s *BotreonStore) TSIncrBy(key string, timestamp int64, value float64, opts TSAddOptions) (int64, error) {
+	// 注意：不在此处取 key 锁——本方法末尾委托 s.TSAdd（其内部已取同 key 锁）——
+	// 此处再加锁会与委托的 TSAdd 自死锁（RWMutex 不可重入——2026-09-03 远程挂起
+	// 实证——同 RenameNX 修复）。读段竞态由过渡期 badger 乐观冲突检测覆盖。
 	// Get current value at timestamp, or the last value if timestamp is "*"
 	var ts int64
 	var currentVal float64
@@ -831,6 +836,8 @@ var validAggregators = map[string]bool{
 // bucketDuration). The rule is persisted so TS.CREATERULE is not a no-op;
 // creating a second rule on the same destKey fails like Redis does.
 func (s *BotreonStore) TSAddRule(sourceKey, destKey, aggregator string, bucketDuration int64) error {
+	unlock := s.keyLockMgr.LockMulti([]string{sourceKey, destKey})
+	defer unlock()
 	agg := strings.ToUpper(strings.TrimSpace(aggregator))
 	if !validAggregators[agg] {
 		return fmt.Errorf("ERR unknown aggregator '%s'", aggregator)

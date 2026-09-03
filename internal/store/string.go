@@ -1003,6 +1003,8 @@ func parseBitFieldType(typeStr string) (isSigned bool, bits int, err error) {
 // BitField implements the BITFIELD command
 // BITFIELD key [GET type offset | SET type offset value | INCRBY type offset increment] ...
 func (s *BotreonStore) BitField(key string, operations []string) ([]interface{}, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	// Parse operations
 	type operation struct {
 		op       string // "GET", "SET", "INCRBY"
