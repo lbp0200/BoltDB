@@ -30,6 +30,9 @@ func (s *BotreonStore) XReadGroup(ctx context.Context, group, consumer string, c
 	}
 	result := make([]map[string][]StreamEntry, 0)
 
+	// 锁只覆盖非阻塞读段：阻塞等待（下方 xReadGroupBlocking）必须在锁外——
+	// 若持 key 锁等待，XADD（需同 key 锁）无法推进 → 等待永不唤醒（死锁）。
+	unlock := s.keyLockMgr.LockMulti(keys)
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		now := time.Now().UnixNano() / int64(time.Millisecond)
 
@@ -135,6 +138,7 @@ func (s *BotreonStore) XReadGroup(ctx context.Context, group, consumer string, c
 		}
 		return nil
 	}, 30)
+	unlock()
 
 	if block >= 0 && len(result) == 0 && len(keys) > 0 {
 		r, e := s.xReadGroupBlocking(ctx, group, consumer, count, block, keys)

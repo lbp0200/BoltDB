@@ -22,6 +22,8 @@ func (s *BotreonStore) HSet(key, field string, value interface{}) error {
 	if err := s.checkErrorInjector("HSet"); err != nil {
 		return err
 	}
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	logFuncTag := "BotreonStoreHSet"
 	// 将值转换为字符串（与Redis一致，Hash值都是字符串）
 	var bValue []byte
@@ -152,6 +154,8 @@ func (s *BotreonStore) hashCountKey(key string) []byte {
 
 // HDel 实现 Redis HDEL 命令
 func (s *BotreonStore) HDel(key string, fields ...string) (int, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	deletedCount := 0
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		deletedCount = 0 // reset each attempt; stale value must not survive conflict retry
@@ -380,6 +384,8 @@ func (s *BotreonStore) HVals(key string) ([][]byte, error) {
 
 // HMSet 实现 Redis HMSET 命令，批量设置多个字段
 func (s *BotreonStore) HMSet(key string, fieldValues map[string]interface{}) error {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	typeKey := TypeOfKeyGet(key)
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		if err := txn.Set(typeKey, []byte(KeyTypeHash)); err != nil {
@@ -480,6 +486,8 @@ func (s *BotreonStore) HMGet(key string, fields ...string) ([][]byte, error) {
 
 // HSetNX 实现 Redis HSETNX 命令，仅当字段不存在时设置
 func (s *BotreonStore) HSetNX(key, field string, value interface{}) (bool, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	success := false
 	typeKey := TypeOfKeyGet(key)
 	// 将值转换为字符串（与Redis一致）

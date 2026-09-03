@@ -111,6 +111,8 @@ func decodeTSMeta(b []byte) (*tsMetaData, error) {
 // TSCreate implements TS.CREATE command
 // TS.CREATE key [RETENTION retention] [ENCODING encoding] [DUPLICATE_POLICY policy]
 func (s *BotreonStore) TSCreate(key string, opts TSCreateOptions) error {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	// Check if key already exists
 	exists, err := s.Exists(key)
 	if err != nil {
@@ -860,6 +862,8 @@ func (s *BotreonStore) TSAddRule(sourceKey, destKey, aggregator string, bucketDu
 
 // TSDelRule deletes a compaction rule (source → dest).
 func (s *BotreonStore) TSDelRule(sourceKey, destKey, aggregator string, bucketDuration int64) error {
+	unlock := s.keyLockMgr.LockMulti([]string{sourceKey, destKey})
+	defer unlock()
 	key := tsRuleKey(sourceKey, destKey)
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		// Delete only if the rule actually exists; deleting a non-existent

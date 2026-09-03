@@ -31,6 +31,8 @@ func (s *BotreonStore) LIndex(key string, index int64) (string, error) {
 
 // LSet 实现 Redis LSET 命令
 func (s *BotreonStore) LSet(key string, index int64, value string) error {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		nodeID, _, err := s.getNodeByIndex(txn, key, index)
 		if err != nil {

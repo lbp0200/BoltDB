@@ -50,6 +50,8 @@ func (s *BotreonStore) XAck(key, group string, ids ...string) (int64, error) {
 
 // XAckDelRemoveRefs removes PEL references for an entry from ALL consumer groups
 func (s *BotreonStore) XAckDelRemoveRefs(key, id string) error {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		prefix := []byte(prefixStream + key + streamGroups + ":")
 		opts := badger.DefaultIteratorOptions
@@ -137,6 +139,8 @@ func (s *BotreonStore) XIsAckedByAllGroups(key, id string) (bool, error) {
 
 // XNack releases pending messages back to the group's PEL
 func (s *BotreonStore) XNack(key, group, consumer string, ids ...string) (int64, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	var released int64
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {

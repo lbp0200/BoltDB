@@ -176,6 +176,8 @@ func (s *BotreonStore) ZRevRangeByLex(zSetName, max, min string, offset, count i
 
 // ZRemRangeByLex 实现 Redis ZREMRANGEBYLEX 命令
 func (s *BotreonStore) ZRemRangeByLex(zSetName, min, max string) (int64, error) {
+	s.keyLockMgr.Lock(zSetName)
+	defer s.keyLockMgr.Unlock(zSetName)
 	var removed int64
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		removed = 0

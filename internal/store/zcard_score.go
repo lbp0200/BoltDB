@@ -137,6 +137,8 @@ func (s *BotreonStore) ZMScore(zSetName string, members ...string) ([]float64, e
 
 // ZIncrBy 实现 Redis ZINCRBY 命令
 func (s *BotreonStore) ZIncrBy(zSetName, member string, increment float64) (float64, error) {
+	s.keyLockMgr.Lock(zSetName)
+	defer s.keyLockMgr.Unlock(zSetName)
 	var newScore float64
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		newScore = 0

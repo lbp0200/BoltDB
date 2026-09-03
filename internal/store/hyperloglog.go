@@ -370,6 +370,8 @@ func (s *BotreonStore) PFMerge(destKey string, sourceKeys ...string) error {
 
 // RestoreHLL 从原始字节恢复 HyperLogLog（FULLRESYNC RDB 加载用）
 func (s *BotreonStore) RestoreHLL(key string, data []byte) error {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		typeKey := TypeOfKeyGet(key)
 		if err := txn.Set(typeKey, []byte(KeyTypeHyperLogLog)); err != nil {

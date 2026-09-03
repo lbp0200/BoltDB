@@ -58,6 +58,8 @@ func (s *BotreonStore) jsonReadBytesInTxn(txn *badger.Txn, key string) ([]byte, 
 // 返回 (OK, 是否实际写入, 错误)。NX/XX 条件不满足时返回 (OK, false, nil) ——
 // 上层借此决定是否污染 WATCH（空转不脏，见 812ab66）以及是否进入复制流。
 func (s *BotreonStore) JSONSet(key, path, value string, nx, xx bool) (string, bool, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	// Only support root path for now
 	if path != "$" && path != "." {
 		return "", false, errors.New("ERR path must be '$' or '.'")

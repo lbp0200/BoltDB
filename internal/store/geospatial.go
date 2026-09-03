@@ -795,6 +795,8 @@ func geoDelMemberInTxn(txn *badger.Txn, key, member string) (bool, error) {
 
 // GeoDel removes members from a geo set
 func (s *BotreonStore) GeoDel(key, member string) error {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		_, err := geoDelMemberInTxn(txn, key, member)
 		return err

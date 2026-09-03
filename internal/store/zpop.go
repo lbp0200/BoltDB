@@ -11,6 +11,8 @@ func (s *BotreonStore) ZPopMax(zSetName string, count int) ([]ZSetMember, error)
 	if count <= 0 {
 		return nil, nil
 	}
+	s.keyLockMgr.Lock(zSetName)
+	defer s.keyLockMgr.Unlock(zSetName)
 	var results []ZSetMember
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		results = nil
@@ -43,6 +45,8 @@ func (s *BotreonStore) ZPopMin(zSetName string, count int) ([]ZSetMember, error)
 	if count <= 0 {
 		return nil, nil
 	}
+	s.keyLockMgr.Lock(zSetName)
+	defer s.keyLockMgr.Unlock(zSetName)
 	var results []ZSetMember
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		results = nil

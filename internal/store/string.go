@@ -24,6 +24,8 @@ func (s *BotreonStore) Set(key string, value string) error {
 	if err := s.checkErrorInjector("Set"); err != nil {
 		return err
 	}
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// Check if key already exists with a different type
 		badgerTypeKey := TypeOfKeyGet(key)
@@ -199,6 +201,12 @@ func (s *BotreonStore) MSet(keyValues ...string) error {
 	if len(keyValues)%2 != 0 {
 		return errors.New("MSET requires an even number of arguments")
 	}
+	lockKeys := make([]string, 0, len(keyValues)/2)
+	for i := 0; i < len(keyValues); i += 2 {
+		lockKeys = append(lockKeys, keyValues[i])
+	}
+	unlock := s.keyLockMgr.LockMulti(lockKeys)
+	defer unlock()
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		for i := 0; i < len(keyValues); i += 2 {
 			key := keyValues[i]
@@ -1368,6 +1376,13 @@ func (s *BotreonStore) SetStringBatch(entries []StringEntry) error {
 	if len(entries) == 0 {
 		return nil
 	}
+
+	lockKeys := make([]string, 0, len(entries))
+	for _, e := range entries {
+		lockKeys = append(lockKeys, e.Key)
+	}
+	unlock := s.keyLockMgr.LockMulti(lockKeys)
+	defer unlock()
 
 	if err := s.retryUpdate(func(txn *badger.Txn) error {
 		for _, e := range entries {

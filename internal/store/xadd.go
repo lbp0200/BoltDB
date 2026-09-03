@@ -12,6 +12,8 @@ import (
 
 // CreateEmptyStream creates an empty stream with just the TYPE_ key and metadata
 func (s *BotreonStore) CreateEmptyStream(key string) error {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		typeKey := TypeOfKeyGet(key)
 		if err := txn.Set(typeKey, []byte(KeyTypeStream)); err != nil {
