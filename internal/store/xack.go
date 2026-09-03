@@ -10,6 +10,8 @@ import (
 
 // XAck acknowledges messages in a stream
 func (s *BotreonStore) XAck(key, group string, ids ...string) (int64, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	var acknowledged int64
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {
@@ -226,6 +228,8 @@ type XClaimOptions struct {
 
 // XClaim claims pending messages.
 func (s *BotreonStore) XClaim(key, group, consumer string, opts XClaimOptions, ids ...string) ([]string, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	var claimed []string
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {
