@@ -176,3 +176,31 @@ badger 冲突检测后，RMW 命令不丢更新（§9 阻断的解除）。
 5. **回滚**：S1-A1 独立提交（纯增量——可随时撤）；S1-A2 前保留 git 基线（回字节记账 =
    撤 OpenManaged 单点）。
 
+### §10 附：RMW 覆盖清单（2026-09-03——store 279 导出方法分类）
+
+**A. 值 RMW（锁必需——写值依赖读值）**：INCR/DECR/INCRBY/DECRBY/INCRBYFLOAT、GETSET、
+APPEND、SETRANGE、SETBIT/BITFIELD/BITOP；list 族 LPUSH/RPUSH/LPUSHX/RPUSHX/LPOP/RPOP/
+LREM/LSET/LTRIM/LINSERT/LMOVE/LMPop/BRPOPLPUSH/BLMOVE + 阻塞 B* 变体；set 族 SADD/SREM/
+SPOP/SPOPN/SMOVE/SDIFFSTORE/SINTERSTORE/SUNIONSTORE；zset 族 ZADD/ZINCRBY/ZREM/
+ZREMRANGEBY*/ZPOPMIN/ZPOPMAX/ZMPOP/ZDIFFSTORE/ZINTERSTORE/ZUNIONSTORE/ZSetDel；
+hash 族 HSET/HMSET/HSETNX/HINCRBY/HINCRBYFLOAT/HDEL；流 XADD/XDEL/XTRIM/XSETID/XACK/
+XNACK/XCLAIM/XAUTOCLAIM/XGROUP*；Geo GEOADD/GEODEL/GEOSEARCHSTORE；TS*（TSAdd/
+TSIncrBy/TSDel/TSRule）；JSON*（JSONSet/Del/ArrAppend/NumIncrBy/NumMultBy/Clear）；
+PFADD/PFMERGE；MSETNX；RENAME/RENAMENX。
+
+**B. key 生命周期/类型检查（锁必需——存在性/类型依赖）**：DEL/DelString、EXPIRE/
+EXPIREAT/PEXPIRE/PEXPIREAT/PERSIST；SET 族（SET/SETNX/GETSET/SETEX/PSETEX）的类型检查
+（写前读 type-key——并发类型变更竞态需锁——SETNX 的存在性检查同理）。
+
+**C. 盲写（无需锁——并发 last-wins 即正确 Redis 语义）**：SET/SetWithTTL/SETEX/PSETEX/
+SetStringBatch/MSet/Restore——仅当 B 类类型检查的竞态风险经裁决可接受（建议过渡期
+SET 类也取锁——与 badger 冲突检测双保险——代价小、S1-A2 后统一按清单收窄）。
+
+**D. 只读/工具（不在覆盖内）**：GET/GETRANGE/MGET/EXISTS/TYPE/STRLEN/LLEN/LRANGE/LINDEX/
+SCARD/SMEMBERS/SISMEMBER/ZSCORE/ZRANGE/ZCARD/HGETALL/HLEN/XRANGE/XLEN/KEYS/SCAN/
+OBJECT*/DUMP + 内部（SNAPSHOTMU*/SAVE*/LOAD*/CLEARALLDATA/FLUSHDB/CLOSE/CHECK/...）。
+FLUSHDB 全库清与写并发的互斥为独立问题（需全库写锁——不在 key 锁层——S1-A2 前裁决）。
+
+**实现落点**：清单驱动锁注册表（命令名 → key 参数位映射——server 分发层按命令元数据
+取锁——避免逐个命令方法埋锁——见 §10 设计点 3 的修订）。
+
