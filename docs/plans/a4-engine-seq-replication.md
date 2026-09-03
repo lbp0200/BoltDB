@@ -92,3 +92,31 @@ FULLRESYNC#2 → 数据丢失。30s 阈值（`63b5c8c`）为已知最佳部分�
   snapshotMu 锁绑定退役——FULLRESYNC 无应用层锁。若 S0 定案 managed mode 不可行
   （坏点不可绕）——A4 关闭并回写设计文档（候选仅剩"换引擎/维持现状"）。
 
+## 8. S0 引擎研究结论（2026-09-03——go doc + 最小 demo 实证）
+
+**语义定案**：
+- **managed = DB 级模式**——`badger.OpenManaged(opts)` 专用构造函数（**非 Options 字段**）；
+  at-ts API（`NewTransactionAt`/`CommitAt`/`SetEntryAt`）仅 managed DB 可用——非 managed 上
+  直接 panic（`managedDB=false`——`managed_db.go`）。`DB.Update` 不可用于 managed、
+  `DB.View` 假定读 ts（go doc 契约）。
+- **实证（demo——用后即清）**：managed 写往返 OK（`NewTransactionAt(rs)`+`Set`+`CommitAt(cs)`）；
+  **read-at-ts 版本视图精确**（@3 全空/@4 见 ts4/@6 全见——点对点视图成立）；重开恢复 OK
+  （ts 写持久化完好）。
+
+**坏点清单**：
+1. **`DB.Backup`/`NewStream` 在 managed 模式 panic**（"This API can not be called in managed
+   mode"——backup.go→NewStream）——**D5 的 backup 快照路径被 managed 封死**。
+2. **乱序 CommitAt 被接受**（A@ts5 后 B@ts4 均 err=nil——oracle 不拒、无 API 保证）——
+   提交 ts 序**必须由调用方保证**——D1 的 ts 源须与提交序严格一致（写路径串行分配或
+   批内预分配），否则从侧重放乱序（非交换命令发散——A4 自身引入新发散源）。
+3. 冲突重试在 managed 下的行为**未实证**（`DetectConflicts` 字段存在——S1 需补测）。
+
+**可行性裁决：部分可行——D1-D4 基石成立，D5 需替代路径**
+- managed 写 + read-at-ts + 恢复**全部实证可用**——引擎序列记账的存储层基础**可行**（S1-S2 路线成立）。
+- **D5 降级**：FULLRESYNC 快照**不用 backup**——改用现有 RDB-at-ts（GenerateRDB 机制在
+  managed 视图下按 ts 扫描）或维持 snapshotMu+RDB 组合（D5 从"必需"降为"可选优化"——
+  不影响 S1-S2 的丢失链断裂主目标）。
+- **D1 设计约束**：ts 源须串行分配（提交序 == ts 序）——写路径在现有 snapshotMu 临界区
+  内取 ts（该临界区已覆盖 commit——见 §1c 调查链）——天然满足序约束。
+- S0 未发现不可绕坏点 → **A4 继续（S1 立项可启动）**。
+
