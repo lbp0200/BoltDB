@@ -32,18 +32,25 @@
 > 1. B2 排水进度判据——停滞检测改测应用进度（需事件级慢写/freeze 时序数据——
 >    INFO 累计计数分辨率不足，需临时探针采集）。
 > 2. 架构级：**A4 复制记账引擎序列化——已立项（2026-09-03）**——managed-mode ts 迁移
->    （S0 引擎研究 ✅ → **S1-A1 应用层 key 锁层 ✅（2026-09-03 完成——A 方向 kvrocks
->    式——补差 + 覆盖完备性复核双里程碑）** → S1-A2 切引擎 → S2 复制切换 → S3 快照全量——
->    每阶段可回滚——dw A/B 门槛 ≤1/15）——
+>    （S0 引擎研究 ✅ → **S1-A1 应用层 key 锁层 ✅（2026-09-03——补差 + 覆盖完备性复核
+>    双里程碑）** → **S1-A2 切引擎 ✅（2026-09-03——§10 附5——全量验证绿）** → S2 复制
+>    切换 → S3 快照全量——每阶段可回滚——dw A/B 门槛 ≤1/15）——
 >    计划与设计见 [a4-engine-seq-replication.md](a4-engine-seq-replication.md)（§8 S0 结论/
->    §9 S1 阻断裁决/§10 S1-A 设计 + §10 附 3 实施状态）；A2 复制应用批量合并（随 A4 的
->    写批单位自然覆盖——不单独立项）。
+>    §9 S1 阻断裁决/§10 S1-A 设计 + §10 附 3 S1-A1 实施状态 + **§10 附 5 S1-A2 实施状态**）；
+>    A2 复制应用批量合并（随 A4 的写批单位自然覆盖——不单独立项）。
 >    **S1-A1 收口（2026-09-03）**：审计 gap 清单全部命令组加锁（~55 方法——14 增量——
 >    每增量远程 store -race 绿）——两处自死锁发现即修（RenameNX→Rename、TSIncrBy→TSAdd
 >    委托模式）+ **写路径覆盖完备性复核**（retryUpdate 全量审计 25 候选——22 空洞修复
 >    （`45be299`——含 XReadGroup 作用域锁——阻塞等待必须在锁外）——LMove/RPopLPush 假阳性
 >    （列表族 lockListKeysOrdered 已覆盖）——NextStartup/RenameNX 例外核实）——store +
 >    replication 跨包远程 -race 绿 + lint 0——S1-A2 前置（key 锁覆盖完备）已证。
+>    **S1-A2 收口（2026-09-03——`b9083a3`）**：引擎切换 OpenManaged + tsSource（MaxVersion
+>    水位）+ commitTS chokepoint（全库 db.Update 零残留——含 cluster 3 站点）——managed
+>    模式 discard-ts 必需（三层：基础推进 → 有序完成水位 → discardMu pair 原子对——值级
+>    实证 `discardTs=1154<lastCleanupTs=1158` 回退链）——冲突测试适配（raw helper 加 key
+>    锁——managed 退役冲突重试）——验证全绿（store 47.7s + replication 22.1s + §1c 守卫
+>    三件套 + lint 0）。**S1-A2 完工后 §1c-残留进入 S2/S3 阶段——dw A/B ≤1/15 验收在
+>    复制切换后执行**。
 > 3. 发散悖论（C4）根因定位：主侧发送字节 vs 从侧接收字节的抓包级直接比对（层 D——
 >    外部工具）——恢复路径重设计（层 C：降级无损化）的前提。
 >
