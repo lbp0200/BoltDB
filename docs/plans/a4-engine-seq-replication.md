@@ -288,3 +288,25 @@ A/B 列为 S1-A2 前置可选项。**推送**：18 提交待推（github SSH 网
    Open 模式的差异（INFO l0_*/slow_* 遥测对照——阶段 0 字段可用）；③ CommitAt 失败重试
    的 ts 消耗语义（空洞）须文档化。
 
+### §10 附 5：S1-A2 实施状态（2026-09-03——切换落地 + 验证阻塞）
+
+**切换已落地（未提交——工作区）**：OpenManaged（define.go:490——managed 为 options 开关：
+`OpenManaged` = `managedTxns=true` + `Open`）+ tsSource 接线（struct 字段 + 构造器
+`MaxVersion()+1` 水位 Init）+ `commitTS` chokepoint（`NewTransactionAt(MaxUint64, true)`
+最新快照读 + fn 写体 + `CommitAt(ts, nil)` 同步提交——nil 回调 = 同步 Commit 错误直返）——
+全库 db.Update 零残留（retryUpdate set.go:59 + define.go 6 直写站点 + cluster 3 站点经
+`RunWriteLocked` 转 commitTS——穷尽复检）。测试代码同步（8 处裸 Update + gc_test helper
+的 OpenManaged 接线）。
+
+**发现并修复（discard-ts 必需）**：managed 模式无自动版本回收——不推进 discard-ts 则每次
+写/删的新 ts 版本永不回收 → MVCC 版本累积 → 写删量级下压实停滞（60000 写 + 48000 删
+规模远程挂起实证——gc_test 同因）。修复 = commitTS 提交后 `SetDiscardTs(ts)`——scale
+探针 16.7s ✓ + TestRunValueLogGC 21.1s ✓（原挂起测试已过）。
+
+**验证阻塞（未修）**：store 全包远程 -race 仍失败——badger 内部 `Assert failed`
+（y.AssertTrue——疑 txn.go:176 `ts >= o.lastCleanupTs` 类断言）——**仅全包套件上下文触发**
+（TestRenameAllTypes/TimeSeries+HLL 处——隔离单跑通过）——疑 commitTS 的每次提交
+`SetDiscardTs(ts)` 与并发 in-flight 提交的边界竞态（乱序完成时 discard-ts 越过未完成提交
+的 ts）——需并发安全推进策略（txnMark 水位感知或滞后批量推进——badger 内部对齐）。诊断
+探针（写/Flatten/删风暴/GC 规模）已用后即清。**store 套件未绿前 S1-A2 不得提交**。
+
