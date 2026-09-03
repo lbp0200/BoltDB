@@ -51,6 +51,19 @@
 >    锁——managed 退役冲突重试）——验证全绿（store 47.7s + replication 22.1s + §1c 守卫
 >    三件套 + lint 0）。**S1-A2 完工后 §1c-残留进入 S2/S3 阶段——dw A/B ≤1/15 验收在
 >    复制切换后执行**。
+>    **S2 实施中（2026-09-03——D 定案 = kvrocks 式 log-in-commit）**：用户裁决 D
+>    （kvrocks 调研实证：RocksDB SequenceNumber 记账 + log-data 与数据同批（单一批 =
+>    单一 seq——零分发侧打标）+ WAL 回读传播——见 a4 §10 附6 D-定案）。已提交：D 地基
+>    （`bd0c854`——commitTS 同批传播日志键 REPLLOG_+tsBE——日志键 ts 天然 = 数据 commit
+>    ts——无竞态/无 ctx 流穿/无提交串行化）+ string 族扩展（`6fd372e`——12 写站点标识性
+>    日志值——SetEX/PSETEX/INCR/DECR 经 wrapper 委托天然覆盖）。C5 基准发现（`6fd372e`
+>    提交记录）：SET 路径 -race 158-165µs/op vs S1-A2 基线 120（+30-37% 一致抬升——
+>    每写 +1 日志键开销——权衡已在 D-定案记录）。
+>    **候选下一步**：1. D 覆盖继续扩展（hash/list/set/zset 族——string 之外）；2. S2 ②/④
+>    增量（日志值全重放形式——对齐 processRequest normalize——+ vlog 影响/保留策略——
+>    string 族先行试点）；3. 复制层读侧（S2 主体——backlog/PSYNC/ACK ts 化 + 4 守卫重写
+>    + dw A/B ≤1/15——kvrocks WAL 回读式读侧——大设计）；4. C5 开销归因（同日本底对照
+>    D-off vs D-on——确认 +30-37% 的准确归属）。
 > 3. 发散悖论（C4）根因定位：主侧发送字节 vs 从侧接收字节的抓包级直接比对（层 D——
 >    外部工具）——恢复路径重设计（层 C：降级无损化）的前提。
 >
