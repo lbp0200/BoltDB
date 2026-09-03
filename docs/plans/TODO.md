@@ -41,7 +41,7 @@
 
 | 项 | 现象 | 下一步 |
 |----|------|--------|
-| **SSD 基线复测（下次执行）** | 目标：拿到可信 SSD 写入基线（对比机械盘 28 MB/s）。**正确姿势**（2026-08-06 调查结论）：① 先确认 `DEBUG GC` 已完成（GC 与写入严重互斥，GC 期间 1MB SET 减速 1350×）；② `ps aux \| grep redis-benchmark` 确认无残留进程；③ 单进程 `redis-benchmark --cluster -h 10.1.2.16 -p 6337 -t set -n 65534 -r 20000000 -d 1048576 -c 50`（必须带 `-r`，否则覆盖写同一 key）；④ 记录吞吐 + DBSIZE 分布 + 磁盘占用；⑤ 测完 FLUSHDB 清理。备选：用已修复的 `scale-data-filler`（按 CLUSTER SHARDS/SLOTS 分组 pipeline）替代 benchmark | ⏳ 下次（预计 ~5 分钟/64GB）<br>**一键验证**：`./scripts/cluster-ops.sh gc --all` 后 `ps aux \| grep -v grep \| grep redis-benchmark \|\| echo ok`；再跑单进程 benchmark，`redis-cli --cluster -h 10.1.2.16 -p 6337 DBSIZE` 核对 65534 |
+| **SSD 基线复测（2026-09-03 已执行——爬行中止）** | 目标：可信 SSD 写入基线（对比机械盘 28 MB/s）。**正确姿势**（2026-08-06 调查结论）：① 先确认 `DEBUG GC` 已完成（GC 与写入严重互斥，GC 期间 1MB SET 减速 1350×）；② `ps aux \| grep redis-benchmark` 确认无残留进程；③ 单进程 `redis-benchmark --cluster -h 10.1.2.16 -p 6337 -t set -n 65534 -r 20000000 -d 1048576 -c 50`（必须带 `-r`，否则覆盖写同一 key）；④ 记录吞吐 + DBSIZE 分布 + 磁盘占用；⑤ 测完 FLUSHDB 清理。备选：用已修复的 `scale-data-filler`（按 CLUSTER SHARDS/SLOTS 分组 pipeline）替代 benchmark | ⚠️ **实测（2026-09-03 11:17-11:40）**：GC 前置 rewritten=0 健康 → 基准启动 ~166 ops/s（≈166 MB/s）后**崩塌至 ~5 ops/s**（21 分钟仅 9.5%——全量需 ~4 小时——非 ~5 分钟）——**中止**——持续负载下写路径塌陷（疑 L0/vlog 压实风暴）为实测发现；FLUSHDB 清理 ✓（DBSIZE 归零）；vlog 6.3G 残留为已知 badger 机制（tombstone 卡空 L0——自然压实回收——同 §2 vlog 单元）。**备选**：scale-data-filler（分组 pipeline）或分段小批量重测 |
 
 > node3 vlog 35GB 未回收 —— ✅ **已解决（2026-08-31）**：自然 compaction 已触发，
 > 35GB → 1.1M+2GB 活跃（稀疏）；三节点 `DEBUG GC 0.5` `rewritten` 均=0（健康形态）。
