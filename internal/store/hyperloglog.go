@@ -152,6 +152,8 @@ func (h *HyperLogLog) merge(other *HyperLogLog) bool {
 
 // PFAdd 实现 Redis PFADD 命令
 func (s *BotreonStore) PFAdd(key string, elements ...string) (int64, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	var changed int64
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {
@@ -337,6 +339,8 @@ func (s *BotreonStore) pfCountMultiple(keys []string) (int64, error) {
 
 // PFMerge 实现 Redis PFMERGE 命令
 func (s *BotreonStore) PFMerge(destKey string, sourceKeys ...string) error {
+	unlock := s.keyLockMgr.LockMulti(append([]string{destKey}, sourceKeys...))
+	defer unlock()
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		// 设置目标键类型
 		typeKey := TypeOfKeyGet(destKey)

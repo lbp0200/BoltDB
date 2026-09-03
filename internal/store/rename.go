@@ -14,6 +14,8 @@ func (s *BotreonStore) Rename(key, newKey string) error {
 	if key == newKey {
 		return nil
 	}
+	unlock := s.keyLockMgr.LockMulti([]string{key, newKey})
+	defer unlock()
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		// 检查旧键是否存在
 		typeKey := TypeOfKeyGet(key)
@@ -363,6 +365,10 @@ func (s *BotreonStore) Rename(key, newKey string) error {
 
 // RenameNX 实现 RENAMENX 命令（仅新键不存在时重命名）
 func (s *BotreonStore) RenameNX(key, newKey string) (bool, error) {
+	// 注意：不在此处取 key 锁——本方法委托 s.Rename（rename.go），其内部已取
+	// LockMulti([key, newKey])；此处再加锁会与委托的 Rename 自死锁（RWMutex
+	// 不可重入——2026-09-03 远程挂起实证）。NX 检查的竞态由过渡期 badger
+	// 乐观冲突检测覆盖（S1-A2 切引擎前的双保险形态）。
 	success := false
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// 检查新键是否已存在
