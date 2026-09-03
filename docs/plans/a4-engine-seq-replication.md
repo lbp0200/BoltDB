@@ -319,3 +319,48 @@ key 锁（S1-A1 语义：RMW 原子性由 key 锁接管）→ 确定性无丢失
 NoLoss 66.5s）+ golangci-lint 0 issues。调试插桩（badger 补丁副本 + go.mod replace +
 探针）已用后即清。
 
+### §10 附 6：S2 复制切换蓝图（2026-09-03——落点调查 + 设计定案方向）
+
+> S1-A2（引擎 ts 记账）完成后，S2 = 复制层从字节 offset 记账切换到 ts 记账。本附记
+> 录落点调查（代码锚点）与设计定案方向——实施前的前置调查（S2 为复制层最大改动面——
+> 复制语义改变——兼容面广）。
+
+**落点调查（代码锚点）**：
+- **主侧写路径**：`processRequest`（snapshotMu RLock——commit→PropagateCommand 线性
+  绑定）→ `ReplicationManager.PropagateCommand`（replication.go:371）→
+  `serializeCommand(cmd)` + `backlog.Append(cmdBytes)`（replication.go:383-388——返回
+  byte-offset——backlog 唯一入点）。
+- **backlog**：`ReplicationBacklog`（backlog.go:12——Append/GetRange/GetCurrentOffset/
+  SetOffset + `StartsAtCommandBoundary` backlog.go:152）；`BacklogWAL`
+  （backlog_wal.go:34——WAL 持久化——Append(offset, cmdBytes)/Replay/Truncate——重开
+  恢复的 offset 锚点）。
+- **排水**：`GetRange(startOffset, endOffset)`（backlog.go:65）+ `SendBacklogData`
+  （psync.go:112——主→从字节流切片）。
+- **PSYNC**：`HandlePSync(replId, offset)`（psync.go:21——offset 定 FULLRESYNC vs
+  CONTINUE；psync.go:52-56 的 `StartsAtCommandBoundary` 边界校验——纵深防御）。
+- **从侧确认**：`SlaveReconnector`（reconnect.go——周期 GETACK/ACK——reconnect.go:
+  358-418——masterWater/offset 语义——从侧按 offset 确认）。
+
+**关键观察（蓝图定案输入）**：
+1. **commit-ts 未回传**：store 提交（commitTS）与 `PropagateCommand` 同处 snapshotMu
+   RLock 临界区——但提交 ts 当前不暴露给调用方——S2 的 ts 标注需打通：commitTS 返回
+   本次提交 ts（或 processRequest 捕获 tsSource 水位）→ PropagateCommand(ts, cmd)。
+2. **B2 排水进度判据被 S2 自然覆盖**：从侧按 ts 确认后——停滞检测的"排水进度"直接以
+   ts 差度量（主侧已传播 ts vs 从侧确认 ts）——1c-complete-fix-design 的 B2 候选
+   （停滞检测改测应用进度）不再需要独立事件级探针。
+3. **边界天然化**：backlog 条目从"字节段 + 边界扫描"（StartsAtCommandBoundary）变为
+   "ts 键条目"——ts 整数比较即边界——psync.go:52-56 的纵深防御简化为整数比较。
+4. **双轨一致性**：迁移期需 ts↔byte 映射核验（每命令一条传播 = 一个 ts——ts 段内
+   命令字节长 == serializeCommand 输出——换算表核验防漂移——§5 风险注记）。
+
+**设计定案方向**：backlog entry = (ts, cmdBytes)——Append 返回 ts；GetRange(tsStart)
+  排水；ACK/GETACK 载 ts；FULLRESYNC 参数 offset→ts（RDB 快照 at ts + 排水 [ts, now) 属
+  S3——S2 保持 RDB + ts-排水混合过渡）；配置化开关保留字节记账回退（双轨并存——最大回滚
+  损失单阶段）。
+
+**范围/风险/验证**：改动面 = replication.go/backlog.go/backlog_wal.go/psync.go/
+  reconnect.go + server 层复制命令 ts 语义（replication_helper.go/handler_dispatch.go）；
+  验证门槛 = 现有 4 守卫重写绿 + 新增 ts 单调/重放守卫 + dw A/B ≤1/15（§7 协议）+ 兼容
+  三套 + RESP 形状（§6）；风险最高项 = 复制语义改变面（兼容套件全覆盖）+ 双轨一致性
+  （换算表核验）。**实施须先补 commit-ts 回传（观察 1）的小步改造并单独验证**。
+
