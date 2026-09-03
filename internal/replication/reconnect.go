@@ -301,14 +301,19 @@ func (sr *SlaveReconnector) sendPSYNC(mc *MasterConnection) (fullResync bool, er
 		psyncReplId = "?"
 	}
 	psyncOffset := sr.lastOffset.Load()
+	psyncTS := sr.lastAppliedTS.Load()
 	if psyncReplId == "?" {
 		psyncOffset = -1
+		psyncTS = 0
 	}
 
+	// S2 PSYNC-ts（④——len 向后兼容）：第 4 参为从侧 lastAppliedTS（直接主侧 ts 域
+	// resume 点）——旧主节点按 len==3 忽略（字节 offset 仍为第 3 参——影子双轨）。
 	if err := mc.SendCommand([][]byte{
 		[]byte("PSYNC"),
 		[]byte(psyncReplId),
 		[]byte(strconv.FormatInt(psyncOffset, 10)),
+		[]byte(strconv.FormatUint(psyncTS, 10)),
 	}); err != nil {
 		return false, fmt.Errorf("send PSYNC failed: %w", err)
 	}
@@ -325,6 +330,12 @@ func (sr *SlaveReconnector) sendPSYNC(mc *MasterConnection) (fullResync bool, er
 			sr.lastReplId = parts[1]
 			offset, _ := strconv.ParseInt(parts[2], 10, 64)
 			sr.lastOffset.Store(offset)
+			// S2 PSYNC-ts：第 4 字段为主侧 currentTS（全量同步起点——应用水位初值）。
+			if len(parts) >= 4 {
+				if ts, tsErr := strconv.ParseUint(parts[3], 10, 64); tsErr == nil {
+					sr.lastAppliedTS.Store(ts)
+				}
+			}
 		}
 		return true, nil
 	}

@@ -17,7 +17,7 @@ func TestHandlePSync_NewMaster(t *testing.T) {
 	rm.SetRole(RoleMaster)
 
 	// Handle PSYNC with ? -1 (full sync)
-	result, err := HandlePSync(rm, "?", -1)
+	result, err := HandlePSync(rm, "?", -1, 0)
 	assert.NoError(t, err)
 	assert.True(t, result != nil)
 	assert.True(t, result.FullResync)
@@ -34,7 +34,7 @@ func TestHandlePSync_WithOffset(t *testing.T) {
 	rm.SetRole(RoleMaster)
 
 	// Handle PSYNC with known replication ID
-	result, err := HandlePSync(rm, rm.GetReplicationID(), 0)
+	result, err := HandlePSync(rm, rm.GetReplicationID(), 0, 0)
 	assert.NoError(t, err)
 	assert.True(t, result != nil)
 }

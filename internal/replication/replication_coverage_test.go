@@ -521,7 +521,7 @@ func TestHandlePSync_PartialSync(t *testing.T) {
 	rm.PropagateCommand([][]byte{[]byte("SET"), []byte("key"), []byte("value")})
 
 	// Try partial sync with same repl ID but offset 0
-	result, err := HandlePSync(rm, rm.GetReplicationID(), 0)
+	result, err := HandlePSync(rm, rm.GetReplicationID(), 0, 0)
 	assert.NoError(t, err)
 	assert.True(t, result != nil)
 }
@@ -546,7 +546,7 @@ func TestHandlePSync_ValidPartialSync(t *testing.T) {
 	// offset to land on a command boundary — a misaligned offset (e.g. a byte
 	// in the middle of a command) is rejected and降级为 FULLRESYNC, 避免从节点
 	// 收到错位字节流后 ReadRESP 误帧（K:HASH:47 类）。
-	result, err := HandlePSync(rm, rm.GetReplicationID(), 0)
+	result, err := HandlePSync(rm, rm.GetReplicationID(), 0, 0)
 	assert.NoError(t, err)
 	assert.True(t, result != nil)
 	// Should return partial sync for a valid in-range boundary offset
@@ -575,7 +575,7 @@ func TestHandlePSync_MidCommandOffsetFallsBackToFullResync(t *testing.T) {
 	assert.True(t, currentOffset > 1)
 
 	// 请求命令中间的字节（currentOffset-1 是命令最后一字节，非边界）。
-	result, err := HandlePSync(rm, rm.GetReplicationID(), currentOffset-1)
+	result, err := HandlePSync(rm, rm.GetReplicationID(), currentOffset-1, 0)
 	assert.NoError(t, err)
 	assert.True(t, result != nil)
 	assert.True(t, result.FullResync)
@@ -594,7 +594,7 @@ func TestHandlePSync_DifferentReplId(t *testing.T) {
 	rm.PropagateCommand([][]byte{[]byte("SET"), []byte("key"), []byte("value")})
 
 	// Try with different repl ID - should trigger full sync
-	result, err := HandlePSync(rm, "different-repl-id-12345", 100)
+	result, err := HandlePSync(rm, "different-repl-id-12345", 100, 0)
 	assert.NoError(t, err)
 	assert.True(t, result != nil)
 	assert.True(t, result.FullResync) // Different repl ID should trigger full resync
@@ -2228,7 +2228,7 @@ func TestHandlePSync_FullResyncDataIntegrity(t *testing.T) {
 	rm.PropagateCommand([][]byte{[]byte("SET"), []byte("psync_key"), []byte("psync_value")})
 
 	// 验证 HandlePSync 返回正确的结果
-	result, err := HandlePSync(rm, "?", 0)
+	result, err := HandlePSync(rm, "?", 0, 0)
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.True(t, result.FullResync) // 不同 replId 触发全量同步

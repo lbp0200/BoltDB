@@ -182,7 +182,7 @@ func TestSendFullResync(t *testing.T) {
 	conn := newMockConn()
 	slave := NewSlaveConnection(conn)
 
-	err := SendFullResync(slave, "test-repl-id", 100)
+	err := SendFullResync(slave, "test-repl-id", 100, 0)
 	assert.NoError(t, err)
 
 	// 验证写入的数据包含 FULLRESYNC

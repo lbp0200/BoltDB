@@ -34,9 +34,15 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 	if err != nil {
 		return proto.NewError("ERR invalid offset")
 	}
+	// S2 PSYNC-ts（④——len 向后兼容）：第 3 参为从侧 lastAppliedTS——旧从节点
+	// 不发（ts 保持 0——字节模式）。
+	var ts uint64
+	if len(args) >= 3 {
+		ts, _ = strconv.ParseUint(string(args[2]), 10, 64)
+	}
 
 	// 处理PSYNC
-	result, err := replication.HandlePSync(h.Replication, replId, offset)
+	result, err := replication.HandlePSync(h.Replication, replId, offset, ts)
 	if err != nil {
 		return wrapLogError(err)
 	}
@@ -72,7 +78,7 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 			return proto.NewError("ERR failed to generate RDB")
 		}
 
-		response := fmt.Sprintf("+FULLRESYNC %s %d\r\n", result.ReplId, snapshotOffset)
+		response := fmt.Sprintf("+FULLRESYNC %s %d %d\r\n", result.ReplId, snapshotOffset, result.TS)
 		if _, err := writer.WriteString(response); err != nil {
 			logger.Logger.Error().Err(err).Msg("发送FULLRESYNC失败")
 			return proto.NewError("ERR failed to send FULLRESYNC")

@@ -43,7 +43,7 @@ func FuzzHandlePSync(f *testing.F) {
 		rm.SetRole(RoleMaster)
 
 		// Just ensure it doesn't panic
-		HandlePSync(rm, replId, offset)
+		HandlePSync(rm, replId, offset, 0)
 	})
 }
 

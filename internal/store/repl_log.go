@@ -47,6 +47,23 @@ type ReplLogEntry struct {
 	Value []byte
 }
 
+// ReplLogStartTS 返回当前传播日志键的最小 ts（日志键范围下界——PSYNC-ts 判定
+// [logStartTS, currentTS] 的起点）。正向前缀 Seek 第一个日志键（O(log N) 级）。
+func (s *BotreonStore) ReplLogStartTS() (uint64, error) {
+	var ts uint64
+	err := s.db.View(func(txn *badger.Txn) error {
+		it := txn.NewIterator(badger.DefaultIteratorOptions)
+		defer it.Close()
+		it.Seek(replLogPrefix)
+		if it.Valid() && bytes.HasPrefix(it.Item().Key(), replLogPrefix) {
+			key := it.Item().Key()
+			ts = binary.BigEndian.Uint64(key[len(key)-8:])
+		}
+		return nil
+	})
+	return ts, err
+}
+
 // ReplLogCurrentTS 返回当前传播日志键的最大 ts（主侧 currentTS 水位——GETACK 回复的
 // ts 携带与排水判据的基准）。反向 Seek 到前缀最大键（O(log N) 级——非全扫描）。
 func (s *BotreonStore) ReplLogCurrentTS() (uint64, error) {
