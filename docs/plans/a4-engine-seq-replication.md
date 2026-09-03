@@ -247,3 +247,44 @@ FULLRESYNC 恢复路径调已加锁的 XGroupRestore/XSetID 无回归）+ golang
 A/B 列为 S1-A2 前置可选项。**推送**：18 提交待推（github SSH 网络故障期间本地积累——
 恢复后 `git push origin main`）。
 
+### §10 附 4：S1-A2 实施蓝图（2026-09-03——代码级落点调查 + 设计定案）
+
+**范围边界**：S1-A2 = **引擎地基切换**（store 走 managed-mode + 全写路径 ts 标记提交）——
+复制层字节 offset/backlog **不改**（命令流语义不变——现有套件必须全绿）；ts↔offset 映射
+为 S2 的后续范围（§4）。
+
+**落点调查结论**（代码锚点）：
+- Open 站点：`define.go:490`（`badger.Open(opts)` → managed 专用构造 + ts 源初始化）。
+- 写路径 chokepoint：`retryUpdate`（set.go:23——背压预检 + 信号量 + 重试循环 + 内部
+  `s.db.Update(fn)` 于 set.go:59——29 文件 ~100+ 调用者——全部命令方法已由 S1-A1 加 key 锁）。
+- 直接 `db.Update` 调用者：define.go:429/572/610/659/707/959（复制状态保存——
+  SaveReplIDLocked/SaveMasterReplOffsetLocked/SaveBacklogLocked 族——注释明示"在 snapshotMu
+  读锁保护下执行"）。
+- snapshotMu：store 暴露包装（define.go:948-970——`SnapshotMuRLock` 等）——server
+  processRequest 持读锁跨 commit→PropagateCommand（Issue #3 线性绑定）——**retryUpdate
+  刻意不嵌套 RLock**（嵌套在 FULLRESYNC 写者排队时会死锁——set.go:23 注释）。
+- **坏点 #1 实际不适用**：全库无 badger 原生 `Backup(`/`NewStream`/`WriteBatch` 调用
+  （备份走自有 dump/RDB 格式——dump_restore.go + backup manager）——D5 快照路径无需降级。
+
+**设计定案**：
+1. **ts 源**：互斥保护的单调 uint64 计数器（`tsSource`——S0 坏点 #2 的乱序 CommitAt 由
+   源的串行唯一分配杜绝）——重启水位：启动时扫描当前最大 ts + 1（或持久化水位键——
+   与 S0 demo 的重开恢复实证一致）。分配点 = 每次提交尝试内（retryUpdate 的 CommitAt
+   前 + 直接 Update 调用者的各自临界区）——因全部写路径均在 processRequest 的 snapshotMu
+   读锁临界区/恢复期写锁内执行，满足"临界区内串行分配"；ts 空洞（失败尝试消耗）容忍
+   （读-at-ts 语义只依赖 ≤N 前缀完整，非连续）。
+2. **CommitAt 转化**：retryUpdate（set.go:59）`s.db.Update(fn)` →
+   `s.db.CommitAt(tsSource.Next(), fn)`——**零签名 churn**（ts 自分配——~100 调用者不改）；
+   直接 Update 调用者（define.go:429-959）同样 CommitAt 化。冲突重试分支（ErrConflict）
+   在 managed 下退役（key 锁已接管同 key 串行化——循环保留以覆盖 L0/瞬态错误）。
+3. **OpenManaged 切换**：define.go:490 换 managed 构造 + ts 源初始化（S0 demo 实证写往返/
+   读-at-ts 视图/重开恢复 OK）。
+4. **读侧**：121 处 `db.View` 不动（S0 实证 managed 下 View 照常工作）。
+5. **验证协议**：store 全包远程 -race + replication 跨包（字节 offset 语义不变——
+   FULLRESYNC/PSYNC/RDB 套件全绿）+ 回归守卫（§1c 三件套）+ **新增并发 INCR 原子性测试**
+   （坏点 #4 解除验证——仅 key 锁保护下的原子性）+ dw A/B 门槛 ≤1/15 + lint。
+6. **回滚**：切换提交与 S1-A1 可分——git revert 单提交可退。
+7. **风险注记**：① ts 空洞/重启水位的边界用例需补测；② managed 下写吞吐/压实行为与
+   Open 模式的差异（INFO l0_*/slow_* 遥测对照——阶段 0 字段可用）；③ CommitAt 失败重试
+   的 ts 消耗语义（空洞）须文档化。
+
