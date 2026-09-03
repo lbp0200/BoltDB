@@ -166,12 +166,13 @@
 
 - TODO §1c 定论链：`63b5c8c`（30s 阈值）→ `bac26ed`/`8992a1e`（读争用 A/B 确认）→
   `f013bdb`（40s 阈值验证/阈值路径定性失败）→ `71cab80`/`85e2f14`/`f88187d`（发散悖论与
-  定位穷尽）——`docs/plans/TODO.md` 86-407 行完整记录。
+  定位穷尽）→ `4e9e56b`/`e5a1bb7`/`d7af179`（B1/A1b/阶段 0 裁决与落地）——完整逐条记录
+  见 git 历史（2026-08-31 ~ 2026-09-03 提交链）——TODO 的 §1c 调查史已归档精简。
 - 代码：`internal/replication/reconnect.go`（停滞检测/应用路径）、`psync.go`（排水发送）、
   `replication.go`（CatchUpAndEnableSlave）、`internal/store/set.go`（retryUpdate）、
   `define.go`（BotreonStore/Open/snapshotMu/retryMetrics）。
 - 相关：`docs/replication/failure-modes.md`（TOCTOU/快照 offset 排序/写截止风暴/backlog 枯竭/
-  offset 漂移/重复窗口）、`docs/plans/TODO.md` §1c 全段。
+  offset 漂移/重复窗口）、`docs/plans/TODO.md`（§1c-残留 精简条目 + 已收口归档节）。
 
 ## 10. 实施验证记录（候选方案的实测裁决）
 
