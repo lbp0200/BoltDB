@@ -98,13 +98,21 @@ func (t *tsSource) AdvanceDiscard() uint64 {
 // （60000 写 + 48000 删规模远程挂起实证——gc_test 同因）。推进取有序完成水位
 // （AdvanceDiscard——连续完成前缀 + 单调守卫），且 AdvanceDiscard+SetDiscardTs
 // 在 discardMu 下成原子对（见 define.go discardMu 注释——并发低值后落回退实证）。
-func (s *BotreonStore) commitTS(fn func(*badger.Txn) error) error {
+func (s *BotreonStore) commitTS(fn func(*badger.Txn) error, logValue ...[]byte) error {
 	txn := s.db.NewTransactionAt(math.MaxUint64, true)
 	defer txn.Discard()
 	ts := s.tsSource.Begin()
 	defer s.tsSource.End(ts)
 	if err := fn(txn); err != nil {
 		return err
+	}
+	// S2 D 定案（a4 §10 附6——kvrocks 式 log-in-commit）：传播日志键与数据变更
+	// 同事务写入——同 ts = 天然绑定（无分发侧打标/竞态）。fn 成功后写（失败回复
+	// 不入日志——防 slave apply 错误/FULLRESYNC thrash——handler_core 754 注释语义）。
+	if len(logValue) > 0 && len(logValue[0]) > 0 {
+		if err := txn.Set(replLogKey(ts), logValue[0]); err != nil {
+			return err
+		}
 	}
 	if err := txn.CommitAt(ts, nil); err != nil {
 		return err

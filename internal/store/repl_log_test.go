@@ -1,0 +1,141 @@
+package store
+
+import (
+	"encoding/binary"
+	"fmt"
+	"testing"
+
+	"github.com/dgraph-io/badger/v4"
+)
+
+// logTS 从日志键中解出 ts（键尾 8 字节大端）。
+func logTS(key []byte) uint64 {
+	return binary.BigEndian.Uint64(key[len(key)-8:])
+}
+
+// replLogEntries 遍历全部传播日志键（前缀扫描）返回 (ts, value) 列表。
+func replLogEntries(t *testing.T, s *BotreonStore) [][2]uint64 {
+	t.Helper()
+	var out [][2]uint64
+	err := s.db.View(func(txn *badger.Txn) error {
+		it := txn.NewIterator(badger.DefaultIteratorOptions)
+		defer it.Close()
+		for it.Seek(replLogPrefix); it.Valid() && hasPrefix(it.Item().Key(), replLogPrefix); it.Next() {
+			v, err := it.Item().ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			out = append(out, [2]uint64{logTS(it.Item().Key()), uint64(len(v))})
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func hasPrefix(b, prefix []byte) bool {
+	if len(b) < len(prefix) {
+		return false
+	}
+	for i := range prefix {
+		if b[i] != prefix[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// TestReplLogSameTSBinding 验证 log-in-commit 的核心绑定：SET 的数据条目与传播
+// 日志键在同一事务（同一 commit ts）——日志键嵌入 ts == 数据条目 item.Version()。
+func TestReplLogSameTSBinding(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	if err := s.Set("binding:key", "value-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	err := s.db.View(func(txn *badger.Txn) error {
+		// 数据条目：STRING 数据键的版本（commit ts）
+		item, err := txn.Get([]byte(s.stringKey("binding:key")))
+		if err != nil {
+			return err
+		}
+		dataTS := item.Version()
+
+		// 日志条目：REPLLOG_ + ts
+		it := txn.NewIterator(badger.DefaultIteratorOptions)
+		defer it.Close()
+		var logFound bool
+		for it.Seek(replLogPrefix); it.Valid() && hasPrefix(it.Item().Key(), replLogPrefix); it.Next() {
+			logFound = true
+			if lt := logTS(it.Item().Key()); lt != dataTS {
+				t.Fatalf("log ts %d != data commit ts %d (binding broken)", lt, dataTS)
+			}
+			v, err := it.Item().ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			if string(v) != string(encodePropagateCommand([]byte("SET"), []byte("binding:key"))) {
+				t.Fatalf("log value mismatch: %q", v)
+			}
+		}
+		if !logFound {
+			t.Fatal("no repl log entry after successful SET")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestReplLogOrdering 验证日志键按 ts 升序（前缀扫描即排水序）。
+func TestReplLogOrdering(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	const n = 20
+	for i := 0; i < n; i++ {
+		if err := s.Set(fmt.Sprintf("order:key:%d", i), "v"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries := replLogEntries(t, s)
+	if len(entries) != n {
+		t.Fatalf("log entries = %d, want %d", len(entries), n)
+	}
+	for i := 1; i < len(entries); i++ {
+		if entries[i][0] <= entries[i-1][0] {
+			t.Fatalf("log ts not ascending at %d: %d <= %d", i, entries[i][0], entries[i-1][0])
+		}
+	}
+}
+
+// TestReplLogSuccessOnly 验证失败写不入日志：对已存在不同类型键 SET → ErrWrongType
+// → 无新日志条目；成功后才有。
+func TestReplLogSuccessOnly(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	// 先建 LIST 类型键（冲突类型）
+	if _, err := s.LPush("conflict:key", "a"); err != nil {
+		t.Fatal(err)
+	}
+	before := len(replLogEntries(t, s))
+
+	// SET 到 LIST 键 → ErrWrongType（fn 失败——不得写日志）
+	if err := s.Set("conflict:key", "v"); err == nil {
+		t.Fatal("expected ErrWrongType on SET over LIST key")
+	}
+	if got := len(replLogEntries(t, s)); got != before {
+		t.Fatalf("failed SET wrote a repl log entry: before %d after %d", before, got)
+	}
+
+	// 成功 SET → 日志 +1
+	if err := s.Set("ok:key", "v"); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(replLogEntries(t, s)); got != before+1 {
+		t.Fatalf("successful SET did not write exactly one log entry: before %d after %d", before, got)
+	}
+}

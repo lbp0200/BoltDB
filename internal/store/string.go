@@ -48,7 +48,9 @@ func (s *BotreonStore) Set(key string, value string) error {
 		}
 		strKey := s.stringKey(key)
 		return s.setValueWithCompression(txn, []byte(strKey), []byte(value))
-	}, 30)
+		// 注：日志值 = SET 命令的标识性小负载（不含 value 参数——完整重放形式连同
+		// vlog 影响/保留策略归 S2 ② 增量——a4 §10 附6 D-定案待定件②④）。
+	}, 30, encodePropagateCommand([]byte("SET"), []byte(key)))
 	return err
 }
 

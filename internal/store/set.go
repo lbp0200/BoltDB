@@ -20,7 +20,7 @@ func randomFloat64() float64 {
 	return float64(binary.BigEndian.Uint64(b)) / (1 << 64)
 }
 
-func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int) error {
+func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int, logValue ...[]byte) error {
 	// snapshotMu 读锁由 server processRequest 持有，跨越 commit → PropagateCommand
 	// （Issue #3）。这里不再 RLock：嵌套 RLock 在 FULLRESYNC 写者排队时会死锁。
 	// 见 docs/failures/snapshot-inconsistency.md §4。
@@ -56,7 +56,7 @@ func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int) e
 	var err error
 	for i := 0; i < maxRetries; i++ {
 		attemptStart := time.Now()
-		err = s.commitTS(fn)
+		err = s.commitTS(fn, logValue...)
 		s.recordUpdateLatency(time.Since(attemptStart))
 		if err == nil {
 			s.retryMu.Lock()
