@@ -52,6 +52,8 @@ func (s *BotreonStore) Set(key string, value string) error {
 
 // SetWithTTL 字符串操作，设置键值对并设置过期时间
 func (s *BotreonStore) SetWithTTL(key, value string, ttl time.Duration) error {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		// Check if key already exists with a different type
 		typeKey := TypeOfKeyGet(key)
