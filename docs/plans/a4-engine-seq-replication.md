@@ -539,3 +539,21 @@ D 写路径开销未可观测**。
   语义 + 从侧 lastAppliedTS 跟踪——backlog 影子同流并行 + 换算表验证——后退役）。
   回传仅在 backlog 影子需**内联条目 ts**（(offset, ts, cmd)）时才必要——且换算表可用
   探针式事件对齐（log-key ↔ backlog 条目）构建——回传或可全免（实施时复核）。
+
+### log-key 增量流传输设计（2026-09-04——分级-3 主体的 wire/相位/ACK 定案）
+
+- **wire 形态（每条目 = (ts, 全命令)）**：master 按从侧请求 ts 增量扫描日志键
+  （`ReplLogEntriesFrom`——6785b82——首个 ts ≥ 请求 ts 起）——每条目发送 = 显式 ts
+  （日志键 ts）+ 全命令 RESP（值源见相位——初始为 backlog 影子事件对齐的既有全命令
+  ——**非日志键当前标识性值**）——从侧按条目 ts 推进 lastAppliedTS。传输载体复用
+  既有复制流（新命令类型或 ts 注记形态——对齐 kvrocks FeedSlaveThread 的 WAL 回读
+  重放——实施细定）。
+- **与 ②/D4 的子相位**：(i) **协议相位**——(ts, 全命令) 流 + 从侧 lastAppliedTS +
+  ACK-ts（值 = backlog 影子对齐的全命令——**无需 ② 部署**——换算表事件对齐即值源
+  ——backlog 保持权威）；(ii) **终态**——backlog 退役后值源切日志键自身（②/D4 全重放
+  形式——2x vlog 写放大与部署同步）。**②/D4 非 feed 前置——feed 协议相位先行**。
+- **lastAppliedTS 跟踪**：从侧对每**已应用**条目以 wire ts 更新（直接主侧 ts 域——
+  应用后推进——与现字节 lastOffset 同位点同步维护——CONTINUE 落盘持久化）。
+- **ACK received-vs-applied（定案 = applied）**：ACK-ts 报已应用最大 ts（与现字节 ACK
+  的应用语义一致——B2 排水判据测应用推进）——received-only 水位仅协议测试用（不进
+  判据——从侧"收到但未应用"窗口不触发排水误判）。
