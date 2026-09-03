@@ -224,3 +224,26 @@ rename.go（RENAME/RENAMENX）、del.go（DEL/EXPIRE/PERSIST 族）、hyperloglo
 逐方法编辑——~10+ 文件）→ ② store 全包绿（零行为回归证明）→ ③ S1-A2 切引擎（key 锁
 接管并发——冲突检测退役——§8 坏点 #4 解除验证：并发 INCR 原子性新测试）。
 
+### §10 附 3：S1-A1 实施状态（2026-09-03——里程碑验证）
+
+**补差完成**：审计 gap 清单全部命令组已加锁（14 个增量提交——~55 个 RMW/生命周期方法
+按既有模式 wrap——单 key `Lock`/多 key `LockMulti` 排序获取）——覆盖：DEL/DelString、
+EXPIRE/EXPIREAT/PEXPIRE/PEXPIREAT/PERSIST（纯委托的 ExpireAt/PExpireAt 不重锁）、
+SET 族（SetWithTTL 为 SetEX/PSETEX 委托落点）、SetNX、MSetNX、set 族（SAdd/SRem/SPop/
+SPopN/SMove + *STORE）、zset 族（ZAdd/ZAddWithOptions/ZRem/ZSetDel/ZRemRange* +
+Z*STORE）、hll（PFAdd/PFMerge）、RENAME/RENAMENX、流（XAdd/XDel/XTrim/XSetID/XAck/
+XClaim/XAutoClaim/XGroup*）、geo（GeoAddWithOptions/GeoRemove/GeoSearchStore）、TS
+（TSAdd/TSDel/TSAddRule——TSIncrBy 委托 TSAdd 不重锁）、JSON（JSONSet/JSONDel/
+JSONArrAppend/JSONNumIncrBy/JSONNumMultBy/JSONClear）、bit（SetBit/BitField/BitOp）。
+
+**两处自死锁发现即修（委托模式教训）**：RenameNX→Rename、TSIncrBy→TSAdd——方法内委托
+另一已加锁方法时不得自持锁（RWMutex 不可重入）——修复为不重锁 + 注释注明（读段竞态由
+过渡期 badger 冲突检测覆盖）。
+
+**里程碑验证**：store 全包远程 -race 绿（多轮 ~51-54s）+ replication 跨包绿（23.8s——
+FULLRESYNC 恢复路径调已加锁的 XGroupRestore/XSetID 无回归）+ golangci-lint 0 issues +
+写路径 bench ok。**慢写直方图对照**：key 锁为每次 RMW 单次互斥操作（~ns 级——分片池——
+仅同 key 并发写有争用——即意图的串行化）——不同 key 写负载无退化预期；正式前后基准
+A/B 列为 S1-A2 前置可选项。**推送**：18 提交待推（github SSH 网络故障期间本地积累——
+恢复后 `git push origin main`）。
+
