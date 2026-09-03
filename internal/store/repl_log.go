@@ -1,8 +1,11 @@
 package store
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
+
+	"github.com/dgraph-io/badger/v4"
 )
 
 // 复制传播日志键（S2——D 定案——kvrocks 式 log-in-commit，a4 §10 附6）：
@@ -36,4 +39,30 @@ func encodePropagateCommand(args ...[]byte) []byte {
 		b = append(b, '\r', '\n')
 	}
 	return b
+}
+
+// ReplLogEntry 是传播日志键读侧的条目（S2——§10 附7 D1b——日志键为增量续传/排水源）。
+type ReplLogEntry struct {
+	TS    uint64
+	Value []byte
+}
+
+// ReplLogEntries 遍历全部传播日志键（REPLLOG_ 前缀扫描——键序即 ts 升序）返回条目。
+// 读侧探针（§10 附7 分级-1——影子双写一致性比对）与 S2 增量续传（D1b）的数据源。
+func (s *BotreonStore) ReplLogEntries() ([]ReplLogEntry, error) {
+	var out []ReplLogEntry
+	err := s.db.View(func(txn *badger.Txn) error {
+		it := txn.NewIterator(badger.DefaultIteratorOptions)
+		defer it.Close()
+		for it.Seek(replLogPrefix); it.Valid() && bytes.HasPrefix(it.Item().Key(), replLogPrefix); it.Next() {
+			v, err := it.Item().ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			key := it.Item().Key()
+			out = append(out, ReplLogEntry{TS: binary.BigEndian.Uint64(key[len(key)-8:]), Value: v})
+		}
+		return nil
+	})
+	return out, err
 }
