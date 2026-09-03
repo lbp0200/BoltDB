@@ -90,6 +90,8 @@ func (s *BotreonStore) PSETEX(key string, value string, milliseconds int64) erro
 
 // SetNX 实现 Redis SETNX 命令，仅当键不存在时设置
 func (s *BotreonStore) SetNX(key string, value string) (bool, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	success := false
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		success = false // reset each attempt; stale value must not survive conflict retry
@@ -216,6 +218,12 @@ func (s *BotreonStore) MSetNX(keyValues ...string) (bool, error) {
 	if len(keyValues)%2 != 0 {
 		return false, errors.New("MSETNX requires an even number of arguments")
 	}
+	lockKeys := make([]string, 0, len(keyValues)/2)
+	for i := 0; i < len(keyValues); i += 2 {
+		lockKeys = append(lockKeys, keyValues[i])
+	}
+	unlock := s.keyLockMgr.LockMulti(lockKeys)
+	defer unlock()
 	success := false
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		success = false // reset each attempt; stale value must not survive conflict retry
