@@ -176,3 +176,42 @@ func TestReplLogTSMonotonicUnderConcurrentWrites(t *testing.T) {
 		}
 	}
 }
+
+// TestReplLogEntriesFrom 验证增量扫描 API：从指定 ts（含）起返回条目（键序 seek——
+// 首个 ts >= since）——log-key 增量流（master 侧按从侧请求 ts 增量发送）的读取基础。
+func TestReplLogEntriesFrom(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	const n = 20
+	for i := 0; i < n; i++ {
+		if err := s.Set(fmt.Sprintf("from:key:%d", i), "v"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all := replLogEntries(t, s)
+	if len(all) != n {
+		t.Fatalf("log entries = %d, want %d", len(all), n)
+	}
+	// 从中间 ts 起——应为后半段（含中点的 ts）
+	midTS := all[n/2][0]
+	from, err := s.ReplLogEntriesFrom(midTS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(from) != n-n/2 {
+		t.Fatalf("entries from mid ts = %d, want %d", len(from), n-n/2)
+	}
+	for i := 0; i < len(from); i++ {
+		if from[i].TS != all[n/2+i][0] {
+			t.Fatalf("entry %d ts = %d, want %d (from-ts scan misaligned)", i, from[i].TS, all[n/2+i][0])
+		}
+	}
+	// 从 0 起 = 全量（与 ReplLogEntries 等价）
+	from0, err := s.ReplLogEntriesFrom(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(from0) != n {
+		t.Fatalf("entries from 0 = %d, want %d", len(from0), n)
+	}
+}

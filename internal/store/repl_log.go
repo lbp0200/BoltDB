@@ -50,11 +50,19 @@ type ReplLogEntry struct {
 // ReplLogEntries 遍历全部传播日志键（REPLLOG_ 前缀扫描——键序即 ts 升序）返回条目。
 // 读侧探针（§10 附7 分级-1——影子双写一致性比对）与 S2 增量续传（D1b）的数据源。
 func (s *BotreonStore) ReplLogEntries() ([]ReplLogEntry, error) {
+	return s.ReplLogEntriesFrom(0)
+}
+
+// ReplLogEntriesFrom 从指定 ts（含）起遍历传播日志键（replLogKey(since) seek——
+// 键序即 ts 升序——首个 ts >= since 的日志键起）。log-key 增量流（S2 分级 2/3 重排——
+// master 侧按从侧请求 ts 增量发送）的读取基础。
+func (s *BotreonStore) ReplLogEntriesFrom(since uint64) ([]ReplLogEntry, error) {
 	var out []ReplLogEntry
+	seekKey := replLogKey(since)
 	err := s.db.View(func(txn *badger.Txn) error {
 		it := txn.NewIterator(badger.DefaultIteratorOptions)
 		defer it.Close()
-		for it.Seek(replLogPrefix); it.Valid() && bytes.HasPrefix(it.Item().Key(), replLogPrefix); it.Next() {
+		for it.Seek(seekKey); it.Valid() && bytes.HasPrefix(it.Item().Key(), replLogPrefix); it.Next() {
 			v, err := it.Item().ValueCopy(nil)
 			if err != nil {
 				return err
