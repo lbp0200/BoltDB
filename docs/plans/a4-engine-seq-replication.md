@@ -405,5 +405,10 @@ retryUpdate → commitTS（ts 深埋于此——同 goroutine）。每命令 1:1
 （对齐现有 processRequest 的 normalize——EXPIRE→PEXPIREAT 族）；③ 成功条件日志
 （失败回复不入日志——防 slave apply 错误/FULLRESYNC thrash——754 注释语义）；④ 保留/
 回收（日志键增长——backlog 保留等价）；⑤ 实施顺序：commitTS 级日志支持 + 单命令族
-试点 → 扩展 → 复制层读侧接 backlog/排水（S2 主体）。
+试点 → 扩展 → 复制层读侧接 backlog/排水（S2 主体）。**实施进度（2026-09-03）**：
+commitTS 级支持 + 单命令族试点 ✅（`bd0c854`——REPLLOG_+tsBE 同批日志键 + 同 ts 绑定
+测试）→ string 族扩展 ✅（`6fd372e`——12 写站点标识性负载——wrapper 委托覆盖）——
+**C5 核验（2026-09-03——推翻 6fd372e 初测 +30-37%）：同条件紧邻 A/B 无检测差异
+（D-on 417µs vs pre-D 438µs——~5% 噪声内——初测为跨时机器漂移伪影——~2.7x 批次差）——
+D 写路径开销未可观测**。
 
