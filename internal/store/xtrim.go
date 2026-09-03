@@ -9,6 +9,8 @@ import (
 
 // XTrim trims a stream
 func (s *BotreonStore) XTrim(key string, maxLen int64, minID string) (int64, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	var trimmed int64
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {
@@ -114,6 +116,8 @@ func (s *BotreonStore) XTrim(key string, maxLen int64, minID string) (int64, err
 
 // XSetID sets the last-delivered ID of a stream (internal replication command)
 func (s *BotreonStore) XSetID(key, lastID string, entriesAdded int64, maxDeletedID string) error {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		metaKey := streamKey(key)
 

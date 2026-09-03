@@ -9,6 +9,8 @@ import (
 
 // XDel deletes entries from a stream
 func (s *BotreonStore) XDel(key string, ids ...string) (int64, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	var deleted int64
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {

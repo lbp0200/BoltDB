@@ -32,6 +32,8 @@ func (s *BotreonStore) CreateEmptyStream(key string) error {
 
 // XAdd adds a new entry to a stream
 func (s *BotreonStore) XAdd(key string, opts StreamXAddOptions, id string, fields map[string]string) (string, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	var resultID string
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {
