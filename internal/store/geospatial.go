@@ -291,7 +291,7 @@ func (s *BotreonStore) GeoAddWithOptions(key string, opts GeoAddOptions, members
 		}
 
 		return nil
-	}, 20)
+	}, 20, encodePropagateCommand([]byte("GEOADD"), []byte(key)))
 
 	return added, err
 }
@@ -713,7 +713,7 @@ func (s *BotreonStore) GeoSearchStore(dstKey, srcKey string, centerLon, centerLa
 		}
 		added = int64(len(members))
 		return nil
-	}, 20)
+	}, 20, encodePropagateCommand([]byte("GEOSEARCHSTORE"), []byte(dstKey)))
 	if err == nil && addedNewMember {
 		s.notifyBlockingZPop(dstKey)
 	}
@@ -800,7 +800,7 @@ func (s *BotreonStore) GeoDel(key, member string) error {
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		_, err := geoDelMemberInTxn(txn, key, member)
 		return err
-	}, 20)
+	}, 20, encodePropagateCommand([]byte("ZREM"), []byte(key)))
 }
 
 // GeoRadiusByMember searches for members near a member
@@ -924,7 +924,7 @@ func (s *BotreonStore) GeoRemove(key string, members ...string) (int64, error) {
 			}
 		}
 		return nil
-	}, 20)
+	}, 20, encodePropagateCommand([]byte("ZREM"), []byte(key)))
 	return removed, err
 }
 
