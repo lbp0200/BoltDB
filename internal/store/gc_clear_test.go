@@ -18,7 +18,7 @@ func TestClearAllData_PreservesSystemKeys(t *testing.T) {
 	// Save replication metadata and a fake cluster config.
 	assert.NoError(t, s.SaveReplID("deadbeef1234567890abcdef1234567890abcdef12"))
 	assert.NoError(t, s.SaveMasterReplOffset(12345))
-	if err := s.db.Update(func(txn *badger.Txn) error {
+	if err := s.commitTS(func(txn *badger.Txn) error {
 		return txn.Set([]byte("cluster:config"), []byte(`{"node_id":"n1"}`))
 	}); err != nil {
 		t.Fatalf("save cluster config: %v", err)

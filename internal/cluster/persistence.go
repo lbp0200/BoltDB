@@ -96,7 +96,7 @@ func (c *Cluster) saveConfigLocked() error {
 		return fmt.Errorf("marshal cluster config: %w", err)
 	}
 
-	return c.Store.GetDB().Update(func(txn *badger.Txn) error {
+	return c.Store.RunWriteLocked(func(txn *badger.Txn) error {
 		return txn.Set([]byte(configKey), data)
 	})
 }

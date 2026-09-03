@@ -866,7 +866,7 @@ func TestNextStartupCleansOrphans(t *testing.T) {
 	// Create a key, then manually delete the type key to simulate orphan
 	s.Set("ns_orph", "val")
 	typeKey := TypeOfKeyGet("ns_orph")
-	s.db.Update(func(txn *badger.Txn) error {
+	s.commitTS(func(txn *badger.Txn) error {
 		return txn.Delete(typeKey)
 	})
 
@@ -881,7 +881,7 @@ func TestNextStartupCleansOrphanedList(t *testing.T) {
 
 	s.LPush("ns_orl", "a", "b")
 	typeKey := TypeOfKeyGet("ns_orl")
-	s.db.Update(func(txn *badger.Txn) error {
+	s.commitTS(func(txn *badger.Txn) error {
 		return txn.Delete(typeKey)
 	})
 
@@ -895,7 +895,7 @@ func TestNextStartupCleansOrphanedHash(t *testing.T) {
 
 	s.HSet("ns_orh", "f1", "v1")
 	typeKey := TypeOfKeyGet("ns_orh")
-	s.db.Update(func(txn *badger.Txn) error {
+	s.commitTS(func(txn *badger.Txn) error {
 		return txn.Delete(typeKey)
 	})
 
@@ -909,7 +909,7 @@ func TestNextStartupCleansOrphanedSet(t *testing.T) {
 
 	s.SAdd("ns_ors", "x", "y")
 	typeKey := TypeOfKeyGet("ns_ors")
-	s.db.Update(func(txn *badger.Txn) error {
+	s.commitTS(func(txn *badger.Txn) error {
 		return txn.Delete(typeKey)
 	})
 
@@ -923,7 +923,7 @@ func TestNextStartupCleansOrphanedZSet(t *testing.T) {
 
 	s.ZAdd("ns_orz", []ZSetMember{{Member: "a", Score: 1.0}})
 	typeKey := TypeOfKeyGet("ns_orz")
-	s.db.Update(func(txn *badger.Txn) error {
+	s.commitTS(func(txn *badger.Txn) error {
 		return txn.Delete(typeKey)
 	})
 

@@ -7,21 +7,56 @@ import (
 	"github.com/dgraph-io/badger/v4"
 )
 
-// TestTSSourceMonotonic 验证 ts 源在大量并发分配下串行唯一、无重复。
+// TestTSSourceMonotonic 验证 ts 源在大量分配下串行唯一、无重复。
 func TestTSSourceMonotonic(t *testing.T) {
 	t.Parallel()
 	src := newTSSource()
 	const n = 100000
 	seen := make(map[uint64]struct{}, n)
 	for i := 0; i < n; i++ {
-		v := src.Next()
+		v := src.Begin()
 		if _, dup := seen[v]; dup {
 			t.Fatalf("duplicate ts %d at iteration %d", v, i)
 		}
 		seen[v] = struct{}{}
+		src.End(v)
 	}
-	if src.Next() != n+1 {
-		t.Fatalf("sequence not contiguous: next = %d, want %d", src.Next(), n+1)
+	if src.SafeDiscard() != n {
+		t.Fatalf("ordered watermark did not advance over sequential completes: got %d, want %d",
+			src.SafeDiscard(), n)
+	}
+}
+
+// TestTSSourceOrderedWatermark 验证有序完成水位：并发提交乱序完成时，SafeDiscard
+// 只能推进到**连续完成前缀**——不得越过未完成（in-flight）提交的 ts（否则 discard-ts
+// 越过 in-flight 提交 → badger `ts >= o.lastCleanupTs` 断言——2026-09-03 全包套件实证）。
+func TestTSSourceOrderedWatermark(t *testing.T) {
+	t.Parallel()
+	src := newTSSource()
+
+	ts1 := src.Begin()
+	ts2 := src.Begin()
+	ts3 := src.Begin()
+	if ts1 != 1 || ts2 != 2 || ts3 != 3 {
+		t.Fatalf("unexpected allocation order: %d %d %d", ts1, ts2, ts3)
+	}
+
+	// 乱序完成：3 先完成——前缀断裂（1、2 未完成）——水位不得推进。
+	src.End(ts3)
+	if got := src.SafeDiscard(); got != 0 {
+		t.Fatalf("SafeDiscard advanced past in-flight commits: got %d, want 0", got)
+	}
+
+	// 1 完成——前缀推进到 1（2 仍 in-flight）。
+	src.End(ts1)
+	if got := src.SafeDiscard(); got != 1 {
+		t.Fatalf("SafeDiscard = %d, want 1", got)
+	}
+
+	// 2 完成——前缀推进到 3（1、2、3 全部完成）。
+	src.End(ts2)
+	if got := src.SafeDiscard(); got != 3 {
+		t.Fatalf("SafeDiscard = %d, want 3", got)
 	}
 }
 
@@ -63,7 +98,7 @@ func TestTSSourceRecoveryFromMaxVersion(t *testing.T) {
 	defer db2.Close()
 	src := newTSSource()
 	src.Init(db2)
-	if got := src.Next(); got != last+1 {
+	if got := src.Begin(); got != last+1 {
 		t.Fatalf("recovery watermark: next = %d, want %d", got, last+1)
 	}
 }

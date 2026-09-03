@@ -13,9 +13,14 @@ import (
 )
 
 // deterministicConflictWrite runs s.retryUpdate with a function that reads and
-// increments a counter stored at `key`, forcing BadgerDB conflict detection
-// when multiple goroutines write concurrently.
+// increments a counter stored at `key`. In the Open mode this exercised
+// BadgerDB conflict detection; since S1-A2 (managed mode) retires conflict
+// retries as the atomicity mechanism, the helper now holds the key lock
+// (S1-A1) so concurrent writers serialize - the no-loss assertion becomes a
+// key-lock regression gate instead of a conflict-resolution check.
 func deterministicConflictWrite(s *BotreonStore, key string, maxRetries int) error {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(key))
 		var count uint64
@@ -2153,7 +2158,7 @@ func TestDeterministicConflict_RetryUpdateSuccessAfterConflict(t *testing.T) {
 	key := "counter:success"
 
 	// Pre-set counter to 0
-	s.db.Update(func(txn *badger.Txn) error {
+	s.commitTS(func(txn *badger.Txn) error {
 		return txn.Set([]byte(key), make([]byte, 8))
 	})
 

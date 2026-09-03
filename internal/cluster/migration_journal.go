@@ -51,7 +51,7 @@ func (c *Cluster) saveJournal(j *migrationJournal) error {
 	if err != nil {
 		return fmt.Errorf("marshal migration journal: %w", err)
 	}
-	return c.Store.GetDB().Update(func(txn *badger.Txn) error {
+	return c.Store.RunWriteLocked(func(txn *badger.Txn) error {
 		return txn.Set(journalKey(j.Slot), data)
 	})
 }
@@ -86,7 +86,7 @@ func (c *Cluster) loadJournal(slot uint32) (*migrationJournal, error) {
 
 // deleteJournal 删除迁移日志（迁移完成后清理）。
 func (c *Cluster) deleteJournal(slot uint32) error {
-	return c.Store.GetDB().Update(func(txn *badger.Txn) error {
+	return c.Store.RunWriteLocked(func(txn *badger.Txn) error {
 		return txn.Delete(journalKey(slot))
 	})
 }

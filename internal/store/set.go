@@ -56,7 +56,7 @@ func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int) e
 	var err error
 	for i := 0; i < maxRetries; i++ {
 		attemptStart := time.Now()
-		err = s.db.Update(fn)
+		err = s.commitTS(fn)
 		s.recordUpdateLatency(time.Since(attemptStart))
 		if err == nil {
 			s.retryMu.Lock()

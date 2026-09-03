@@ -241,7 +241,7 @@ func TestNextStartupCleanupOrphanedStringData(t *testing.T) {
 	s := setupTestStore(t)
 
 	// 制造孤儿 STRING 数据：直接写入 STRING:orphan_str 无 TYPE_
-	err := s.GetDB().Update(func(txn *badger.Txn) error {
+	err := s.commitTS(func(txn *badger.Txn) error {
 		return txn.Set([]byte("STRING:orphan_str"), []byte("orphan"))
 	})
 	assert.NoError(t, err)

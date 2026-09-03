@@ -81,6 +81,15 @@ type BotreonStore struct {
 	db              *badger.DB
 	compressionType CompressionType
 
+	// tsSource 分配 managed-mode 提交的串行唯一 commit timestamp（A4 §10 附4）
+	tsSource *tsSource
+
+	// discardMu 串行化 AdvanceDiscard+SetDiscardTs 原子对：单调守卫（tsSource 内部）
+	// 与 oracle 实际推进之间若有窗口，并发下低值可能后于高值落地（oracle discardTs
+	// 回退 → badger cleanup 断言 `discardTs >= lastCleanupTs`——txn.go:211——2026-09-03
+	// 值级实证 1408<1413/1154<1158）。持锁保证 tsSource.discarded 恒等于 oracle 实态。
+	discardMu sync.Mutex
+
 	// Key-level locking for atomic operations
 	keyLockMgr *KeyLockManager
 
@@ -426,7 +435,7 @@ func (s *BotreonStore) migrateTTLFormat() error {
 	logger.Logger.Info().Int("count", len(keysToFix)).Msg("TTL 格式迁移：发现纳秒格式的过期时间，正在迁移为秒格式")
 
 	for _, kf := range keysToFix {
-		if err := s.db.Update(func(txn *badger.Txn) error {
+		if err := s.commitTS(func(txn *badger.Txn) error {
 			item, err := txn.Get(kf.key)
 			if err != nil {
 				return err
@@ -487,7 +496,7 @@ func NewBotreonStoreWithCompression(path string, compressionType CompressionType
 	// 7. 优化垃圾回收
 	opts.NumGoroutines = 8 // GC goroutine 数量（默认 8）
 
-	db, err := badger.Open(opts)
+	db, err := badger.OpenManaged(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -506,7 +515,9 @@ func NewBotreonStoreWithCompression(path string, compressionType CompressionType
 		zsetRankCaches:      make(map[string]*zsetRankCache),
 		closeCh:             make(chan struct{}),
 		scanBookmarks:       make(map[uint64][]byte),
+		tsSource:            newTSSource(),
 	}
+	s.tsSource.Init(db)
 	s.backpressure.Store(p)
 	cfg := bpConfig
 	s.bpConfig.Store(&cfg)
@@ -569,7 +580,7 @@ func (s *BotreonStore) GetDB() *badger.DB {
 // SaveReplID 持久化复制 ID 到 BadgerDB，重启后保持 replId 不变
 // 从而避免主节点重启导致所有从节点触发 FULLRESYNC。
 func (s *BotreonStore) SaveReplID(id string) error {
-	return s.db.Update(func(txn *badger.Txn) error {
+	return s.commitTS(func(txn *badger.Txn) error {
 		return txn.Set(replMetaKey, []byte(id))
 	})
 }
@@ -607,7 +618,7 @@ func (s *BotreonStore) LoadReplID() (string, error) {
 // SaveMasterReplOffset 持久化主节点复制偏移量到 BadgerDB，
 // 确保重启后从节点可以通过 PSYNC CONTINUE 而非 FULLRESYNC 重新连接。
 func (s *BotreonStore) SaveMasterReplOffset(offset int64) error {
-	return s.db.Update(func(txn *badger.Txn) error {
+	return s.commitTS(func(txn *badger.Txn) error {
 		buf := make([]byte, 8)
 		binary.BigEndian.PutUint64(buf, uint64(offset))
 		return txn.Set(replOffsetKey, buf)
@@ -656,7 +667,7 @@ func (s *BotreonStore) SaveBacklog(offset int64, buffer []byte, size int64) erro
 	binary.BigEndian.PutUint64(buf[0:8], uint64(offset))
 	binary.BigEndian.PutUint64(buf[8:16], uint64(size))
 	copy(buf[16:], buffer)
-	return s.db.Update(func(txn *badger.Txn) error {
+	return s.commitTS(func(txn *badger.Txn) error {
 		return txn.Set(backlogKey, buf)
 	})
 }
@@ -704,7 +715,7 @@ func (s *BotreonStore) LoadBacklog() (int64, []byte, int64, error) {
 
 // DeleteBacklog 删除持久化的 backlog 数据。
 func (s *BotreonStore) DeleteBacklog() error {
-	return s.db.Update(func(txn *badger.Txn) error {
+	return s.commitTS(func(txn *badger.Txn) error {
 		return txn.Delete(backlogKey)
 	})
 }
@@ -956,7 +967,7 @@ func (s *BotreonStore) ViewWithSnapshotLock(fn func(txn *badger.Txn) error) erro
 func (s *BotreonStore) RunWriteLocked(fn func(txn *badger.Txn) error) error {
 	s.snapshotMu.RLock()
 	defer s.snapshotMu.RUnlock()
-	return s.db.Update(fn)
+	return s.commitTS(fn)
 }
 
 // SnapshotMuLock / SnapshotMuUnlock 暴露给需要跨多步原子绑定的

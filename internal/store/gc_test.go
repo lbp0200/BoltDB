@@ -26,7 +26,7 @@ func newTestStoreWithVlogSize(t *testing.T, vlogSize int64) *BotreonStore {
 	// are key+valuePointer only — many keys are needed to fill a memtable.
 	opts.MemTableSize = 1024 * 1024
 	opts.ValueThreshold = 512
-	db, err := badger.Open(opts)
+	db, err := badger.OpenManaged(opts)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -43,7 +43,9 @@ func newTestStoreWithVlogSize(t *testing.T, vlogSize int64) *BotreonStore {
 		zsetRankCaches:      make(map[string]*zsetRankCache),
 		closeCh:             make(chan struct{}),
 		scanBookmarks:       make(map[uint64][]byte),
+		tsSource:            newTSSource(),
 	}
+	s.tsSource.Init(db)
 	s.backpressure.Store(p)
 	cfg := bpConfig
 	s.bpConfig.Store(&cfg)
