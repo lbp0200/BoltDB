@@ -117,5 +117,5 @@ func (s *BotreonStore) LTrim(key string, start, stop int64) error {
 
 		newLength := uint64(stop - start + 1)
 		return s.listUpdateMeta(txn, key, newLength, newStartID, newEndID)
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("LTRIM"), []byte(key)))
 }

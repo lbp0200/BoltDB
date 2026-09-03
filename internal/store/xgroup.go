@@ -53,7 +53,7 @@ func (s *BotreonStore) XGroupCreate(key, group, startID string) error {
 			return err
 		}
 		return txn.Set(groupKey, data)
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("XGROUP"), []byte(key), []byte("CREATE")))
 }
 
 // XGroupCreateConsumer explicitly creates a consumer in a group.
@@ -96,7 +96,7 @@ func (s *BotreonStore) XGroupCreateConsumer(key, group, consumer string) (int64,
 			return err
 		}
 		return txn.Set(groupKey, data)
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("XGROUP"), []byte(key), []byte("CREATECONSUMER")))
 	return created, err
 }
 
@@ -138,7 +138,7 @@ func (s *BotreonStore) XGroupDelConsumer(key, group, consumer string) (int64, er
 			return err
 		}
 		return txn.Set(groupKey, data)
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("XGROUP"), []byte(key), []byte("DELCONSUMER")))
 	return removed, err
 }
 
@@ -149,7 +149,7 @@ func (s *BotreonStore) XGroupDestroy(key, group string) error {
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		groupKey := streamGroupDataKey(key, group)
 		return txn.Delete(groupKey)
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("XGROUP"), []byte(key), []byte("DESTROY")))
 }
 
 // XGroupSetID sets the last delivered ID for a group

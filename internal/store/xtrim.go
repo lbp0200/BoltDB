@@ -109,7 +109,7 @@ func (s *BotreonStore) XTrim(key string, maxLen int64, minID string) (int64, err
 			return err
 		}
 		return nil
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("XTRIM"), []byte(key)))
 
 	return trimmed, err
 }
@@ -179,5 +179,5 @@ func (s *BotreonStore) XSetID(key, lastID string, entriesAdded int64, maxDeleted
 
 		data := encodeStreamMeta(meta)
 		return txn.Set(metaKey, data)
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("XSETID"), []byte(key)))
 }

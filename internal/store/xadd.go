@@ -169,7 +169,7 @@ func (s *BotreonStore) XAdd(key string, opts StreamXAddOptions, id string, field
 		}
 		resultID = id
 		return nil
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("XADD"), []byte(key)))
 
 	if err == nil && resultID != "" {
 		s.notifyStreamRead(key, []StreamEntry{

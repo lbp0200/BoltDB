@@ -114,7 +114,7 @@ func (s *BotreonStore) Del(key string) (int64, error) {
 		}
 		deleted = 1
 		return nil
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("DEL"), []byte(key)))
 	if err == nil && deleted > 0 && (delKeyType == KeyTypeSortedSet || delKeyType == KeyTypeGeo) {
 		s.markZSetDirty(key)
 	}

@@ -151,7 +151,7 @@ func (s *BotreonStore) XAutoClaim(key, group, consumer string, minIdleTime int64
 			return err
 		}
 		return txn.Set(groupKey, data)
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("XAUTOCLAIM"), []byte(key)))
 
 	return &result, err
 }

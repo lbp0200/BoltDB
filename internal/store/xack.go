@@ -43,7 +43,7 @@ func (s *BotreonStore) XAck(key, group string, ids ...string) (int64, error) {
 			return err
 		}
 		return txn.Set(groupKey, data)
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("XACK"), []byte(key)))
 
 	return acknowledged, err
 }
@@ -90,7 +90,7 @@ func (s *BotreonStore) XAckDelRemoveRefs(key, id string) error {
 			}
 		}
 		return nil
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("XACKDEL"), []byte(key)))
 }
 
 // XIsAckedByAllGroups checks if an entry has been acknowledged by ALL consumer groups
@@ -176,7 +176,7 @@ func (s *BotreonStore) XNack(key, group, consumer string, ids ...string) (int64,
 			return err
 		}
 		return txn.Set(groupKey, data)
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("XNACK"), []byte(key)))
 
 	return released, err
 }
@@ -300,7 +300,7 @@ func (s *BotreonStore) XClaim(key, group, consumer string, opts XClaimOptions, i
 			return err
 		}
 		return txn.Set(groupKey, data)
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("XCLAIM"), []byte(key)))
 
 	return claimed, err
 }
