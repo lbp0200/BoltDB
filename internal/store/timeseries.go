@@ -148,6 +148,8 @@ func (s *BotreonStore) TSCreate(key string, opts TSCreateOptions) error {
 // TSAdd implements TS.ADD command
 // TS.ADD key timestamp value [ON_DUPLICATE policy]
 func (s *BotreonStore) TSAdd(key string, timestamp int64, value float64, opts TSAddOptions) (int64, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	var addedTimestamp int64
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {

@@ -27,6 +27,8 @@ type XAutoClaimResult struct {
 
 // XAutoClaim automatically claims pending messages
 func (s *BotreonStore) XAutoClaim(key, group, consumer string, minIdleTime int64, start string, opts XAutoClaimOptions) (*XAutoClaimResult, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	var result XAutoClaimResult
 
 	err := s.retryUpdate(func(txn *badger.Txn) error {

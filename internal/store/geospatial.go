@@ -142,6 +142,8 @@ func (s *BotreonStore) GeoAdd(key string, members []GeoMember) (int64, error) {
 
 // GeoAddWithOptions 实现带选项的 GEOADD（NX/XX/CH）。
 func (s *BotreonStore) GeoAddWithOptions(key string, opts GeoAddOptions, members []GeoMember) (int64, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	var added int64
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		added = 0 // reset each attempt; stale value must not survive conflict retry
