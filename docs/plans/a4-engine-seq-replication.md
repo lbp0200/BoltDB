@@ -110,6 +110,11 @@ FULLRESYNC#2 → 数据丢失。30s 阈值（`63b5c8c`）为已知最佳部分�
    提交 ts 序**必须由调用方保证**——D1 的 ts 源须与提交序严格一致（写路径串行分配或
    批内预分配），否则从侧重放乱序（非交换命令发散——A4 自身引入新发散源）。
 3. 冲突重试在 managed 下的行为**未实证**（`DetectConflicts` 字段存在——S1 需补测）。
+4. **managed 模式无自动冲突检测（S1 设计探针 2026-09-03 实证）**：同 readTs 重叠写
+   （同 key）双提交均 err=nil——last-wins——无 ErrConflict——badger 乐观冲突检测在
+   手动 commit-ts 路径被绕过（即便 `DetectConflicts=true` 默认开启）。**推论**：
+   retryUpdate 的乐观并发模式（read-modify-write 命令 INCR/GETSET/... 依赖冲突重试
+   防 lost-update）在 managed 下**失去保护**——迁移需自带并发控制（见 §9 S1 阻断）。
 
 **可行性裁决：部分可行——D1-D4 基石成立，D5 需替代路径**
 - managed 写 + read-at-ts + 恢复**全部实证可用**——引擎序列记账的存储层基础**可行**（S1-S2 路线成立）。
@@ -119,4 +124,25 @@ FULLRESYNC#2 → 数据丢失。30s 阈值（`63b5c8c`）为已知最佳部分�
 - **D1 设计约束**：ts 源须串行分配（提交序 == ts 序）——写路径在现有 snapshotMu 临界区
   内取 ts（该临界区已覆盖 commit——见 §1c 调查链）——天然满足序约束。
 - S0 未发现不可绕坏点 → **A4 继续（S1 立项可启动）**。
+
+## 9. S1 设计阻断：managed 无冲突检测 vs read-modify-write（2026-09-03）
+
+**S1 设计阶段探针**（写/读路径清单 + managed 行为实证）发现 D1（引擎 managed 迁移）的
+**根本阻断**：
+
+- **事实**：① managed 模式（手动 commit-ts）**无自动冲突检测**（§8 坏点 #4——同 readTs
+  重叠写双提交 last-wins）；② 服务器无全局写串行器（executeCommand 走各连接 goroutine）；
+  ③ store 写路径为乐观并发（`retryUpdate`——ErrConflict → 退避重跑——read-modify-write
+  命令 INCR/GETSET/SETNX/... 靠冲突重试防 lost-update）。
+- **推论**：直接切 OpenManaged + retryUpdate CommitAt 化后，read-modify-write 的乐观保护
+  **失效**——重叠写静默 last-wins（确定性丢更新——比 §1c 残留更严重的正确性回归）。
+- **候选出路**（需用户裁决——成本/风险差异大）：
+  - **A. 自带并发控制层**：store 级写互斥或读集-版本校验（mini-MVCC）——保留并发写——
+    设计量最大（S1 扩展——触碰每条 read-modify-write 语义）。
+  - **B. 写尝试全串行化**：ts 分配 + fn + CommitAt 置于 store 级写互斥——read-modify-write
+    确定性有序——**不同 key 的并发写也串行**——吞吐形态变化（需压测确认可接受）。
+  - **C. S1 暂不切引擎**：非 managed 下用户态 ts 源 + 并行记录（双轨——字节记账 + 冲突
+    检测原样保留——复制零影响）——引擎 ts 切换推迟（managed 并发控制另行设计）。
+- **建议**：C 先行（S1 的"ts 源 + 并行记录"目标达成且零正确性风险——为 S2 铺数据），
+  managed 切换的并发控制作为独立子课题（A/B 选型后再动引擎）。
 
