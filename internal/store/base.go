@@ -130,6 +130,7 @@ func (s *BotreonStore) Expire(key string, seconds int) (bool, error) {
 	if seconds <= 0 {
 		// Redis 语义：非正 TTL 立即删除键（EXPIRE key 0/负数）。
 		// 返回 Del 是否删除了 key：key 存在→true(1)，不存在→false(0)。
+		// 注意：Del 自身已取 key 锁——此处不得在锁内调用（RWMutex 不可重入）。
 		deleted, err := s.Del(key)
 		if err != nil {
 			logger.Logger.Warn().Err(err).Str("key", key).Msg("Expire: error deleting key with non-positive TTL")
@@ -137,6 +138,8 @@ func (s *BotreonStore) Expire(key string, seconds int) (bool, error) {
 		}
 		return deleted > 0, nil
 	}
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	success := false
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		typeKey := TypeOfKeyGet(key)
@@ -208,6 +211,7 @@ func (s *BotreonStore) PExpire(key string, milliseconds int64) (bool, error) {
 	if milliseconds <= 0 {
 		// Redis 语义：非正 TTL 立即删除键（PEXPIRE key 0/负数）。
 		// 返回 Del 是否删除了 key：key 存在→true(1)，不存在→false(0)。
+		// 注意：Del 自身已取 key 锁——此处不得在锁内调用（RWMutex 不可重入）。
 		deleted, err := s.Del(key)
 		if err != nil {
 			logger.Logger.Warn().Err(err).Str("key", key).Msg("PExpire: error deleting key with non-positive TTL")
@@ -215,6 +219,8 @@ func (s *BotreonStore) PExpire(key string, milliseconds int64) (bool, error) {
 		}
 		return deleted > 0, nil
 	}
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	success := false
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		typeKey := TypeOfKeyGet(key)
