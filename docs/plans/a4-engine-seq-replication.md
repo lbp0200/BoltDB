@@ -392,3 +392,18 @@ retryUpdate → commitTS（ts 深埋于此——同 goroutine）。每命令 1:1
   但机械——可分文件增量）——或备选：提交-传播对串行化（写吞吐成本——C5 敏感）。实施
   前需裁 ctx-流穿 vs 串行化的吞吐权衡。
 
+**D-定案（2026-09-03——用户裁决 = kvrocks 式 log-in-commit）**：kvrocks 调研实证：其记账
+单位 = RocksDB SequenceNumber（非字节 offset）；每命令 log-data（WriteBatchLogData——
+命令参数）与数据变更**同一 WriteBatch** 写入（redis_db.cc——单一批 = 单一 seq——命令与
+提交天然同序——**零分发侧打标**）；传播 = `GetWALIter(next_repl_seq)` WAL 回读重放
+（FeedSlaveThread::loop——replication.cc:178——`batch.sequence != curr_seq` 离散检测 +
+`max_replication_lag_` 守卫）；从侧 ACK 带最大 seq；log-data 构造点 = **76 处**
+（storage/types 的 per-命令函数级——等价 bolt 的 store 方法 fn 体级——无签名破坏）。
+**bolt 落点定案**：传播日志键与数据变更同 commitTS 事务写入（同 ts = 天然绑定——
+无竞态、无 ctx 流穿、无串行化吞吐代价）——复制层按日志键 ts 排水。待定设计件：
+① 日志键方案（ts 序键——如前缀 + ts 大端——读侧前缀扫描）；② 日志值 = 传播规范形式
+（对齐现有 processRequest 的 normalize——EXPIRE→PEXPIREAT 族）；③ 成功条件日志
+（失败回复不入日志——防 slave apply 错误/FULLRESYNC thrash——754 注释语义）；④ 保留/
+回收（日志键增长——backlog 保留等价）；⑤ 实施顺序：commitTS 级日志支持 + 单命令族
+试点 → 扩展 → 复制层读侧接 backlog/排水（S2 主体）。
+
