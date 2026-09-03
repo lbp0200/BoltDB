@@ -403,6 +403,15 @@
 > 路径（背压/重试）时 idle 新鲜不判停滞盲区——为 B2（排水进度判据）动机证据（需阶段
 > 0 直方图判别"慢推进 vs 执行阻塞"）。
 >
+> **阶段 0 观测落地（2026-09-03 08:47，commit `3840d9e`）——B2 的前置就绪**：写路径
+> 健康遥测入 INFO `# Stats`（store_write_conflicts/l0_rejected/l0_delayed/blocked/
+> slow_10ms/slow_50ms/slow_100ms——`GetRetryMetrics` 零开销计数器——慢写分桶仅慢路径
+> 锁、快速路径零锁——C5 约束）——A1b 亦机制否决（亚并发读触发——并发闸结构上无法过
+> 自身门槛——设计文档 §10）。**§1c 快速修复空间至此穷尽**（阈值调参/B1/A1b 全实证
+> 关闭）；剩余：B2（需事件级慢写/freeze 时序数据——INFO 累计计数分辨率不足以判别
+> "慢推进 vs 执行阻塞"——需临时探针采集）或架构级（A2 批量应用/A4 读隔离——远期
+> 立项）。
+>
 > **流程验证追加（2026-09-02 04:41）**：从侧 FULLRESYNC 流（tryReplicate）=
 > ReadBulkString → LoadRDB（内含 FlushDB，rdb_loader.go:141）→ 之后才进入
 > readCommandLoop 排水——**严格顺序、无加载/排水重叠**——"恢复期交互/覆盖"候选在
