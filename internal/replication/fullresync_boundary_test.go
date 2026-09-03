@@ -60,6 +60,22 @@ func TestFullresyncBoundary_CommittedButUnpropagatedWrite(t *testing.T) {
 	if !inRDB {
 		t.Errorf("fenced write missing from RDB (offset=%d)", snapshotOffset)
 	}
+
+	// ts 双轨（S2——④ PSYNC-ts 透镜）：fenced 写经 commit 必已写传播日志键——
+	// 日志键存在性为快照一致性提供 ts 侧断言（与字节 gap 口径一致的双轨验证：
+	// 日志键回放 == 字节 backlog 回放由 replay 守卫显式覆盖）。
+	logEntries, err := s.ReplLogEntries()
+	assert.NoError(t, err)
+	fencedLogFound := false
+	for _, e := range logEntries {
+		if bytes.Contains(e.Value, []byte("boundary:probe")) {
+			fencedLogFound = true
+			break
+		}
+	}
+	if !fencedLogFound {
+		t.Errorf("fenced write's repl log entry missing (ts lens)")
+	}
 }
 
 // TestFullresyncBoundary_FenceBlocksSnapshotWriteLock is the actual
