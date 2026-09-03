@@ -100,7 +100,7 @@ func (s *BotreonStore) HSet(key, field string, value interface{}) error {
 			currentCount++
 		}
 		return txn.Set(countKey, helper.Uint64ToBytes(currentCount))
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("HSET"), []byte(key)))
 }
 func (s *BotreonStore) HGet(key, field string) ([]byte, error) {
 	if err := s.checkErrorInjector("HGet"); err != nil {
@@ -207,7 +207,7 @@ func (s *BotreonStore) HDel(key string, fields ...string) (int, error) {
 			return txn.Set(countKey, helper.Uint64ToBytes(currentCount))
 		}
 		return nil
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("HDEL"), []byte(key)))
 	return deletedCount, err
 }
 
@@ -456,7 +456,7 @@ func (s *BotreonStore) HMSet(key string, fieldValues map[string]interface{}) err
 			return txn.Set(countKey, helper.Uint64ToBytes(currentCount))
 		}
 		return nil
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("HMSET"), []byte(key)))
 }
 
 // HMGet 实现 Redis HMGET 命令，批量获取多个字段值
@@ -556,7 +556,7 @@ func (s *BotreonStore) HSetNX(key, field string, value interface{}) (bool, error
 
 		success = true
 		return nil
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("HSETNX"), []byte(key)))
 	return success, err
 }
 
@@ -636,7 +636,7 @@ func (s *BotreonStore) HIncrBy(key, field string, increment int64) (int64, error
 		}
 
 		return nil
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("HINCRBY"), []byte(key)))
 	return result, err
 }
 
@@ -716,7 +716,7 @@ func (s *BotreonStore) HIncrByFloat(key, field string, increment float64) (float
 		}
 
 		return nil
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("HINCRBYFLOAT"), []byte(key)))
 	return result, err
 }
 
