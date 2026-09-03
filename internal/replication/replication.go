@@ -199,6 +199,12 @@ func generateReplicationID() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
+// CurrentTS 返回当前传播日志键水位（主侧 currentTS——GETACK 回复的 ts 携带——
+// S2 feed 协议相位 ③ ACK-ts 双轨）。
+func (rm *ReplicationManager) CurrentTS() (uint64, error) {
+	return rm.store.ReplLogCurrentTS()
+}
+
 // GetRole 获取当前角色
 func (rm *ReplicationManager) GetRole() string {
 	rm.mu.RLock()
@@ -630,6 +636,20 @@ func (rm *ReplicationManager) IsSlave() bool {
 }
 
 // UpdateSlaveAckOffset 更新从节点的ACK偏移量
+// UpdateSlaveAckTS 更新从节点确认的主侧 ts 水位（S2 ACK-ts 双轨——从侧
+// lastAppliedTS——applied 语义——排水判据 D2 的数据源）。
+func (rm *ReplicationManager) UpdateSlaveAckTS(slaveID string, ts uint64) {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	if slave, exists := rm.slaves[slaveID]; exists {
+		slave.UpdateReplAckTS(ts)
+		logger.Logger.Debug().
+			Str("slave_id", slaveID).
+			Uint64("ack_ts", ts).
+			Msg("更新从节点ACK ts 水位")
+	}
+}
+
 func (rm *ReplicationManager) UpdateSlaveAckOffset(slaveID string, offset int64) {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()

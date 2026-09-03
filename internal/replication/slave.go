@@ -19,10 +19,11 @@ type SlaveConnection struct {
 	Conn          net.Conn
 	Reader        *bufio.Reader
 	Writer        *bufio.Writer
-	ReplOffset    atomic.Int64 // 从节点的复制偏移量
-	ReplAckOffset atomic.Int64 // 从节点确认的偏移量
-	Ready         atomic.Bool  // 是否准备好接收命令
-	LastAckTime   int64        // 最后一次ACK时间
+	ReplOffset    atomic.Int64  // 从节点的复制偏移量
+	ReplAckOffset atomic.Int64  // 从节点确认的偏移量
+	ReplAckTS     atomic.Uint64 // 从节点确认的主侧 ts 水位（S2 ACK-ts 双轨——applied 语义）
+	Ready         atomic.Bool   // 是否准备好接收命令
+	LastAckTime   int64         // 最后一次ACK时间
 	mu            sync.RWMutex
 	closeOnce     sync.Once
 	writeMu       sync.Mutex // 写锁：SendCommand/SendBacklogData 互斥，与 Close 不冲突
@@ -79,6 +80,15 @@ func (sc *SlaveConnection) UpdateReplAck(offset int64) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
 	sc.ReplAckOffset.Store(offset)
+	sc.LastAckTime = time.Now().Unix()
+}
+
+// UpdateReplAckTS 更新从节点确认的主侧 ts 水位（S2 ACK-ts 双轨——从侧 lastAppliedTS
+// ——applied 语义——排水判据 D2 的数据源）。
+func (sc *SlaveConnection) UpdateReplAckTS(ts uint64) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	sc.ReplAckTS.Store(ts)
 	sc.LastAckTime = time.Now().Unix()
 }
 

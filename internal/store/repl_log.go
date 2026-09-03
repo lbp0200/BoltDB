@@ -47,6 +47,23 @@ type ReplLogEntry struct {
 	Value []byte
 }
 
+// ReplLogCurrentTS 返回当前传播日志键的最大 ts（主侧 currentTS 水位——GETACK 回复的
+// ts 携带与排水判据的基准）。反向 Seek 到前缀最大键（O(log N) 级——非全扫描）。
+func (s *BotreonStore) ReplLogCurrentTS() (uint64, error) {
+	var ts uint64
+	err := s.db.View(func(txn *badger.Txn) error {
+		it := txn.NewIterator(badger.IteratorOptions{Reverse: true})
+		defer it.Close()
+		it.Seek(replLogKey(^uint64(0)))
+		if it.Valid() && bytes.HasPrefix(it.Item().Key(), replLogPrefix) {
+			key := it.Item().Key()
+			ts = binary.BigEndian.Uint64(key[len(key)-8:])
+		}
+		return nil
+	})
+	return ts, err
+}
+
 // ReplLogEntries 遍历全部传播日志键（REPLLOG_ 前缀扫描——键序即 ts 升序）返回条目。
 // 读侧探针（§10 附7 分级-1——影子双写一致性比对）与 S2 增量续传（D1b）的数据源。
 func (s *BotreonStore) ReplLogEntries() ([]ReplLogEntry, error) {

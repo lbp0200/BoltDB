@@ -273,6 +273,14 @@ func (h *Handler) handleSlaveReplicationConnection(ctx context.Context, slave *r
 				}
 				slave.UpdateReplAck(offset)
 				h.Replication.UpdateSlaveAckOffset(slave.ID, offset)
+				// S2 ACK-ts 双轨（向后兼容 len 判定）：第 4 参为从侧 lastAppliedTS
+				// （applied 语义——排水判据 D2 的数据源）。
+				if len(req.Args) >= 4 {
+					if ackTS, tsErr := strconv.ParseUint(string(req.Args[3]), 10, 64); tsErr == nil {
+						slave.UpdateReplAckTS(ackTS)
+						h.Replication.UpdateSlaveAckTS(slave.ID, ackTS)
+					}
+				}
 				continue
 			}
 		}
@@ -285,8 +293,8 @@ func (h *Handler) handleSlaveReplicationConnection(ctx context.Context, slave *r
 		if cmd == "REPLCONF" && len(req.Args) >= 2 &&
 			strings.ToUpper(string(req.Args[1])) == "GETACK" {
 			masterOffset := h.Replication.GetMasterReplOffset()
-			ackResp := fmt.Sprintf("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$%d\r\n%d\r\n",
-				len(strconv.FormatInt(masterOffset, 10)), masterOffset)
+			currentTS, _ := h.Replication.CurrentTS()
+			ackResp := replication.EncodeReplconfAck(masterOffset, currentTS)
 			if err := slave.WriteAndFlush([]byte(ackResp)); err != nil {
 				logger.Logger.Debug().
 					Str("slave_id", slave.ID).

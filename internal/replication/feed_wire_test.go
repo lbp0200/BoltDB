@@ -1,8 +1,13 @@
 package replication
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
+	"strconv"
 	"testing"
+
+	"github.com/lbp0200/BoltDB/internal/proto"
 )
 
 // TestFeedEntryRoundtrip 验证 REPLLOG wire 形态（flattened：REPLLOG <ts> <cmd>
@@ -48,6 +53,40 @@ func TestFeedEntryRoundtrip(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestEncodeReplconfAck 验证 ACK-ts 双轨 wire（4 参 REPLCONF ACK <offset> <ts>）：
+// 主侧 GETACK 回复（currentTS）与从侧应答（lastAppliedTS）共用同一编码——参数顺序
+// offset, ts——旧 3 参解析按 len 判定忽略 ts（向后兼容）。
+func TestEncodeReplconfAck(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		offset int64
+		ts     uint64
+	}{
+		{0, 0},
+		{12345, 0},
+		{42, 987654321},
+		{9223372036854775807, 18446744073709551615}, // 极值
+	}
+	for _, c := range cases {
+		data := EncodeReplconfAck(c.offset, c.ts)
+		req, err := proto.ReadRESP(bufio.NewReader(bytes.NewReader(data)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(req.Args) != 4 {
+			t.Fatalf("args = %d, want 4 (offset, ts dual-track)", len(req.Args))
+		}
+		if string(req.Args[0]) != "REPLCONF" || string(req.Args[1]) != "ACK" {
+			t.Fatalf("unexpected args: %v", req.Args)
+		}
+		gotOffset, _ := strconv.ParseInt(string(req.Args[2]), 10, 64)
+		gotTS, _ := strconv.ParseUint(string(req.Args[3]), 10, 64)
+		if gotOffset != c.offset || gotTS != c.ts {
+			t.Fatalf("roundtrip (%d, %d) != (%d, %d)", gotOffset, gotTS, c.offset, c.ts)
+		}
 	}
 }
 

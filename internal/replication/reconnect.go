@@ -88,6 +88,9 @@ type SlaveReconnector struct {
 	// masterWater: 主节点对周期 REPLCONF GETACK * 的回复（REPLCONF ACK）
 	// 中通告的 offset。与 lastDataTime 一起用于检测投递停滞的尾巴缺口。
 	masterWater atomic.Int64
+	// masterWaterTS: 主节点 GETACK 回复携带的 currentTS（主侧 ts 水位——S2 ACK-ts
+	// 双轨——停滞判据的 ts 形式基准）。
+	masterWaterTS atomic.Uint64
 	// lastDataTime: 最近一次收到数据命令（非 PING/REPLCONF/SELECT）的时间。
 	lastDataTime atomic.Int64
 	// stallTimeout: 停滞判定阈值，测试可缩短；默认 replStallTimeout。
@@ -415,8 +418,8 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 		if cmd == "REPLCONF" && len(req.Args) >= 3 &&
 			strings.ToUpper(string(req.Args[1])) == "GETACK" {
 			offset := sr.lastOffset.Load()
-			ackResp := fmt.Sprintf("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$%d\r\n%d\r\n",
-				len(strconv.FormatInt(offset, 10)), offset)
+			ackTS := sr.lastAppliedTS.Load()
+			ackResp := EncodeReplconfAck(offset, ackTS)
 			if err := sr.writeRespToMaster(mc, []byte(ackResp)); err != nil {
 				return fmt.Errorf("write REPLCONF ACK to master failed: %w", err)
 			}
@@ -432,13 +435,24 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 			strings.ToUpper(string(req.Args[1])) == "ACK" {
 			if masterOffset, err := strconv.ParseInt(string(req.Args[2]), 10, 64); err == nil {
 				sr.masterWater.Store(masterOffset)
+				// S2 ACK-ts 双轨（向后兼容 len 判定）：第 4 参为主侧 currentTS。
+				if len(req.Args) >= 4 {
+					if masterTS, tsErr := strconv.ParseUint(string(req.Args[3]), 10, 64); tsErr == nil {
+						sr.masterWaterTS.Store(masterTS)
+					}
+				}
 				slaveOffset := sr.lastOffset.Load()
+				slaveTS := sr.lastAppliedTS.Load()
+				masterTS := sr.masterWaterTS.Load()
 				lastData := time.Unix(0, sr.lastDataTime.Load())
 				stall := sr.stallTimeout
 				if stall <= 0 {
 					stall = replStallTimeout
 				}
-				if masterOffset <= slaveOffset {
+				// 双轨收敛：字节（offset）与 ts（主侧水位 <= 已应用 ts）同时收敛。
+				// masterTS==0 = 旧主节点无 ts 携带——仅字节判据（向后兼容）。
+				tsConverged := masterTS == 0 || masterTS <= slaveTS
+				if masterOffset <= slaveOffset && tsConverged {
 					// 已收敛：记录收敛时刻（停滞检测的武装前提）。
 					sr.lastConvergedTime.Store(time.Now().UnixNano())
 				} else {
@@ -456,10 +470,12 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 						logger.Logger.Warn().
 							Int64("master_offset", masterOffset).
 							Int64("slave_offset", slaveOffset).
+							Uint64("master_ts", masterTS).
+							Uint64("slave_ts", slaveTS).
 							Dur("idle", idle).
 							Bool("armed", armed).
-							Msg("复制流停滞：主节点水位高于已应用 offset 且数据流空闲，强制重连")
-						return fmt.Errorf("replication stalled: master at %d, slave at %d", masterOffset, slaveOffset)
+							Msg("复制流停滞：主节点水位高于已应用水位且数据流空闲，强制重连")
+						return fmt.Errorf("replication stalled: master at %d, slave at %d (master ts %d, slave ts %d)", masterOffset, slaveOffset, masterTS, slaveTS)
 					}
 				}
 			}

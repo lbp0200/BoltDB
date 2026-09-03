@@ -141,6 +141,40 @@ func TestReplLogSuccessOnly(t *testing.T) {
 	}
 }
 
+// TestReplLogCurrentTS 验证当前日志键水位（最大 ts——主侧 currentTS——GETACK 回复
+// 的 ts 携带源——S2 feed 协议相位 ③）。
+func TestReplLogCurrentTS(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	const n = 15
+	for i := 0; i < n; i++ {
+		if err := s.Set(fmt.Sprintf("cts:key:%d", i), "v"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries := replLogEntries(t, s)
+	if len(entries) != n {
+		t.Fatalf("log entries = %d, want %d", len(entries), n)
+	}
+	want := entries[len(entries)-1][0]
+	got, err := s.ReplLogCurrentTS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("current ts = %d, want %d", got, want)
+	}
+	// 空库 = 0
+	empty := setupTestStore(t)
+	z, err := empty.ReplLogCurrentTS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if z != 0 {
+		t.Fatalf("empty current ts = %d, want 0", z)
+	}
+}
+
 // TestReplLogTSMonotonicUnderConcurrentWrites 并发写压下日志键 ts 单调实证（ts 单调
 // 守卫种子——a4 §10 附7 验证门槛）：多 goroutine 并发 SET（不同键——per-key 锁无串行
 // 化）——ts 源串行分配（提交序即 ts 序）不得倒挂——日志键 ts 严格升序 + 无重复。

@@ -31,6 +31,15 @@ func feedEntryArgs(ts uint64, command []string) []string {
 	return append(args, command...)
 }
 
+// EncodeReplconfAck 构造 REPLCONF ACK 回复（S2 ACK-ts 双轨 4 参形式：
+// REPLCONF ACK <offset> <ts>——主侧 GETACK 回复带 currentTS、从侧应答带
+// lastAppliedTS——向后兼容：旧 3 参主/从按 len 判定忽略第 4 参）。
+func EncodeReplconfAck(offset int64, ts uint64) []byte {
+	return []byte(fmt.Sprintf("*4\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$%d\r\n%d\r\n$%d\r\n%d\r\n",
+		len(strconv.FormatInt(offset, 10)), offset,
+		len(strconv.FormatUint(ts, 10)), ts))
+}
+
 // feedEntryParse 解析 REPLLOG 命令参数（从侧接收侧使用）：
 // 返回 (ts, 全命令参数)——全命令参数切片可直接交 executeReplicatedCommand。
 //
