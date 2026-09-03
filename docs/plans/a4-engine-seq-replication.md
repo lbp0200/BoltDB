@@ -499,3 +499,28 @@ D 写路径开销未可观测**。
 - **顺序建议**：先 ACK 判据 ts 化（从侧自算 lastAppliedTS——主侧 ACK 回复带 currentTS
   ——换算表核验双轨）→ 后 PSYNC (replId, ts)（slave 需 lastAppliedTS 持久化）→ 排水
   判据 ts 推进 → 分级-3 backlog 退役。
+
+### ts 域深化（2026-09-04——ACK/PSYNC ts 的域语义定案）
+
+- **域结论：ACK/PSYNC 的 ts 一律是"直接主侧 ts 域"**。从侧本地提交 ts（从侧 apply 经
+  store 写路径（D 覆盖方法）产生的自有 log 键 ts）是**另一域**——与主侧 ts 不可比
+  （两域各自从 1 起步独立推进——slave 本地 ts=50 与 master ts=100 无意义）——
+  "从侧自算 lastAppliedTS" 的正解 = 从侧跟踪**已应用的直接主侧 ts 水位**（流中携带的
+  主侧 ts——非本地 commit ts）。
+- **流须携带主侧 ts**（从侧获知已应用主侧 ts 的前提）：两形态——(a) backlog 条目
+  (offset, ts, cmd)（D1a 条目结构——主侧需 per-命令提交 ts——**commit-ts 回传**：store
+  提交 ts 暴露给 PropagateCommand——cf21964 机制矩阵的"store 返回 ts"为可行项——
+  ctx 流穿/单字段捕获已否决）；(b) log-key 增量流（分级-3——键 ts 天然携带——终态）。
+  分级-2 的 ACK-ts 若先于分级-3 落地，走 (a) + 回传；否则 ACK-ts 顺延至分级-3 的
+  天然携带（回传面 = 服务器两调用点 + backlog 条目格式——比 ctx 流穿小一个量级）。
+- **从侧自有 log 键的域归属**：从侧 apply 的本地提交 log 键（本地域）服务于从侧的
+  **下游**（其 sub-slave 的 ACK/PSYNC——链式复制的 hop-local 域）——不参与上游 ACK
+  判据（同直接主侧的域对齐仅在相邻 hop 内）。
+- **换算表角色（定案）**：非 ACK 判据的运行期依赖——是**过渡期验证锚 + 升级桥**：
+  (i) 守卫重写（ts 单调/重放 + 4 守卫）用表核验双轨一致（分级-3 退役前）；(ii) 半升级
+  窗口（部分从侧仍字节 offset）的 PSYNC 续传桥（offset ↔ ts 换算）——运行期判据全
+  ts 后表降为测试工具。
+- **顺序修正**：原"先 ACK 判据 ts 化"的隐含前置 = 主侧 per-命令 ts 可用（回传或分级-3
+  流）——实际首步 = **commit-ts 回传打通**（store 提交 ts → PropagateCommand → backlog
+  条目 ts）——ACK 判据 ts 化随其后（从侧以条目 ts 更新 lastAppliedTS——主侧 ACK 回复
+  带 currentTS）。
