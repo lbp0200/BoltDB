@@ -186,7 +186,7 @@ func (s *BotreonStore) Expire(key string, seconds int) (bool, error) {
 
 		success = true
 		return nil
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("EXPIRE"), []byte(key)))
 	return success, err
 }
 
@@ -271,7 +271,7 @@ func (s *BotreonStore) PExpire(key string, milliseconds int64) (bool, error) {
 
 		success = true
 		return nil
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("PEXPIRE"), []byte(key)))
 	return success, err
 }
 
@@ -502,7 +502,7 @@ func (s *BotreonStore) Persist(key string) (bool, error) {
 			return err
 		}
 		return txn.Set(vk, valBytes)
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("PERSIST"), []byte(key)))
 	if errors.Is(err, ErrKeyNotFound) {
 		return false, nil
 	}

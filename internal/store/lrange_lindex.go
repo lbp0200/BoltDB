@@ -43,7 +43,7 @@ func (s *BotreonStore) LSet(key string, index int64, value string) error {
 		}
 		nodeKey := s.listKey(key, nodeID)
 		return txn.Set([]byte(nodeKey), []byte(value))
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("LSET"), []byte(key)))
 }
 
 // LRange 实现 Redis LRANGE 命令

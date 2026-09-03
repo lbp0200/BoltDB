@@ -178,7 +178,7 @@ func (s *BotreonStore) PFAdd(key string, elements ...string) (int64, error) {
 
 		// 保存
 		return s.saveHLL(txn, key, hll)
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("PFADD"), []byte(key)))
 
 	return changed, err
 }
@@ -365,7 +365,7 @@ func (s *BotreonStore) PFMerge(destKey string, sourceKeys ...string) error {
 
 		// 保存目标
 		return s.saveHLL(txn, destKey, destHLL)
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("PFMERGE"), []byte(destKey)))
 }
 
 // RestoreHLL 从原始字节恢复 HyperLogLog（FULLRESYNC RDB 加载用）

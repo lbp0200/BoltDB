@@ -133,7 +133,7 @@ func (s *BotreonStore) LInsert(key string, where string, pivot, value string) (i
 		}
 		newLength = int(length) + 1
 		return nil
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("LINSERT"), []byte(key)))
 	return newLength, err
 }
 

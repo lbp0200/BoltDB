@@ -197,7 +197,7 @@ func (s *BotreonStore) ZRemRangeByLex(zSetName, min, max string) (int64, error) 
 			removed += n
 		}
 		return nil
-	}, 20)
+	}, 20, encodePropagateCommand([]byte("ZREMRANGEBYLEX"), []byte(zSetName)))
 	s.markZSetDirty(zSetName)
 	return removed, err
 }
