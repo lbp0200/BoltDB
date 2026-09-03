@@ -462,6 +462,8 @@ func (s *BotreonStore) computeAbsoluteExpiry(key string, unit time.Duration) (in
 
 // PERSIST 实现 Redis PERSIST 命令，移除键的过期时间
 func (s *BotreonStore) Persist(key string) (bool, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	var hasTTL bool
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		typeKey := TypeOfKeyGet(key)

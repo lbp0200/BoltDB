@@ -131,6 +131,8 @@ func (s *BotreonStore) SAdd(key string, members ...string) (int, error) {
 	if err := s.checkErrorInjector("SAdd"); err != nil {
 		return 0, err
 	}
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	added := 0
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		added = 0 // reset each attempt; stale value must not survive conflict retry
@@ -196,6 +198,8 @@ func (s *BotreonStore) SAdd(key string, members ...string) (int, error) {
 
 // SRem 实现 Redis SREM 命令
 func (s *BotreonStore) SRem(key string, members ...string) (int, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	removed := 0
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		removed = 0 // reset each attempt; stale value must not survive conflict retry
@@ -377,6 +381,8 @@ func (s *BotreonStore) SMembers(key string) ([]string, error) {
 // 优化：使用迭代器随机选择，避免加载所有成员
 // 双向搜索：目标索引在后半部时从末尾反向扫描，平均迭代步数 N/2 → N/4
 func (s *BotreonStore) SPop(key string) (string, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	var member string
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		member = "" // reset each attempt; stale value must not survive conflict retry
@@ -464,6 +470,8 @@ func (s *BotreonStore) SPop(key string) (string, error) {
 
 // SPopN 实现 Redis SPOP 命令（带count参数），随机弹出并删除多个成员
 func (s *BotreonStore) SPopN(key string, count int) ([]string, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	var members []string
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		members = nil // reset each attempt; stale slice must not survive conflict retry
@@ -581,6 +589,8 @@ func (s *BotreonStore) SRandMemberN(key string, count int) ([]string, error) {
 
 // SMove 实现 Redis SMOVE 命令，将成员从源集合移动到目标集合
 func (s *BotreonStore) SMove(source, destination, member string) (bool, error) {
+	unlock := s.keyLockMgr.LockMulti([]string{source, destination})
+	defer unlock()
 	moved := false
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		moved = false // reset each attempt; stale value must not survive conflict retry
@@ -754,6 +764,8 @@ func (s *BotreonStore) SDiff(keys ...string) ([]string, error) {
 
 // SInterStore 实现 Redis SINTERSTORE 命令，计算交集并存储到目标集合
 func (s *BotreonStore) SInterStore(destination string, keys ...string) (int, error) {
+	unlock := s.keyLockMgr.LockMulti(append([]string{destination}, keys...))
+	defer unlock()
 	var count int
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		count = 0 // reset each attempt; stale value must not survive conflict retry
@@ -821,6 +833,8 @@ func (s *BotreonStore) SInterStore(destination string, keys ...string) (int, err
 
 // SUnionStore 实现 Redis SUNIONSTORE 命令，计算并集并存储到目标集合
 func (s *BotreonStore) SUnionStore(destination string, keys ...string) (int, error) {
+	unlock := s.keyLockMgr.LockMulti(append([]string{destination}, keys...))
+	defer unlock()
 	var count int
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		count = 0 // reset each attempt; stale value must not survive conflict retry
@@ -875,6 +889,8 @@ func (s *BotreonStore) SUnionStore(destination string, keys ...string) (int, err
 
 // SDiffStore 实现 Redis SDIFFSTORE 命令，计算差集并存储到目标集合
 func (s *BotreonStore) SDiffStore(destination string, keys ...string) (int, error) {
+	unlock := s.keyLockMgr.LockMulti(append([]string{destination}, keys...))
+	defer unlock()
 	var count int
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		count = 0 // reset each attempt; stale value must not survive conflict retry
