@@ -12,6 +12,8 @@ func (s *BotreonStore) ZAdd(zSetName string, members []ZSetMember) error {
 	if err := s.checkErrorInjector("ZAdd"); err != nil {
 		return err
 	}
+	s.keyLockMgr.Lock(zSetName)
+	defer s.keyLockMgr.Unlock(zSetName)
 	if len(members) == 0 {
 		s.markZSetDirty(zSetName)
 		return nil
@@ -49,6 +51,8 @@ func (s *BotreonStore) ZAddWithOptions(zSetName string, opts ZAddOptions, member
 	if err := s.checkErrorInjector("ZAdd"); err != nil {
 		return 0, err
 	}
+	s.keyLockMgr.Lock(zSetName)
+	defer s.keyLockMgr.Unlock(zSetName)
 	if len(members) == 0 {
 		s.markZSetDirty(zSetName)
 		return 0, nil
@@ -373,6 +377,8 @@ func zSetDelInTxn(txn *badger.Txn, zSetName string) error {
 
 // ZSetDel 删除整个排序集
 func (s *BotreonStore) ZSetDel(zSetName string) error {
+	s.keyLockMgr.Lock(zSetName)
+	defer s.keyLockMgr.Unlock(zSetName)
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		return zSetDelInTxn(txn, zSetName)
 	}, 20)
@@ -380,6 +386,8 @@ func (s *BotreonStore) ZSetDel(zSetName string) error {
 
 // ZRem 删除成员
 func (s *BotreonStore) ZRem(zSetName, member string) (int64, error) {
+	s.keyLockMgr.Lock(zSetName)
+	defer s.keyLockMgr.Unlock(zSetName)
 	var deleted int64 = 0
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		deleted = 0
@@ -484,6 +492,8 @@ func zRemMemberInTxn(txn *badger.Txn, zSetName, member string) (int64, error) {
 
 // ZRemRangeByRank 实现 Redis ZREMRANGEBYRANK 命令
 func (s *BotreonStore) ZRemRangeByRank(zSetName string, start, stop int64) (int64, error) {
+	s.keyLockMgr.Lock(zSetName)
+	defer s.keyLockMgr.Unlock(zSetName)
 	var removed int64
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		removed = 0
@@ -506,6 +516,8 @@ func (s *BotreonStore) ZRemRangeByRank(zSetName string, start, stop int64) (int6
 
 // ZRemRangeByScore 实现 Redis ZREMRANGEBYSCORE 命令
 func (s *BotreonStore) ZRemRangeByScore(zSetName string, minScore, maxScore float64, minExclusive, maxExclusive bool) (int64, error) {
+	s.keyLockMgr.Lock(zSetName)
+	defer s.keyLockMgr.Unlock(zSetName)
 	var removed int64
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		removed = 0

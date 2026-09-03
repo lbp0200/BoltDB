@@ -9,6 +9,8 @@ import (
 
 // ZUnionStore 实现 Redis ZUNIONSTORE 命令
 func (s *BotreonStore) ZUnionStore(destination string, keys []string, weights []float64, aggregate string) (int64, error) {
+	unlock := s.keyLockMgr.LockMulti(append([]string{destination}, keys...))
+	defer unlock()
 	var count int64
 	var notify bool
 	err := s.retryUpdate(func(txn *badger.Txn) error {
@@ -34,6 +36,8 @@ func (s *BotreonStore) ZUnionStore(destination string, keys []string, weights []
 
 // ZInterStore 实现 Redis ZINTERSTORE 命令
 func (s *BotreonStore) ZInterStore(destination string, keys []string, weights []float64, aggregate string) (int64, error) {
+	unlock := s.keyLockMgr.LockMulti(append([]string{destination}, keys...))
+	defer unlock()
 	var count int64
 	var notify bool
 	err := s.retryUpdate(func(txn *badger.Txn) error {
@@ -62,6 +66,8 @@ func (s *BotreonStore) ZInterStore(destination string, keys []string, weights []
 
 // ZDiffStore 实现 Redis ZDIFFSTORE 命令
 func (s *BotreonStore) ZDiffStore(destination string, keys []string) (int64, error) {
+	unlock := s.keyLockMgr.LockMulti(append([]string{destination}, keys...))
+	defer unlock()
 	var count int64
 	var notify bool
 	err := s.retryUpdate(func(txn *badger.Txn) error {
