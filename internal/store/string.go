@@ -645,6 +645,8 @@ func (s *BotreonStore) GetBit(key string, offset int) (int, error) {
 
 // SetBit 实现 Redis SETBIT 命令，设置指定位的值
 func (s *BotreonStore) SetBit(key string, offset int, value int) (int, error) {
+	s.keyLockMgr.Lock(key)
+	defer s.keyLockMgr.Unlock(key)
 	var oldBit int
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		data, err := s.getStringBytes(txn, key)
@@ -760,6 +762,8 @@ func (s *BotreonStore) BitCountWithUnit(key string, start, end int, unit string)
 
 // BitOp 实现 Redis BITOP 命令，位操作
 func (s *BotreonStore) BitOp(op string, destKey string, keys ...string) (int, error) {
+	unlock := s.keyLockMgr.LockMulti(append([]string{destKey}, keys...))
+	defer unlock()
 	var resultLength int
 	err := s.retryUpdate(func(txn *badger.Txn) error {
 		if len(keys) == 0 {
