@@ -412,3 +412,65 @@ commitTS 级支持 + 单命令族试点 ✅（`bd0c854`——REPLLOG_+tsBE 同�
 （D-on 417µs vs pre-D 438µs——~5% 噪声内——初测为跨时机器漂移伪影——~2.7x 批次差）——
 D 写路径开销未可观测**。
 
+
+### §10 附 7：S2 读侧架构定案（2026-09-03——kvrocks WAL 回读式读侧的设计深化）
+
+> 范围：S2 复制切换的**读侧**（backlog/PSYNC/ACK 的 ts 化——D 日志键的消费者侧）。
+> 写侧（D log-in-commit）已落地（附 6 实施进度——`bd0c854`/`6fd372e`）。本文为架构
+> 定案（设计文档——实施待启动授权）。
+
+**当前读侧机制映射（字节记账——实证）**：
+- 传播：processRequest（RLock 区）→ PropagateCommand（replication.go:371——RLock 复制
+  slaves → `serializeCommand(cmd)` → `backlog.Append(cmdBytes)` 返回**字节 offset** →
+  WAL.Append(cmdOffset, cmdBytes) 持久化 backlog → maybeTruncateBacklogWAL）。
+- PSYNC：HandlePSync(replId, offset)（psync.go:21——offset 请求 → 边界校验
+  `offset ∈ [backlogStart, currentOffset]` + `StartsAtCommandBoundary`（backlog.go:152——
+  字节↔命令边界映射）→ 命中 = SendBacklogData 增量续传；未命中/重启空 backlog = 降级
+  FULLRESYNC）。
+- ACK：REPLCONF GETACK * / ACK（reconnect.go:431——从侧上报 masterOffset →
+  `masterWater`——主侧排水进度判据的字节确认）。
+- FULLRESYNC：写锁跨 snapshotOffset 捕获 + GenerateRDB + 发送（replication_handler.go
+  40-60——RDB 快照 + 1MB backlog 排水）。
+
+**S2 目标架构（ts 记账——kvrocks WAL 回读式）**：
+- D 日志键（REPLLOG_+tsBE——应用级 WAL——ts 序！）= 命令流的**天然 ts 序源**——读侧的
+  增量续传源 = 日志键前缀扫描（kvrocks 的 GetWALIter(next_repl_seq) 模拟——从 last-fed-ts
+  起扫）。
+- 记账单位迁移：字节 offset → **ts**——backlog 条目（或等效）的推进水位 = ts 水位；
+  ACK 确认 = 从侧已应用的最大 ts；PSYNC 请求 = (replId, ts)（边界校验变 ts 整数比较——
+  StartsAtCommandBoundary 的字节映射退役）。
+- 保留/回收（④）：日志键按"主侧已全部确认水位"推进删除（badger 的 vlog 压实自然回收）——
+  或过渡期配置化上限。
+
+**架构决策点（定案候选 + 推荐）**：
+- **D1 读侧源形态**：(a) backlog 保留 + ts 侧信道（backlog 条目 N ↔ ts 映射——并发 RLock
+  下同步打标竞态（附 6 观察 1——单字段捕获证伪）——需 per-条目 ts 携带——backlog 条目
+  结构改 (offset, cmd) → (offset, ts, cmd)——ts 源仍困于竞态——**否决**）；
+  (b) **日志键为源（推荐——kvrocks 式）**：读侧增量续传直接前缀扫描日志键（ts 序——
+  天然单调——零同步打标）——backlog/WAL 字节记账退役或降为兼容影子；
+  (c) 混合（影子双写——过渡期字节记账保留 + 日志键并行——兼容性最稳——成本 = 双写）。
+- **D2 从侧确认单位**：字节 masterWater → **ts 水位**（从侧按日志键 ts 确认——GETACK/
+  ACK 的语义改为 ts——排水进度判据（B2——附 6 观察 2 自然覆盖）改测 ts 推进）。
+- **D3 PSYNC 语义**：(replId, ts) 请求——边界校验 = ts ∈ [logStart-ts, current-ts] 整数
+  比较——StartsAtCommandBoundary 字节映射退役（附 6 观察 3——边界天然化）。
+- **D4 日志值形式（②——规格随本定案冻结）**：全重放 RESP 数组（含值参数）——SET 族
+  TTL 绝对化（PXAT 绝对毫秒——对齐 processRequest 的 EXPIRE→PEXPIREAT 规范化原则——
+  消除相对 TTL 的传播滞后漂移）——成功写才记（附 6 待定件③——fn 成功条件已实现）。
+  部署与读侧切换同步（全值入日志 = 2x vlog 写放大——消费者落地前不部署）。
+- **D5 保留/回收（④）**：日志键删除水位 = min(全部从侧确认 ts)——删除旧日志键释放
+  vlog——过渡期配置上限兜底（max-log-ts-age）——backlog 保留等价语义。
+
+**实施分级（读侧切换——每级可回滚）**：
+1. **影子双写 + 读侧观测**（D1c——最稳起步）：PropagateCommand 旁路日志键双写（string
+   族已具备——其余族补 D 覆盖——候选 1）+ 读侧探针（按 ts 扫描日志键回放验证与 backlog
+   等价——事件级比对）。
+2. **PSYNC/ACK ts 语义**（D2/D3）：从侧确认改 ts——主侧排水进度判据改 ts 推进——字节
+   记账保留为影子（换算表核验双轨一致——附 6 双轨一致性）。
+3. **backlog 退役**（D1b——kvrocks 式）：增量续传源切日志键——backlog/WAL 字节记账删除
+   （配置化开关保留回滚——字节记账+ts 记账双轨切换）。
+4. **D4 部署**（全值重放形式 + 2x vlog 写放大——与读侧切换同步）+ **D5 保留**上线。
+
+**验证门槛**：现有 4 守卫重写绿（ts 语义）+ 新增 ts 单调守卫（backlog/日志键 ts 序——
+并发无倒挂）+ ts 重放守卫（日志键回放 == 字节 backlog 回放事件级等价）+ dw A/B ≤1/15
+（§7 协议）+ 兼容三套 + RESP 形状。回滚 = 配置化开关切回字节记账（双轨影子已就位——
+无数据迁移）。风险最高项 = 复制语义改变面（兼容套件全覆盖）+ 双轨一致性（换算表核验）。
