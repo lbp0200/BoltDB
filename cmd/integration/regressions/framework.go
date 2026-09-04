@@ -42,6 +42,14 @@ type RegressionServer struct {
 	ownDB   bool // cleanup 时是否关闭 DB
 }
 
+// EnableFeedLoop 启用该回归服务器的 feed-mode（S2 backlog 退役——rm.SetFeedLoop——
+// 真实服务器等效 --feed-loop 标志——测试内注入：新激活的从侧走 REPLLOG 增量流）。
+func (r *RegressionServer) EnableFeedLoop() {
+	if r.replMgr != nil {
+		r.replMgr.SetFeedLoop(true)
+	}
+}
+
 // StartRegression 启动一个独立的 BoltDB 服务器用于回归测试
 func StartRegression(t *testing.T) *RegressionServer {
 	t.Helper()

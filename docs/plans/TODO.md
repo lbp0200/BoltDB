@@ -78,13 +78,20 @@
 >    默认关零成本回滚））——E2E 闭环（`6838470`——master feed 流 → 从侧 apply → 收敛 +
 >    lastAppliedTS == master 水位）——生产接线（`07fd694`——`--feed-loop` 启动标志默认关 +
 >    config `[replication] feedloop` + 三套件 feed-mode 零回归：cli 93 + py 247 + node 122）。
->    **剩余方向（backlog 退役尾）**：1. **feed-mode 规模验证 → 退役决策**（soak/退化
->    不变量在 feed-mode 下——双轨核验锚已齐：replay 守卫 + E2E + 三套件——决策后 backlog
->    影子退役（配置化开关保留回滚——字节+ts 双轨切换））；2. **dw A/B ≤1/15**（§7 协议
->    ——双轨下重复窗口度量——复制切换后验收）；3. **②/D4 全重放形式部署**（backlog
->    退役后值源切日志键——`ReplLogEntriesFrom` 增量 seek 转正——2x vlog 写放大与读侧
->    切换同步——仍延后）；4. §2 SSD 崩塌复测（疑 discard-ts/压实同源——S1-A2 后新代码
->    复验）+ C4 抓包级比对（发散悖论根因——S3 前提）。
+>    **剩余方向（backlog 退役尾）**：1. **feed-mode 规模验证 → 退役决策**（**2026-09-04
+>    实测阻断：psync-reconnect-no-loss 在 feed-mode 下 missing=2499/3666——无丢失不变量
+>    FAIL——根因 = FeedEntriesFrom 值源对齐（log 键序 ↔ backlog 事件序绝对位置 1:1）在
+>    并发写者下分叉（processRequest 的 snapshotMu.RLock 共享——commit-A/commit-B/
+>    append-B/append-A 交错——log 序 (A,B) vs backlog 序 (B,A)——错误关联→从侧数据
+>    错位/缺失）——**退役被阻断——backlog 保持权威——修复 = ②/D4 值源切换（log 键
+>    全值——零对齐）前置，或对齐硬化（log 键标识符值 vs 事件命令+键校验——错位检测
+>    回退 FULLRESYNC）**——双轨核验锚（replay 守卫 + E2E + 重连 + 三套件）在串行/顺序
+>    写场景全绿——并发场景为残留缺口——`--feed-loop` 默认关不受影响）；2. **dw A/B
+>    ≤1/15**（§7 协议——双轨下重复窗口度量——复制切换后验收）；3. **②/D4 全重放形式
+>    部署**（**并发对齐分叉实测——由"仍延后"提级为退役前置**：值源切日志键全值（零
+>    对齐）——`ReplLogEntriesFrom` 增量 seek 转正——2x vlog 写放大与读侧切换同步）；
+>    4. §2 SSD 崩塌复测（疑 discard-ts/压实同源——S1-A2 后新代码复验）+ C4 抓包级比对
+>    （发散悖论根因——S3 前提）。
 > 3. 发散悖论（C4）根因定位：主侧发送字节 vs 从侧接收字节的抓包级直接比对（层 D——
 >    外部工具）——恢复路径重设计（层 C：降级无损化）的前提。
 >
