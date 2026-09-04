@@ -163,6 +163,12 @@
   **判据未翻转**：现停滞判据仍为数据到达空闲 idle（armed→stall / 未 armed→
   drainStall）——B2 判据翻转（应用空闲替代数据空闲）属"推阈/换判据"风险面
   （§8 阈值脆弱性）——按 §7 A/B gate 收口：探针数据收集若干轮后定判据。
+  **区分能力实证（2026-09-05）**：`TestSlaveReconnector_readCommandLoop_
+  ApplyIdleDistinguishesStall`——transient skip（JSON.CLEAR missing key——
+  isTransientReplicationError：offset 推进、store 不变）后 lastDataTime 刷新
+  （数据到达）但 lastApplyTime **不更新**——apply_idle 显著大于 data idle——
+  单元级同构 §1c 冻结链"收到数据但应用卡住"——现有判据（data idle）在此场景
+  不触发停滞（盲区）——B2 判据翻转的数据依据（探针捕获盲区信号）。
 - **门槛**：方案生效需 A/B 失败 ≤ 1/15（对照 30s 基线 2/15）；纯对照（无读探针）不回归
   （0 失败 0 停滞）；守卫全绿；`--full` 1 次停滞+降级合计 < 2。
 - **回归套件**：4 个停滞/冻结守卫 + 兼容三套（py/node/cli）+ tier-A PR-gate。

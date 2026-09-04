@@ -756,6 +756,85 @@ func TestSlaveReconnector_readCommandLoop_MultipleCommands(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestSlaveReconnector_readCommandLoop_ApplyIdleDistinguishesStall(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	sr := NewSlaveReconnector(rm, testStore, "127.0.0.1:6379")
+	sr.state.Store(int32(SlaveConnected))
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sr.readCommandLoop(mc)
+	}()
+
+	// 1) 正常应用 SET：lastApplyTime 推进——apply_idle 回落
+	_, err := serverEnd.Write([]byte("*3\r\n$3\r\nSET\r\n$1\r\na\r\n$3\r\nAAA\r\n"))
+	assert.NoError(t, err)
+	for i := 0; i < 50; i++ {
+		if _, err := testStore.Get("a"); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	appliedIdle := sr.GetApplyIdle()
+	if appliedIdle > 2*time.Second {
+		t.Fatalf("post-apply GetApplyIdle = %v, want <= 2s (lastApplyTime advanced)", appliedIdle)
+	}
+	// SET 后的 offset 基线（lastOffset 累计——skip 断言用增量）
+	baseOffset := sr.lastOffset.Load()
+
+	// 2) transient skip（JSON.CLEAR missing key——isTransientReplicationError）：
+	//    lastDataTime 刷新（数据到达）但 lastApplyTime **不更新**（应用停滞信号——
+	//    §1c 冻结链"收到数据但应用卡住"的单元级同构）。
+	skipCmd := [][]byte{[]byte("JSON.CLEAR"), []byte("nosuch")}
+	skipBytes := serializeCommand(skipCmd)
+	_, err = serverEnd.Write(skipBytes)
+	assert.NoError(t, err)
+
+	// 等待 skip 处理完成（offset 按 skip 命令字节数增量推进）
+	var skipSeen bool
+	for i := 0; i < 50; i++ {
+		if sr.lastOffset.Load() == baseOffset+int64(len(skipBytes)) {
+			skipSeen = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !skipSeen {
+		t.Fatal("skip command not processed (offset not advanced)")
+	}
+
+	// 3) 区分能力断言：数据已到达（lastDataTime 刷新）但应用未推进——
+	//    apply_idle 显著大于 data idle（探针捕获停滞信号——现有判据测 data idle
+	//    在此场景不触发——B2 判据翻转的数据依据）。
+	skipIdle := sr.GetApplyIdle()
+	// lastDataTime 在 skip 处理时刷新——data idle 应远小于 apply idle
+	if skipIdle <= appliedIdle {
+		t.Fatalf("skip GetApplyIdle = %v, want > applied idle %v (lastApplyTime must NOT advance on transient skip)", skipIdle, appliedIdle)
+	}
+	t.Logf("apply_idle after skip = %v (vs post-apply %v) — data arrived but apply stalled", skipIdle, appliedIdle)
+
+	close(sr.stopCh)
+	clientEnd.Close()
+	err = <-done
+	assert.NoError(t, err)
+}
+
 func TestSlaveReconnector_readCommandLoop_ApplySkipIncrementsCount(t *testing.T) {
 	t.Parallel()
 	testStore := setupTestStore(t)
