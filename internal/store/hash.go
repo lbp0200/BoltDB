@@ -18,6 +18,33 @@ var ErrWrongType = errors.New("WRONGTYPE Operation against a key holding the wro
 var ErrMemberNotFound = errors.New("member not found")
 
 // 修改 HSet 维护计数器
+// encodeHashValue 将 Hash 字段值编码为存储字节（与 HSet/HSetNX/HMSet 的既有 switch
+// 同逻辑——D4 全重放日志值构造的共享编码——HMSET 扁平 pairs 站点的值编码）。
+func encodeHashValue(value interface{}) ([]byte, error) {
+	var bValue []byte
+	switch v := value.(type) {
+	case string:
+		bValue = []byte(v)
+	case []byte:
+		bValue = v
+	case int, int8, int16, int32, int64:
+		bValue = []byte(fmt.Sprintf("%d", v))
+	case uint, uint8, uint16, uint32, uint64:
+		bValue = []byte(fmt.Sprintf("%d", v))
+	case float32, float64:
+		bValue = []byte(fmt.Sprintf("%g", v))
+	case bool:
+		if v {
+			bValue = []byte("1")
+		} else {
+			bValue = []byte("0")
+		}
+	default:
+		return helper.InterfaceToBytes(value)
+	}
+	return bValue, nil
+}
+
 func (s *BotreonStore) HSet(key, field string, value interface{}) error {
 	if err := s.checkErrorInjector("HSet"); err != nil {
 		return err
@@ -100,7 +127,7 @@ func (s *BotreonStore) HSet(key, field string, value interface{}) error {
 			currentCount++
 		}
 		return txn.Set(countKey, helper.Uint64ToBytes(currentCount))
-	}, 30, encodePropagateCommand([]byte("HSET"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("HSET"), []byte(key), []byte(field), bValue))
 }
 func (s *BotreonStore) HGet(key, field string) ([]byte, error) {
 	if err := s.checkErrorInjector("HGet"); err != nil {
@@ -207,7 +234,7 @@ func (s *BotreonStore) HDel(key string, fields ...string) (int, error) {
 			return txn.Set(countKey, helper.Uint64ToBytes(currentCount))
 		}
 		return nil
-	}, 30, encodePropagateCommand([]byte("HDEL"), []byte(key)))
+	}, 30, encodePropagateStringArgs([]byte("HDEL"), append([]string{key}, fields...)))
 	return deletedCount, err
 }
 
@@ -456,7 +483,21 @@ func (s *BotreonStore) HMSet(key string, fieldValues map[string]interface{}) err
 			return txn.Set(countKey, helper.Uint64ToBytes(currentCount))
 		}
 		return nil
-	}, 30, encodePropagateCommand([]byte("HMSET"), []byte(key)))
+	}, 30, func() []byte {
+		// D4 全重放：HMSET key field1 v1 field2 v2...——map 扁平（迭代序随机——
+		// 从侧 HMSet 集合语义无关序——重放确定性由值集保证）。
+		args := make([][]byte, 0, 1+2*len(fieldValues))
+		args = append(args, []byte("HMSET"), []byte(key))
+		for f, v := range fieldValues {
+			b, err := encodeHashValue(v)
+			if err != nil {
+				// 编码失败（gob 不支持类型——罕见）——兜底标识符形态
+				return encodePropagateCommand([]byte("HMSET"), []byte(key))
+			}
+			args = append(args, []byte(f), b)
+		}
+		return encodePropagateCommand(args...)
+	}())
 }
 
 // HMGet 实现 Redis HMGET 命令，批量获取多个字段值
@@ -556,7 +597,7 @@ func (s *BotreonStore) HSetNX(key, field string, value interface{}) (bool, error
 
 		success = true
 		return nil
-	}, 30, encodePropagateCommand([]byte("HSETNX"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("HSETNX"), []byte(key), []byte(field), bValue))
 	return success, err
 }
 
@@ -636,7 +677,7 @@ func (s *BotreonStore) HIncrBy(key, field string, increment int64) (int64, error
 		}
 
 		return nil
-	}, 30, encodePropagateCommand([]byte("HINCRBY"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("HINCRBY"), []byte(key), []byte(field), []byte(strconv.FormatInt(increment, 10))))
 	return result, err
 }
 
@@ -716,7 +757,7 @@ func (s *BotreonStore) HIncrByFloat(key, field string, increment float64) (float
 		}
 
 		return nil
-	}, 30, encodePropagateCommand([]byte("HINCRBYFLOAT"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("HINCRBYFLOAT"), []byte(key), []byte(field), []byte(strconv.FormatFloat(increment, 'f', -1, 64))))
 	return result, err
 }
 
