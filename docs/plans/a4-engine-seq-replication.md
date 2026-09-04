@@ -557,3 +557,18 @@ D 写路径开销未可观测**。
 - **ACK received-vs-applied（定案 = applied）**：ACK-ts 报已应用最大 ts（与现字节 ACK
   的应用语义一致——B2 排水判据测应用推进）——received-only 水位仅协议测试用（不进
   判据——从侧"收到但未应用"窗口不触发排水误判）。
+- **②/D4 实施勘察（2026-09-04——`528c236` 对齐硬化后的退役前置结论）**：
+  - **调用面全量**：`encodePropagateCommand` 89 调用点（~40 种命令——15+ 文件——
+    形态统一：`retryUpdate(fn, 30, encodePropagateCommand(命令, 键))`——logValue
+    可变参数经 `commitTS`（ts_source.go:101）写 `replLogKey(ts)`（:112-113）——
+    标识符值 = 命令名+键（RESP 编码））。
+  - **D4 升级范围**：89 站点 × logValue 标识符 → 全重放值（命令+全部参数+PXAT
+    绝对 TTL——每站点本地变量拼装——机械但量大——2x vlog 写放大已知成本——
+    D 定案 §10 附6 已入册）。
+  - **零对齐 feed 切换落点**：D4 后 `FeedEntriesFrom` 值源 = log 键自身值
+    （`parseCommandEvents(logValue)` → 命令参数——直接组帧 REPLLOG——**无 backlog
+    事件对齐**——对齐硬化（`verifyFeedAlignment`——528c236）退役——并发 commit 序
+    vs append 序分叉问题消失（每 log 键携带自身完整命令——与 backlog 无关联）。
+  - **从侧侧零改动**：REPLLOG 分支（feedEntryParse 拆 ts+全命令 → apply）已支持
+    全命令——D4 部署仅 master 侧值源 + 站点 logValue 升级。
+  - **部署依赖**：2x vlog 写放大与读侧切换同步（(ii) 终态）——退役决策的前置。
