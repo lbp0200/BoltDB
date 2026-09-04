@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/lbp0200/BoltDB/internal/store"
 )
 
 // TestRegressionDuplicateWindowMeasurement checks master/slave convergence
@@ -37,8 +39,13 @@ func TestRegressionDuplicateWindowMeasurement(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping heavy regression in short mode")
 	}
-	master := StartRegression(t)
+	masterDB, err := store.NewBotreonStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("dw-measure: create store: %v", err)
+	}
+	master := StartRegressionWithStore(t, masterDB)
 	defer master.Close()
+	defer masterDB.Close()
 
 	slave := StartRegression(t)
 	defer slave.Close()
@@ -213,6 +220,16 @@ func TestRegressionDuplicateWindowMeasurement(t *testing.T) {
 	t.Logf("dw-measure: goroutine delta=%d (baseline=%d, final=%d)", leak, baseline, final)
 	if leak > 30 {
 		t.Errorf("dw-measure: goroutine leak: %d (baseline=%d, final=%d)", leak, baseline, final)
+	}
+
+	// ts 双轨（S2——④）：master 的传播日志键覆盖全部写入（dw 测量的 ts 透镜补充——
+	// commit 即记日志——日志键计数 > 0）。
+	logEntries, err := masterDB.ReplLogEntries()
+	if err != nil {
+		t.Fatalf("dw-measure: ReplLogEntries: %v", err)
+	}
+	if len(logEntries) == 0 {
+		t.Errorf("dw-measure: no repl log entries on master (ts lens)")
 	}
 }
 

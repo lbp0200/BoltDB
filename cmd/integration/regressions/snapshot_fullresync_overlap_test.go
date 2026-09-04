@@ -11,6 +11,8 @@ import (
 
 	"github.com/lbp0200/BoltDB/internal/monitor"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/lbp0200/BoltDB/internal/store"
 )
 
 // TestRegressionSnapshotFullresyncOffset verifies that FULLRESYNC snapshot
@@ -34,8 +36,13 @@ func TestRegressionSnapshotFullresyncOffset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping heavy regression in short mode")
 	}
-	master := StartRegression(t)
+	masterDB, err := store.NewBotreonStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("offset-fix: create store: %v", err)
+	}
+	master := StartRegressionWithStore(t, masterDB)
 	defer master.Close()
+	defer masterDB.Close()
 
 	slave := StartRegression(t)
 	defer slave.Close()
@@ -203,6 +210,16 @@ func TestRegressionSnapshotFullresyncOffset(t *testing.T) {
 	assertion.MaxReconnectCount = 10
 	level := pm.CheckDegradation(t, assertion, baseline)
 	t.Logf("offset-fix: degradation level: %s", level)
+
+	// ts 双轨（S2——④）：master 的传播日志键覆盖全部写入（commit 即记日志——日志键
+	// 计数 > 0——快照一致性验证的 ts 透镜补充）。
+	logEntries, err := masterDB.ReplLogEntries()
+	if err != nil {
+		t.Fatalf("offset-fix: ReplLogEntries: %v", err)
+	}
+	if len(logEntries) == 0 {
+		t.Errorf("offset-fix: no repl log entries on master (ts lens)")
+	}
 }
 
 // seedKeys writes multi-type data before replication starts

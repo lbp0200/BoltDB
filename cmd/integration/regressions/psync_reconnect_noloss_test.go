@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/lbp0200/BoltDB/internal/store"
 )
 
 // TestRegressionPsyncReconnectNoLoss verifies that after slave disconnect/
@@ -27,8 +29,13 @@ func TestRegressionPsyncReconnectNoLoss(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping heavy regression in short mode")
 	}
-	master := StartRegression(t)
+	masterDB, err := store.NewBotreonStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("psync-loss: create store: %v", err)
+	}
+	master := StartRegressionWithStore(t, masterDB)
 	defer master.Close()
+	defer masterDB.Close()
 
 	slave := StartRegression(t)
 	defer slave.Close()
@@ -134,6 +141,16 @@ func TestRegressionPsyncReconnectNoLoss(t *testing.T) {
 	defer sc.Close()
 
 	verifyUniqueTokenSet(ctx, t, mc, sc, writeCounter.Load())
+
+	// ts 双轨（S2——④）：master 的传播日志键覆盖全部写入（commit 即记日志——日志键
+	// 计数 >= 写入数——无丢失的 ts 透镜验证）。
+	logEntries, err := masterDB.ReplLogEntries()
+	if err != nil {
+		t.Fatalf("psync-loss: ReplLogEntries: %v", err)
+	}
+	if uint64(len(logEntries)) < writeCounter.Load() {
+		t.Errorf("psync-loss: repl log entries %d < writes %d (ts lens)", len(logEntries), writeCounter.Load())
+	}
 
 	// Goroutine leak check
 	delta := runtime.NumGoroutine() - baseline
