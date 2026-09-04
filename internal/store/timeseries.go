@@ -142,7 +142,21 @@ func (s *BotreonStore) TSCreate(key string, opts TSCreateOptions) error {
 		}
 
 		return txn.Set(tsMetaKey(key), encodeTSMeta(meta))
-	}, 30, encodePropagateCommand([]byte("TS.CREATE"), []byte(key)))
+	}, 30, func() []byte {
+		// D4 全重放：TS.CREATE key [RETENTION ms] [ENCODING enc] [DUPLICATE_POLICY p]
+		args := make([][]byte, 0, 8)
+		args = append(args, []byte("TS.CREATE"), []byte(key))
+		if opts.Retention > 0 {
+			args = append(args, []byte("RETENTION"), []byte(strconv.FormatInt(opts.Retention, 10)))
+		}
+		if opts.Encoding != "" {
+			args = append(args, []byte("ENCODING"), []byte(opts.Encoding))
+		}
+		if opts.DuplicatePolicy != "" {
+			args = append(args, []byte("DUPLICATE_POLICY"), []byte(opts.DuplicatePolicy))
+		}
+		return encodePropagateCommand(args...)
+	}())
 
 	return err
 }
@@ -292,7 +306,19 @@ func (s *BotreonStore) TSAdd(key string, timestamp int64, value float64, opts TS
 
 		addedTimestamp = timestamp
 		return nil
-	}, 30, encodePropagateCommand([]byte("TS.ADD"), []byte(key)))
+	}, 30, func() []byte {
+		// D4 全重放：TS.ADD key <ts> <value> [RETENTION ms] [ON_DUPLICATE p]
+		args := make([][]byte, 0, 8)
+		args = append(args, []byte("TS.ADD"), []byte(key),
+			[]byte(strconv.FormatInt(timestamp, 10)), []byte(strconv.FormatFloat(value, 'f', -1, 64)))
+		if opts.Retention > 0 {
+			args = append(args, []byte("RETENTION"), []byte(strconv.FormatInt(opts.Retention, 10)))
+		}
+		if opts.OnDuplicate != "" {
+			args = append(args, []byte("ON_DUPLICATE"), []byte(opts.OnDuplicate))
+		}
+		return encodePropagateCommand(args...)
+	}())
 
 	return addedTimestamp, err
 }
@@ -509,7 +535,7 @@ func (s *BotreonStore) TSDel(key string, start, stop string) (int64, error) {
 		}
 
 		return txn.Set(metaKey, encodeTSMeta(meta))
-	}, 30, encodePropagateCommand([]byte("TS.DEL"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("TS.DEL"), []byte(key), []byte(start), []byte(stop)))
 
 	return deleted, err
 }
@@ -857,7 +883,8 @@ func (s *BotreonStore) TSAddRule(sourceKey, destKey, aggregator string, bucketDu
 		}
 		val := fmt.Sprintf("%s|%d", agg, bucketDuration)
 		return txn.Set(key, []byte(val))
-	}, 30, encodePropagateCommand([]byte("TS.ADDRULE"), []byte(sourceKey)))
+	}, 30, encodePropagateCommand([]byte("TS.ADDRULE"), []byte(sourceKey), []byte(destKey),
+		[]byte("AGGREGATION"), []byte(aggregator), []byte(strconv.FormatInt(bucketDuration, 10))))
 }
 
 // TSDelRule deletes a compaction rule (source → dest).
@@ -874,7 +901,8 @@ func (s *BotreonStore) TSDelRule(sourceKey, destKey, aggregator string, bucketDu
 			return err
 		}
 		return txn.Delete(key)
-	}, 30, encodePropagateCommand([]byte("TS.DELRULE"), []byte(sourceKey)))
+	}, 30, encodePropagateCommand([]byte("TS.DELRULE"), []byte(sourceKey), []byte(destKey),
+		[]byte("AGGREGATION"), []byte(aggregator), []byte(strconv.FormatInt(bucketDuration, 10))))
 }
 
 // TSGetRule returns the stored aggregator and bucket duration for the rule
