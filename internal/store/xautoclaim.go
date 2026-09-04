@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -151,7 +152,32 @@ func (s *BotreonStore) XAutoClaim(key, group, consumer string, minIdleTime int64
 			return err
 		}
 		return txn.Set(groupKey, data)
-	}, 30, encodePropagateCommand([]byte("XAUTOCLAIM"), []byte(key)))
+	}, 30, func() []byte {
+		// D4 全重放：XAUTOCLAIM key group consumer <min-idle> start [COUNT n] [JUSTID]
+		// [IDLE ms] [TIME ms] [RETRYCOUNT n] [FORCE]
+		args := make([][]byte, 0, 7+4)
+		args = append(args, []byte("XAUTOCLAIM"), []byte(key), []byte(group), []byte(consumer),
+			[]byte(strconv.FormatInt(minIdleTime, 10)), []byte(start))
+		if opts.Count > 0 {
+			args = append(args, []byte("COUNT"), []byte(strconv.FormatInt(opts.Count, 10)))
+		}
+		if opts.JustID {
+			args = append(args, []byte("JUSTID"))
+		}
+		if opts.IdleMS > 0 {
+			args = append(args, []byte("IDLE"), []byte(strconv.FormatInt(opts.IdleMS, 10)))
+		}
+		if opts.TimeMS > 0 {
+			args = append(args, []byte("TIME"), []byte(strconv.FormatInt(opts.TimeMS, 10)))
+		}
+		if opts.RetryCount > 0 {
+			args = append(args, []byte("RETRYCOUNT"), []byte(strconv.FormatInt(opts.RetryCount, 10)))
+		}
+		if opts.Force {
+			args = append(args, []byte("FORCE"))
+		}
+		return encodePropagateCommand(args...)
+	}())
 
 	return &result, err
 }

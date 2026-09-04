@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -43,7 +44,7 @@ func (s *BotreonStore) XAck(key, group string, ids ...string) (int64, error) {
 			return err
 		}
 		return txn.Set(groupKey, data)
-	}, 30, encodePropagateCommand([]byte("XACK"), []byte(key)))
+	}, 30, encodePropagateStringArgs([]byte("XACK"), append([]string{key, group}, ids...)))
 
 	return acknowledged, err
 }
@@ -90,7 +91,7 @@ func (s *BotreonStore) XAckDelRemoveRefs(key, id string) error {
 			}
 		}
 		return nil
-	}, 30, encodePropagateCommand([]byte("XACKDEL"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("XACKDEL"), []byte(key), []byte(id)))
 }
 
 // XIsAckedByAllGroups checks if an entry has been acknowledged by ALL consumer groups
@@ -176,7 +177,7 @@ func (s *BotreonStore) XNack(key, group, consumer string, ids ...string) (int64,
 			return err
 		}
 		return txn.Set(groupKey, data)
-	}, 30, encodePropagateCommand([]byte("XNACK"), []byte(key)))
+	}, 30, encodePropagateStringArgs([]byte("XNACK"), append([]string{key, group, consumer}, ids...)))
 
 	return released, err
 }
@@ -300,7 +301,32 @@ func (s *BotreonStore) XClaim(key, group, consumer string, opts XClaimOptions, i
 			return err
 		}
 		return txn.Set(groupKey, data)
-	}, 30, encodePropagateCommand([]byte("XCLAIM"), []byte(key)))
+	}, 30, func() []byte {
+		// D4 全重放：XCLAIM key group consumer <min-idle> id... [IDLE ms] [TIME ms]
+		// [RETRYCOUNT n] [FORCE] [LASTID id]
+		args := make([][]byte, 0, 5+len(ids)+4)
+		args = append(args, []byte("XCLAIM"), []byte(key), []byte(group), []byte(consumer),
+			[]byte(strconv.FormatInt(opts.MinIdleTime, 10)))
+		for _, id := range ids {
+			args = append(args, []byte(id))
+		}
+		if opts.IdleMS > 0 {
+			args = append(args, []byte("IDLE"), []byte(strconv.FormatInt(opts.IdleMS, 10)))
+		}
+		if opts.TimeMS > 0 {
+			args = append(args, []byte("TIME"), []byte(strconv.FormatInt(opts.TimeMS, 10)))
+		}
+		if opts.RetryCount > 0 {
+			args = append(args, []byte("RETRYCOUNT"), []byte(strconv.FormatInt(opts.RetryCount, 10)))
+		}
+		if opts.Force {
+			args = append(args, []byte("FORCE"))
+		}
+		if opts.LastID != "" {
+			args = append(args, []byte("LASTID"), []byte(opts.LastID))
+		}
+		return encodePropagateCommand(args...)
+	}())
 
 	return claimed, err
 }

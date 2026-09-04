@@ -101,7 +101,7 @@ func (s *BotreonStore) XDel(key string, ids ...string) (int64, error) {
 			return err
 		}
 		return nil
-	}, 30, encodePropagateCommand([]byte("XDEL"), []byte(key)))
+	}, 30, encodePropagateStringArgs([]byte("XDEL"), append([]string{key}, ids...)))
 
 	return deleted, err
 }

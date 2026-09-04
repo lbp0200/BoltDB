@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"errors"
+	"strconv"
 
 	"github.com/dgraph-io/badger/v4"
 )
@@ -109,7 +110,18 @@ func (s *BotreonStore) XTrim(key string, maxLen int64, minID string) (int64, err
 			return err
 		}
 		return nil
-	}, 30, encodePropagateCommand([]byte("XTRIM"), []byte(key)))
+	}, 30, func() []byte {
+		// D4 全重放：XTRIM key [MAXLEN <n>] [MINID <id>]
+		args := make([][]byte, 0, 5)
+		args = append(args, []byte("XTRIM"), []byte(key))
+		if maxLen > 0 {
+			args = append(args, []byte("MAXLEN"), []byte(strconv.FormatInt(maxLen, 10)))
+		}
+		if minID != "" {
+			args = append(args, []byte("MINID"), []byte(minID))
+		}
+		return encodePropagateCommand(args...)
+	}())
 
 	return trimmed, err
 }
@@ -179,5 +191,16 @@ func (s *BotreonStore) XSetID(key, lastID string, entriesAdded int64, maxDeleted
 
 		data := encodeStreamMeta(meta)
 		return txn.Set(metaKey, data)
-	}, 30, encodePropagateCommand([]byte("XSETID"), []byte(key)))
+	}, 30, func() []byte {
+		// D4 全重放：XSETID key lastID [ENTRIESADDED <n>] [MAXDELETEDID <id>]
+		args := make([][]byte, 0, 6)
+		args = append(args, []byte("XSETID"), []byte(key), []byte(lastID))
+		if entriesAdded > 0 {
+			args = append(args, []byte("ENTRIESADDED"), []byte(strconv.FormatInt(entriesAdded, 10)))
+		}
+		if maxDeletedID != "" {
+			args = append(args, []byte("MAXDELETEDID"), []byte(maxDeletedID))
+		}
+		return encodePropagateCommand(args...)
+	}())
 }

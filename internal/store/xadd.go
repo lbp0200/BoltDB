@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -169,7 +170,29 @@ func (s *BotreonStore) XAdd(key string, opts StreamXAddOptions, id string, field
 		}
 		resultID = id
 		return nil
-	}, 30, encodePropagateCommand([]byte("XADD"), []byte(key)))
+	}, 30, func() []byte {
+		// D4 全重放：XADD key [NOMKSTREAM] [MAXLEN [~] <n>] [MINID <id>] id field value...
+		args := make([][]byte, 0, 4+2*len(fields))
+		args = append(args, []byte("XADD"), []byte(key))
+		if opts.NoMkStream {
+			args = append(args, []byte("NOMKSTREAM"))
+		}
+		if opts.MaxLen > 0 {
+			args = append(args, []byte("MAXLEN"))
+			if opts.MaxLenApprox > 0 {
+				args = append(args, []byte("~"))
+			}
+			args = append(args, []byte(strconv.FormatInt(opts.MaxLen, 10)))
+		}
+		if opts.MinID != "" {
+			args = append(args, []byte("MINID"), []byte(opts.MinID))
+		}
+		args = append(args, []byte(id))
+		for f, v := range fields {
+			args = append(args, []byte(f), []byte(v))
+		}
+		return encodePropagateCommand(args...)
+	}())
 
 	if err == nil && resultID != "" {
 		s.notifyStreamRead(key, []StreamEntry{
