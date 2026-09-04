@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/dgraph-io/badger/v4"
 )
@@ -59,7 +60,7 @@ func (s *BotreonStore) LPush(key string, values ...string) (int, error) {
 		}
 		finalLength = length
 		return s.listUpdateMeta(txn, key, length, start, end)
-	}, 30, encodePropagateCommand([]byte("LPUSH"), []byte(key)))
+	}, 30, encodePropagateStringArgs([]byte("LPUSH"), append([]string{key}, values...)))
 
 	s.notifyBlockingPop(key, values[0])
 
@@ -117,7 +118,7 @@ func (s *BotreonStore) RPush(key string, values ...string) (int, error) {
 		}
 		finalLength = length
 		return s.listUpdateMeta(txn, key, length, start, end)
-	}, 30, encodePropagateCommand([]byte("RPUSH"), []byte(key)))
+	}, 30, encodePropagateStringArgs([]byte("RPUSH"), append([]string{key}, values...)))
 
 	s.notifyBlockingPop(key, values[0])
 
@@ -278,7 +279,7 @@ func (s *BotreonStore) LPUSHX(key string, values ...string) (int, error) {
 		}
 		finalLength = length
 		return nil
-	}, 30, encodePropagateCommand([]byte("LPUSHX"), []byte(key)))
+	}, 30, encodePropagateStringArgs([]byte("LPUSHX"), append([]string{key}, values...)))
 	if err == nil && finalLength > 0 && len(values) > 0 {
 		s.notifyBlockingPop(key, values[0])
 	}
@@ -299,7 +300,7 @@ func (s *BotreonStore) RPUSHX(key string, values ...string) (int, error) {
 		}
 		finalLength = length
 		return nil
-	}, 30, encodePropagateCommand([]byte("RPUSHX"), []byte(key)))
+	}, 30, encodePropagateStringArgs([]byte("RPUSHX"), append([]string{key}, values...)))
 	if err == nil && finalLength > 0 && len(values) > 0 {
 		s.notifyBlockingPop(key, values[len(values)-1])
 	}
@@ -425,7 +426,16 @@ func (s *BotreonStore) LMPop(keys []string, modifier string, count int) (string,
 			}
 
 			return s.listUpdateMeta(txn, key, currentLength, currentStart, currentEnd)
-		}, 30, encodePropagateCommand([]byte("LMPOP"), []byte(key)))
+		}, 30, func() []byte {
+			// D4 全重放：LMPOP key... <LEFT|RIGHT> count
+			args := make([][]byte, 0, 1+len(keys)+2)
+			args = append(args, []byte("LMPOP"))
+			for _, k := range keys {
+				args = append(args, []byte(k))
+			}
+			args = append(args, []byte(modifier), []byte(strconv.Itoa(count)))
+			return encodePropagateCommand(args...)
+		}())
 		s.keyLockMgr.Unlock(key)
 		if err != nil {
 			return "", nil, err

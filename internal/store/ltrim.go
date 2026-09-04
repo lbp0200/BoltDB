@@ -1,6 +1,8 @@
 package store
 
 import (
+	"strconv"
+
 	"github.com/dgraph-io/badger/v4"
 )
 
@@ -117,5 +119,5 @@ func (s *BotreonStore) LTrim(key string, start, stop int64) error {
 
 		newLength := uint64(stop - start + 1)
 		return s.listUpdateMeta(txn, key, newLength, newStartID, newEndID)
-	}, 30, encodePropagateCommand([]byte("LTRIM"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("LTRIM"), []byte(key), []byte(strconv.FormatInt(start, 10)), []byte(strconv.FormatInt(stop, 10))))
 }

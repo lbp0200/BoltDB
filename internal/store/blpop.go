@@ -140,7 +140,7 @@ func (s *BotreonStore) LMove(source, destination, sourceDirection, destinationDi
 		}
 		value = popped
 		return s.listPushInTxn(txn, destination, value, toLeft)
-	}, 30, encodePropagateCommand([]byte("LMOVE"), []byte(source)))
+	}, 30, encodePropagateCommand([]byte("LMOVE"), []byte(source), []byte(destination), []byte(sourceDirection), []byte(destinationDirection)))
 	if err == nil && value != "" {
 		s.notifyBlockingPop(destination, value)
 	}

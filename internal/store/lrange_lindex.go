@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/dgraph-io/badger/v4"
 )
@@ -43,7 +44,7 @@ func (s *BotreonStore) LSet(key string, index int64, value string) error {
 		}
 		nodeKey := s.listKey(key, nodeID)
 		return txn.Set([]byte(nodeKey), []byte(value))
-	}, 30, encodePropagateCommand([]byte("LSET"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("LSET"), []byte(key), []byte(strconv.FormatInt(index, 10)), []byte(value)))
 }
 
 // LRange 实现 Redis LRANGE 命令
