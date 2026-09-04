@@ -121,6 +121,13 @@
 >    feedSinceTS=curTS+1——字节域与 ts 域 REPLLOG 流坐标不兼容→间隙命令既不在字节补发也
 >    不在增量流→丢失——**治本 = backlog 影子退役本身（重连改 ts 域）——非 D4/零对齐可解**。
 >    探针已回滚。
+>    **feed-mode 复跑验证 PASS（2026-09-04——治本确认）**：新增
+>    `TestRegressionPsyncReconnectNoLossFeed`（psync_reconnect_noloss_feed_test.go——
+>    master+slave 双侧 EnableFeedLoop——复刻 psync-reconnect-no-loss 结构）远程 -race
+>    PASS（45.8s：tokens=5636 recon=6 goroutine-delta=4——**零 MISSING/EXTRA/VALUE
+>    MISMATCH**——missing=2473 原始复现 → 修复后 ≤2 容差内全绿；slave offset 超前
+>    712074 为 feed 模式已知双轨测量伪影——D4 全重放值更大——测试按非关键处理）——
+>    **重连改 ts 域（2c8ecd0）为 feed-mode 数据丢失治本确认**。
 >    **剩余方向（backlog 退役尾——D4 前置已清）**：1. **backlog 影子退役**（分级-3 尾——
 >    **feed-mode 规模验证已确认为数据丢失治本（重连改 ts 域——字节 catch-up 与 REPLLOG
 >    ts 流坐标不兼容是 missing=2473 根因）**——增量续传源切 log-key——`ReplLogEntriesFrom`
