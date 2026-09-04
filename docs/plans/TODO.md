@@ -97,6 +97,27 @@
 >    从"missing=2499 数据丢失"变为"convergence 停滞（lag=5184）"——**错误关联数据已防
 >    （安全层 ✓）但可用性仍缺（feed 报错→从侧停滞——治本 = ②/D4 值源切换——硬化为
 >    过渡安全网——退役仍被阻断）**。
+>    **D4 值源切换全族收官（2026-09-04——退役真修复前置齐）**：12 族 ~90 写站点
+>    logValue 标识符→全重放值（`7035868` string（SetWithTTL 用 PXAT 绝对 TTL——gc-test
+>    比例 0.5→0.25 适配——2x vlog 写放大实证）→ `08dd4d5` hash（encodeHashValue helper）→
+>    `f94d050` list → `700a9dc` set → `e398ee1` zset（ZADD pairs+flags + Z\*STORE helper——
+>    ZDIFFSTORE 无 weights）→ `e2253ed` stream（XCLAIM/XAUTOCLAIM options 构造 + XGROUP
+>    四子命令）→ `58243f5` geo（BYRADIUS/BYBOX——lon-lat-member 序）→ `eb41fb1` json →
+>    `b6efdae` hll → `7e61b23` rename → `1bea7ee` base（相对 TTL 标准形态——PERSIST 免改）→
+>    `c40eecf` ts——D 覆盖收尾）——每族经定向 + 远程 -race store 全包绿（57-60s）。
+>    **零对齐 feed 值源已切（2026-09-04——`b9a7fa4`——退役真修复落地）**：FeedEntriesFrom
+>    值源 = log 键自身全重放命令（parseReplLogValue——无 backlog 事件读取/对齐）——
+>    **并发 commit/append 分叉结构性消除（missing=2499 根因真修复——非对齐硬化式报错
+>    兜底）**——对齐硬化 verifyFeedAlignment 退役（528c236 过渡安全网完成使命）+
+>    feed_alignment_test 重写为 TestParseReplLogValue——FeedSlave/wire/从侧处理不变——
+>    replication 全包远程 -race 23.2s 绿。
+>    **剩余方向（backlog 退役尾——D4 前置已清）**：1. **backlog 影子退役**（分级-3 尾——
+>    增量续传源切 log-key——`ReplLogEntriesFrom` 增量 seek 转正——backlog/WAL 字节记账
+>    删除——配置化开关保留回滚——字节+ts 双轨切换）；2. **feed-mode 规模验证复跑**
+>    （零对齐后并发无丢失 + 无停滞——退化不变量证据更新——退役决策依据）；3. **dw A/B
+>    ≤1/15**（§7 协议——双轨下重复窗口度量——复制切换后验收）+ ②/D4 部署同步读侧切换
+>    （2x vlog 写放大已知成本——消费者落地后）；4. §2 SSD 崩塌复测 + C4 抓包级比对
+>    （S3 前提——开放项）。
 > 3. 发散悖论（C4）根因定位：主侧发送字节 vs 从侧接收字节的抓包级直接比对（层 D——
 >    外部工具）——恢复路径重设计（层 C：降级无损化）的前提。
 >
