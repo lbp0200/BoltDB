@@ -152,8 +152,11 @@ GETACK 回复切到 **4 参** `REPLCONF ACK <offset> <ts>`（经 `EncodeReplconf
 - **既有确认（2026-09-04）**：`git stash` 干净树复跑该测试 → 同样失败——与 CONTINUE→FULLRESYNC
   修复无因果链（后者仅改 `psync.go` + `feed_reconnect_test.go`）。§1c-残留 提到的
   `1263d50`「GETACK 4 参测试修复」覆盖了 replication 侧守卫，**漏了这条 server 侧 coverage 测试**。
-- **下一步**：断言改 4 参（`REPLCONF`/`ACK`/`<offset>`/`<ts>`）——或对齐 `EncodeReplconfAck`
-  输出生成期望值；低风险，随下次触碰 server 包时一并修。
+- **下一步**：~~断言改 4 参（`REPLCONF`/`ACK`/`<offset>`/`<ts>`）~~ —— **已修复（2026-09-04）**：
+  断言改 4 参 + 校验第 4 参 == currentTS（fresh 无写路径 = 0）——远程 `-race -short
+  ./internal/server/...` 全绿（43.3s）。注：`handler_depth_test.go:1304`
+  （`TestSentinelBoundary_ReplconfGetack`）走 `executeCommand` → replconf_commands.go:54-60
+  的 3 参路径——断言 3 参正确，不在本次修改范围。
 
 ## 架构边界（已决策：不做）
 | 边界 | 原因 |

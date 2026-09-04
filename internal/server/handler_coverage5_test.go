@@ -616,8 +616,9 @@ func TestProcessPubSubCommand_PUBSUB_SHARDCHANNELS(t *testing.T) {
 }
 
 // TestHandleSlaveReplicationConnection_RepliesToGetAck 守卫：从节点发
-// REPLCONF GETACK * 时，主节点必须回复携带自身 offset 的 REPLCONF ACK
-// （从节点 readCommandLoop 据此检测投递停滞的尾巴缺口，见 TODO §1c）。
+// REPLCONF GETACK * 时，主节点必须回复携带自身 offset + currentTS 的
+// REPLCONF ACK（S2 ACK-ts 双轨 4 参：REPLCONF ACK <offset> <ts>——从节点
+// readCommandLoop 据此检测投递停滞的尾巴缺口，见 TODO §1c）。
 func TestHandleSlaveReplicationConnection_RepliesToGetAck(t *testing.T) {
 	t.Parallel()
 
@@ -645,12 +646,15 @@ func TestHandleSlaveReplicationConnection_RepliesToGetAck(t *testing.T) {
 
 	resp, err := proto.ReadRESP(bufio.NewReader(serverEnd))
 	assert.NoError(t, err)
-	if len(resp.Args) != 3 {
-		t.Fatalf("GETACK reply has %d args, want 3", len(resp.Args))
+	// S2 ACK-ts 双轨（15d5f7b）：主侧 GETACK 回复为 4 参 REPLCONF ACK <offset> <ts>
+	// ——第 4 参 = currentTS（本测试无写路径——fresh ReplicationManager → 0）。
+	if len(resp.Args) != 4 {
+		t.Fatalf("GETACK reply has %d args, want 4", len(resp.Args))
 	}
 	assert.Equal(t, "REPLCONF", string(resp.Args[0]))
 	assert.Equal(t, "ACK", string(resp.Args[1]))
 	assert.Equal(t, "12345", string(resp.Args[2]))
+	assert.Equal(t, "0", string(resp.Args[3]))
 
 	serverEnd.Close()
 	slaveConn.Close()
