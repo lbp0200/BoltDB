@@ -65,15 +65,26 @@
 >    ——共享捕获竞态实证——**推荐分级 2/3 重排：log-key 增量流先行（键 ts 天然携带——零
 >    回传）——含 ACK/PSYNC ts 语义 + 从侧 lastAppliedTS——backlog 影子并行 + 换算表验证
 >    后退役**）。
->    **候选下一步**：1. S2 ②/④ 增量
->    （日志值全重放形式——D4——部署与读侧切换同步——仍延后）；2. 复制层读侧（S2 主体——
->    **log-key 增量流先行（分级 2/3 合并——零回传）**——下一步方向（2026-09-04——feed
->    传输设计定案 `a1b1cb3`）：① wire 形态落地（(ts, 全命令) 条目——新命令类型/ts 注记
->    ——实施细定项）；② master 侧按 ts 增量发送（`ReplLogEntriesFrom`——6785b82——从侧
->    请求 ts 起扫描）+ 从侧 (ts, 全命令) 解析 + lastAppliedTS 应用侧推进（CONTINUE 落盘
->    持久化）；③ ACK-ts（**applied 语义**——received-only 仅协议测试不进判据）；
->    ④ PSYNC (replId, ts)（整数边界——StartsAtCommandBoundary 字节映射退役）；⑤ 4 守卫
->    重写 + ts 单调/重放守卫 + dw A/B ≤1/15——大设计——a4 §10 附7 定案锚）。
+>    **S2 feed 协议 ①-⑤ + feed-loop + 生产接线全落地（2026-09-04）**：
+>    ① wire（`e322be9`——REPLLOG (ts, 全命令) flattened——嵌套 bulk 无收益否决）；
+>    ② sender + 从侧分支（`298c87d`——master 增量 sender + 从侧 REPLLOG 分支 apply +
+>    lastAppliedTS 推进 + 字节 lastOffset 双轨）；③ ACK-ts（`15d5f7b`——ACK 带
+>    lastAppliedTS + GETACK 带 currentTS——停滞判据 ts 形式——masterTS==0 字节兜底）；
+>    ④ PSYNC-ts（`26403e1`——4 参整数边界 [logStartTS, currentTS]——ts==0 字节模式保留）；
+>    ⑤ 验证门槛（`a3b0cb2` ts 重放守卫——日志键回放 == 字节 backlog 回放事件级等价 +
+>    `b043c63`/`cc3ca39` 4 守卫 ts 双轨重写——含 GETACK 4 参测试修复 `1263d50`）。
+>    feed-loop 增量流（`982057b`——FeedEntriesFrom nolint 转正 + feed-state since-ts 游标 +
+>    PropagateCommand 分支双轨并存（feed 从侧走 REPLLOG——非 feed 从侧字节路径不变——
+>    默认关零成本回滚））——E2E 闭环（`6838470`——master feed 流 → 从侧 apply → 收敛 +
+>    lastAppliedTS == master 水位）——生产接线（`07fd694`——`--feed-loop` 启动标志默认关 +
+>    config `[replication] feedloop` + 三套件 feed-mode 零回归：cli 93 + py 247 + node 122）。
+>    **剩余方向（backlog 退役尾）**：1. **feed-mode 规模验证 → 退役决策**（soak/退化
+>    不变量在 feed-mode 下——双轨核验锚已齐：replay 守卫 + E2E + 三套件——决策后 backlog
+>    影子退役（配置化开关保留回滚——字节+ts 双轨切换））；2. **dw A/B ≤1/15**（§7 协议
+>    ——双轨下重复窗口度量——复制切换后验收）；3. **②/D4 全重放形式部署**（backlog
+>    退役后值源切日志键——`ReplLogEntriesFrom` 增量 seek 转正——2x vlog 写放大与读侧
+>    切换同步——仍延后）；4. §2 SSD 崩塌复测（疑 discard-ts/压实同源——S1-A2 后新代码
+>    复验）+ C4 抓包级比对（发散悖论根因——S3 前提）。
 > 3. 发散悖论（C4）根因定位：主侧发送字节 vs 从侧接收字节的抓包级直接比对（层 D——
 >    外部工具）——恢复路径重设计（层 C：降级无损化）的前提。
 >
