@@ -78,7 +78,7 @@ func TestReplLogSameTSBinding(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			if string(v) != string(encodePropagateCommand([]byte("SET"), []byte("binding:key"))) {
+			if string(v) != string(encodePropagateCommand([]byte("SET"), []byte("binding:key"), []byte("value-1"))) {
 				t.Fatalf("log value mismatch: %q", v)
 			}
 		}

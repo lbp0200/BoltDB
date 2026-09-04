@@ -41,6 +41,17 @@ func encodePropagateCommand(args ...[]byte) []byte {
 	return b
 }
 
+// encodePropagateStringArgs 构造全重放日志值（命令 + 字符串参数摊平——D4 形态——零
+// 对齐 feed 值源——MSET/MSETNX/BITOP/BITFIELD 等扁平参数站点的日志值构造）。
+func encodePropagateStringArgs(cmd []byte, args []string) []byte {
+	all := make([][]byte, 0, 1+len(args))
+	all = append(all, cmd)
+	for _, a := range args {
+		all = append(all, []byte(a))
+	}
+	return encodePropagateCommand(all...)
+}
+
 // ReplLogEntry 是传播日志键读侧的条目（S2——§10 附7 D1b——日志键为增量续传/排水源）。
 type ReplLogEntry struct {
 	TS    uint64

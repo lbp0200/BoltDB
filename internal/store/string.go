@@ -48,9 +48,8 @@ func (s *BotreonStore) Set(key string, value string) error {
 		}
 		strKey := s.stringKey(key)
 		return s.setValueWithCompression(txn, []byte(strKey), []byte(value))
-		// 注：日志值 = SET 命令的标识性小负载（不含 value 参数——完整重放形式连同
-		// vlog 影响/保留策略归 S2 ② 增量——a4 §10 附6 D-定案待定件②④）。
-	}, 30, encodePropagateCommand([]byte("SET"), []byte(key)))
+		// 注：日志值 = SET 全重放形式（D4——含 value——零对齐 feed 值源——a4 §10 附7）。
+	}, 30, encodePropagateCommand([]byte("SET"), []byte(key), []byte(value)))
 	return err
 }
 
@@ -80,7 +79,8 @@ func (s *BotreonStore) SetWithTTL(key, value string, ttl time.Duration) error {
 		}
 		strKey := s.stringKey(key)
 		return s.setEntryWithCompression(txn, []byte(strKey), []byte(value), ttl)
-	}, 30, encodePropagateCommand([]byte("SET"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("SET"), []byte(key), []byte(value), []byte("PXAT"),
+		[]byte(strconv.FormatInt(time.Now().Add(ttl).UnixMilli(), 10))))
 	return err
 }
 
@@ -119,7 +119,7 @@ func (s *BotreonStore) SetNX(key string, value string) (bool, error) {
 		}
 		success = true
 		return nil
-	}, 30, encodePropagateCommand([]byte("SETNX"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("SETNX"), []byte(key), []byte(value)))
 	return success, err
 }
 
@@ -146,7 +146,7 @@ func (s *BotreonStore) GetSet(key string, value string) (string, error) {
 			return err
 		}
 		return s.setValueWithCompression(txn, []byte(strKey), []byte(value))
-	}, 30, encodePropagateCommand([]byte("GETSET"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("GETSET"), []byte(key), []byte(value)))
 	if err != nil {
 		return "", err
 	}
@@ -222,7 +222,7 @@ func (s *BotreonStore) MSet(keyValues ...string) error {
 			}
 		}
 		return nil
-	}, 30, encodePropagateCommand([]byte("MSET")))
+	}, 30, encodePropagateStringArgs([]byte("MSET"), keyValues))
 }
 
 // MSetNX 实现 Redis MSETNX 命令，仅当所有键都不存在时设置多个键值对
@@ -266,7 +266,7 @@ func (s *BotreonStore) MSetNX(keyValues ...string) (bool, error) {
 		}
 		success = true
 		return nil
-	}, 30, encodePropagateCommand([]byte("MSETNX")))
+	}, 30, encodePropagateStringArgs([]byte("MSETNX"), keyValues))
 	return success, err
 }
 
@@ -389,7 +389,7 @@ func (s *BotreonStore) INCRBY(key string, increment int64) (int64, error) {
 		}
 		newValue = oldValue + increment
 		return s.setIntValue(txn, key, newValue)
-	}, 30, encodePropagateCommand([]byte("INCRBY"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("INCRBY"), []byte(key), []byte(strconv.FormatInt(increment, 10))))
 	return newValue, err
 }
 
@@ -437,7 +437,7 @@ func (s *BotreonStore) INCRBYFLOAT(key string, increment float64) (float64, erro
 			return err
 		}
 		return s.setValueWithCompression(txn, []byte(strKey), []byte(newValueStr))
-	}, 30, encodePropagateCommand([]byte("INCRBYFLOAT"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("INCRBYFLOAT"), []byte(key), []byte(strconv.FormatFloat(increment, 'f', -1, 64))))
 	if err != nil {
 		return 0, err
 	}
@@ -488,7 +488,7 @@ func (s *BotreonStore) APPEND(key string, value string) (int, error) {
 			return err
 		}
 		return s.setValueWithCompression(txn, []byte(strKey), []byte(newValue))
-	}, 30, encodePropagateCommand([]byte("APPEND"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("APPEND"), []byte(key), []byte(value)))
 	return newLength, err
 }
 
@@ -605,7 +605,7 @@ func (s *BotreonStore) SetRange(key string, offset int, value string) (int, erro
 			return err
 		}
 		return s.setValueWithCompression(txn, []byte(strKey), []byte(newValue))
-	}, 30, encodePropagateCommand([]byte("SETRANGE"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("SETRANGE"), []byte(key), []byte(strconv.Itoa(offset)), []byte(value)))
 	if err != nil {
 		return 0, err
 	}
@@ -689,7 +689,7 @@ func (s *BotreonStore) SetBit(key string, offset int, value int) (int, error) {
 		}
 		strKey := s.stringKey(key)
 		return s.setValueWithCompression(txn, []byte(strKey), data)
-	}, 30, encodePropagateCommand([]byte("SETBIT"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("SETBIT"), []byte(key), []byte(strconv.Itoa(offset)), []byte(strconv.Itoa(value))))
 	return oldBit, err
 }
 
@@ -851,7 +851,7 @@ func (s *BotreonStore) BitOp(op string, destKey string, keys ...string) (int, er
 		}
 		strKey := s.stringKey(destKey)
 		return txn.Set([]byte(strKey), result)
-	}, 30, encodePropagateCommand([]byte("BITOP"), []byte(op), []byte(destKey)))
+	}, 30, encodePropagateStringArgs([]byte("BITOP"), append([]string{op, destKey}, keys...)))
 	return resultLength, err
 }
 
@@ -1357,7 +1357,7 @@ func (s *BotreonStore) BitField(key string, operations []string) ([]interface{},
 		}
 
 		return nil
-	}, 30, encodePropagateCommand([]byte("BITFIELD"), []byte(key)))
+	}, 30, encodePropagateStringArgs([]byte("BITFIELD"), append([]string{key}, operations...)))
 
 	return results, err
 }

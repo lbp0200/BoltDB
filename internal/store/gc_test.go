@@ -107,7 +107,10 @@ func TestRunValueLogGC(t *testing.T) {
 		t.Fatalf("flatten: %v", err)
 	}
 
-	rewritten, err := s.RunValueLogGC(0.5)
+	// D4 值源切换（2026-09-04——string 族 log 值 = 含数据的全命令——超 ValueThreshold
+	// 进 vlog——2x vlog 写放大已知成本 a4 §10 附6）稀释 vlog 的 discard-ratio（约半减），
+	// GC 阈值从 0.5 适配为 0.25——重写/旧文件回收的验证语义不变。
+	rewritten, err := s.RunValueLogGC(0.25)
 	if err != nil {
 		t.Fatalf("RunValueLogGC: %v", err)
 	}
