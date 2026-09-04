@@ -154,7 +154,9 @@
 >    feed 零丢失复跑）。**换算表已落地（2026-09-05——gate 2 前置完成）**：
 >    `ReplConversionTable`（conversion_table.go——OffsetToTS/TSToOffset/AlignCheck +
 >    空表边界）——测试覆盖（含分叉检测 + 8×25 并发鲁棒——锚检测语义实证）+
->    replication 全包远程 -race 绿——守卫重写（以表核验双轨）待阶段 1 实施时接入。
+>    replication 全包远程 -race 绿——**守卫重写已接入**（`TestTSReplayEquivalence`
+>    ts 重放守卫末尾换算表构建 + AlignCheck 断言——事件级等价的强形式）——
+>    阶段 1 实施时其余守卫（4 守卫）同步以表核验。
 >    2. ~~feed-mode 规模验证复跑~~（**已完成——零对齐后仍 missing=2473——见上**）；3. **dw A/B
 >    ≤1/15**（§7 协议——双轨下重复窗口度量——复制切换后验收）+ ②/D4 部署同步读侧切换
 >    （2x vlog 写放大已知成本——消费者落地后）；4. §2 SSD 崩塌复测 + C4 抓包级比对

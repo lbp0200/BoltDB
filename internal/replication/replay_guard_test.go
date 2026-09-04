@@ -70,4 +70,17 @@ func TestTSReplayEquivalence(t *testing.T) {
 			}
 		}
 	}
+
+	// 换算表核验（a4 §10 附7——验证锚接入守卫）：事件对齐构建成功（上述等价性的
+	// 强形式——offset↔ts 双向映射建表）+ AlignCheck 双轨一致（事件数 == 日志键数）。
+	tbl, err := BuildReplConversionTable(rm.GetBacklog(), s)
+	if err != nil {
+		t.Fatalf("conversion table build failed in replay guard: %v", err)
+	}
+	if tbl.Count() != n {
+		t.Fatalf("conversion table count = %d, want %d", tbl.Count(), n)
+	}
+	if cnt, ok := tbl.AlignCheck(s); !ok || cnt != n {
+		t.Fatalf("conversion table AlignCheck = (%d, %v), want (%d, true)", cnt, ok, n)
+	}
 }

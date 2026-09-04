@@ -502,7 +502,8 @@ D 写路径开销未可观测**。
   + **`TestConversionTableDetectsDivergence`**（反转序构造分叉——锚检测语义实证——
   missing=2499 根因家族的早期检测面）+ **`TestConversionTableConcurrentWriters`**
   （8×25 并发——锚要么一致要么报对齐错——绝不静默错表）覆盖（replication 全包远程
-  -race 绿）。
+  -race 绿）。**守卫接入**：`TestTSReplayEquivalence`（ts 重放守卫）末尾追加换算表
+  构建 + AlignCheck 断言——事件级等价的强形式（offset↔ts 双向映射建表核验）。
 - **顺序建议**：先 ACK 判据 ts 化（从侧自算 lastAppliedTS——主侧 ACK 回复带 currentTS
   ——换算表核验双轨）→ 后 PSYNC (replId, ts)（slave 需 lastAppliedTS 持久化）→ 排水
   判据 ts 推进 → 分级-3 backlog 退役。
