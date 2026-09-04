@@ -36,6 +36,7 @@ var (
 	skipStartupCleanup      = flag.Bool("skip-startup-cleanup", false, "skip startup cleanup (data integrity check)")
 	clientOutputBufferLimit = flag.Int64("client-output-buffer-limit", 32<<20, "per-client output buffer hard limit in bytes (default 32MB, 0 = unlimited)")
 	replBacklogSizeFlag     = flag.String("repl-backlog-size", "", "replication backlog size (e.g. 100mb, 1gb, default 1mb)")
+	feedLoopFlag            = flag.Bool("feed-loop", false, "enable feed-mode replication (REPLLOG incremental stream to slaves, S2 backlog retirement)")
 	gossipIntervalFlag      = flag.Duration("gossip-interval", 1*time.Second, "cluster gossip PING interval (default 1s, e.g. 5s to reduce idle CPU)")
 	metricsAddrFlag         = flag.String("metrics-addr", "", "metrics HTTP listen addr (e.g. :6338, empty = disabled)")
 	maxClientsFlag          = flag.Int("maxclients", 10000, "max number of connected clients (0 = unlimited)")
@@ -284,6 +285,11 @@ func main() {
 		}
 		replMgr.SetBacklogSize(size)
 		logger.Logger.Info().Int64("size", size).Msg("Replication backlog size set")
+	}
+
+	if *feedLoopFlag {
+		replMgr.SetFeedLoop(true)
+		logger.Logger.Info().Msg("Feed-mode replication enabled (REPLLOG incremental stream)")
 	}
 
 	// 创建并启用 backlog WAL（文件持久化），提供崩溃恢复能力

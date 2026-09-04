@@ -36,6 +36,7 @@ type MemoryConfig struct {
 type ReplicationConfig struct {
 	BacklogSize string `toml:"backlog-size"`
 	ReplicaOf   string `toml:"replicaof"`
+	FeedLoop    bool   `toml:"feedloop"`
 }
 
 type TLSConfig struct {
@@ -187,6 +188,10 @@ func applyConfigOverlay(cfg *Config, seenFlags map[string]bool) map[string]bool 
 	if !seenFlags["replicaof"] && cfg.Replication.ReplicaOf != "" {
 		*replicaofFlag = cfg.Replication.ReplicaOf
 		setByConfig["replicaof"] = true
+	}
+	if !seenFlags["feed-loop"] && cfg.Replication.FeedLoop {
+		*feedLoopFlag = true
+		setByConfig["feed-loop"] = true
 	}
 
 	// === TLS ===
