@@ -110,7 +110,18 @@ func (s *BotreonStore) JSONSet(key, path, value string, nx, xx bool) (string, bo
 		}
 		wrote = true
 		return nil
-	}, 30, encodePropagateCommand([]byte("JSON.SET"), []byte(key)))
+	}, 30, func() []byte {
+		// D4 全重放：JSON.SET key path value [NX] [XX]
+		args := make([][]byte, 0, 5)
+		args = append(args, []byte("JSON.SET"), []byte(key), []byte(path), []byte(value))
+		if nx {
+			args = append(args, []byte("NX"))
+		}
+		if xx {
+			args = append(args, []byte("XX"))
+		}
+		return encodePropagateCommand(args...)
+	}())
 	if err != nil {
 		return "", false, err
 	}
@@ -216,7 +227,7 @@ func (s *BotreonStore) JSONDel(key string, paths ...string) (int64, error) {
 			}
 			deleted = 1
 			return nil
-		}, 30, encodePropagateCommand([]byte("JSON.DEL"), []byte(key)))
+		}, 30, encodePropagateStringArgs([]byte("JSON.DEL"), append([]string{key}, paths...)))
 		if err != nil {
 			return 0, err
 		}
@@ -347,7 +358,7 @@ func (s *BotreonStore) JSONArrAppend(key, path string, values ...string) (int64,
 		}
 		newLen = int64(len(arr))
 		return txn.Set([]byte(s.jsonKey(key)), newData)
-	}, 30, encodePropagateCommand([]byte("JSON.ARRAPPEND"), []byte(key)))
+	}, 30, encodePropagateStringArgs([]byte("JSON.ARRAPPEND"), append([]string{key, path}, values...)))
 	if err != nil {
 		if errors.Is(err, ErrKeyNotFound) {
 			return 0, ErrKeyNotFound
@@ -532,7 +543,7 @@ func (s *BotreonStore) JSONNumIncrBy(key, path string, increment float64) (float
 		}
 		result = num
 		return txn.Set([]byte(s.jsonKey(key)), newData)
-	}, 30, encodePropagateCommand([]byte("JSON.NUMINCRBY"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("JSON.NUMINCRBY"), []byte(key), []byte(path), []byte(strconv.FormatFloat(increment, 'f', -1, 64))))
 	if err != nil {
 		if errors.Is(err, ErrKeyNotFound) {
 			return 0, ErrKeyNotFound
@@ -603,7 +614,7 @@ func (s *BotreonStore) JSONNumMultBy(key, path string, multiplier float64) (floa
 		}
 		result = num
 		return txn.Set([]byte(s.jsonKey(key)), newData)
-	}, 30, encodePropagateCommand([]byte("JSON.NUMMULTBY"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("JSON.NUMMULTBY"), []byte(key), []byte(path), []byte(strconv.FormatFloat(multiplier, 'f', -1, 64))))
 	if err != nil {
 		if errors.Is(err, ErrKeyNotFound) {
 			return 0, ErrKeyNotFound
@@ -653,7 +664,7 @@ func (s *BotreonStore) JSONClear(key, path string) (int64, error) {
 			return errors.New("ERR failed to marshal JSON")
 		}
 		return txn.Set([]byte(s.jsonKey(key)), newData)
-	}, 30, encodePropagateCommand([]byte("JSON.CLEAR"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("JSON.CLEAR"), []byte(key), []byte(path)))
 	if err != nil {
 		if errors.Is(err, ErrKeyNotFound) {
 			return 0, ErrKeyNotFound
