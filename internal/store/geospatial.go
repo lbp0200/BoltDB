@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/dgraph-io/badger/v4"
@@ -291,7 +292,25 @@ func (s *BotreonStore) GeoAddWithOptions(key string, opts GeoAddOptions, members
 		}
 
 		return nil
-	}, 20, encodePropagateCommand([]byte("GEOADD"), []byte(key)))
+	}, 20, func() []byte {
+		// D4 全重放：GEOADD key [NX|XX] [CH] <lon> <lat> <member>...
+		args := make([][]byte, 0, 1+3*len(members)+3)
+		args = append(args, []byte("GEOADD"), []byte(key))
+		if opts.NX {
+			args = append(args, []byte("NX"))
+		}
+		if opts.XX {
+			args = append(args, []byte("XX"))
+		}
+		if opts.CH {
+			args = append(args, []byte("CH"))
+		}
+		for _, m := range members {
+			args = append(args, []byte(strconv.FormatFloat(m.Lon, 'f', -1, 64)),
+				[]byte(strconv.FormatFloat(m.Lat, 'f', -1, 64)), []byte(m.Member))
+		}
+		return encodePropagateCommand(args...)
+	}())
 
 	return added, err
 }
@@ -713,7 +732,27 @@ func (s *BotreonStore) GeoSearchStore(dstKey, srcKey string, centerLon, centerLa
 		}
 		added = int64(len(members))
 		return nil
-	}, 20, encodePropagateCommand([]byte("GEOSEARCHSTORE"), []byte(dstKey)))
+	}, 20, func() []byte {
+		// D4 全重放：GEOSEARCHSTORE dst src FROMLONLAT <lon> <lat>
+		// BYRADIUS <r> <unit> 或 BYBOX <w> <h> <unit>——[COUNT <n>] [STOREDIST]
+		args := make([][]byte, 0, 10)
+		args = append(args, []byte("GEOSEARCHSTORE"), []byte(dstKey), []byte(srcKey),
+			[]byte("FROMLONLAT"), []byte(strconv.FormatFloat(centerLon, 'f', -1, 64)),
+			[]byte(strconv.FormatFloat(centerLat, 'f', -1, 64)))
+		if shape == "BOX" {
+			args = append(args, []byte("BYBOX"), []byte(strconv.FormatFloat(radius, 'f', -1, 64)),
+				[]byte(strconv.FormatFloat(boxHeight, 'f', -1, 64)), []byte(unit))
+		} else {
+			args = append(args, []byte("BYRADIUS"), []byte(strconv.FormatFloat(radius, 'f', -1, 64)), []byte(unit))
+		}
+		if count > 0 {
+			args = append(args, []byte("COUNT"), []byte(strconv.Itoa(count)))
+		}
+		if storeDist {
+			args = append(args, []byte("STOREDIST"))
+		}
+		return encodePropagateCommand(args...)
+	}())
 	if err == nil && addedNewMember {
 		s.notifyBlockingZPop(dstKey)
 	}
@@ -800,7 +839,7 @@ func (s *BotreonStore) GeoDel(key, member string) error {
 	return s.retryUpdate(func(txn *badger.Txn) error {
 		_, err := geoDelMemberInTxn(txn, key, member)
 		return err
-	}, 20, encodePropagateCommand([]byte("ZREM"), []byte(key)))
+	}, 20, encodePropagateCommand([]byte("ZREM"), []byte(key), []byte(member)))
 }
 
 // GeoRadiusByMember searches for members near a member
@@ -924,7 +963,7 @@ func (s *BotreonStore) GeoRemove(key string, members ...string) (int64, error) {
 			}
 		}
 		return nil
-	}, 20, encodePropagateCommand([]byte("ZREM"), []byte(key)))
+	}, 20, encodePropagateStringArgs([]byte("ZREM"), append([]string{key}, members...)))
 	return removed, err
 }
 
