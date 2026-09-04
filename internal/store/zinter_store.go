@@ -3,9 +3,31 @@ package store
 import (
 	"errors"
 	"sort"
+	"strconv"
 
 	"github.com/dgraph-io/badger/v4"
 )
+
+// encodePropagateZSetStoreArgs 构造 Z*STORE 族的 D4 全重放日志值（命令 + destination +
+// numkeys + keys... + [WEIGHTS ...] + [AGGREGATE ...]——ZUNIONSTORE/ZINTERSTORE/ZDIFFSTORE
+// 共享——从侧重放经 WriteCommand 的 Z*STORE 分发解析）。
+func encodePropagateZSetStoreArgs(cmd []byte, destination string, keys []string, weights []float64, aggregate string) []byte {
+	args := make([][]byte, 0, 3+len(keys)+2*len(weights)+2)
+	args = append(args, cmd, []byte(destination), []byte(strconv.Itoa(len(keys))))
+	for _, k := range keys {
+		args = append(args, []byte(k))
+	}
+	if len(weights) > 0 {
+		args = append(args, []byte("WEIGHTS"))
+		for _, w := range weights {
+			args = append(args, []byte(strconv.FormatFloat(w, 'f', -1, 64)))
+		}
+	}
+	if aggregate != "" {
+		args = append(args, []byte("AGGREGATE"), []byte(aggregate))
+	}
+	return encodePropagateCommand(args...)
+}
 
 // ZUnionStore 实现 Redis ZUNIONSTORE 命令
 func (s *BotreonStore) ZUnionStore(destination string, keys []string, weights []float64, aggregate string) (int64, error) {
@@ -26,7 +48,7 @@ func (s *BotreonStore) ZUnionStore(destination string, keys []string, weights []
 		count = int64(len(memberScores))
 		notify = count > 0
 		return nil
-	}, 20, encodePropagateCommand([]byte("ZUNIONSTORE"), []byte(destination)))
+	}, 20, encodePropagateZSetStoreArgs([]byte("ZUNIONSTORE"), destination, keys, weights, aggregate))
 	if err == nil && notify {
 		s.notifyBlockingZPop(destination)
 	}
@@ -56,7 +78,7 @@ func (s *BotreonStore) ZInterStore(destination string, keys []string, weights []
 		count = int64(len(memberScores))
 		notify = count > 0
 		return nil
-	}, 20, encodePropagateCommand([]byte("ZINTERSTORE"), []byte(destination)))
+	}, 20, encodePropagateZSetStoreArgs([]byte("ZINTERSTORE"), destination, keys, weights, aggregate))
 	if err == nil && notify {
 		s.notifyBlockingZPop(destination)
 	}
@@ -86,7 +108,7 @@ func (s *BotreonStore) ZDiffStore(destination string, keys []string) (int64, err
 		count = int64(len(members))
 		notify = count > 0
 		return nil
-	}, 20, encodePropagateCommand([]byte("ZDIFFSTORE"), []byte(destination)))
+	}, 20, encodePropagateZSetStoreArgs([]byte("ZDIFFSTORE"), destination, keys, nil, ""))
 	if err == nil && notify {
 		s.notifyBlockingZPop(destination)
 	}

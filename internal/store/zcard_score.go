@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/lbp0200/BoltDB/internal/logger"
@@ -206,7 +207,7 @@ func (s *BotreonStore) ZIncrBy(zSetName, member string, increment float64) (floa
 		}
 
 		return txn.Set(metaKey, encodeMeta(meta))
-	}, 20, encodePropagateCommand([]byte("ZINCRBY"), []byte(zSetName)))
+	}, 20, encodePropagateCommand([]byte("ZINCRBY"), []byte(zSetName), []byte(member), []byte(strconv.FormatFloat(increment, 'f', -1, 64))))
 	s.markZSetDirty(zSetName)
 	return newScore, err
 }

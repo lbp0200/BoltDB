@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/lbp0200/BoltDB/internal/logger"
@@ -23,7 +24,15 @@ func (s *BotreonStore) ZAdd(zSetName string, members []ZSetMember) error {
 		var err error
 		addedNewMember, err = zAddMembersInTxn(txn, zSetName, members)
 		return err
-	}, 20, encodePropagateCommand([]byte("ZADD"), []byte(zSetName)))
+	}, 20, func() []byte {
+		// D4 全重放：ZADD zSetName <score> <member>...——pairs 摊平
+		args := make([][]byte, 0, 1+2*len(members))
+		args = append(args, []byte("ZADD"), []byte(zSetName))
+		for _, m := range members {
+			args = append(args, []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)), []byte(m.Member))
+		}
+		return encodePropagateCommand(args...)
+	}())
 	if err == nil && addedNewMember {
 		s.notifyBlockingZPop(zSetName)
 	}
@@ -63,7 +72,33 @@ func (s *BotreonStore) ZAddWithOptions(zSetName string, opts ZAddOptions, member
 		var err error
 		changed, addedNewMember, err = zAddMembersInTxnOpts(txn, zSetName, opts, members)
 		return err
-	}, 20, encodePropagateCommand([]byte("ZADD"), []byte(zSetName)))
+	}, 20, func() []byte {
+		// D4 全重放：ZADD zSetName [NX|XX] [GT|LT] [CH] [INCR] <score> <member>...
+		args := make([][]byte, 0, 1+6+2*len(members))
+		args = append(args, []byte("ZADD"), []byte(zSetName))
+		if opts.NX {
+			args = append(args, []byte("NX"))
+		}
+		if opts.XX {
+			args = append(args, []byte("XX"))
+		}
+		if opts.GT {
+			args = append(args, []byte("GT"))
+		}
+		if opts.LT {
+			args = append(args, []byte("LT"))
+		}
+		if opts.CH {
+			args = append(args, []byte("CH"))
+		}
+		if opts.INCR {
+			args = append(args, []byte("INCR"))
+		}
+		for _, m := range members {
+			args = append(args, []byte(strconv.FormatFloat(m.Score, 'f', -1, 64)), []byte(m.Member))
+		}
+		return encodePropagateCommand(args...)
+	}())
 	if err == nil && addedNewMember {
 		s.notifyBlockingZPop(zSetName)
 	}
@@ -397,7 +432,7 @@ func (s *BotreonStore) ZRem(zSetName, member string) (int64, error) {
 		}
 		deleted = n
 		return nil
-	}, 20, encodePropagateCommand([]byte("ZREM"), []byte(zSetName)))
+	}, 20, encodePropagateCommand([]byte("ZREM"), []byte(zSetName), []byte(member)))
 	if err != nil {
 		return 0, err
 	}
@@ -509,7 +544,7 @@ func (s *BotreonStore) ZRemRangeByRank(zSetName string, start, stop int64) (int6
 			removed += n
 		}
 		return nil
-	}, 20, encodePropagateCommand([]byte("ZREMRANGEBYRANK"), []byte(zSetName)))
+	}, 20, encodePropagateCommand([]byte("ZREMRANGEBYRANK"), []byte(zSetName), []byte(strconv.FormatInt(start, 10)), []byte(strconv.FormatInt(stop, 10))))
 	s.markZSetDirty(zSetName)
 	return removed, err
 }
@@ -533,7 +568,18 @@ func (s *BotreonStore) ZRemRangeByScore(zSetName string, minScore, maxScore floa
 			removed += n
 		}
 		return nil
-	}, 20, encodePropagateCommand([]byte("ZREMRANGEBYSCORE"), []byte(zSetName)))
+	}, 20, func() []byte {
+		// D4 全重放：ZREMRANGEBYSCORE zSetName <min> <max>——exclusive 用 "(" 前缀
+		minS := strconv.FormatFloat(minScore, 'f', -1, 64)
+		maxS := strconv.FormatFloat(maxScore, 'f', -1, 64)
+		if minExclusive {
+			minS = "(" + minS
+		}
+		if maxExclusive {
+			maxS = "(" + maxS
+		}
+		return encodePropagateCommand([]byte("ZREMRANGEBYSCORE"), []byte(zSetName), []byte(minS), []byte(maxS))
+	}())
 	s.markZSetDirty(zSetName)
 	return removed, err
 }

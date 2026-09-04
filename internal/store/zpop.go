@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/dgraph-io/badger/v4"
 )
@@ -35,7 +36,7 @@ func (s *BotreonStore) ZPopMax(zSetName string, count int) ([]ZSetMember, error)
 			}
 		}
 		return nil
-	}, 20, encodePropagateCommand([]byte("ZPOPMAX"), []byte(zSetName)))
+	}, 20, encodePropagateCommand([]byte("ZPOPMAX"), []byte(zSetName), []byte(strconv.Itoa(count))))
 	s.markZSetDirty(zSetName)
 	return results, err
 }
@@ -68,7 +69,7 @@ func (s *BotreonStore) ZPopMin(zSetName string, count int) ([]ZSetMember, error)
 			}
 		}
 		return nil
-	}, 20, encodePropagateCommand([]byte("ZPOPMIN"), []byte(zSetName)))
+	}, 20, encodePropagateCommand([]byte("ZPOPMIN"), []byte(zSetName), []byte(strconv.Itoa(count))))
 	s.markZSetDirty(zSetName)
 	return results, err
 }
