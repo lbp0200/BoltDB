@@ -67,22 +67,21 @@ func parseReplLogValue(logValue []byte) ([]string, error) {
 // 值源 = log 键自身值（D4——全重放命令——零对齐——无 backlog 事件读取/对齐）——并发
 // 写者下 commit 序 vs append 序分叉问题消失（D4 前该分叉导致错误关联——2026-09-04
 // 规模验证 missing=2499——对齐硬化 528c236 为过渡安全网——D4 全族落地后退役）。
+// 读取经 store.ReplLogEntriesFrom(since) 增量 seek（replLogKey(since) 定位首个
+// ts>=since 的日志键——O(log N) seek + 顺序迭代——非 O(n) 全量扫描——backlog 退役
+// 尾项：增量续传源切 log-key 的读侧）。
 func (rm *ReplicationManager) FeedEntriesFrom(since uint64) ([][]string, error) {
-	all, err := rm.store.ReplLogEntries()
+	entries, err := rm.store.ReplLogEntriesFrom(since)
 	if err != nil {
 		return nil, err
 	}
-	start := 0
-	for start < len(all) && all[start].TS < since {
-		start++
-	}
-	out := make([][]string, 0, len(all)-start)
-	for i := start; i < len(all); i++ {
-		args, err := parseReplLogValue(all[i].Value)
+	out := make([][]string, 0, len(entries))
+	for i := range entries {
+		args, err := parseReplLogValue(entries[i].Value)
 		if err != nil {
-			return nil, fmt.Errorf("feed value parse at ts=%d: %w", all[i].TS, err)
+			return nil, fmt.Errorf("feed value parse at ts=%d: %w", entries[i].TS, err)
 		}
-		out = append(out, feedEntryArgs(all[i].TS, args))
+		out = append(out, feedEntryArgs(entries[i].TS, args))
 	}
 	return out, nil
 }
@@ -94,8 +93,8 @@ func (rm *ReplicationManager) FeedEntriesFrom(since uint64) ([][]string, error) 
 // backlog 字节路径——PropagateCommand 分支）。
 // 字节双轨说明：feed 帧（REPLLOG <ts> <cmd>...）字节与 backlog 命令字节不同——feed
 // 模式从侧 lastOffset 允许漂移——停滞判据以 ts 形式为准（masterTS==0 旧主字节兜底
-// 不受影响——feed 模式要求 ts 化主从）。全量扫描（O(n)）首步正确性优先——②/D4
-// 部署时转 ReplLogEntriesFrom 增量 seek。
+// 不受影响——feed 模式要求 ts 化主从）。读取已转 ReplLogEntriesFrom 增量 seek
+// （O(log N) seek——非全量扫描——见 FeedEntriesFrom）。
 func (rm *ReplicationManager) FeedSlave(slave *SlaveConnection) error {
 	if !slave.FeedIsEnabled() {
 		return nil
