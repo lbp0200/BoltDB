@@ -169,6 +169,26 @@
   （数据到达）但 lastApplyTime **不更新**——apply_idle 显著大于 data idle——
   单元级同构 §1c 冻结链"收到数据但应用卡住"——现有判据（data idle）在此场景
   不触发停滞（盲区）——B2 判据翻转的数据依据（探针捕获盲区信号）。
+
+  **B2 判据翻转方案（2026-09-05——设计定案，实施待 A/B gate）**：
+  - **现判据（不替换——只补充）**：`idle = time.Since(lastData)`；触发 =
+    `(armed && idle > replStallTimeout=2s) || (!armed && idle > replDrainStallTimeout=30s)`
+    ——武装前提 = 本连接 30s 内曾收敛（replStallArmWindow）。**盲区**：数据持续
+    到达（lastDataTime 刷新）但应用停滞（lastApplyTime 不推进）——idle 小不触发。
+  - **补充触发（apply_idle 停滞）**：`applyIdle = time.Since(lastApplyTime)`——
+    在现触发条件之外追加：`masterOffset > slaveOffset && applyIdle > replDrainStallTimeout`
+    ——应用停滞超过排水冻结阈值（30s——与现排水冻结同量级，不引入新低阈值——
+    规避 §8 阈值脆弱性）且水位未收敛（排除已收敛后的长空闲）——触发强制重连
+    （PSYNC CONTINUE 从 lastOffset 重放——冻结链自愈路径复用）。
+  - **回滚**：翻转阈值设独立常量（`replApplyStallTimeout`）——A/B 失败即恢复
+    现判据（一行还原——无行为残留）。
+  - **A/B 验证计划（§7 协议）**：A 组 = 读探针开 + 判据翻转；B 组 = 读探针开 +
+    现判据——各自 dw 回归 `-count=15` 同主机同时段对照——门槛：翻转组失败 ≤ 1/15
+    （对照 30s 基线 2/15）；纯对照（无探针无翻转）不回归（0 失败 0 停滞）；
+    守卫全绿；`--full` 停滞+降级合计 < 2。
+  - **风险注记**：翻转后 apply_idle 在慢应用（store 读争用——§1c 触发链）期间
+    增长——若瞬态慢写超过 30s 会误触发重连（代价 = 一次 FULLRESYNC 而非数据丢失
+    ——重连自愈路径本身经 9435523/2c8ecd0 治本）——误触发率由 A/B 门槛约束。
 - **门槛**：方案生效需 A/B 失败 ≤ 1/15（对照 30s 基线 2/15）；纯对照（无读探针）不回归
   （0 失败 0 停滞）；守卫全绿；`--full` 1 次停滞+降级合计 < 2。
 - **回归套件**：4 个停滞/冻结守卫 + 兼容三套（py/node/cli）+ tier-A PR-gate。

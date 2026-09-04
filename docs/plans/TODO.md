@@ -35,6 +35,10 @@
 >    isTransientReplicationError）后 lastDataTime 刷新但 lastApplyTime **不更新**
 >    ——apply_idle 显著大于 data idle（单元级同构 §1c 冻结链"收到数据但应用
 >    卡住"）——现有判据（data idle）在此场景不触发——B2 判据翻转的数据依据。
+>    **判据翻转方案已入册（2026-09-05——1c §7）**：补充触发 `applyIdle >
+>    replDrainStallTimeout(30s)` 且水位未收敛——不替换现判据（盲区补充）——
+>    独立常量 `replApplyStallTimeout` 可一行回滚——A/B 验证计划（A=探针+翻转 /
+>    B=探针+现判据——门槛 ≤1/15）——实施待 gate。
 > 2. 架构级：**A4 复制记账引擎序列化——已立项（2026-09-03）**——managed-mode ts 迁移
 >    （S0 引擎研究 ✅ → **S1-A1 应用层 key 锁层 ✅（2026-09-03——补差 + 覆盖完备性复核
 >    双里程碑）** → **S1-A2 切引擎 ✅（2026-09-03——§10 附5——全量验证绿）** → S2 复制
