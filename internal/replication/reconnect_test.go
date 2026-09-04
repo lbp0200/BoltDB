@@ -417,10 +417,13 @@ func TestSlaveReconnector_readCommandLoop_REPLCONF_GETACK(t *testing.T) {
 	br := bufio.NewReader(serverEnd)
 	resp, err := proto.ReadRESP(br)
 	assert.NoError(t, err)
-	assert.Equal(t, 3, len(resp.Args))
+	// S2 ACK-ts 双轨（15d5f7b）：从侧 GETACK 应答为 4 参 REPLCONF ACK <offset> <ts>
+	// ——第 4 参 = lastAppliedTS（fresh 连接 = 0）——旧 3 参主按 len 判定忽略。
+	assert.Equal(t, 4, len(resp.Args))
 	assert.Equal(t, "REPLCONF", string(resp.Args[0]))
 	assert.Equal(t, "ACK", string(resp.Args[1]))
 	assert.Equal(t, "0", string(resp.Args[2]))
+	assert.Equal(t, "0", string(resp.Args[3]))
 
 	close(sr.stopCh)
 	clientEnd.Close()
