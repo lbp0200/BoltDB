@@ -148,7 +148,10 @@
 >    PSYNC 判定/FULLRESYNC offset/字节从侧 ts=0 兼容的基础）——重启后 backlog 空 →
 >    PSYNC 安全降级 FULLRESYNC（ts 域重建——已治本）——--feed-loop 关闭即完全恢复字节
 >    WAL 记账（回滚开关）——replication/server 全包 + 三守卫 + feed 变体远程 -race 全绿；
->    剩余：backlog 内存环删除（需字节从侧 ts=0 完全退役后——offset 水位改 ts 源）。
+>    剩余：backlog 内存环删除（需字节从侧 ts=0 完全退役后——offset 水位改 ts 源——
+>    **设计方案已入册：a4 §10 附8**——消费者迁移表 11 项 + 两阶段实施（阶段 1 offset
+>    改 ts 源可回滚 / 阶段 2 删环 gate 严格）+ 退役三 gate（字节从侧退役/换算表核验/
+>    feed 零丢失复跑）。
 >    2. ~~feed-mode 规模验证复跑~~（**已完成——零对齐后仍 missing=2473——见上**）；3. **dw A/B
 >    ≤1/15**（§7 协议——双轨下重复窗口度量——复制切换后验收）+ ②/D4 部署同步读侧切换
 >    （2x vlog 写放大已知成本——消费者落地后）；4. §2 SSD 崩塌复测 + C4 抓包级比对

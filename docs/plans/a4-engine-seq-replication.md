@@ -572,3 +572,49 @@ D 写路径开销未可观测**。
   - **从侧侧零改动**：REPLLOG 分支（feedEntryParse 拆 ts+全命令 → apply）已支持
     全命令——D4 部署仅 master 侧值源 + 站点 logValue 升级。
   - **部署依赖**：2x vlog 写放大与读侧切换同步（(ii) 终态）——退役决策的前置。
+
+### §10 附8：backlog 内存环删除设计（offset 水位改 ts 源——2026-09-04）
+
+> 前置已齐（2026-09-04 前序提交）：PSYNC-ts（`26403e1`）、ACK-ts（`15d5f7b`）、
+> feed-loop 增量流 + 接线（`982057b`/`07fd694`）、重连 ts 域 catch-up（`2c8ecd0`）、
+> FeedEntriesFrom 增量 seek（`ea6704a`）、feed-loop 跳过 WAL 字节记账（`2e1e68b`）、
+> feed-mode 复跑零丢失守卫（`1f1ef74`）。本设计为 backlog 退役**最后一步**——删除
+> backlog 内存环 + WAL 字节记账，offset 水位改 ts 源。
+
+**退役条件（gate——全部满足才可实施）**：
+1. **字节从侧（PSYNC 3 参/ts=0）完全退役**——部署内从侧全量 feed-mode（master+slave
+   双侧 `--feed-loop`），无 ts=0 请求进入 PSYNC；
+2. **换算表双轨核验持续通过**（过渡期验证锚——§10 附7：每 backlog 条目起始字节偏移
+   ↔ 其日志键 ts 事件对齐建表——守卫重写以表核验双轨一致）；
+3. **feed-mode 规模验证零丢失持续**（`TestRegressionPsyncReconnectNoLossFeed`
+   ——`1f1ef74`——修复后 PASS 已确认——退役前再复跑）。
+
+**offset 水位改 ts 源——消费者迁移表**（现状 17 处消费点 → ts 域）：
+
+| 消费者 | 现状（字节域） | 迁移后（ts 域） |
+|---|---|---|
+| `GetMasterReplOffset()`（replication.go:240） | `backlog.GetCurrentOffset()` | `store.ReplLogCurrentTS()`（log 键最大 ts）——或换算表映射的兼容字节（半升级窗口） |
+| RDB `snapshotOffset`（handler:74） | 字节快照点 | snapshot 时 `currentTS`（线性化不变式：快照点 ts = catch-up 起点 ts+1） |
+| CONTINUE 字节补发（handler:158） | `SendBacklogData(backlog, offset, cur)` | 删除——统一 `CatchUpAndEnableSlaveTS`（resumeTS+1 起 FeedSlave） |
+| `CatchUpAndEnableSlave` 字节循环（replication.go:526） | backlog `[start,end)` | 删除——仅留 `CatchUpAndEnableSlaveTS` |
+| PSYNC 字节判定（psync.go:77-90） | backlog range/boundary | 删除（ts=0 无请求）——仅留 ts 域 CONTINUE + FULLRESYNC |
+| GETACK 回复（handler:321） | 字节 offset（双轨带 ts） | ts 为主（ACK-ts 已 4 参落地 `15d5f7b`——字节字段保留兼容或移除） |
+| INFO `master_repl_offset`（info.go:66,96） | 字节水位 | ts 水位（或换算表兼容字节——监控兼容性注记） |
+| WAIT（admin2_commands.go:26,45,231） | 字节等待目标 | ts 等待目标（slave ReplAckTS ≥ 目标 ts） |
+| `FeedSlave` SendCommand offset（feed_source.go:115） | 字节 track（feed 允许漂移） | ts（feedSinceTS 已 ts 化——字节仅双轨兼容） |
+| monitor/pressure.go:217 | 字节 offset | ts（或换算表兼容） |
+| backlog WAL 重建校验（replication.go:118） | backlog.offset | 删除（WAL 已跳过 `2e1e68b`——环删除后 WAL 一并删除） |
+
+**实施步骤（两阶段，阶段 1 可回滚）**：
+- **阶段 1——offset 改 ts 源（双轨并存——backlog 环降为影子）**：`GetMasterReplOffset`
+  改读 ts 源；RDB snapshot 线性化点改 ts；WAIT/INFO/GETACK 迁移；backlog 环仍 Append
+  但无消费者（影子——换算表核验双轨一致）——此阶段**可回滚**（配置开关切回字节源）。
+- **阶段 2——删除环（gate 通过后）**：删 `ReplicationBacklog`/`BacklogWAL`/
+  `SendBacklogData`/`CatchUpAndEnableSlave` 字节循环/psync 字节分支——配置化开关
+  （`--feed-loop`）保留为启动要求（回滚 = 阶段 1 状态需代码还原——阶段 2 不可在线回滚，
+  故 gate 必须严格）。
+
+**风险**：① INFO master_repl_offset 语义变化（字节→ts）——客户端/监控兼容注记；
+② 半升级窗口（部分从侧字节）——换算表桥（§10 附7 (ii) 升级桥）；③ RDB 线性化点迁移
+——保持"快照点 ts = catch-up 起点 ts+1"不变式（与 FULLRESYNC 守卫同构——4 守卫重写
+以表核验）。
