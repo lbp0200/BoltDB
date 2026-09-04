@@ -58,6 +58,16 @@ const replStallArmWindow = 30 * time.Second
 // 读写隔离或恢复路径重设计（TODO §1c 记录）。
 const replDrainStallTimeout = 30 * time.Second
 
+// replApplyStallTimeout: B2 应用停滞阈值（2026-09-05 判据翻转方案——1c §7）。
+// 现判据（data idle）的盲区：数据持续到达（lastDataTime 刷新）但应用停滞
+// （lastApplyTime 不推进——§1c 冻结链"收到数据但应用卡住"的单元级同构见
+// TestSlaveReconnector_readCommandLoop_ApplyIdleDistinguishesStall）——
+// idle 小不触发。补充触发：主节点水位高于已应用 offset 且应用空闲超过该
+// 阈值即强制重连（PSYNC CONTINUE 从 lastOffset 重放——自愈路径复用）。
+// 阈值与排水冻结同量级（30s——不引入新低阈值——规避 §8 阈值脆弱性）；
+// 独立常量供 A/B gate：失败即恢复现判据（一行还原）。
+const replApplyStallTimeout = 30 * time.Second
+
 type ReconnectConfig struct {
 	MaxRetries  int
 	BaseBackoff time.Duration
@@ -104,6 +114,9 @@ type SlaveReconnector struct {
 	// drainStallTimeout: 追赶排水期的冻结阈值（未收敛时），测试可缩短；
 	// 默认 replDrainStallTimeout。
 	drainStallTimeout time.Duration
+	// applyStallTimeout: B2 应用停滞阈值（补充触发——1c §7 判据翻转），
+	// 测试可缩短；默认 replApplyStallTimeout。
+	applyStallTimeout time.Duration
 	// lastConvergedTime: 最近一次与主节点收敛（ACK 显示 masterOffset <=
 	// lastOffset）的时刻。停滞检测仅在该时刻落在 replStallArmWindow 内时
 	// 才武装（避免追赶排水期的瞬时发送停顿被误判为停滞）。
@@ -485,20 +498,31 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 					if drainStall <= 0 {
 						drainStall = replDrainStallTimeout
 					}
+					// B2 应用停滞补充触发（1c §7 判据翻转——盲区补充）：现判据
+					// （data idle）在数据持续到达（lastDataTime 刷新）但应用停滞
+					// （lastApplyTime 不推进）时不触发——补充条件：主节点水位高于
+					// 已应用 offset 且应用空闲超过 applyStall 阈值（默认 30s——
+					// 与排水冻结同量级）即强制重连自愈。
+					applyIdle := time.Since(time.Unix(0, sr.lastApplyTime.Load()))
+					applyStall := sr.applyStallTimeout
+					if applyStall <= 0 {
+						applyStall = replApplyStallTimeout
+					}
 					// 已武装（本连接近期曾收敛）：短暂空闲即判定尾巴缺口；
 					// 未武装（追赶排水期）：仅超长空闲才判定排水冻结——瞬态
 					// 发送停顿（捕获轮 idle=2.55s）不误判，真冻结（lag=162
 					// 停 40s）触发强制重连自愈（TODO §1c）。
-					if (armed && idle > stall) || (!armed && idle > drainStall) {
+					if (armed && idle > stall) || (!armed && idle > drainStall) ||
+						(masterOffset > slaveOffset && applyIdle > applyStall) {
 						logger.Logger.Warn().
 							Int64("master_offset", masterOffset).
 							Int64("slave_offset", slaveOffset).
 							Uint64("master_ts", masterTS).
 							Uint64("slave_ts", slaveTS).
 							Dur("idle", idle).
-							Dur("apply_idle", time.Since(time.Unix(0, sr.lastApplyTime.Load()))).
+							Dur("apply_idle", applyIdle).
 							Bool("armed", armed).
-							Msg("复制流停滞：主节点水位高于已应用水位且数据流空闲，强制重连")
+							Msg("复制流停滞：主节点水位高于已应用水位且数据流空闲/应用停滞，强制重连")
 						return fmt.Errorf("replication stalled: master at %d, slave at %d (master ts %d, slave ts %d)", masterOffset, slaveOffset, masterTS, slaveTS)
 					}
 				}
