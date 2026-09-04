@@ -499,7 +499,10 @@ D 写路径开销未可观测**。
   **已落地（2026-09-05）**：`ReplConversionTable`（internal/replication/
   conversion_table.go——事件对齐构建 + 双向换算 OffsetToTS/TSToOffset + AlignCheck
   双轨核验 + 空表边界）——`TestConversionTableDualTrack`/`TestConversionTableEmpty`
-  覆盖（replication 全包远程 -race 绿）。
+  + **`TestConversionTableDetectsDivergence`**（反转序构造分叉——锚检测语义实证——
+  missing=2499 根因家族的早期检测面）+ **`TestConversionTableConcurrentWriters`**
+  （8×25 并发——锚要么一致要么报对齐错——绝不静默错表）覆盖（replication 全包远程
+  -race 绿）。
 - **顺序建议**：先 ACK 判据 ts 化（从侧自算 lastAppliedTS——主侧 ACK 回复带 currentTS
   ——换算表核验双轨）→ 后 PSYNC (replId, ts)（slave 需 lastAppliedTS 持久化）→ 排水
   判据 ts 推进 → 分级-3 backlog 退役。

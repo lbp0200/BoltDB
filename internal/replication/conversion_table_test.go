@@ -2,6 +2,7 @@ package replication
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 )
 
@@ -96,5 +97,100 @@ func TestConversionTableEmpty(t *testing.T) {
 	}
 	if _, ok := tbl.AlignCheck(s); !ok {
 		t.Fatal("empty table AlignCheck should be consistent (0 events == 0 log keys)")
+	}
+}
+
+// TestConversionTableDetectsDivergence 验证锚的分叉检测语义（missing=2499 根因
+// 家族——并发 commit/append 序错位）：先按序 s.Set（log 键 ts 升序），再以**反转
+// 顺序** PropagateCommand（backlog 事件序与 log 键序分叉）——BuildReplConversionTable
+// 必须返回对齐错误（锚现形分叉——绝不静默产出错误映射）。
+func TestConversionTableDetectsDivergence(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	rm := NewReplicationManager(s)
+	rm.SetRole(RoleMaster)
+	defer rm.Stop()
+
+	const n = 10
+	keys := make([]string, n)
+	for i := 0; i < n; i++ {
+		keys[i] = fmt.Sprintf("div:k:%d", i)
+		if err := s.Set(keys[i], "v"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// backlog 事件序反转（与 log 键序分叉——锚应检测）
+	for i := n - 1; i >= 0; i-- {
+		rm.PropagateCommand([][]byte{[]byte("SET"), []byte(keys[i]), []byte("v")})
+	}
+
+	tbl, err := BuildReplConversionTable(rm.GetBacklog(), s)
+	if err == nil {
+		// 双轨竟然一致？count 相等但事件序错位——若建表成功则换算必错——兜底断言
+		if tbl != nil {
+			t.Fatalf("diverged dual-track built without error (count=%d) — anchor failed to detect", tbl.Count())
+		}
+	}
+	// 期望：对齐错误（事件序分叉现形）
+	if err == nil {
+		t.Fatal("expected alignment error for diverged dual-track, got nil")
+	}
+	t.Logf("divergence detected as expected: %v", err)
+}
+
+// TestConversionTableConcurrentWriters 验证锚在并发写者下的鲁棒性（复刻
+// missing=2499 场景结构——8 writers × 25 并发 SET + PropagateCommand）：
+// 锚要么建出完全一致的换算表（对齐 + AlignCheck + 抽样往返全通过），要么返回
+// 对齐错误（并发 harness 下 commit 序 vs append 序天然分叉——锚检测而非静默
+// 产出错误映射）——绝不 panic、绝不静默错表。
+func TestConversionTableConcurrentWriters(t *testing.T) {
+	t.Parallel()
+	s := setupTestStore(t)
+	rm := NewReplicationManager(s)
+	rm.SetRole(RoleMaster)
+	defer rm.Stop()
+
+	const writers = 8
+	const perWriter = 25
+	var wg sync.WaitGroup
+	wg.Add(writers)
+	for w := 0; w < writers; w++ {
+		go func(writerID int) {
+			defer wg.Done()
+			for i := 0; i < perWriter; i++ {
+				k := fmt.Sprintf("conc:w%d:k%d", writerID, i)
+				if err := s.Set(k, "v"); err != nil {
+					t.Errorf("concurrent SET %s: %v", k, err)
+					return
+				}
+				rm.PropagateCommand([][]byte{[]byte("SET"), []byte(k), []byte("v")})
+			}
+		}(w)
+	}
+	wg.Wait()
+
+	tbl, err := BuildReplConversionTable(rm.GetBacklog(), s)
+	if err != nil {
+		// 允许对齐错误（并发 harness 下分叉是已知现象——锚检测语义）
+		t.Logf("concurrent dual-track diverged — anchor detected: %v", err)
+		return
+	}
+	if tbl == nil {
+		t.Fatal("nil table with nil error")
+	}
+	wantCount := writers * perWriter
+	if tbl.Count() != wantCount {
+		t.Fatalf("concurrent table count = %d, want %d", tbl.Count(), wantCount)
+	}
+	// 建表一致：AlignCheck + 抽样往返核验
+	if cnt, ok := tbl.AlignCheck(s); !ok || cnt != wantCount {
+		t.Fatalf("concurrent AlignCheck = (%d, %v), want (%d, true)", cnt, ok, wantCount)
+	}
+	for i := 0; i < tbl.Count(); i += 7 { // 抽样往返
+		off := tbl.OffsetAt(i)
+		ts := tbl.TSAt(i)
+		if got := tbl.OffsetToTS(off); got != ts {
+			t.Fatalf("concurrent event %d: OffsetToTS(%d) = %d, want %d", i, off, got, ts)
+		}
 	}
 }
