@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -192,7 +193,7 @@ func (s *BotreonStore) SAdd(key string, members ...string) (int, error) {
 			return txn.Set([]byte(countKey), helper.Uint64ToBytes(count))
 		}
 		return nil
-	}, 30, encodePropagateCommand([]byte("SADD"), []byte(key))) // 最多重试 30 次（高并发时需要更多重试）
+	}, 30, encodePropagateStringArgs([]byte("SADD"), append([]string{key}, members...))) // 最多重试 30 次（高并发时需要更多重试）
 	return added, err
 }
 
@@ -253,7 +254,7 @@ func (s *BotreonStore) SRem(key string, members ...string) (int, error) {
 			return txn.Set([]byte(countKey), helper.Uint64ToBytes(count))
 		}
 		return nil
-	}, 30, encodePropagateCommand([]byte("SREM"), []byte(key))) // 最多重试 30 次（高并发时需要更多重试）
+	}, 30, encodePropagateStringArgs([]byte("SREM"), append([]string{key}, members...))) // 最多重试 30 次（高并发时需要更多重试）
 	return removed, err
 }
 
@@ -524,7 +525,7 @@ func (s *BotreonStore) SPopN(key string, count int) ([]string, error) {
 			}
 		}
 		return nil
-	}, 30, encodePropagateCommand([]byte("SPOP"), []byte(key))) // 最多重试 30 次（高并发时需要更多重试）
+	}, 30, encodePropagateCommand([]byte("SPOP"), []byte(key), []byte(strconv.Itoa(count)))) // 最多重试 30 次（高并发时需要更多重试）
 	return members, err
 }
 
@@ -659,7 +660,7 @@ func (s *BotreonStore) SMove(source, destination, member string) (bool, error) {
 
 		moved = true
 		return nil
-	}, 30, encodePropagateCommand([]byte("SMOVE"), []byte(source), []byte(destination)))
+	}, 30, encodePropagateCommand([]byte("SMOVE"), []byte(source), []byte(destination), []byte(member)))
 	return moved, err
 }
 
@@ -827,7 +828,7 @@ func (s *BotreonStore) SInterStore(destination string, keys ...string) (int, err
 		countKey := s.setKey(destination, "count")
 		// #nosec G115 - count is bounded by practical set size limits
 		return txn.Set([]byte(countKey), helper.Uint64ToBytes(uint64(count)))
-	}, 30, encodePropagateCommand([]byte("SINTERSTORE"), []byte(destination)))
+	}, 30, encodePropagateStringArgs([]byte("SINTERSTORE"), append([]string{destination}, keys...)))
 	return count, err
 }
 
@@ -883,7 +884,7 @@ func (s *BotreonStore) SUnionStore(destination string, keys ...string) (int, err
 		countKey := s.setKey(destination, "count")
 		// #nosec G115 - count is bounded by practical set size limits
 		return txn.Set([]byte(countKey), helper.Uint64ToBytes(uint64(count)))
-	}, 30, encodePropagateCommand([]byte("SUNIONSTORE"), []byte(destination)))
+	}, 30, encodePropagateStringArgs([]byte("SUNIONSTORE"), append([]string{destination}, keys...)))
 	return count, err
 }
 
@@ -952,7 +953,7 @@ func (s *BotreonStore) SDiffStore(destination string, keys ...string) (int, erro
 		countKey := s.setKey(destination, "count")
 		// #nosec G115 - count is bounded by practical set size limits
 		return txn.Set([]byte(countKey), helper.Uint64ToBytes(uint64(count)))
-	}, 30, encodePropagateCommand([]byte("SDIFFSTORE"), []byte(destination)))
+	}, 30, encodePropagateStringArgs([]byte("SDIFFSTORE"), append([]string{destination}, keys...)))
 	return count, err
 }
 
