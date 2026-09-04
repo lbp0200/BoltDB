@@ -360,7 +360,7 @@ func (s *BotreonStore) Rename(key, newKey string) error {
 			}
 			return txn.Delete(typeKey)
 		}
-	}, 30, encodePropagateCommand([]byte("RENAME"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("RENAME"), []byte(key), []byte(newKey)))
 }
 
 // RenameNX 实现 RENAMENX 命令（仅新键不存在时重命名）
@@ -388,7 +388,7 @@ func (s *BotreonStore) RenameNX(key, newKey string) (bool, error) {
 		}
 		success = true
 		return nil
-	}, 30, encodePropagateCommand([]byte("RENAMENX"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("RENAMENX"), []byte(key), []byte(newKey)))
 	return success, err
 }
 
