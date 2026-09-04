@@ -514,6 +514,69 @@ done:
 	assert.NoError(t, err)
 }
 
+func TestSlaveReconnector_readCommandLoop_ApplyIdleTracking(t *testing.T) {
+	t.Parallel()
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	sr := NewSlaveReconnector(rm, testStore, "127.0.0.1:6379")
+	sr.state.Store(int32(SlaveConnected))
+
+	// 未应用任何命令前：lastApplyTime 零值（1970）——GetApplyIdle 极大
+	// （B2 探针初值语义——"从未应用"由调用方区分）。
+	before := sr.GetApplyIdle()
+	if before < 10*time.Minute {
+		t.Fatalf("pre-apply GetApplyIdle = %v, want huge (zero lastApplyTime)", before)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sr.readCommandLoop(mc)
+	}()
+
+	_, err := serverEnd.Write([]byte("*3\r\n$3\r\nSET\r\n$5\r\nmykey\r\n$5\r\nmyval\r\n"))
+	assert.NoError(t, err)
+
+	for i := 0; i < 50; i++ {
+		val, err := testStore.Get("mykey")
+		if err == nil {
+			assert.Equal(t, "myval", val)
+			goto applied
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for SET to be processed")
+
+applied:
+	// 应用成功后：lastApplyTime 推进——GetApplyIdle 大幅回落（探针采集面生效——
+	// "收到数据且已应用"与"收到数据但应用卡住"可区分）。
+	after := sr.GetApplyIdle()
+	if after >= before {
+		t.Fatalf("post-apply GetApplyIdle = %v, want < pre-apply %v (lastApplyTime must advance on apply)", after, before)
+	}
+	if after > 2*time.Second {
+		t.Fatalf("post-apply GetApplyIdle = %v, want <= 2s (apply progress probe)", after)
+	}
+
+	close(sr.stopCh)
+	clientEnd.Close()
+	err = <-done
+	assert.NoError(t, err)
+}
+
 func TestSlaveReconnector_readCommandLoop_ReadError(t *testing.T) {
 	t.Parallel()
 	testStore := setupTestStore(t)

@@ -24,6 +24,12 @@
 >    数据源）+ 停滞检查点日志 `apply_idle` 维度（事件级 slow-apply/freeze 时序）
 >    ——**判据未翻转**（现判据仍为数据到达空闲 idle——B2 判据翻转属推阈风险，按
 >    §7 A/B gate 收口——探针数据收集若干轮后定判据）。
+>    **行为测试已落地（2026-09-05）**：`TestSlaveReconnector_readCommandLoop_
+>    ApplyIdleTracking`（应用 SET 后 GetApplyIdle 推进断言——"收到数据且已应用"
+>    与"收到数据但应用卡住"可区分）+ INFO `repl_apply_idle_ms` 字段存在断言
+>    （TestBuildInfoResponse_ReplicationSection 补 Replication 初始化）——
+>    本地 vet + 远程 -race 定向/全包（replication 48.2s + server 42.1s）+
+>    cli 兼容套件 93/93 全绿（新增 INFO 键无解析回归）。
 > 2. 架构级：**A4 复制记账引擎序列化——已立项（2026-09-03）**——managed-mode ts 迁移
 >    （S0 引擎研究 ✅ → **S1-A1 应用层 key 锁层 ✅（2026-09-03——补差 + 覆盖完备性复核
 >    双里程碑）** → **S1-A2 切引擎 ✅（2026-09-03——§10 附5——全量验证绿）** → S2 复制

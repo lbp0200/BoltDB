@@ -83,11 +83,19 @@ func TestBuildInfoResponse_ReplicationSection(t *testing.T) {
 	handler, _ := setupTestHandler(t)
 	defer handler.Db.Close()
 	handler.Port = 6337
+	// setupTestHandler 不初始化 Replication——复制段内容（role/offset/B2 探针
+	// 字段）在 h.Replication == nil 时不输出——此处初始化以验证字段存在性语义。
+	handler.Replication = replication.NewReplicationManager(handler.Db)
+	handler.Replication.SetRole(replication.RoleMaster)
+	defer handler.Replication.Stop()
 
 	resp := handler.buildInfoResponse("REPLICATION")
 	assert.True(t, strings.Contains(resp, "# Replication"))
 	assert.True(t, !strings.Contains(resp, "# Server"))
 	assert.True(t, !strings.Contains(resp, "# Memory"))
+	// B2 应用进度探针（TODO §1c）：INFO 暴露 repl_apply_idle_ms（从侧应用空闲
+	// 毫秒——判据翻转的采集面——字段必须存在——值可为 0（未复制/从未应用）。
+	assert.True(t, strings.Contains(resp, "repl_apply_idle_ms:"))
 }
 
 // TestBuildInfoResponse_PersistenceSection 验证只返回 Persistence 段
