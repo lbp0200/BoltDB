@@ -50,6 +50,11 @@ type ReplicationManager struct {
 	// apply skips advance replica offset without mutating the store.
 	sendDropCount  atomic.Int64
 	applySkipCount atomic.Int64
+
+	// feedLoop: 全局 feed 模式开关（S2 backlog 退役首步）——开启后新激活的从侧
+	// 走 REPLLOG 增量流（feed-mode——backlog 字节发送的双轨替代）——默认关闭
+	//（backlog 字节路径保持现状——双轨并存可切换——回滚零成本）。
+	feedLoop atomic.Bool
 }
 
 // NewReplicationManager 创建新的复制管理器
@@ -409,6 +414,21 @@ func (rm *ReplicationManager) PropagateCommand(cmd [][]byte) {
 	defer rm.propMu.RUnlock()
 	for _, slave := range slaves {
 		if slave.IsReady() {
+			// feed-mode 从侧：走 REPLLOG 增量流（backlog 字节发送的双轨替代——S2
+			// backlog 退役首步）——FeedSlave 只发增量（feedSinceTS 起的 log 键）——
+			// 不发本命令的 backlog 字节（避免从侧双通道重复 apply）。
+			if slave.FeedIsEnabled() {
+				if err := rm.FeedSlave(slave); err != nil {
+					rm.sendDropCount.Add(1)
+					logger.Logger.Warn().
+						Str("slave_id", slave.ID).
+						Err(err).
+						Int64("send_drop_count", rm.sendDropCount.Load()).
+						Msg("feed 增量发送到从节点失败")
+					// handleSlaveReplicationConnection 会在断连时清理
+				}
+				continue
+			}
 			if err := slave.SendCommand(cmdBytes, cmdOffset); err != nil {
 				rm.sendDropCount.Add(1)
 				logger.Logger.Warn().
@@ -459,6 +479,12 @@ func (rm *ReplicationManager) maybeTruncateBacklogWAL(written int64) {
 	}
 }
 
+// SetFeedLoop 全局切换 feed 模式（S2 backlog 退役首步）——开启后新激活的从侧走
+// REPLLOG 增量流（feed-mode——backlog 字节发送的双轨替代）——默认关闭（回滚零成本）。
+func (rm *ReplicationManager) SetFeedLoop(enabled bool) {
+	rm.feedLoop.Store(enabled)
+}
+
 // CatchUpAndEnableSlave drains backlog [startOffset, masterOffset) while
 // Ready=false, then sets Ready under propMu so gap-fill never races with
 // live PropagateCommand for the same offsets.
@@ -486,6 +512,18 @@ func (rm *ReplicationManager) CatchUpAndEnableSlave(slave *SlaveConnection, star
 			continue
 		}
 		slave.SetReplOffset(startOffset)
+		if rm.feedLoop.Load() {
+			// feed-mode 激活：feedSinceTS = 当前 log 键水位+1——激活前（RDB 快照 +
+			// backlog 字节 catch-up）已覆盖到 startOffset——从下一条起走 REPLLOG
+			// 增量——propMu 内激活（写路径 RLock 阻塞——竞态窗口写经字节路径补发
+			//（就绪翻转后 SendCommand 成功）——无丢失无重复）。
+			curTS, err := rm.store.ReplLogCurrentTS()
+			if err != nil {
+				rm.propMu.Unlock()
+				return err
+			}
+			slave.FeedSetEnabled(true, curTS+1)
+		}
 		slave.SetReady(true)
 		rm.propMu.Unlock()
 		return nil

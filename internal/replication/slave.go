@@ -22,11 +22,17 @@ type SlaveConnection struct {
 	ReplOffset    atomic.Int64  // 从节点的复制偏移量
 	ReplAckOffset atomic.Int64  // 从节点确认的偏移量
 	ReplAckTS     atomic.Uint64 // 从节点确认的主侧 ts 水位（S2 ACK-ts 双轨——applied 语义）
-	Ready         atomic.Bool   // 是否准备好接收命令
-	LastAckTime   int64         // 最后一次ACK时间
-	mu            sync.RWMutex
-	closeOnce     sync.Once
-	writeMu       sync.Mutex // 写锁：SendCommand/SendBacklogData 互斥，与 Close 不冲突
+	// feedEnabled: 该从侧处于 feed 模式（REPLLOG 增量流——backlog 字节发送的
+	// 双轨替代——S2 backlog 退役首步——feed-mode 每从侧独立开关）。
+	feedEnabled atomic.Bool
+	// feedSinceTS: 下次 feed 发送的 log 键 ts 下界——激活时置 currentTS+1
+	//（激活前已由 RDB 快照 + backlog 字节 catch-up 覆盖——避免双发/漏发）。
+	feedSinceTS atomic.Uint64
+	Ready       atomic.Bool // 是否准备好接收命令
+	LastAckTime int64       // 最后一次ACK时间
+	mu          sync.RWMutex
+	closeOnce   sync.Once
+	writeMu     sync.Mutex // 写锁：SendCommand/SendBacklogData 互斥，与 Close 不冲突
 }
 
 // NewSlaveConnection 创建新的从节点连接
@@ -90,6 +96,24 @@ func (sc *SlaveConnection) UpdateReplAckTS(ts uint64) {
 	defer sc.mu.Unlock()
 	sc.ReplAckTS.Store(ts)
 	sc.LastAckTime = time.Now().Unix()
+}
+
+// FeedSetEnabled 启用/停用该从侧的 feed 模式（S2 backlog 退役首步——REPLLOG 增量
+// 流替代 backlog 字节发送——激活时传 currentTS+1 作为 feed 起点——激活前已由 RDB
+// 快照 + backlog 字节 catch-up 覆盖，从该 ts 起全部经 feed 增量发送——避免双发/漏发）。
+func (sc *SlaveConnection) FeedSetEnabled(enabled bool, sinceTS uint64) {
+	sc.feedEnabled.Store(enabled)
+	sc.feedSinceTS.Store(sinceTS)
+}
+
+// FeedIsEnabled 返回该从侧是否处于 feed 模式。
+func (sc *SlaveConnection) FeedIsEnabled() bool {
+	return sc.feedEnabled.Load()
+}
+
+// FeedSinceTS 返回下次 feed 发送的 log 键 ts 下界。
+func (sc *SlaveConnection) FeedSinceTS() uint64 {
+	return sc.feedSinceTS.Load()
 }
 
 // GetReplAckOffset 获取确认偏移量

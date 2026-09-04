@@ -2,6 +2,7 @@ package replication
 
 import (
 	"fmt"
+	"strconv"
 )
 
 // parseCommandEvents 解析 RESP 命令流为逐命令参数切片（全参数——feed 值源对齐用）。
@@ -55,8 +56,6 @@ func parseCommandEvents(data []byte) [][]string {
 // 日志键（ReplLogEntries——ts 升序）与 backlog 命令事件按绝对位置 1:1 对齐（协议相位
 // 值源 = backlog 影子对齐的全命令——backlog 保持权威——②/D4 部署前无需日志键全值）。
 // 返回逐条 wire 参数（feedEntryArgs 形态——可直接序列化发送）。
-//
-//nolint:unused // 预接线 sender——仅测试使用（feed 协议相位 ③ PSYNC-ts 集成后消费）
 func (rm *ReplicationManager) FeedEntriesFrom(since uint64) ([][]string, error) {
 	all, err := rm.store.ReplLogEntries()
 	if err != nil {
@@ -81,4 +80,43 @@ func (rm *ReplicationManager) FeedEntriesFrom(since uint64) ([][]string, error) 
 		out = append(out, feedEntryArgs(all[i].TS, events[i]))
 	}
 	return out, nil
+}
+
+// FeedSlave 对处于 feed 模式的从侧增量发送 REPLLOG wire 条目（S2 backlog 退役首步——
+// 实际流发送）：FeedEntriesFrom(feedSinceTS) 构造增量（log 键 ts 升序 + backlog 对齐
+// 全命令——backlog 值源）→ 逐条序列化发送（REPLLOG 帧——SendCommand）→ 游标推进到
+// 最后已发条目的 ts+1（ts 严格升序——下次增量续传）。非 feed 模式从侧返回 nil（走
+// backlog 字节路径——PropagateCommand 分支）。
+// 字节双轨说明：feed 帧（REPLLOG <ts> <cmd>...）字节与 backlog 命令字节不同——feed
+// 模式从侧 lastOffset 允许漂移——停滞判据以 ts 形式为准（masterTS==0 旧主字节兜底
+// 不受影响——feed 模式要求 ts 化主从）。全量扫描（O(n)）首步正确性优先——②/D4
+// 部署时转 ReplLogEntriesFrom 增量 seek。
+func (rm *ReplicationManager) FeedSlave(slave *SlaveConnection) error {
+	if !slave.FeedIsEnabled() {
+		return nil
+	}
+	since := slave.FeedSinceTS()
+	entries, err := rm.FeedEntriesFrom(since)
+	if err != nil {
+		return err
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	for _, args := range entries {
+		argBytes := make([][]byte, len(args))
+		for j, a := range args {
+			argBytes[j] = []byte(a)
+		}
+		if err := slave.SendCommand(serializeCommand(argBytes), rm.GetMasterReplOffset()); err != nil {
+			return err
+		}
+	}
+	// 游标推进到最后已发条目的 ts+1（ts 在 wire 参数索引 1——跳过已发——增量续传）
+	lastTS, err := strconv.ParseUint(entries[len(entries)-1][1], 10, 64)
+	if err != nil {
+		return fmt.Errorf("feed last ts parse: %w", err)
+	}
+	slave.FeedSetEnabled(true, lastTS+1)
+	return nil
 }
