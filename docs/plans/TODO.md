@@ -157,6 +157,11 @@
 >    replication 全包远程 -race 绿——**守卫重写已接入**（`TestTSReplayEquivalence`
 >    ts 重放守卫末尾换算表构建 + AlignCheck 断言——事件级等价的强形式）——
 >    阶段 1 实施时其余守卫（4 守卫）同步以表核验。
+>    **--full 验证（2026-09-05——无 -short 全量基线）**：replication 48.3s +
+>    server 40.1s + store 253.6s + cmd/integration 复制重测组 8.0s + cluster 重测组
+>    13.2s（MultiNode/Gossip/SlotSync/MigrateSlotUnderLoad/Failover/BlockingFuzz
+>    全 PASS）全绿——soak 类（TestClusterSoak/TestSoak*）属 tier-C nightly
+>    （SOAK_DURATION=1h）不阻塞 PR gate——当前 HEAD 发版基线确认。
 >    2. ~~feed-mode 规模验证复跑~~（**已完成——零对齐后仍 missing=2473——见上**）；3. **dw A/B
 >    ≤1/15**（§7 协议——双轨下重复窗口度量——复制切换后验收）+ ②/D4 部署同步读侧切换
 >    （2x vlog 写放大已知成本——消费者落地后）；4. §2 SSD 崩塌复测 + C4 抓包级比对
