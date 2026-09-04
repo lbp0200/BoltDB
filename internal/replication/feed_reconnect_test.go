@@ -5,12 +5,13 @@ import (
 	"testing"
 )
 
-// TestFeedModeReconnectResume 验证 feed-mode 的无丢失重连（退役决策正确性前置）：
-// 从侧断连后（lastAppliedTS = resumeTS 水位），重连经 PSYNC-ts 4 参（④——整数边界
-// [logStartTS, currentTS]）→ CONTINUE（非 FULLRESYNC——无丢失）+ res.TS == resumeTS；
-// 断连窗口的 feed 续传 = FeedEntriesFrom(resumeTS+1)（严格大于——已 apply 的不重发）
-// 覆盖 gap（m 条——无丢失无重复）——与 backlog 断连窗口事件事件级等价（replay 守卫式
-// 对齐核验——resume 点在事件索引 5——gap 从事件 6 起）。
+// TestFeedModeReconnectResume 验证 feed-mode 重连的无丢失契约（S2 PSYNC-ts ④）：
+// 从侧断连后（lastAppliedTS = resumeTS 水位），重连经 PSYNC-ts 4 参 → 强制 FULLRESYNC
+// （ts 模式 CONTINUE 的 result.Offset 为从侧 feed 域 lastOffset，与主侧 backlog 原始
+// 命令 offset 域不一致——读错区间会丢 gap [resumeTS+1, currentTS]）：
+// res.FullResync == true + res.TS == currentTS + res.Offset == currentOffset（主侧合法域）。
+// 保留断连窗口 gap 可恢复性核验：FeedEntriesFrom(resumeTS+1)（严格大于——已 apply 的
+// 不重发）覆盖 m 条 gap，与 backlog 断连窗口事件事件级等价（replay 守卫式对齐核验）。
 func TestFeedModeReconnectResume(t *testing.T) {
 	t.Parallel()
 	s := setupTestStore(t)
@@ -46,17 +47,20 @@ func TestFeedModeReconnectResume(t *testing.T) {
 		rm.PropagateCommand([][]byte{[]byte("SET"), []byte(k), []byte("v")})
 	}
 
-	// 重连：PSYNC-ts（从侧带 lastAppliedTS=resumeTS）——ts 模式边界判定
+	// 重连：PSYNC-ts（从侧带 lastAppliedTS=resumeTS）——ts > 0 强制 FULLRESYNC
 	replID := rm.GetReplicationID()
 	res, err := HandlePSync(rm, replID, 0, resumeTS)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.FullResync {
-		t.Fatalf("resume ts=%d in-range should CONTINUE, got FULLRESYNC", resumeTS)
+	if !res.FullResync {
+		t.Fatalf("feed-mode reconnect ts=%d should force FULLRESYNC, got CONTINUE", resumeTS)
 	}
-	if res.TS != resumeTS {
-		t.Fatalf("continue TS = %d, want %d", res.TS, resumeTS)
+	// FULLRESYNC 起点 = 主侧当前水位（合法域）——从侧在 reconnect.go 把 lastAppliedTS
+	// 重置为 res.TS，catch-up [res.Offset, currentOffset) 与 fresh 路径逐字节一致。
+	currentTS, _ := s.ReplLogCurrentTS()
+	if res.TS != currentTS {
+		t.Fatalf("fullresync TS = %d, want currentTS %d", res.TS, currentTS)
 	}
 
 	// 断连窗口的 feed 续传：严格大于 resumeTS（已 apply 的不重发）——覆盖 gap m 条

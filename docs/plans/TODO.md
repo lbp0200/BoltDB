@@ -140,6 +140,21 @@
 |----|------|--------|
 | **SSD 基线复测（2026-09-03 已执行——爬行中止）** | 目标：可信 SSD 写入基线（对比机械盘 28 MB/s）。**正确姿势**（2026-08-06 调查结论）：① 先确认 `DEBUG GC` 已完成（GC 与写入严重互斥，GC 期间 1MB SET 减速 1350×）；② `ps aux \| grep redis-benchmark` 确认无残留进程；③ 单进程 `redis-benchmark --cluster -h 10.1.2.16 -p 6337 -t set -n 65534 -r 20000000 -d 1048576 -c 50`（必须带 `-r`，否则覆盖写同一 key）；④ 记录吞吐 + DBSIZE 分布 + 磁盘占用；⑤ 测完 FLUSHDB 清理。备选：用已修复的 `scale-data-filler`（按 CLUSTER SHARDS/SLOTS 分组 pipeline）替代 benchmark | ⚠️ **实测（2026-09-03 11:17-11:40）**：GC 前置 rewritten=0 健康 → 基准启动 ~166 ops/s（≈166 MB/s）后**崩塌至 ~5 ops/s**（21 分钟仅 9.5%——全量需 ~4 小时——非 ~5 分钟）——**中止**——持续负载下写路径塌陷（疑 L0/vlog 压实风暴）为实测发现；FLUSHDB 清理 ✓（DBSIZE 归零）；vlog 6.3G 残留为已知 badger 机制（tombstone 卡空 L0——自然压实回收——同 §2 vlog 单元）。**备选**：scale-data-filler（分组 pipeline）或分段小批量重测 |
 
+### 3. GETACK 回复参数量测试未随 S2 ACK-ts 更新（既有失败——非阻塞）
+
+`TestHandleSlaveReplicationConnection_RepliesToGetAck`
+（`internal/server/handler_coverage5_test.go:649`）断言主节点对 `REPLCONF GETACK *`
+的回复为 **3 参**（`REPLCONF ACK <offset>`），但 S2 ACK-ts（`15d5f7b`——③ ACK-ts）已把
+GETACK 回复切到 **4 参** `REPLCONF ACK <offset> <ts>`（经 `EncodeReplconfAck`，
+`internal/replication/feed_wire.go:38`——主侧带 currentTS、从侧应答带 lastAppliedTS）。
+
+- **现象**：`GETACK reply has 4 args, want 3`（远程 `-race -short ./internal/server/...` FAIL）。
+- **既有确认（2026-09-04）**：`git stash` 干净树复跑该测试 → 同样失败——与 CONTINUE→FULLRESYNC
+  修复无因果链（后者仅改 `psync.go` + `feed_reconnect_test.go`）。§1c-残留 提到的
+  `1263d50`「GETACK 4 参测试修复」覆盖了 replication 侧守卫，**漏了这条 server 侧 coverage 测试**。
+- **下一步**：断言改 4 参（`REPLCONF`/`ACK`/`<offset>`/`<ts>`）——或对齐 `EncodeReplconfAck`
+  输出生成期望值；低风险，随下次触碰 server 包时一并修。
+
 ## 架构边界（已决策：不做）
 | 边界 | 原因 |
 |------|------|
