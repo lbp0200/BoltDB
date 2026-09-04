@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
 	"runtime"
 	"sync"
 	"testing"
@@ -94,6 +95,17 @@ func TestRegressionDuplicateWindowMeasurement(t *testing.T) {
 	// Allow writers to accumulate some state
 	time.Sleep(1 * time.Second)
 
+	// §7 协议 A/B 探针：从侧 LLen 读探针（DW_READ_PROBE=1 或 -args DW_READ_PROBE
+	// 时启用——默认关保持纯对照基线 0 失败 0 停滞）——模拟 §1c 根因（从侧外部读
+	// db.View 与复制应用写争用——badger 共享 oracle/readTs）——每 ~10ms 一轮
+	// （≈ 每 10 ACK 节奏）。远程 -args 透传（os.Args 检查）供 remote-test.sh 使用。
+	probeWg := new(sync.WaitGroup)
+	if dwReadProbeEnabled() {
+		t.Log("dw-measure: read probe ENABLED (DW_READ_PROBE=1) — §1c slave-side read contention simulation")
+		probeWg.Add(1)
+		go dwReadProbe(ctx, t, probeWg, stop, slave.Client)
+	}
+
 	// Phase 3: trigger FULLRESYNC by killing slave connection while writes are in flight
 	// This creates the duplicate window during RDB generation.
 	t.Log("dw-measure: phase 3 — kill slave connection to trigger FULLRESYNC")
@@ -106,6 +118,7 @@ func TestRegressionDuplicateWindowMeasurement(t *testing.T) {
 	t.Log("dw-measure: phase 4 — stop writers, wait for convergence")
 	close(stop)
 	writeWg.Wait()
+	probeWg.Wait()
 	close(errCh)
 	for e := range errCh {
 		t.Logf("dw-measure: writer err: %v", e)
@@ -484,6 +497,53 @@ func dwWriteZADD(ctx context.Context, wg *sync.WaitGroup, stop <-chan struct{}, 
 		select {
 		case <-time.After(time.Duration(rng.Intn(3)) * time.Millisecond):
 		case <-stop:
+			return
+		}
+	}
+}
+
+// dwReadProbeEnabled 判断读探针是否启用：env `DW_READ_PROBE=1` 或 go test
+// `-args DW_READ_PROBE`（remote-test.sh 经 ssh 执行远程 go test——env 无法透传，
+// 故支持 -args 形式——go test 会把 -args 后的参数放入测试进程 os.Args）。
+func dwReadProbeEnabled() bool {
+	if os.Getenv("DW_READ_PROBE") == "1" {
+		return true
+	}
+	for _, a := range os.Args {
+		if a == "DW_READ_PROBE" {
+			return true
+		}
+	}
+	return false
+}
+
+// dwReadProbe 从侧 LLen 读探针（§7 协议 A/B 形态——"从侧 LLen 读探针（每 10
+// ACK）"）：每 ~10ms 一轮从侧读 dw:list:* 的 LLen——模拟 §1c 根因（从侧外部读
+// db.View 与复制应用写争用——badger 共享 oracle/readTs——读创建 readTs 等待 vs
+// oracle 锁）。由 DW_READ_PROBE=1 启用（默认关——纯对照基线 0 失败 0 停滞不
+// 受影响）。读失败容忍（探针是测量注入——不因连接瞬断失败测试）。
+func dwReadProbe(ctx context.Context, t *testing.T, wg *sync.WaitGroup, stop <-chan struct{}, sc *redis.Client) {
+	defer wg.Done()
+	rng := rand.New(rand.NewSource(9000))
+	reads := 0
+	fails := 0
+	for {
+		select {
+		case <-stop:
+			t.Logf("dw-measure: read probe stopped (reads=%d fails=%d)", reads, fails)
+			return
+		default:
+		}
+		key := fmt.Sprintf("dw:list:%d", rng.Intn(5))
+		if _, err := sc.LLen(ctx, key).Result(); err != nil {
+			fails++
+		} else {
+			reads++
+		}
+		select {
+		case <-time.After(10 * time.Millisecond):
+		case <-stop:
+			t.Logf("dw-measure: read probe stopped (reads=%d fails=%d)", reads, fails)
 			return
 		}
 	}
