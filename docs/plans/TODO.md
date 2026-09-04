@@ -157,6 +157,12 @@
 >    replication 全包远程 -race 绿——**守卫重写已接入**（`TestTSReplayEquivalence`
 >    ts 重放守卫末尾换算表构建 + AlignCheck 断言——事件级等价的强形式）——
 >    阶段 1 实施时其余守卫（4 守卫）同步以表核验。
+>    **RDB 线性化点 ts 化前置验证（2026-09-05——阶段 1 先行）**：勘察确认不变式
+>    "快照点 ts = catch-up 起点 ts+1"当前实现下成立（snapshotOffset 锁内捕获 +
+>    feed 激活 feedSinceTS=currentTS+1 propMu 内读）——**阶段 1 落点修正**：psync.go:122
+>    currentTS（FULLRESYNC 响应第 4 字段）锁外读可能早于快照水位——须移入写锁内
+>    与 snapshotOffset 同位——验证测试 TestFullresyncTsDomainInvariant 远程 -race 绿
+>    （详见 a4 §10 附8）。
 >    **--full 验证（2026-09-05——无 -short 全量基线）**：replication 48.3s +
 >    server 40.1s + store 253.6s + cmd/integration 复制重测组 8.0s + cluster 重测组
 >    13.2s（MultiNode/Gossip/SlotSync/MigrateSlotUnderLoad/Failover/BlockingFuzz

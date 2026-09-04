@@ -626,3 +626,18 @@ D 写路径开销未可观测**。
 ② 半升级窗口（部分从侧字节）——换算表桥（§10 附7 (ii) 升级桥）；③ RDB 线性化点迁移
 ——保持"快照点 ts = catch-up 起点 ts+1"不变式（与 FULLRESYNC 守卫同构——4 守卫重写
 以表核验）。
+
+**RDB 线性化点 ts 化——前置验证（2026-09-05——阶段 1 先行）**：
+- **勘察**：FULLRESYNC 分支 snapshotOffset（handler:74）在 SnapshotMuLock 写锁内捕获
+  + GenerateRDB 同一写锁 MVCC View——快照一致；feed-mode 激活 `feedSinceTS =
+  ReplLogCurrentTS()+1` 在**字节 catch-up 完成后、propMu 内**读取（replication.go:553）
+  ——激活水位 ≥ 快照水位——**不变式"快照点 ts = catch-up 起点 ts+1"当前实现下成立**
+  （不重叠不遗漏）。
+- **阶段 1 落点修正**：psync.go:122 `currentTS`（FULLRESYNC 响应第 4 字段）在**锁外**
+  读取（HandlePSync 早于 handler:64 SnapshotMuLock）——作为从侧 lastAppliedTS 初值
+  （reconnect.go:336）可能**早于**快照实际水位——阶段 1"RDB 线性化点 ts 化"必须把
+  currentTS 读取**移入写锁内**（与 snapshotOffset 同位），否则从侧重连请求过旧 ts
+  触发重复（有从侧去重兜底但产生无谓重传）。
+- **验证测试**：`TestFullresyncTsDomainInvariant`（internal/replication/
+  fullresync_ts_invariant_test.go——FULLRESYNC 响应 ts ≤ catch-up 起点 ts +
+  FeedSinceTS == currentTS+1 + FeedEntriesFrom 无交集三段断言）——远程 -race 绿。
