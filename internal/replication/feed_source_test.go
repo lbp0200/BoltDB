@@ -32,7 +32,8 @@ func TestFeedEntriesFromAlignment(t *testing.T) {
 		t.Fatalf("log entries = %d, want %d", len(entries), n)
 	}
 
-	// 全量（since=0）：n 条 wire 条目——值与 backlog 全命令对齐（含值参数）
+	// 全量（since=0）：n 条 wire 条目——值 = log 键自身 D4 全重放命令（零对齐值源——
+	// SET k v 含值参数——可 apply 的完整形式）
 	wire, err := rm.FeedEntriesFrom(0)
 	if err != nil {
 		t.Fatal(err)

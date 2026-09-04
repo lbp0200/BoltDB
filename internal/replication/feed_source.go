@@ -52,24 +52,25 @@ func parseCommandEvents(data []byte) [][]string {
 	return out
 }
 
+// parseReplLogValue 解析 log 键值（D4 全重放命令——encodePropagateCommand/StringArgs
+// 产物——RESP 编码）为命令参数——零对齐 feed 值源（无需 backlog 事件对齐——并发
+// commit 序 vs append 序分叉问题消失——每个 log 键携带自身完整命令）。
+func parseReplLogValue(logValue []byte) ([]string, error) {
+	idArgs := parseCommandEvents(logValue)
+	if len(idArgs) != 1 || len(idArgs[0]) < 2 {
+		return nil, fmt.Errorf("unparseable repl log value %q", string(logValue))
+	}
+	return idArgs[0], nil
+}
+
 // FeedEntriesFrom 按请求 ts 增量构造 REPLLOG wire 条目（master 侧发送面的读取基础）：
-// 日志键（ReplLogEntries——ts 升序）与 backlog 命令事件按绝对位置 1:1 对齐（协议相位
-// 值源 = backlog 影子对齐的全命令——backlog 保持权威——②/D4 部署前无需日志键全值）。
-// 返回逐条 wire 参数（feedEntryArgs 形态——可直接序列化发送）。
+// 值源 = log 键自身值（D4——全重放命令——零对齐——无 backlog 事件读取/对齐）——并发
+// 写者下 commit 序 vs append 序分叉问题消失（D4 前该分叉导致错误关联——2026-09-04
+// 规模验证 missing=2499——对齐硬化 528c236 为过渡安全网——D4 全族落地后退役）。
 func (rm *ReplicationManager) FeedEntriesFrom(since uint64) ([][]string, error) {
 	all, err := rm.store.ReplLogEntries()
 	if err != nil {
 		return nil, err
-	}
-	backlog := rm.backlog
-	cur := backlog.GetCurrentOffset()
-	raw, err := backlog.GetRange(0, cur)
-	if err != nil {
-		return nil, err
-	}
-	events := parseCommandEvents(raw)
-	if len(events) < len(all) {
-		return nil, fmt.Errorf("backlog events %d < repl log entries %d (alignment broken)", len(events), len(all))
 	}
 	start := 0
 	for start < len(all) && all[start].TS < since {
@@ -77,37 +78,18 @@ func (rm *ReplicationManager) FeedEntriesFrom(since uint64) ([][]string, error) 
 	}
 	out := make([][]string, 0, len(all)-start)
 	for i := start; i < len(all); i++ {
-		// 对齐硬化（2026-09-04 规模验证 missing=2499 根因的即时修复）：log 键标识符
-		// 值（RESP 编码命令名+键）与 backlog 事件命令+键逐条目校验——并发写者下
-		// commit 序 vs append 序分叉（绝对位置 1:1 对齐失效——错误关联）在此捕获——
-		// 返回错误→从侧回退 catch-up/FULLRESYNC（防错误关联数据落地）。
-		if err := verifyFeedAlignment(all[i].Value, events[i]); err != nil {
-			return nil, fmt.Errorf("feed alignment broken at ts=%d: %w", all[i].TS, err)
+		args, err := parseReplLogValue(all[i].Value)
+		if err != nil {
+			return nil, fmt.Errorf("feed value parse at ts=%d: %w", all[i].TS, err)
 		}
-		out = append(out, feedEntryArgs(all[i].TS, events[i]))
+		out = append(out, feedEntryArgs(all[i].TS, args))
 	}
 	return out, nil
 }
 
-// verifyFeedAlignment 校验 log 键标识符值（RESP 编码——命令名+键——encodePropagateCommand
-// 产物）与 backlog 事件（全命令参数）的命令+键一致。并发写者下 log 键序（commit 序）
-// 与 backlog 事件序（append 序）分叉时，绝对位置 1:1 对齐把每个 log 键关联到错误的
-// 命令——此处检测错位并报错（从侧回退字节路径——正确数据兜底）。
-func verifyFeedAlignment(logValue []byte, event []string) error {
-	idArgs := parseCommandEvents(logValue)
-	if len(idArgs) != 1 || len(idArgs[0]) < 2 {
-		return fmt.Errorf("unparseable identifier value %q", string(logValue))
-	}
-	id := idArgs[0]
-	if len(event) < 2 || id[0] != event[0] || id[1] != event[1] {
-		return fmt.Errorf("identifier %q vs event %v (command/key mismatch)", id, event)
-	}
-	return nil
-}
-
 // FeedSlave 对处于 feed 模式的从侧增量发送 REPLLOG wire 条目（S2 backlog 退役首步——
-// 实际流发送）：FeedEntriesFrom(feedSinceTS) 构造增量（log 键 ts 升序 + backlog 对齐
-// 全命令——backlog 值源）→ 逐条序列化发送（REPLLOG 帧——SendCommand）→ 游标推进到
+// 实际流发送）：FeedEntriesFrom(feedSinceTS) 构造增量（log 键 ts 升序 + D4 全重放值
+// 全命令——零对齐值源）→ 逐条序列化发送（REPLLOG 帧——SendCommand）→ 游标推进到
 // 最后已发条目的 ts+1（ts 严格升序——下次增量续传）。非 feed 模式从侧返回 nil（走
 // backlog 字节路径——PropagateCommand 分支）。
 // 字节双轨说明：feed 帧（REPLLOG <ts> <cmd>...）字节与 backlog 命令字节不同——feed
