@@ -93,6 +93,12 @@ type SlaveReconnector struct {
 	masterWaterTS atomic.Uint64
 	// lastDataTime: 最近一次收到数据命令（非 PING/REPLCONF/SELECT）的时间。
 	lastDataTime atomic.Int64
+	// lastApplyTime: 最近一次**成功应用**复制命令（feed 条目或数据命令）的时间。
+	// B2 排水进度判据的探针数据源（TODO §1c——停滞检测改测应用进度的采集面）：
+	// §1c 冻结链的本质是"收到数据但应用卡住"（读争用扰动写路径→排水间隙）——
+	// 此时 lastDataTime 持续刷新而 lastApplyTime 停滞——本字段为事件级
+	// slow-apply/freeze 时序数据提供分辨率（INFO 累计计数不足）。
+	lastApplyTime atomic.Int64
 	// stallTimeout: 停滞判定阈值，测试可缩短；默认 replStallTimeout。
 	stallTimeout time.Duration
 	// drainStallTimeout: 追赶排水期的冻结阈值（未收敛时），测试可缩短；
@@ -120,6 +126,12 @@ func (sr *SlaveReconnector) GetState() SlaveState {
 
 func (sr *SlaveReconnector) GetLastOffset() int64 {
 	return sr.lastOffset.Load()
+}
+
+// GetApplyIdle 返回最近一次成功应用复制命令后的空闲时长（B2 应用进度探针——
+// 停滞检测改测应用进度的采集面：lastDataTime 持续刷新而应用卡住时此值增长）。
+func (sr *SlaveReconnector) GetApplyIdle() time.Duration {
+	return time.Since(time.Unix(0, sr.lastApplyTime.Load()))
 }
 
 func (sr *SlaveReconnector) GetMasterAddr() string {
@@ -484,6 +496,7 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 							Uint64("master_ts", masterTS).
 							Uint64("slave_ts", slaveTS).
 							Dur("idle", idle).
+							Dur("apply_idle", time.Since(time.Unix(0, sr.lastApplyTime.Load()))).
 							Bool("armed", armed).
 							Msg("复制流停滞：主节点水位高于已应用水位且数据流空闲，强制重连")
 						return fmt.Errorf("replication stalled: master at %d, slave at %d (master ts %d, slave ts %d)", masterOffset, slaveOffset, masterTS, slaveTS)
@@ -531,6 +544,7 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 			}
 			sr.lastAppliedTS.Store(ts)
 			sr.lastOffset.Add(int64(len(cmdBytes)))
+			sr.lastApplyTime.Store(time.Now().UnixNano())
 			continue
 		}
 
@@ -561,6 +575,7 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 		}
 
 		sr.lastOffset.Add(int64(len(cmdBytes)))
+		sr.lastApplyTime.Store(time.Now().UnixNano())
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/lbp0200/BoltDB/internal/logger"
 	"github.com/lbp0200/BoltDB/internal/store"
@@ -308,6 +309,18 @@ func (rm *ReplicationManager) GetSlaveReplOffset() int64 {
 	defer rm.mu.RUnlock()
 	if rm.slaveReconnector != nil {
 		return rm.slaveReconnector.GetLastOffset()
+	}
+	return 0
+}
+
+// GetSlaveApplyIdleMs 返回从侧最近一次成功应用复制命令后的空闲毫秒数
+// （B2 应用进度探针——INFO repl_apply_idle_ms 数据源——§1c 冻结链的
+// "收到数据但应用卡住"检测面）。0 = 从侧不在复制或从未应用。
+func (rm *ReplicationManager) GetSlaveApplyIdleMs() int64 {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	if rm.slaveReconnector != nil {
+		return int64(rm.slaveReconnector.GetApplyIdle() / time.Millisecond)
 	}
 	return 0
 }

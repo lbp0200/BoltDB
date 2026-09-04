@@ -110,6 +110,11 @@ func (h *Handler) buildInfoResponse(section string) string {
 			// keys are ignored by Sentinel / redis-cli parsers.
 			builder.WriteString("repl_send_drop_count:" + strconv.FormatInt(h.Replication.GetReplSendDropCount(), 10) + "\n")
 			builder.WriteString("repl_apply_skip_count:" + strconv.FormatInt(h.Replication.GetReplApplySkipCount(), 10) + "\n")
+			// B2 应用进度探针（TODO §1c）：从侧最近一次成功应用复制命令后的空闲
+			// 毫秒数——"收到数据但应用卡住"（§1c 冻结链）的分辨率补充——累计
+			// 计数（skip/drop）无法区分"瞬态跳过"与"持续冻结"——本字段为事件级
+			// slow-apply/freeze 时序数据提供采集面（判据翻转待 A/B gate 收口）。
+			builder.WriteString("repl_apply_idle_ms:" + strconv.FormatInt(h.Replication.GetSlaveApplyIdleMs(), 10) + "\n")
 		}
 		builder.WriteString("\n")
 	}
