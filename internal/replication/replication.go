@@ -400,7 +400,12 @@ func (rm *ReplicationManager) PropagateCommand(cmd [][]byte) {
 
 	// 如果配置了 WAL，将命令写入持久化日志
 	// 这提供了 crash 恢复能力：即使主节点崩溃，backlog 也可以从 WAL 重建
-	if wal != nil {
+	// S2 backlog 退役双轨切换：feed-loop 开启时跳过 WAL 字节记账——log-key 为
+	// 权威持久化源（commit 即写日志键——backlog 退役尾项）——backlog 内存环保留
+	// （offset 水位 = PSYNC 判定/FULLRESYNC offset/字节从侧 ts=0 兼容的基础）——
+	// 重启后 backlog 空 → PSYNC 安全降级 FULLRESYNC（ts 域重建——已治本）。
+	// --feed-loop 关闭（字节模式）即完全恢复字节 WAL 记账（回滚开关）。
+	if wal != nil && !rm.feedLoop.Load() {
 		if err := wal.Append(cmdOffset, cmdBytes); err != nil {
 			logger.Logger.Warn().Err(err).Int64("offset", cmdOffset).Msg("backlog WAL append failed")
 		}
