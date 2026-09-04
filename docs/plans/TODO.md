@@ -111,10 +111,21 @@
 >    兜底）**——对齐硬化 verifyFeedAlignment 退役（528c236 过渡安全网完成使命）+
 >    feed_alignment_test 重写为 TestParseReplLogValue——FeedSlave/wire/从侧处理不变——
 >    replication 全包远程 -race 23.2s 绿。
+>    **feed-mode 规模验证复跑已做（2026-09-04——零对齐后仍 missing=2473/3818 ≈65%）**：
+>    TestFeedModeScaleNoLoss（3 writers×5ms + 5 kill cycles——复刻 psync-reconnect-no-loss
+>    结构——master+slave 双侧 EnableFeedLoop）实测 missing key 跨 writer/seq **分散**（非尾部
+>    连续）+ slave offset 超前 ~93k 字节（D4 全重放值更大——双轨设计测量伪影）+ 日志
+>    `feed 增量发送到从节点失败 ... use of closed network connection`——**零对齐未消除数据
+>    丢失（与最初 missing=2499 同量级）**。**根因锁定投递/补发层（非值源对齐层）**：重连
+>    CatchUpAndEnableSlave 走 backlog **字节** catch-up（按从侧漂移的字节 offset）后跳
+>    feedSinceTS=curTS+1——字节域与 ts 域 REPLLOG 流坐标不兼容→间隙命令既不在字节补发也
+>    不在增量流→丢失——**治本 = backlog 影子退役本身（重连改 ts 域）——非 D4/零对齐可解**。
+>    探针已回滚。
 >    **剩余方向（backlog 退役尾——D4 前置已清）**：1. **backlog 影子退役**（分级-3 尾——
->    增量续传源切 log-key——`ReplLogEntriesFrom` 增量 seek 转正——backlog/WAL 字节记账
->    删除——配置化开关保留回滚——字节+ts 双轨切换）；2. **feed-mode 规模验证复跑**
->    （零对齐后并发无丢失 + 无停滞——退化不变量证据更新——退役决策依据）；3. **dw A/B
+>    **feed-mode 规模验证已确认为数据丢失治本（重连改 ts 域——字节 catch-up 与 REPLLOG
+>    ts 流坐标不兼容是 missing=2473 根因）**——增量续传源切 log-key——`ReplLogEntriesFrom`
+>    增量 seek 转正——backlog/WAL 字节记账删除——配置化开关保留回滚——字节+ts 双轨切换）；
+>    2. ~~feed-mode 规模验证复跑~~（**已完成——零对齐后仍 missing=2473——见上**）；3. **dw A/B
 >    ≤1/15**（§7 协议——双轨下重复窗口度量——复制切换后验收）+ ②/D4 部署同步读侧切换
 >    （2x vlog 写放大已知成本——消费者落地后）；4. §2 SSD 崩塌复测 + C4 抓包级比对
 >    （S3 前提——开放项）。
