@@ -835,6 +835,116 @@ func TestSlaveReconnector_readCommandLoop_ApplyIdleDistinguishesStall(t *testing
 	assert.NoError(t, err)
 }
 
+// TestSlaveReconnector_readCommandLoop_ApplyStallForcesReconnect 守卫 B2
+// 判据翻转的补充触发正向路径（1c §7——盲区闭合）：数据持续到达（lastDataTime
+// 刷新——data idle 小）但应用停滞（lastApplyTime 不推进——applyIdle 超阈值）
+// 且主节点水位高于已应用 offset——现判据（data idle）两条都不触发（idle 小
+// < stall 且 < drainStall）——仅补充触发（applyIdle > applyStall）强制重连。
+func TestSlaveReconnector_readCommandLoop_ApplyStallForcesReconnect(t *testing.T) {
+	testStore := setupTestStore(t)
+	rm := NewReplicationManager(testStore)
+	defer rm.Stop()
+
+	serverEnd, clientEnd := net.Pipe()
+	defer serverEnd.Close()
+	defer clientEnd.Close()
+
+	mc := &MasterConnection{
+		Addr:   "127.0.0.1:6379",
+		Conn:   clientEnd,
+		Reader: bufio.NewReader(clientEnd),
+		Writer: bufio.NewWriter(clientEnd),
+		stopCh: make(chan struct{}),
+	}
+
+	sr := NewSlaveReconnector(rm, testStore, "127.0.0.1:6379")
+	sr.applyStallTimeout = 200 * time.Millisecond
+	sr.state.Store(int32(SlaveConnected))
+
+	// 排水 goroutine：消费从节点发出的 REPLCONF GETACK（net.Pipe 同步写，
+	// 对端不读会阻塞 GETACK 发送器）。测试体末尾显式 serverEnd.Close()
+	// 解除其阻塞后等待退出（不能依赖 defer 顺序：LIFO 下 Close 会晚于等待）。
+	drainDone := make(chan struct{})
+	go func() {
+		buf := make([]byte, 512)
+		for {
+			if _, err := serverEnd.Read(buf); err != nil {
+				close(drainDone)
+				return
+			}
+		}
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sr.readCommandLoop(mc)
+	}()
+
+	// 喂一条数据命令（推进 lastOffset、刷新 lastDataTime + lastApplyTime）
+	_, err := serverEnd.Write([]byte("*3\r\n$3\r\nSET\r\n$2\r\nk1\r\n$2\r\nv1\r\n"))
+	assert.NoError(t, err)
+
+	var offset int64
+	for i := 0; i < 50; i++ {
+		offset = sr.lastOffset.Load()
+		if offset > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.True(t, offset > 0)
+
+	// 主节点通告更高 offset（masterOffset > slaveOffset——未收敛——走 else 分支）。
+	// 此刻 applyIdle 仍小（SET 刚应用）——现判据与补充触发都不触发。
+	_, err = serverEnd.Write([]byte("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$7\r\n9999999\r\n"))
+	assert.NoError(t, err)
+	time.Sleep(100 * time.Millisecond)
+
+	// 断言 readCommandLoop 未提前返回（前一条 ACK 后数据刚到达——应用停滞
+	// 尚未超阈值——不误触发）
+	select {
+	case err := <-done:
+		t.Fatalf("readCommandLoop returned early before apply stall: %v", err)
+	default:
+	}
+
+	// 等待应用停滞超过 applyStallTimeout（lastApplyTime 不再推进——无新数据
+	// 到达也无新应用）
+	time.Sleep(150 * time.Millisecond)
+
+	// 数据再次到达但**应用停滞**（transient skip——JSON.CLEAR missing key——
+	// isTransientReplicationError：offset 推进但 lastApplyTime **不更新**——
+	// 95eb44e 实证路径）——lastDataTime 刷新（data idle 小）但 applyIdle
+	// 已超阈值——主节点水位仍高于已应用 offset → 补充触发强制重连
+	skipCmd := [][]byte{[]byte("JSON.CLEAR"), []byte("nosuch")}
+	skipBytes := serializeCommand(skipCmd)
+	_, err = serverEnd.Write(skipBytes)
+	assert.NoError(t, err)
+	time.Sleep(250 * time.Millisecond)
+
+	// 停滞检查仅在收到 REPLCONF ACK 时执行——再发 ACK 通告更高 offset
+	// 触发检查：masterOffset(9999999) > slaveOffset 且 applyIdle > 200ms
+	// （skip 未刷新 lastApplyTime）→ 补充触发
+	_, err = serverEnd.Write([]byte("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$7\r\n9999999\r\n"))
+	assert.NoError(t, err)
+
+	select {
+	case err := <-done:
+		assert.Error(t, err)
+		assert.True(t, strings.Contains(err.Error(), "replication stalled"))
+	case <-time.After(3 * time.Second):
+		t.Fatal("readCommandLoop did not force reconnect on apply stall (B2 supplement)")
+	}
+
+	close(sr.stopCh)
+	serverEnd.Close()
+	select {
+	case <-drainDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("drain goroutine did not exit")
+	}
+}
+
 func TestSlaveReconnector_readCommandLoop_ApplySkipIncrementsCount(t *testing.T) {
 	t.Parallel()
 	testStore := setupTestStore(t)

@@ -193,6 +193,12 @@
     （replication 49.9s + server 41.7s）全绿——**A/B A 组（翻转+探针开）dw
     -count=15 15/15 全绿**（0 失败——门槛 ≤1/15 显著通过；B 组基线 = 探针开
     15/15 全绿——无回归）——判据翻转生效，回滚开关保留（A/B 后续失败即还原）。
+  - **补充触发正向路径守卫（2026-09-05）**：`TestSlaveReconnector_readCommandLoop_
+    ApplyStallForcesReconnect`——transient skip（JSON.CLEAR missing key）后数据
+    到达但应用停滞超阈值（lastApplyTime 不推进）+ 主节点水位高于已应用 offset
+    → 补充触发强制重连——现判据（data idle）两条均不触发（idle 小 < stall 且
+    < drainStall）——盲区闭合的直接证据——本地无 -race + 远程定向（4.7s）+
+    replication 全包（49.5s）全绿。
   - **风险注记**：翻转后 apply_idle 在慢应用（store 读争用——§1c 触发链）期间
     增长——若瞬态慢写超过 30s 会误触发重连（代价 = 一次 FULLRESYNC 而非数据丢失
     ——重连自愈路径本身经 9435523/2c8ecd0 治本）——误触发率由 A/B 门槛约束。
