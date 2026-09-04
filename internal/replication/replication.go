@@ -485,6 +485,29 @@ func (rm *ReplicationManager) SetFeedLoop(enabled bool) {
 	rm.feedLoop.Store(enabled)
 }
 
+// CatchUpAndEnableSlaveTS 为 feed 模式重连从侧做 **ts 域增量 catch-up**（S2 分级-3——
+// 重连改 ts 域——backlog 影子退役治本）：从 resumeTS+1 起经 FeedSlave 同步补发
+// [resumeTS+1, curTS] 的 REPLLOG gap（log 键值源零对齐——不再走字节 SendBacklogData，
+// byte 坐标错域问题结构性消除——见 9435523 根因记录），然后 SetReady(true)。
+// 激活（FeedSetEnabled + SetReady）在 propMu 内原子完成（与字节路径
+// CatchUpAndEnableSlave 的激活语义一致——极小窗口——不阻塞写路径）；gap 补发在
+// propMu 外——FeedSlave 经 SendCommand 要求 Ready（slave.go:130），故先激活再补发。
+// 补发窗口内与 live-push 的潜在双发（PropagateCommand 亦从 feedSinceTS=resumeTS+1
+// 起 FeedSlave）由从侧 lastAppliedTS 去重兜底（ts <= lastAppliedTS 跳过——reconnect.go）
+// ——无丢失——补发完成后游标推进到最后已发 ts+1——后续 live-push 无缝续传。
+// On error Ready stays true（已激活——由调用方 RemoveSlave 清理）。
+func (rm *ReplicationManager) CatchUpAndEnableSlaveTS(slave *SlaveConnection, resumeTS uint64) error {
+	// 激活 + Ready 在 propMu 内原子（防与 live-push 交错——字节路径同构）。
+	rm.propMu.Lock()
+	slave.FeedSetEnabled(true, resumeTS+1)
+	slave.SetReady(true)
+	rm.propMu.Unlock()
+	if err := rm.FeedSlave(slave); err != nil {
+		return err
+	}
+	return nil
+}
+
 // CatchUpAndEnableSlave drains backlog [startOffset, masterOffset) while
 // Ready=false, then sets Ready under propMu so gap-fill never races with
 // live PropagateCommand for the same offsets.

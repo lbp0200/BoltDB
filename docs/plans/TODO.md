@@ -124,7 +124,14 @@
 >    **剩余方向（backlog 退役尾——D4 前置已清）**：1. **backlog 影子退役**（分级-3 尾——
 >    **feed-mode 规模验证已确认为数据丢失治本（重连改 ts 域——字节 catch-up 与 REPLLOG
 >    ts 流坐标不兼容是 missing=2473 根因）**——增量续传源切 log-key——`ReplLogEntriesFrom`
->    增量 seek 转正——backlog/WAL 字节记账删除——配置化开关保留回滚——字节+ts 双轨切换）；
+>    增量 seek 转正——backlog/WAL 字节记账删除——配置化开关保留回滚——字节+ts 双轨切换）。
+>    **重连改 ts 域已落地（2026-09-04——治本替换过渡安全网 9435523）**：psync.go ts 域
+>    CONTINUE（仅 feed-loop 开启时——feed-loop 关字节模式 ts>0 保持 FULLRESYNC）+ handler
+>    CONTINUE 分支按 result.TS>0 分流 + CatchUpAndEnableSlaveTS（propMu 内原子激活 +
+>    propMu 外 FeedSlave 补发 gap [resumeTS+1, curTS]——双发窗口由从侧 lastAppliedTS
+>    去重兜底）——定向重连三测 + replication/server 全包 + 三守卫 + PsyncReconnectNoLoss
+>    远程 -race 全绿（TestPSyncTSRange 补 SetFeedLoop(true)——ts 域边界判定属 feed-loop
+>    场景语义）。剩余：`ReplLogEntriesFrom` 增量 seek 转正 + backlog/WAL 字节记账删除。
 >    2. ~~feed-mode 规模验证复跑~~（**已完成——零对齐后仍 missing=2473——见上**）；3. **dw A/B
 >    ≤1/15**（§7 协议——双轨下重复窗口度量——复制切换后验收）+ ②/D4 部署同步读侧切换
 >    （2x vlog 写放大已知成本——消费者落地后）；4. §2 SSD 崩塌复测 + C4 抓包级比对

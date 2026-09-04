@@ -149,34 +149,54 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 		slaveConn := replication.NewSlaveConnection(conn)
 		slaveConn.SetReplOffset(result.Offset)
 
-		backlog := h.Replication.GetBacklog()
+		if result.TS > 0 {
+			// ts 域路径（feed 模式重连——S2 分级-3 治本）：跳过字节 SendBacklogData
+			// （result.Offset 为从侧 feed 域 lastOffset——与 backlog 原始命令 offset 域
+			// 不一致——读错区间会丢 gap [TS+1, curTS]）——改由 CatchUpAndEnableSlaveTS
+			// 从 result.TS+1 起经 FeedSlave 补发 REPLLOG gap（log 键值源零对齐）。
+			h.Replication.AddSlave(slaveConn)
+			if err := h.Replication.CatchUpAndEnableSlaveTS(slaveConn, result.TS); err != nil {
+				logger.Logger.Error().Err(err).
+					Uint64("resume_ts", result.TS).
+					Msg("CONTINUE ts 域 catch-up 失败")
+				h.Replication.RemoveSlave(slaveConn.ID)
+				return nil
+			}
+			logger.Logger.Info().
+				Str("slave_addr", remoteAddr).
+				Str("repl_id", result.ReplId).
+				Uint64("resume_ts", result.TS).
+				Msg("发送CONTINUE和ts域增量到从节点")
+		} else {
+			backlog := h.Replication.GetBacklog()
 
-		// 先发送 backlog（[result.Offset, currentOffset)）再注册 slave。
-		// 此时 slave 不在 ReplicationManager.slaves 中，PropagateCommand
-		// 不会向其 live-push。
-		currentOffset := h.Replication.GetMasterReplOffset()
-		if err := replication.SendBacklogData(slaveConn, backlog, result.Offset, currentOffset); err != nil {
-			logger.Logger.Error().Err(err).
-				Int64("start_offset", result.Offset).
-				Int64("end_offset", currentOffset).
-				Msg("发送CONTINUE backlog数据失败")
-			// +CONTINUE already flushed — do not write ERR after it.
-			return nil
+			// 先发送 backlog（[result.Offset, currentOffset)）再注册 slave。
+			// 此时 slave 不在 ReplicationManager.slaves 中，PropagateCommand
+			// 不会向其 live-push。
+			currentOffset := h.Replication.GetMasterReplOffset()
+			if err := replication.SendBacklogData(slaveConn, backlog, result.Offset, currentOffset); err != nil {
+				logger.Logger.Error().Err(err).
+					Int64("start_offset", result.Offset).
+					Int64("end_offset", currentOffset).
+					Msg("发送CONTINUE backlog数据失败")
+				// +CONTINUE already flushed — do not write ERR after it.
+				return nil
+			}
+
+			h.Replication.AddSlave(slaveConn)
+			if err := h.Replication.CatchUpAndEnableSlave(slaveConn, currentOffset); err != nil {
+				logger.Logger.Error().Err(err).Msg("CONTINUE slave catch-up failed")
+				h.Replication.RemoveSlave(slaveConn.ID)
+				return nil
+			}
+
+			logger.Logger.Info().
+				Str("slave_addr", remoteAddr).
+				Str("repl_id", result.ReplId).
+				Int64("offset", result.Offset).
+				Int64("current_offset", currentOffset).
+				Msg("发送CONTINUE和backlog到从节点")
 		}
-
-		h.Replication.AddSlave(slaveConn)
-		if err := h.Replication.CatchUpAndEnableSlave(slaveConn, currentOffset); err != nil {
-			logger.Logger.Error().Err(err).Msg("CONTINUE slave catch-up failed")
-			h.Replication.RemoveSlave(slaveConn.ID)
-			return nil
-		}
-
-		logger.Logger.Info().
-			Str("slave_addr", remoteAddr).
-			Str("repl_id", result.ReplId).
-			Int64("offset", result.Offset).
-			Int64("current_offset", currentOffset).
-			Msg("发送CONTINUE和backlog到从节点")
 
 		// 启动goroutine处理从节点的复制连接
 		h.wg.Add(1)

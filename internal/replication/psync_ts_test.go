@@ -15,6 +15,9 @@ func TestPSyncTSRange(t *testing.T) {
 	s := setupTestStore(t)
 	rm := NewReplicationManager(s)
 	rm.SetRole(RoleMaster)
+	// PSYNC-ts 边界判定（④）属 feed-loop 场景语义（ts 域 CONTINUE 仅在 feed-loop
+	// 开启时生效——feed-loop 关闭时 ts>0 走 FULLRESYNC，见 psync.go HandlePSync）。
+	rm.SetFeedLoop(true)
 	defer rm.Stop()
 
 	const n = 10

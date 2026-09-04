@@ -41,19 +41,41 @@ func HandlePSync(rm *ReplicationManager, replId string, offset int64, ts uint64)
 		if ts > 0 {
 			logStartTS, _ := rm.store.ReplLogStartTS()
 			currentTS, _ := rm.store.ReplLogCurrentTS()
-			// S2 PSYNC-ts（④）：ts > 0 = feed 模式重连从节点。强制 FULLRESYNC——
-			// CONTINUE 路径的 result.Offset 为从侧 lastOffset（feed 域 REPLLOG 帧字节），
-			// 与主侧 backlog 原始命令 offset 域不一致，SendBacklogData(backlog,
-			// result.Offset, currentOffset) 读错区间 → gap [ts+1, currentTS] 丢失。
-			// FULLRESYNC 用主侧 currentOffset（合法域）+ RDB 点时快照 +
-			// CatchUpAndEnableSlave；从侧在 reconnect.go:336 把 lastAppliedTS 重置为
-			// currentTS，与 fresh 路径逐字节一致（TestFeedReconnectAfterFullresync），
-			// 无 stale-dedup 风险。
-			logger.Logger.Warn().
-				Uint64("requested_ts", ts).
-				Uint64("log_start_ts", logStartTS).
-				Uint64("current_ts", currentTS).
-				Msg("PSYNC-ts 重连强制 FULLRESYNC（feed offset 域与 backlog 不一致）")
+			// S2 PSYNC-ts（④）：ts > 0 = 从侧携带 lastAppliedTS。**仅在 feed-loop
+			// 开启时**走 ts 域 CONTINUE——gap 由 handler 的 ts 域增量 catch-up 补发
+			// （FeedSlave 从 resumeTS+1 起——log 键值源零对齐——不再走字节
+			// SendBacklogData——byte 坐标错域问题结构性消除，见 9435523 根因记录）。
+			// feed-loop 关闭（字节模式部署）时从侧 ts 来自 FULLRESYNC 响应的 4 字段
+			// （reconnect.go:334 无条件 Store——即使字节模式 lastAppliedTS 也 >0）——
+			// 其字节 offset 才是合法域——保持 9435523 行为：ts>0 落 FULLRESYNC
+			// （字节 catch-up 合法域——回归守卫依赖此行为）。
+			if rm.feedLoop.Load() {
+				// ts 出范围（log 键 retention 外——gap 无法 ts 域补）或 log 空
+				// （currentTS==0——主侧重启）时落 FULLRESYNC（从侧重建，防 dedup 跳新写）。
+				if ts >= logStartTS && ts <= currentTS {
+					logger.Logger.Info().
+						Uint64("requested_ts", ts).
+						Uint64("log_start_ts", logStartTS).
+						Uint64("current_ts", currentTS).
+						Msg("执行增量同步（ts 模式——ts 域 catch-up）")
+					return &PSyncResult{
+						FullResync: false,
+						ReplId:     currentReplId,
+						Offset:     offset,
+						TS:         ts,
+					}, nil
+				}
+				logger.Logger.Warn().
+					Uint64("requested_ts", ts).
+					Uint64("log_start_ts", logStartTS).
+					Uint64("current_ts", currentTS).
+					Msg("PSYNC-ts 不在日志键范围，降级为全量同步")
+			} else {
+				logger.Logger.Warn().
+					Uint64("requested_ts", ts).
+					Uint64("current_ts", currentTS).
+					Msg("feed-loop 关闭（字节模式）：ts>0 重连走 FULLRESYNC（字节 offset 合法域）")
+			}
 		} else {
 			// 检查backlog中是否有足够的数据（字节模式——旧从节点）
 			backlogStart := backlog.GetCurrentOffset() - backlog.GetSize()
