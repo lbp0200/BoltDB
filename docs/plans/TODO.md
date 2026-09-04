@@ -151,7 +151,10 @@
 >    剩余：backlog 内存环删除（需字节从侧 ts=0 完全退役后——offset 水位改 ts 源——
 >    **设计方案已入册：a4 §10 附8**——消费者迁移表 11 项 + 两阶段实施（阶段 1 offset
 >    改 ts 源可回滚 / 阶段 2 删环 gate 严格）+ 退役三 gate（字节从侧退役/换算表核验/
->    feed 零丢失复跑）。
+>    feed 零丢失复跑）。**换算表已落地（2026-09-05——gate 2 前置完成）**：
+>    `ReplConversionTable`（conversion_table.go——OffsetToTS/TSToOffset/AlignCheck +
+>    空表边界）——测试覆盖 + replication 全包远程 -race 绿——守卫重写（以表核验双轨）
+>    待阶段 1 实施时接入。
 >    2. ~~feed-mode 规模验证复跑~~（**已完成——零对齐后仍 missing=2473——见上**）；3. **dw A/B
 >    ≤1/15**（§7 协议——双轨下重复窗口度量——复制切换后验收）+ ②/D4 部署同步读侧切换
 >    （2x vlog 写放大已知成本——消费者落地后）；4. §2 SSD 崩塌复测 + C4 抓包级比对

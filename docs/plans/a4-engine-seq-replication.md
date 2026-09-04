@@ -496,6 +496,10 @@ D 写路径开销未可观测**。
 - **换算表（过渡期双轨核验）**：offset↔ts 双向映射 = 每 backlog 条目起始字节偏移 ↔ 其
   命令日志键 ts（backlog 条目与日志键值同 RESP 格式——解析对齐即可建表）——守卫重写
   （4 守卫 + ts 单调/重放）以表核验双轨一致（分级-3 backlog 退役前的验证锚）。
+  **已落地（2026-09-05）**：`ReplConversionTable`（internal/replication/
+  conversion_table.go——事件对齐构建 + 双向换算 OffsetToTS/TSToOffset + AlignCheck
+  双轨核验 + 空表边界）——`TestConversionTableDualTrack`/`TestConversionTableEmpty`
+  覆盖（replication 全包远程 -race 绿）。
 - **顺序建议**：先 ACK 判据 ts 化（从侧自算 lastAppliedTS——主侧 ACK 回复带 currentTS
   ——换算表核验双轨）→ 后 PSYNC (replId, ts)（slave 需 lastAppliedTS 持久化）→ 排水
   判据 ts 推进 → 分级-3 backlog 退役。
