@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -186,7 +187,7 @@ func (s *BotreonStore) Expire(key string, seconds int) (bool, error) {
 
 		success = true
 		return nil
-	}, 30, encodePropagateCommand([]byte("EXPIRE"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("EXPIRE"), []byte(key), []byte(strconv.Itoa(seconds))))
 	return success, err
 }
 
@@ -271,7 +272,7 @@ func (s *BotreonStore) PExpire(key string, milliseconds int64) (bool, error) {
 
 		success = true
 		return nil
-	}, 30, encodePropagateCommand([]byte("PEXPIRE"), []byte(key)))
+	}, 30, encodePropagateCommand([]byte("PEXPIRE"), []byte(key), []byte(strconv.FormatInt(milliseconds, 10))))
 	return success, err
 }
 
