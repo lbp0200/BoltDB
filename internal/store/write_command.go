@@ -419,34 +419,37 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 		}
 
 	case "APPEND":
-		if len(args) >= 3 {
-			key := string(args[1])
-			value := string(args[2])
-			_, err := s.APPEND(key, value)
-			return err
+		if len(args) < 3 {
+			return fmt.Errorf("invalid APPEND args: want key value, got %d args", len(args)-1)
 		}
+		key := string(args[1])
+		value := string(args[2])
+		_, err := s.APPEND(key, value)
+		return err
 
 	case "RPUSH":
-		if len(args) >= 3 {
-			key := string(args[1])
-			for i := 2; i < len(args); i++ {
-				if _, err := s.RPush(key, string(args[i])); err != nil {
-					return fmt.Errorf("RPUSH %s: %w", key, err)
-				}
-			}
-			return nil
+		if len(args) < 3 {
+			return fmt.Errorf("invalid RPUSH args: want key values, got %d args", len(args)-1)
 		}
+		key := string(args[1])
+		for i := 2; i < len(args); i++ {
+			if _, err := s.RPush(key, string(args[i])); err != nil {
+				return fmt.Errorf("RPUSH %s: %w", key, err)
+			}
+		}
+		return nil
 
 	case "LPUSH":
-		if len(args) >= 3 {
-			key := string(args[1])
-			for i := 2; i < len(args); i++ {
-				if _, err := s.LPush(key, string(args[i])); err != nil {
-					return fmt.Errorf("LPUSH %s: %w", key, err)
-				}
-			}
-			return nil
+		if len(args) < 3 {
+			return fmt.Errorf("invalid LPUSH args: want key values, got %d args", len(args)-1)
 		}
+		key := string(args[1])
+		for i := 2; i < len(args); i++ {
+			if _, err := s.LPush(key, string(args[i])); err != nil {
+				return fmt.Errorf("LPUSH %s: %w", key, err)
+			}
+		}
+		return nil
 
 	case "LPOP":
 		if len(args) >= 2 {

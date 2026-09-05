@@ -609,6 +609,13 @@ be called in managed mode`）——根因：store 以 `badger.OpenManaged` 打�
 managed 兼容）——验证：backup 包全包绿 2.8s + internal/... 全量绿（tier-A
 替代单元测试部分完成——server/replication/store 等全绿）。
 
+**string/list 命令复制检查 + 静默点修复（2026-09-06——同族统一收尾）**：
+GETSET（string.go:149——GETSET 帧）与 APPEND（string.go:491——APPEND 帧）
+log 编码 + apply 分支（write_command.go:182/421）双全（无缺陷）——顺手修复
+APPEND/RPUSH/LPUSH 三处参数不足静默点（malformed→success → 明确错误——
+同 MSET/SETEX/XCLAIM 族统一）——验证：store 包全包远程 -race -short 绿
+132.8s——本地 BUILD+VET 0。
+
 **复现命令（一条即中，无需撞竞态）**：
 
 ```bash
