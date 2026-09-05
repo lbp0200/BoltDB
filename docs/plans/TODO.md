@@ -94,6 +94,10 @@ WAIT / INFO `master_repl_offset` / GETACK / monitor 迁移。**backlog 环仍 Ap
   全键——零亏空——INCR dw:incr:0-4 master==slave）——阶段 1 改动（offset 改 ts
   源 + 字节直读面）对 dw 测量**无回归**（对照阶段 1 前纯对照 14/15+1 flake——
   小样本——正式验收仍 gate 于阶段 2 后）
+- **探针开中间基线（2026-09-05——DW_READ_PROBE=1 预演 -count=3）**：3/3 全绿
+  （gap=0 全键——读探针 reads=1309-1339 fails=0——§1c 从侧读争用模拟）——
+  阶段 1 改动后读争用场景零亏空保持（对照阶段 1 前探针开 15/15——无回归——
+  正式验收仍 gate 于阶段 2 后）
 
 ```bash
 bash scripts/remote-test.sh -race -timeout 180s -v ./cmd/integration/regressions/ \
