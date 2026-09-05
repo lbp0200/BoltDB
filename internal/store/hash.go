@@ -621,7 +621,14 @@ func (s *BotreonStore) HIncrBy(key, field string, increment int64) (int64, error
 			if keyType != "" && keyType != KeyTypeHash {
 				return ErrWrongType
 			}
-		} else if !errors.Is(typeErr, badger.ErrKeyNotFound) {
+		} else if errors.Is(typeErr, badger.ErrKeyNotFound) {
+			// 键不存在（新创建）：补写 typeKey——否则 RDB 生成按 TYPE_ 前缀
+			// 扫描时漏枚举该键（FULLRESYNC 重建缺键——与 HSet/HMSet 对齐——
+			// 2026-09-06 HINCRBYFLOAT 等价扫面抓到）。
+			if err := txn.Set(typeKey, []byte(KeyTypeHash)); err != nil {
+				return err
+			}
+		} else {
 			return typeErr
 		}
 
@@ -701,7 +708,14 @@ func (s *BotreonStore) HIncrByFloat(key, field string, increment float64) (float
 			if keyType != "" && keyType != KeyTypeHash {
 				return ErrWrongType
 			}
-		} else if !errors.Is(typeErr, badger.ErrKeyNotFound) {
+		} else if errors.Is(typeErr, badger.ErrKeyNotFound) {
+			// 键不存在（新创建）：补写 typeKey——否则 RDB 生成按 TYPE_ 前缀
+			// 扫描时漏枚举该键（FULLRESYNC 重建缺键——与 HSet/HMSet 对齐——
+			// 2026-09-06 HINCRBYFLOAT 等价扫面抓到）。
+			if err := txn.Set(typeKey, []byte(KeyTypeHash)); err != nil {
+				return err
+			}
+		} else {
 			return typeErr
 		}
 

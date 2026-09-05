@@ -378,6 +378,23 @@ func TestRDBRebuild_EquivSweepAcrossCommandFamilies(t *testing.T) {
 			return strings.Join(f, ",")
 		}},
 
+		{"HINCRBYFLOAT", func(t *testing.T, s *store.BotreonStore) {
+			if _, err := s.HIncrByFloat("sw:hf", "f1", 1.5); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.HIncrByFloat("sw:hf", "f1", 2.25); err != nil {
+				t.Fatal(err)
+			}
+		}, func(s *store.BotreonStore) string {
+			h, _ := s.HGetAll("sw:hf")
+			f := make([]string, 0, len(h))
+			for k, v := range h {
+				f = append(f, k+"="+string(v))
+			}
+			sort.Strings(f)
+			return strings.Join(f, ",")
+		}},
+
 		{"SADD/SREM/SMOVE", func(t *testing.T, s *store.BotreonStore) {
 			if _, err := s.SAdd("sw:set", "a", "b", "c"); err != nil {
 				t.Fatal(err)

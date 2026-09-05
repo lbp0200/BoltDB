@@ -411,6 +411,18 @@ INCR 族本轮扫面 PASS，但 lost 是**偶发**的，偶发恰好对应"只�
 （行号清单见上）未逐一修复——留作后续系统性工作（lost 家族纵深——偶发 lost
 是否由某站点的 malformed→success 触发——见上文「建议」段）。
 
+**同族新缺陷（2026-09-06——等价扫面扩展 HINCRBYFLOAT 例抓到——已修复）**：
+`HIncrByFloat`/`HIncrBy` 单独创建 hash 键时不写 typeKey（`TYPE_` 标记——对照
+HMSet:418 写 `txn.Set(typeKey, KeyTypeHash)`）——**RDB 生成按 `TYPE_` 前缀遍历
+键（rdb.go:470）漏枚举无 typeKey 的键 → FULLRESYNC 重建缺该键**（实测 A(RDB
+重建)="" vs 主侧/B(帧重放)="f1=3.75"——帧重放不依赖 typeKey 所以 B 正确——
+候选 ⑤ 往返保真未覆盖 HIncrByFloat 单独创建键场景——覆盖盲区）。
+**修复**：HIncrByFloat/HIncrBy 在 typeKey ErrKeyNotFound（键不存在）分支补写
+`txn.Set(typeKey, KeyTypeHash)`（与 HSet/HMSet 对齐——hash.go:621-628/708-715）
+——验证：HINCRBYFLOAT 例转正 PASS（A(RDB 重建)="f1=3.75" 三态一致——扫面
+15 例全 PASS + 窄版 PASS——远程 -race ok 5.556s）。**扫面用例已永久加入**
+（HINCRBYFLOAT——15 例——CI 外门控；窄版未加——hash 浮点族可后续视需加）。
+
 **复现命令（一条即中，无需撞竞态）**：
 
 ```bash
