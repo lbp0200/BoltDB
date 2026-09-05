@@ -407,6 +407,26 @@ INCR 族本轮扫面 PASS，但 lost 是**偶发**的，偶发恰好对应"只�
 ③ 兼容性注记：①只影响新写入的帧，**已落盘的旧序帧仍会被 ②之后的 apply 层判为错误**
    → 会触发一次重连/重建而非丢数据（可接受），但需在实施时确认 backlog/log 键的重放窗口。
 
+**复现命令（一条即中，无需撞竞态）**：
+
+```bash
+# 删掉 rdb_rebuild_vs_replay_equiv_test.go 里 knownDefects 的 ZADD/ZREM/ZINCRBY 表项后：
+bash scripts/remote-test.sh -race -timeout 120s ./internal/replication/ \
+  -run "TestRDBRebuild_EquivSweepAcrossCommandFamilies" -v
+# 期望（修复前）：B(帧重放)=m1:1 而 主侧/A=m1:11 → FAIL
+```
+
+**验证记录（2026-09-05——f03ab5d 提交态）**：`./internal/replication/...` 全包远程 -race
+**通过（ok 126.188s，`REAL_EXIT=0`）**——退出码在 `remote-test.sh` 之后立即取 `$?`
+（不经管道），含四个新探针（撕裂、往返保真、窄版等价、命令族扫面——末者 ZINCRBY 例
+按 `knownDefects` Skip）。窄版等价另单独验过本地 `-count=20` 与远程 `-count=5` 全绿。
+
+> **测量纪律补一条（本轮实际踩到）**：`go test … | grep … | tail` 的退出码来自管道
+> **最后一个命令**，红套件会伪装成 exit 0。本轮就有一次远程运行输出里明明写着
+> `FAIL …/internal/replication`，而任务通知报 exit 0，差点被当成"绿"。判绿必须看
+> `go test` 自身的退出码（`set -o pipefail`，或先重定向到文件再取 `$?`）。
+> 与 §6「判据维度必须覆盖缺陷表现形式」同一类：**测量通道的可信度要先于测量结论。**
+
 ## 架构边界（已决策：不做）
 
 | 边界 | 原因 |
