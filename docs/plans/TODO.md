@@ -221,7 +221,21 @@ writeMu——无反向——无死锁环）。
   从侧 apply 了全部帧但部分 INCR 执行未生效/被跳过）——结合探针异常帧
   （FULLRESYNC 重建 + 重放早期内容——EARLY 起点 ts=3 三参数命令）——
   **定位收窄：FULLRESYNC 重建后重放路径的帧级 apply 丢失**（重放区间/边界
-  或 RDB 载入交错——代码级无直接解——需从侧重放路径逐帧日志观测）
+  或 RDB 载入交错——代码级无直接解——需从侧重放路径逐帧日志观测）——
+  **KVrocks 对照与候选裁决（2026-09-06）**：读 KVrocks 复制实现
+  （kvrocks/src/cluster/replication.cc——fullSyncReadCB/incrementBatchLoopCB/
+  FeedSlaveThread::loop/tryPSyncReadCB）对照——KVrocks 架构（RocksDB seq 线性 +
+  Checkpoint 原生快照 + WriteBatch 原子 apply——失败必 RESTART 可见）结构性避免
+  本 lost 类问题——本项目应用层 log-key ts + 逐帧单事务 apply——无原生保证——
+  **候选 1（从侧 apply badger 事务低值后落静默边界）经代码检查排除**：从侧
+  apply 落点（WriteCommand → Set/SetWithTTL → retryUpdate:60 → commitTS 统一
+  封装——ts_source.go:100-125）与主写路径完全一致（tsSource.Begin 分配 +
+  CommitAt(ts) + discardMu 原子对三层守卫——b9083a3）——低值后落静默拒写
+  结构性不可能——**修改计划候选重排**：①（新）主侧 feed ts 空洞检测加固
+  （KVrocks FeedSlaveThread::loop「迭代器离散即断开」模式——feed 补发检测 log
+  键 ts 跳变/空洞——检测到即断开重连而非静默——纵深防御）；②（原候选 3）
+  FULLRESYNC 重建后重放起点/RDB 载入交错的逐帧日志观测（探针——用后即清）；
+  ③（保留）从侧逐帧收到序列 vs 主侧 log 比对（LOST-DIAG EARLY 累积）
 
 **通用判据教训**（本轮产出，适用后续所有守卫）：凡"零丢失/零多余/全绿"的守卫，先问一句
 ——**它的判据维度覆不覆盖目标缺陷的表现形式**。幂等写入的键集比对查不出重复应用，
