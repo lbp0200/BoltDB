@@ -90,6 +90,11 @@ WAIT / INFO `master_repl_offset` / GETACK / monitor 迁移。**backlog 环仍 Ap
 §7 协议（`1c-complete-fix-design.md`）——双轨下重复窗口度量。**基线数据已测**（纯对照
 14/15+1 flake、探针开 15/15——见 a4 §10 附9），正式验收须在复制切换（阶段 2）后重跑。
 
+- **中间基线（2026-09-05——阶段 1 全部落地后预演 -count=3）**：3/3 全绿（gap=0
+  全键——零亏空——INCR dw:incr:0-4 master==slave）——阶段 1 改动（offset 改 ts
+  源 + 字节直读面）对 dw 测量**无回归**（对照阶段 1 前纯对照 14/15+1 flake——
+  小样本——正式验收仍 gate 于阶段 2 后）
+
 ```bash
 bash scripts/remote-test.sh -race -timeout 180s -v ./cmd/integration/regressions/ \
   -run TestRegressionDuplicateWindowMeasurement          # 加 -count=15（5 批 × 3 次）
