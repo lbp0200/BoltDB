@@ -291,19 +291,45 @@ writeMu——无反向——无死锁环）。
 3. **静态扫描未发现绕过者**（2026-09-05）：`NextStartup` 仅启动期
    （`cmd/boltDB/main.go:260`），server 包 `*_commands.go` 之外无 `h.Db.*` 写，
    cluster 侧 0 处——**故这是结构依赖，不是已观测缺陷**。
-4. **关键未决**：被栅栏保护的写者，其**多键 txn**（meta + data + log 键同批）是否对
-   MaxUint64 读者**原子发布**——badger 写批 apply 路径未读完。若发布非原子，
-   则即使有栅栏也可能读到半条命令。
+4. ~~**关键未决**：被栅栏保护的写者，其多键 txn 是否对 MaxUint64 读者原子发布~~
+   → **已实测裁决（2026-09-05 晚，两个常驻探针）**：
+   - **候选 ④ 排除**——`rdb_torn_snapshot_test.go`：写者以 `MSET a=n b=n`（单逻辑命令
+     两键）反复写，检测 RDB 里 a/b 是否不等或单侧缺失。
+     **fenced（与 `processRequest` 同构取栅栏）= 0/120 撕裂**（远程 -race，11578 次并发写；
+     本地 0/120，147217 次写）；**对照臂 unfenced = 119/120 撕裂**（`a="138" b="139"`…
+     差值随负载增大）——**探针敏感度自证，栅栏确实有效**。
+   - **候选 ⑤ 排除**——`rdb_roundtrip_fidelity_test.go`：静默点 + 并发写后静默，
+     反复「生成 RDB → 载入全新 store → 逐键比计数/列表序列/hash 字段」，
+     **30/30 轮全保真**（本地 4052 次并发写；远程 -race 252 次写同样全保真）。
+   - **由此得到的结构性结论（可证明，不只靠测量）**：MaxUint64 读者只会
+     **多含**（读到 snapshotTS 之后的提交），**绝不会少含**。故
+     **RDB 侧结构上不可能造成 lost——它最多造成 dup**（多含的键其帧 ts > snapshotTS
+     会被 feed 再发一遍）。要造成"从侧比主侧少"，只能来自①帧未被 apply，
+     ②apply 了但值算错，③快照**静默缺键**（见下候选 ⑥——表现应为 MISSING 而非计数偏小，
+     与 lost 签名不符）。**lost 因此收敛回候选 ②/③（重建后重放起点/RDB 载入交错）
+     与从侧 apply 计数侧**，生成侧不再是嫌疑。
 5. **与 lost 全部证据吻合**（这是它优于已排除的候选 1/2 的地方）：丢 1-2 条
    `log==master>slave`、从侧 lastAppliedTS 追平（撕裂发生在**重建载入的那份 RDB 里**，
    不在补发流上）、`applySkip=0`、**只在多周期（6 KILL）出现而单次重连不丢**
    （每个 KILL 周期一次 FULLRESYNC 重建 = 一次撕裂机会，命中率随周期数累积）、
    实验 6 的 FlushDB 证据（键值重置为 1 = 确实经历了重建）。
-6. **确定性实验（不撞竞态——待做）**：并发 INCR 写者 + 反复
-   `GenerateRDBWithSnapshotLock` → 把 RDB 载入全新 store → 逐键断言
-   「载入态 == 主侧 snapshotTS 时刻态」。判据按上面的教训用 **INCR 计数**，不用键集合。
-   失配率 > 0 → 候选 ④ 成立并可直接给出机制；恒为 0 → 据实排除并记录判据。
-7. 相关文档断言已纠正：`AGENTS.md` GenerateRDB Invariants、
+   **注**：④/⑤ 的实测已推翻本条的适用性——吻合的是"重建"这一事实，不是"撕裂"这一机制。
+6. ~~确定性实验（待做）~~ → **已做完，见上第 4 条**。两探针留作常驻守卫，均
+   `testing.Short()` 门控（自旋写者 + 数十次 store 开合，属定向/nightly——
+   **不在 CI 的 `-short` 面里**，别当 PR gate 覆盖）。
+   **能力边界（重要，勿误用）**：探针自己是那个写者，故它防的是
+   **栅栏语义回归**（有人把 `processRequest` 的 RLock 挪走/缩小 → fenced 臂会撕裂），
+   它**查不出"新增了一条本来就不取栅栏的写路径"**——那属于
+   第 3 条的静态审计面（当前结论：未发现绕过者）。
+   对照组 unfenced 恒撕裂 = 探针有效性自证，无需外部触发即可解释"绿"的含义。
+7. **候选 ⑥「RDB 生成静默缺键」（新发现——非 lost 机制，但同类静默丢数据）**：
+   `rdb.go:475-496` 起，键类型读失败（`item.ValueCopy` err）、字符串值读失败
+   （`readStringInTxn` err）都是 **`logger.Warn` + `continue`**——该键直接不进 RDB，
+   而 FULLRESYNC 仍照常成功交付；`WriteStringKeyValue` 失败也只 Warn、**不中止不返回错误**。
+   表现 = 从侧永久少键，主从两侧都不会报错。与本仓库刚立的纪律
+   （`verifyFeedTSContinuity`——「迭代器离散即断开」不静默跳过空洞帧）同型，
+   **建议同样改为显式失败**（快照不完整就别交付）。不入 lost 链（签名不符：MISSING ≠ 计数偏小）。
+8. 相关文档断言已纠正：`AGENTS.md` GenerateRDB Invariants、
    `architecture.md`「MVCC snapshot / point-in-time」两处原写法与本证明相反。
 
 **定级与顺序冲突（2026-09-05 提出）**：本项现记「feed 模式默认关——非阻塞」，而 §2 gate 1
