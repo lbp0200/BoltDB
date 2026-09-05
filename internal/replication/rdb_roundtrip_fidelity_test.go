@@ -57,6 +57,26 @@ func TestRDBSnapshot_RoundTripFidelity(t *testing.T) {
 				t.Fatalf("HSet: %v", err)
 			}
 		}
+		// set / zset（非字符串类型走 flushStrings 分批 apply 路径——错位风险面）
+		mem := make([]string, 0, 8)
+		zm := make([]store.ZSetMember, 0, 8)
+		for i := 0; i < 8; i++ {
+			mem = append(mem, fmt.Sprintf("m%d-%d", i, bump))
+			zm = append(zm, store.ZSetMember{Member: fmt.Sprintf("z%d-%d", i, bump), Score: float64(i) + float64(bump)})
+		}
+		if _, err := s.SAdd("rt:set", mem...); err != nil {
+			t.Fatalf("SAdd: %v", err)
+		}
+		if err := s.ZAdd("rt:zset", zm); err != nil {
+			t.Fatalf("ZAdd: %v", err)
+		}
+		// TTL：过期时间是独立编码字段，且载入侧对解码错误静默（rdb_loader.go:197）
+		if err := s.Set("rt:ttl", fmt.Sprintf("t%d", bump)); err != nil {
+			t.Fatalf("Set ttl: %v", err)
+		}
+		if _, err := s.Expire("rt:ttl", 3600); err != nil {
+			t.Fatalf("Expire: %v", err)
+		}
 		if err := s.Set("rt:str", fmt.Sprintf("s%d", bump)); err != nil {
 			t.Fatalf("Set: %v", err)
 		}
@@ -172,6 +192,66 @@ func snapshotCompare(src *store.BotreonStore, t *testing.T, tag string) int {
 	ds, _ := dst.Get("rt:str")
 	if ss != ds {
 		t.Errorf("%s: str src=%q dst=%q", tag, ss, ds)
+		mismatches++
+	}
+
+	// 全局键数——载入侧任何静默跳过/解析错位都会在这里暴露（最强探测器）。
+	scnt, serr := src.DBSize()
+	dcnt, derr := dst.DBSize()
+	if serr != nil || derr != nil {
+		t.Errorf("%s: DBSize 失败 src=%v dst=%v", tag, serr, derr)
+		mismatches++
+	} else if scnt != dcnt {
+		t.Errorf("%s: DBSIZE MISMATCH src=%d dst=%d（载入丢 %d 键——静默跳过或解析错位）",
+			tag, scnt, dcnt, scnt-dcnt)
+		mismatches++
+	}
+
+	// set（无序 → 按成员集合比）
+	sm, _ := src.SMembers("rt:set")
+	dm, _ := dst.SMembers("rt:set")
+	sset := map[string]bool{}
+	for _, v := range sm {
+		sset[v] = true
+	}
+	for _, v := range dm {
+		if !sset[v] {
+			t.Errorf("%s: set 多出成员 %q（src=%d dst=%d）", tag, v, len(sm), len(dm))
+			mismatches++
+			break
+		}
+		delete(sset, v)
+	}
+	if len(sset) != 0 {
+		t.Errorf("%s: set 载入少 %d 成员（src=%d dst=%d）", tag, len(sset), len(sm), len(dm))
+		mismatches++
+	}
+
+	// zset（成员 + 分值）
+	sz, _ := src.ZRange("rt:zset", 0, -1)
+	dz, _ := dst.ZRange("rt:zset", 0, -1)
+	if len(sz) != len(dz) {
+		t.Errorf("%s: zset 成员数 src=%d dst=%d", tag, len(sz), len(dz))
+		mismatches++
+	} else {
+		for i := range sz {
+			if sz[i].Member != dz[i].Member || sz[i].Score != dz[i].Score {
+				t.Errorf("%s: zset 第 %d 项 src=%s/%g dst=%s/%g", tag, i,
+					sz[i].Member, sz[i].Score, dz[i].Member, dz[i].Score)
+				mismatches++
+				break
+			}
+		}
+	}
+
+	// TTL（秒级编码字段；±2s 容差吸收跨秒读差）
+	sttl, _ := src.TTL("rt:ttl")
+	dttl, _ := dst.TTL("rt:ttl")
+	if dttl <= 0 && sttl > 0 {
+		t.Errorf("%s: TTL 载入后丢失 src=%ds dst=%ds（rdb_loader 对过期字段静默）", tag, sttl, dttl)
+		mismatches++
+	} else if sttl-dttl > 2 || dttl-sttl > 2 {
+		t.Errorf("%s: TTL 偏移超容差 src=%ds dst=%ds", tag, sttl, dttl)
 		mismatches++
 	}
 	return mismatches
