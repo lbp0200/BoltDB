@@ -635,9 +635,18 @@ D 写路径开销未可观测**。
   （不重叠不遗漏）。
 - **阶段 1 落点修正**：psync.go:122 `currentTS`（FULLRESYNC 响应第 4 字段）在**锁外**
   读取（HandlePSync 早于 handler:64 SnapshotMuLock）——作为从侧 lastAppliedTS 初值
-  （reconnect.go:336）可能**早于**快照实际水位——阶段 1"RDB 线性化点 ts 化"必须把
-  currentTS 读取**移入写锁内**（与 snapshotOffset 同位），否则从侧重连请求过旧 ts
-  触发重复（有从侧去重兜底但产生无谓重传）。
+  （reconnect.go:361 `lastAppliedTS.Store(ts)`）可能**早于**快照实际水位——阶段 1
+  "RDB 线性化点 ts 化"必须把 currentTS 读取**移入写锁内**（与 snapshotOffset 同位）。
+  - **后果定级纠正（2026-09-05——本行原写"有从侧去重兜底但产生无谓重传"，该前提为假）**：
+    从侧**不存在 ts 去重**——apply 路径对每条命令无条件执行（全包仅 psync.go CONTINUE
+    区间判定与 reconnect.go 收敛判据两处比较 ts）。真实后果：从侧把该字段既当 dedup
+    阈值又当重连续播点，若在 FULLRESYNC 后**尚未 apply 任何一条命令**就断连重连，
+    以过旧 ts 续播 → 主侧重发 `(staleTs, snapshotTs]` → 该区间命令已在 RDB 内**又被执行
+    一遍**（INCR/XADD/LPUSH 等非幂等命令双应用 = 数据发散，非"仅浪费重传"）。
+    一旦从侧 apply 过至少一条命令，lastAppliedTS 即跳到 ≥ snapshotTs+1，窗口关闭。
+    **暴露面**：仅 feed 模式（`--feed-loop` 默认关时该字段不参与续播判定）。
+    **可达率未实测**——上述为按真实程序顺序摆出的状态，非竞态撞窗口；定级为
+    "窄窗口 + 后果为发散"，修复优先级高于原记录。
 - **验证测试**：`TestFullresyncTsDomainInvariant`（internal/replication/
   fullresync_ts_invariant_test.go——FULLRESYNC 响应 ts ≤ catch-up 起点 ts +
   FeedSinceTS == currentTS+1 + FeedEntriesFrom 无交集三段断言）——远程 -race 绿。

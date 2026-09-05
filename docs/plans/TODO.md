@@ -60,12 +60,31 @@ DW_READ_PROBE=1 ...                                      # 探针开 = §7 完�
 即 a4 §10 附8「阶段 1 落点修正」。
 
 - **已验**：本地 `go vet` 干净 + 远程 `-race`（replication 69.0s + server 50.9s）全绿
-- **未完成 ①**：后果定级存疑——代码注释记「从侧去重兜底，仅无谓重传」，但若从侧 dedup 阈值
-  正是这个过旧 ts，则 (staleTs, snapshotTs] 区间的命令已在 RDB 内又被重放 → **INCR/XADD/
-  LPUSH 等非幂等命令双应用（发散）**。须读通 `reconnect.go` lastAppliedTS 与 dedup 路径定级。
+- ~~**未完成 ①**：后果定级存疑~~ → **已定级（2026-09-05 读通 dedup 路径）**：从侧**不存在
+  ts 去重**（`reconnect.go` apply 路径无条件执行——全包只有 psync.go CONTINUE 区间判定与
+  reconnect.go 收敛判据两处比较 ts），历史注释「ts <= lastAppliedTS 跳过」是**虚构机制**。
+  真实后果 = FULLRESYNC 后尚未 apply 任何命令期间断连重连 → 主侧重发 `(staleTs, snapshotTs]`
+  → 已在 RDB 内的命令**再执行一遍**（非幂等命令双应用 = 发散）。窄窗口、仅 feed 模式暴露。
+  假前提的三处注释/文档已同步纠正（`replication.go` CatchUpAndEnableSlaveTS、
+  `replication_handler.go`、a4 §10 附8）。
 - **未完成 ②**：`TestFullresyncTsDomainInvariant` **不具区分能力**（pre-fix 上同样通过）——
-  需补一个在 pre-fix commit 上实测会红的守卫（`git worktree` 跑一次代价很低）。
+  需补一个在 pre-fix commit 上实测会红的守卫（`git worktree` 跑一次代价很低）。守卫形态建议：
+  INCR 计数断言——主节点在锁外读 ts 之后、取写锁之前提交 K 条 INCR，从侧 FULLRESYNC 后
+  **立刻**断连重连（不经任何 apply），最终 slave 计数应 == K（双应用则 == 2K）。
 - 未完成前**不得**标为「阶段 1 前置已完成」。
+
+### 7. 开放项：同一从侧上并发 FeedSlave 是否重发同一 ts 区间
+
+`FeedSlave`（`feed_source.go:98-126`）的「读游标 feedSinceTS → 发送 → 推进」三步**不是
+原子**的（`writeMu` 只串行化 socket 写，不串行化该三步），而 live-push（PropagateCommand
+的 feed 分支，持 `propMu.RLock`——多个写者可同时持有）与 gap 补发
+（`CatchUpAndEnableSlaveTS`，在 `propMu` 外）都可能对同一从侧调 FeedSlave。两个并发调用可
+各自读到同一个 `since` → 重发同一 ts 区间 → 从侧无去重 → 重复 apply。
+
+**与观测相左，故未定级**：`TestRegressionPsyncReconnectNoLossFeed`（3 writers）零
+EXTRA/MISMATCH 通过——本推断与它矛盾且尚无解释。**先测可达率再谈修复**（按真实程序顺序
+采样，不做竞态撞窗口）；确认后再在「FeedSlave 加每从侧游标锁 / 从侧实现 ts 去重 /
+补发与 live-push 由同一序列化点裁决」之间作为选项提交决策，不擅自改。
 
 ## 架构边界（已决策：不做）
 
