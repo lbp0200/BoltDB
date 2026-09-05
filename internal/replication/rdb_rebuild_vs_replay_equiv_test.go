@@ -71,6 +71,14 @@ func TestRDBRebuild_EquivalentToFrameReplay(t *testing.T) {
 	if _, err := src.Del("eq:gone"); err != nil {
 		t.Fatalf("Del: %v", err)
 	}
+	// ZINCRBY/ZREM 确定性重放（TODO §7——编码侧参数序 + apply 侧 return nil
+	// 静默——修复后窄版常驻回归守卫——权威序 ZINCRBY key increment member）
+	if _, err := src.ZIncrBy("eq:zset", "z0", 10); err != nil {
+		t.Fatalf("ZIncrBy: %v", err)
+	}
+	if _, err := src.ZRem("eq:zset", "z1"); err != nil {
+		t.Fatalf("ZRem: %v", err)
+	}
 
 	// ---- A：写锁内取水位 + 生成 RDB ----
 	src.SnapshotMuLock()
@@ -499,12 +507,10 @@ func TestRDBRebuild_EquivSweepAcrossCommandFamilies(t *testing.T) {
 	// knownDefects 登记「本扫面已确认不等价、但修复尚未落地」的命令族。
 	// 命中即 Skip（明确写出原因与 TODO 条目），修复落地后**删掉表项**，
 	// 该例自动成为回归守卫——不要用 t.Log 吞掉，也不要长期留在表里。
-	knownDefects := map[string]string{
-		"ZADD/ZREM/ZINCRBY": "TODO §8——log 值写成 ZINCRBY key member increment" +
-			"（主侧权威序为 key increment member，zset_commands.go:981），" +
-			"从侧 apply 分支 ParseFloat 失败后 return nil 静默丢弃该命令" +
-			"（write_command.go:820-825）——实测 A=11 / 主侧=11 / B=1",
-	}
+	// 2026-09-06：ZADD/ZREM/ZINCRBY 表项已删——修复落地（编码侧 zcard_score.go
+	// 参数序 key increment member + apply 侧 write_command.go return error——
+	// 见 TODO §7）——该例自动转正为回归守卫。
+	knownDefects := map[string]string{}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

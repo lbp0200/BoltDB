@@ -207,7 +207,7 @@ func (s *BotreonStore) ZIncrBy(zSetName, member string, increment float64) (floa
 		}
 
 		return txn.Set(metaKey, encodeMeta(meta))
-	}, 20, encodePropagateCommand([]byte("ZINCRBY"), []byte(zSetName), []byte(member), []byte(strconv.FormatFloat(increment, 'f', -1, 64))))
+	}, 20, encodePropagateCommand([]byte("ZINCRBY"), []byte(zSetName), []byte(strconv.FormatFloat(increment, 'f', -1, 64)), []byte(member)))
 	s.markZSetDirty(zSetName)
 	return newScore, err
 }

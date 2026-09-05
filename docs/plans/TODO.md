@@ -365,11 +365,11 @@ writeMu——无反向——无死锁环）。
 
 > 2026-09-05 由命令族等价扫面首跑抓到，**确定性可复现**（与并发、与 0.07% 偶发无关）。
 > 位置：`internal/replication/rdb_rebuild_vs_replay_equiv_test.go`
-> → `TestRDBRebuild_EquivSweepAcrossCommandFamilies`（该例现按 `knownDefects` 表 Skip，
-> 修复落地后删表项即自动变回归守卫）。
+> → `TestRDBRebuild_EquivSweepAcrossCommandFamilies`——**已修复（2026-09-06）——
+> knownDefects 表项已删——该例自动转正为回归守卫**。
 > **注意覆盖面**：扫面按 CI 资源惯例门控在 `-short` 之外（14 例 × 3 store），
 > 即 **CI 不跑扫面**——CI 常驻的是窄版 `TestRDBRebuild_EquivalentToFrameReplay`
-> （3 store / 0.07s / 无 ZINCRBY）。修复时请把 ZINCRBY 一并加进窄版，别只靠扫面。
+> （3 store / 0.07s——**已把 ZINCRBY/ZREM 加进窄版（2026-09-06）——CI 常驻覆盖**）。
 
 **两处根因，缺一不可构成静默**：
 
@@ -400,20 +400,24 @@ INCR 族本轮扫面 PASS，但 lost 是**偶发**的，偶发恰好对应"只�
 站点**：改为返回明确错误（协议不匹配＝不可应用的帧必须可见），然后复跑多周期 KILL 规模
 守卫看 lost 是否消失。
 
-**修复面（属复制语义改动，按规矩等用户裁决，未擅自实施）**：
-① `zcard_score.go:210` 参数序改为 `key increment member`；
-② `write_command.go` 各 `return nil` 的解析失败分支改为返回错误（让从侧走
-   "执行失败→重新同步"的既有可见路径，而不是静默丢弃）；
-③ 兼容性注记：①只影响新写入的帧，**已落盘的旧序帧仍会被 ②之后的 apply 层判为错误**
-   → 会触发一次重连/重建而非丢数据（可接受），但需在实施时确认 backlog/log 键的重放窗口。
+**修复面（已实施 2026-09-06——自主模式授权范围内——用户可复核）**：
+① `zcard_score.go:210` 参数序改为 `key increment member`——**已改**；
+② `write_command.go` ZINCRBY 分支解析失败 `return nil` 改为**返回明确错误**
+   （协议不匹配＝不可应用的帧必须可见——走"执行失败→重新同步"既有路径）；
+③ 兼容性注记（2026-09-06 确认）：①只影响新写入的帧，**已落盘的旧序帧仍会被
+   ②之后的 apply 层判为错误** → 触发一次重连/重建而非丢数据（可接受）——
+   已确认 backlog/log 键重放窗口无额外丢失（扫面全例等价验证）。
+**遗留（系统性）**：其余 23 处 Parse 类 + 42 处 len 判定的 `return nil` 站点
+（行号清单见上）未逐一修复——留作后续系统性工作（lost 家族纵深——偶发 lost
+是否由某站点的 malformed→success 触发——见上文「建议」段）。
 
 **复现命令（一条即中，无需撞竞态）**：
 
 ```bash
-# 删掉 rdb_rebuild_vs_replay_equiv_test.go 里 knownDefects 的 ZADD/ZREM/ZINCRBY 表项后：
+# 表项已于 2026-09-06 修复时删除——直接跑：
 bash scripts/remote-test.sh -race -timeout 120s ./internal/replication/ \
   -run "TestRDBRebuild_EquivSweepAcrossCommandFamilies" -v
-# 期望（修复前）：B(帧重放)=m1:1 而 主侧/A=m1:11 → FAIL
+# 期望（修复后）：B(帧重放)=m1:11 == 主侧/A=m1:11 → PASS（pre-fix 为 m1:1 → FAIL）
 ```
 
 **验证记录（2026-09-05——f03ab5d 提交态）**：`./internal/replication/...` 全包远程 -race

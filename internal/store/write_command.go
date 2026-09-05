@@ -817,13 +817,19 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 	case "ZINCRBY":
 		if len(args) >= 4 {
 			key := string(args[1])
-			if delta, err := strconv.ParseFloat(string(args[2]), 64); err == nil {
-				member := string(args[3])
-				_, err := s.ZIncrBy(key, member, delta)
-				return err
+			// 解析失败必须报错（而非 return nil 静默丢弃——lost 家族根因——
+			// TODO §7）：参数形状与权威序（key increment member——
+			// zset_commands.go:981）不一致的帧（含旧序已落盘帧）触发重连/重建
+			// 而非静默少 apply 一条。
+			delta, err := strconv.ParseFloat(string(args[2]), 64)
+			if err != nil {
+				return fmt.Errorf("ZINCRBY %s: invalid increment %q: %w", key, args[2], err)
 			}
-			return nil
+			member := string(args[3])
+			_, err = s.ZIncrBy(key, member, delta)
+			return err
 		}
+		return fmt.Errorf("ZINCRBY: missing args")
 
 	case "ZREM":
 		if len(args) >= 3 {
