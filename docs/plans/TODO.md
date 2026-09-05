@@ -31,6 +31,12 @@ WAIT / INFO `master_repl_offset` / GETACK / monitor 迁移。**backlog 环仍 Ap
   `TestRegressionHalfUpgradeByteSlave`——feed 主侧 + 字节从侧（ts=0）混合——字节
   从侧 FULLRESYNC + 字节 catch-up + 断连重连自愈全通过（数据面无丢失）——阶段 1
   双轨并存兼容承诺验证；**剩余**：阶段 2 gate 1（部署内字节从侧退役）
+- **全量回归确认（2026-09-05——阶段 1 全部落地后）**：regressions 全量守卫 9 批次
+  全绿（核心复制 7 守卫 + DuplicateWindow/BacklogExhaustion/WriteDeadlineStorm/
+  FullresyncKeyLoss/FullresyncBacklogWrap/ReplicationThrash + RetryStorm/DiskPressure/
+  L0Collapse/SplitBrain/Failover/Pubsub/RdbConcurrent/ShutdownRace/DeterministicReplay/
+  ExpireCondition/ClientBuffer）+ cmd/integration 关键批次（复制核心 8 + MasterSlave 族
+  6 + 传播族/shutdown/断连 42.2s）全绿——字节模式与 feed 模式双轨零回归
 
 ### 2. A4 阶段 2——删除 backlog 内存环（gate 严格——不可在线回滚）
 
