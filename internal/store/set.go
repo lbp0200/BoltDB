@@ -102,6 +102,80 @@ func (s *BotreonStore) retryUpdate(fn func(*badger.Txn) error, maxRetries int, l
 	return fmt.Errorf("max retries exhausted (%d): %w", maxRetries, err)
 }
 
+// retryUpdateLazy 与 retryUpdate 相同，但 logValue 延迟求值（见 commitTSLazy——
+// XADD 的 stream id 固化用——修复 log 帧写 `*` 导致从侧 id 漂移 2026-09-06）。
+func (s *BotreonStore) retryUpdateLazy(fn func(*badger.Txn) error, maxRetries int, logValue func() []byte) error {
+	bpCfg := s.bpConfig.Load()
+	if bpCfg.Enabled {
+		delay, reject := s.preWriteCheck()
+		if reject {
+			s.retryMu.Lock()
+			s.retryMetrics.l0Rejected++
+			s.retryMu.Unlock()
+			return fmt.Errorf("write rejected: L0 score %.1f exceeds hard threshold %.0f",
+				s.l0ScoreCached(), bpCfg.L0HardThreshold)
+		}
+		if delay > 0 {
+			s.retryMu.Lock()
+			s.retryMetrics.l0Delayed++
+			s.retryMu.Unlock()
+			time.Sleep(delay)
+		}
+	}
+	slot := s.backpressure.Load()
+	slot.Acquire()
+	defer slot.Release()
+	s.retryMu.Lock()
+	s.retryMetrics.activeRetries++
+	s.retryMu.Unlock()
+	var err error
+	for i := 0; i < maxRetries; i++ {
+		attemptStart := time.Now()
+		err = s.commitTSLazy(fn, logValue)
+		s.recordUpdateLatency(time.Since(attemptStart))
+		if err == nil {
+			s.retryMu.Lock()
+			s.retryMetrics.activeRetries--
+			s.retryMu.Unlock()
+			return nil
+		}
+		if errors.Is(err, badger.ErrConflict) {
+			s.retryMu.Lock()
+			s.retryMetrics.conflicts++
+			s.retryMu.Unlock()
+			baseBackoff := time.Duration(1<<uint(i)) * time.Millisecond
+			if baseBackoff > 50*time.Millisecond {
+				baseBackoff = 50 * time.Millisecond
+			}
+			jitter := time.Duration(randomFloat64() * float64(baseBackoff) * 0.5)
+			backoff := baseBackoff + jitter
+			time.Sleep(backoff)
+			continue
+		}
+		if errors.Is(err, badger.ErrBlockedWrites) {
+			s.retryMu.Lock()
+			s.retryMetrics.writesBlocked++
+			s.retryMu.Unlock()
+			baseBackoff := time.Duration(1<<uint(i)) * time.Millisecond
+			if baseBackoff > 2*time.Second {
+				baseBackoff = 2 * time.Second
+			}
+			jitter := time.Duration(randomFloat64() * float64(baseBackoff) * 0.2)
+			backoff := baseBackoff + jitter
+			time.Sleep(backoff)
+			continue
+		}
+		s.retryMu.Lock()
+		s.retryMetrics.activeRetries--
+		s.retryMu.Unlock()
+		return err
+	}
+	s.retryMu.Lock()
+	s.retryMetrics.activeRetries--
+	s.retryMu.Unlock()
+	return fmt.Errorf("max retries exhausted (%d): %w", maxRetries, err)
+}
+
 // recordUpdateLatency 记录单次 db.Update 尝试的慢写分桶（阶段 0 观测——零开销设计：
 // 快速路径（≤10ms）仅一次时间差比较即返回，无锁；仅慢写（>10ms）在 retryMu 下自增，
 // 避免给写路径（C5：对任何额外扰动极度敏感——1c-complete-fix-design.md §2）增加常规锁开销）。

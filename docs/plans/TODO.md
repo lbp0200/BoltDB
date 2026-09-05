@@ -486,6 +486,30 @@ malformed→success 已改为明确错误（协议不匹配＝不可应用的帧
 len 边界不足的全站性模式（42 处）与 default 数字跳过（2608——防级联风暴）
 保持不修（范围控制——见上）。
 
+**等价扫面扩展（第二轮——2026-09-06——19→22 例——抓到 2 个新确定性缺陷）**：
+新增 LREM / XACKDEL / GEOADD+GEOSEARCHSTORE（list 删除 / stream 消费确认 /
+geo 存储式搜索——本轮 apply 层系统性修复命令族的未覆盖部分）——远程 -race
+全绿（ok 6.231s）——
+**新缺陷 ① LREM 复制传播缺失**（真实缺陷——静默主从不一致）：`LRem` 的
+retryUpdate 无 log 编码（linsert.go:297——对照 LTrim/LSet 写 log）——LREM
+帧不进复制日志——从侧重放缺 LREM——主侧删了从侧不删（实测 B 帧重放=
+"a,b,a,c,a" vs 主侧/A="b,c,a"——frames=1 只有 RPUSH 帧）——修复：
+`encodePropagateCommand(LREM key count value)`（参数序与 WriteCommand LREM
+分支一致）——
+**新缺陷 ② XADD log 帧写 `*`——从侧 id 漂移**（真实缺陷——影响所有依赖精确
+id 的 stream 命令）：xadd.go 的 log 编码闭包**立即求值**（retryUpdate 第三
+参数——fn 执行前）——id 还是原始 `*`（79 行生成逻辑未跑）——log 帧写
+`XADD key * f v`——从侧重放重新生成 id（时间戳不同）→ XDEL/XACK/XACKDEL
+等带主侧 id 的帧在从侧找不到目标（apply err=nil 但删 0 条——静默——实测
+XACKDEL 例 B 帧重放 XLen=2 vs 主侧/A=1）——修复：`commitTSLazy`/
+`retryUpdateLazy`（ts_source.go/set.go——logValue 延迟求值——fn 成功后调用
+——同事务原子——不动既有 retryUpdate/commitTS 及 ~100 处调用点）+ XAdd 改用
+（xadd.go——log 帧固化生成的 id——从侧 XDEL/XACK 精确匹配）——
+GEOSEARCHSTORE 例等价保持（无新缺陷——编码/apply 一致）。
+**验证（2026-09-06）**：扫面 22 例远程 -race 全绿（ok 6.231s——含新例转正）
+——store 包全包远程 -race -short 绿 134.8s（linsert/set/ts_source/xadd 修复
+无回归）——本地 BUILD+VET 0 issues。
+
 **复现命令（一条即中，无需撞竞态）**：
 
 ```bash

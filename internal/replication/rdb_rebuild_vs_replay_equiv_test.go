@@ -590,6 +590,60 @@ func TestRDBRebuild_EquivSweepAcrossCommandFamilies(t *testing.T) {
 			b, _ := s.TTL("sw:ea")
 			return ttlPresence(a) + "/" + ttlPresence(b)
 		}},
+
+		{"LREM", func(t *testing.T, s *store.BotreonStore) {
+			if _, err := s.RPush("sw:lrem", "a", "b", "a", "c", "a"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.LRem("sw:lrem", 2, "a"); err != nil {
+				t.Fatal(err)
+			}
+		}, func(s *store.BotreonStore) string {
+			v, _ := s.LRange("sw:lrem", 0, -1)
+			return strings.Join(v, ",")
+		}},
+
+		{"XACKDEL", func(t *testing.T, s *store.BotreonStore) {
+			id1, err := s.XAdd("sw:xack", store.StreamXAddOptions{}, "*", map[string]string{"f1": "v1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.XAdd("sw:xack", store.StreamXAddOptions{}, "*", map[string]string{"f2": "v2"}); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.XGroupCreate("sw:xack", "g1", "0"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.XAck("sw:xack", "g1", id1); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.XDel("sw:xack", id1); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.XAckDelRemoveRefs("sw:xack", id1); err != nil {
+				t.Fatal(err)
+			}
+		}, func(s *store.BotreonStore) string {
+			n, _ := s.XLen("sw:xack")
+			return fmt.Sprintf("%d", n)
+		}},
+
+		{"GEOADD/GEOSEARCHSTORE", func(t *testing.T, s *store.BotreonStore) {
+			if _, err := s.GeoAdd("sw:gs", []store.GeoMember{{Member: "p1", Lat: 38.11, Lon: 13.36}, {Member: "p2", Lat: 38.71, Lon: 15.52}}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.GeoSearchStore("sw:gsd", "sw:gs", 13.5, 38.5, 500, "km", 10, false, "RADIUS", 0); err != nil {
+				t.Fatal(err)
+			}
+		}, func(s *store.BotreonStore) string {
+			z, _ := s.ZRange("sw:gsd", 0, -1)
+			o := make([]string, 0, len(z))
+			for _, m := range z {
+				o = append(o, m.Member)
+			}
+			sort.Strings(o)
+			return strings.Join(o, ",")
+		}},
 	}
 
 	// knownDefects 登记「本扫面已确认不等价、但修复尚未落地」的命令族。

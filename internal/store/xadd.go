@@ -39,7 +39,7 @@ func (s *BotreonStore) XAdd(key string, opts StreamXAddOptions, id string, field
 	defer s.keyLockMgr.Unlock(key)
 	var resultID string
 
-	err := s.retryUpdate(func(txn *badger.Txn) error {
+	err := s.retryUpdateLazy(func(txn *badger.Txn) error {
 		typeKey := TypeOfKeyGet(key)
 		typeItem, typeErr := txn.Get(typeKey)
 		if typeErr == nil {
@@ -192,7 +192,7 @@ func (s *BotreonStore) XAdd(key string, opts StreamXAddOptions, id string, field
 			args = append(args, []byte(f), []byte(v))
 		}
 		return encodePropagateCommand(args...)
-	}())
+	})
 
 	if err == nil && resultID != "" {
 		s.notifyStreamRead(key, []StreamEntry{

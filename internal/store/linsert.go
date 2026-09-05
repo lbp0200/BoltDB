@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/dgraph-io/badger/v4"
 )
@@ -294,6 +295,6 @@ func (s *BotreonStore) LRem(key string, count int64, value string) (int, error) 
 			return s.listUpdateMeta(txn, key, newLength, currentStart, currentEnd)
 		}
 		return nil
-	}, 30)
+	}, 30, encodePropagateCommand([]byte("LREM"), []byte(key), []byte(strconv.FormatInt(count, 10)), []byte(value)))
 	return removed, err
 }

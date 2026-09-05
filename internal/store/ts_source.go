@@ -124,3 +124,30 @@ func (s *BotreonStore) commitTS(fn func(*badger.Txn) error, logValue ...[]byte) 
 	s.discardMu.Unlock()
 	return nil
 }
+
+// commitTSLazy 与 commitTS 相同，但 logValue 为延迟求值函数（fn 成功后再调用——
+// 支持依赖事务内结果的 log 编码（XADD 的 stream id 生成——修复 log 帧写 `*`
+// 导致从侧重放 id 漂移——lost 家族扫面扩展发现 2026-09-06）。
+func (s *BotreonStore) commitTSLazy(fn func(*badger.Txn) error, logValue func() []byte) error {
+	txn := s.db.NewTransactionAt(math.MaxUint64, true)
+	defer txn.Discard()
+	ts := s.tsSource.Begin()
+	defer s.tsSource.End(ts)
+	if err := fn(txn); err != nil {
+		return err
+	}
+	if lv := logValue(); len(lv) > 0 {
+		if err := txn.Set(replLogKey(ts), lv); err != nil {
+			return err
+		}
+	}
+	if err := txn.CommitAt(ts, nil); err != nil {
+		return err
+	}
+	s.discardMu.Lock()
+	if sd := s.tsSource.AdvanceDiscard(); sd > 0 {
+		s.db.SetDiscardTs(sd)
+	}
+	s.discardMu.Unlock()
+	return nil
+}
