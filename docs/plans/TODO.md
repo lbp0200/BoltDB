@@ -53,62 +53,33 @@ DW_READ_PROBE=1 ...                                      # 探针开 = §7 完�
 主侧发送字节 vs 从侧接收字节的**抓包级**直接比对（层 D——外部工具）。是「恢复路径重设计
 （层 C：降级无损化）」与 A4 S3 的前提。§1c 失败链的最后一环至今未实证。
 
-### 6. 悬空改动：FULLRESYNC ts 移入写锁（未提交 + 缺区分守卫）
-
-`internal/server/replication_handler.go` 工作区有未提交改动——第 4 字段由 `result.TS`
-（`HandlePSync` 锁外读）改为 `snapshotTS`（`SnapshotMuLock` 写锁内读 `ReplLogCurrentTS`）。
-即 a4 §10 附8「阶段 1 落点修正」。
-
-- **已验**：本地 `go vet` 干净 + 远程 `-race`（replication 69.0s + server 50.9s）全绿
-- ~~**未完成 ①**：后果定级存疑~~ → **已定级（2026-09-05 读通 dedup 路径）**：从侧**不存在
-  ts 去重**（`reconnect.go` apply 路径无条件执行——全包只有 psync.go CONTINUE 区间判定与
-  reconnect.go 收敛判据两处比较 ts），历史注释「ts <= lastAppliedTS 跳过」是**虚构机制**。
-  真实后果 = FULLRESYNC 后尚未 apply 任何命令期间断连重连 → 主侧重发 `(staleTs, snapshotTs]`
-  → 已在 RDB 内的命令**再执行一遍**（非幂等命令双应用 = 发散）。窄窗口、仅 feed 模式暴露。
-  假前提的三处注释/文档已同步纠正（`replication.go` CatchUpAndEnableSlaveTS、
-  `replication_handler.go`、a4 §10 附8）。
-- **未完成 ②**：`TestFullresyncTsDomainInvariant` **不具区分能力**（pre-fix 上同样通过）——
-  需补一个在 pre-fix commit 上实测会红的守卫（`git worktree` 跑一次代价很低）。守卫形态建议：
-  INCR 计数断言——主节点在锁外读 ts 之后、取写锁之前提交 K 条 INCR，从侧 FULLRESYNC 后
-  **立刻**断连重连（不经任何 apply），最终 slave 计数应 == K（双应用则 == 2K）。
-  **与 §7 的发生率测量共用同一 harness**（同一判据形态：非幂等写入 + 主从计数比对）——
-  一起做，别写两遍。
-- 未完成前**不得**标为「阶段 1 前置已完成」。
-
-### 7. 开放项：同一从侧上并发 FeedSlave 是否重发同一 ts 区间
+### 6. ✅ 并发 FeedSlave 重发——**重复 apply 已确认（2026-09-05）——修复决策待定**
 
 `FeedSlave`（`feed_source.go:98-126`）的「读游标 feedSinceTS → 发送 → 推进」三步**不是
-原子**的（`writeMu` 只串行化 socket 写，不串行化该三步），而 live-push（PropagateCommand
-的 feed 分支，持 `propMu.RLock`——多个写者可同时持有）与 gap 补发
+原子**的（`writeMu` 只串行化 socket 写），而 live-push（PropagateCommand 的 feed
+分支，持 `propMu.RLock`——多个写者可同时持有）与 gap 补发
 （`CatchUpAndEnableSlaveTS`，在 `propMu` 外）都可能对同一从侧调 FeedSlave。两个并发调用可
 各自读到同一个 `since` → 重发同一 ts 区间 → 从侧无去重 → 重复 apply。
 
-**与观测相左——已解释（2026-09-05）：那个"零 EXTRA/MISMATCH"对本缺陷零检测能力。**
-`TestRegressionPsyncReconnectNoLossFeed` 的判据是 `verifyUniqueTokenSet`
-（`psync_reconnect_noloss_test.go:201`——两边键集合比对 + 逐键 GET 比值），写入用
-`writeUniqueToken`（同文件 :173——每序列号一个**新唯一键**的 SET）。同一份
-`SET unq:w1:5 tok:1:5` 被 apply 两遍，键还在、值不变——**在"键集合"和"值一致"两个判据
-维度上都不留痕迹**。所以该守卫通过 ≠ 不存在重复应用，它只是测不到。反证解除。
+**发生率测量（2026-09-05——`concurrent_feed_slave_test.go`——`REPLAY_RATE_MEASURE=1` 复跑）**：
+判据 = 非幂等 INCR（每写者独立键）+ 主从计数比对。feed 双侧 + 4 写者 + 6 断连周期，
+`-count=5` 两次（10 轮）——
+- **5/5 轮 × 4/4 键全部复现**（第二次完整 5 轮；首次 3 轮即全复现）——slave ≈ 2.3× master
+  （每键 +625~+749），lost=0
+- **结论：不是窄窗口——常态路径**。slave 字节 offset 超前主侧 3.5×（mo=63k so=233k）
+  与计数翻倍同源（feed 帧重复 apply 推进 lastAppliedTS/字节 offset 多次）
+- 既有守卫零检测能力已解释（`verifyUniqueTokenSet` 幂等键集比对查不出重复应用——§7 判据教训）
 
-**前提侧已穷尽核对**：`FeedSlave` 全仓只有两个调用者——`replication.go:439`（live-push，
-在 `propMu.RLock` 内）与 `replication.go:530`（gap 补发，在 `propMu` 外）；
-`PropagateCommand` 的生产调用点按客户端连接分布（`handler_core.go:821` 等），天然并发。
-即"同一从侧上并发 FeedSlave"不是人造交错，是常态形状。
+**下一步 = 修复决策（不擅自改——选项提交决策）**：
+1. FeedSlave 加每从侧游标锁（feedSinceTS 读-发-推原子化——最小面）
+2. 从侧实现 ts 去重（apply 路径 ts ≤ lastAppliedTS 跳过——与 §6 定级的"无去重"现状相反，
+   需评估 RDB/补发边界的语义一致）
+3. 补发与 live-push 由同一序列化点裁决（gap 补发移入 propMu 内——防交错）
 
-**下一步 = 测发生率（未做）**：判据必须换成**非幂等**写入才有意义——
-`INCR`（双应用 → 计数翻倍）或 `RPUSH`（双应用 → 列表变长）。形态：feed 模式双侧
-`EnableFeedLoop` + 多写者写**不同键** + 若干断连周期，跑 N 轮比对主从两侧值。
-`master == slave` → 推断不成立，据实降级并记录判据；`slave > master` → 重复 apply 确认。
-**可与 §6 ② 的区分守卫共用同一 harness**（§6 的断言正好也是 INCR 计数 == K）。
-
-**通用判据教训（本轮产出，适用后续所有守卫）**：凡"零丢失/零多余/全绿"的守卫，先问一句
+**通用判据教训**（本轮产出，适用后续所有守卫）：凡"零丢失/零多余/全绿"的守卫，先问一句
 ——**它的判据维度覆不覆盖目标缺陷的表现形式**。幂等写入的键集比对查不出重复应用，
 一如严格相等断言查不出顺序错乱。守卫写完后到 **pre-fix commit 上跑一次确认会红**
 （`git worktree` 代价很低）是唯一可靠的自检。
-
-**先测可达率再谈修复**（按真实程序顺序采样，不做竞态撞窗口）；确认后再在
-「FeedSlave 加每从侧游标锁 / 从侧实现 ts 去重 / 补发与 live-push 由同一序列化点裁决」
-之间作为选项提交决策，不擅自改。
 
 ## 架构边界（已决策：不做）
 
@@ -138,4 +109,5 @@ DW_READ_PROBE=1 ...                                      # 探针开 = §7 完�
 | backlog 退役前置（增量 seek / WAL 双轨 / 换算表 / RDB 线性化点前置验证） | 2026-09-04~05 | `a4-engine-seq-replication.md` §10 附8 |
 | GETACK 回复参数量测试（`handler_coverage5_test.go:649` 3 参→4 参） | 2026-09-04 | 断言改 4 参 + 校验第 4 参 == currentTS——远程 server 全包绿 43.3s；注：`handler_depth_test.go:1304` 走 3 参路径，断言 3 参正确，不在范围 |
 | v8.52.0 发版基线（`--full` 无 -short 全量） | 2026-09-05 | a4 §10 附9——soak 类属 tier-C nightly，不阻塞 PR gate |
+| §6 FULLRESYNC 线性化点 ts 移入写锁 + **区分守卫** | 2026-09-05 | 5a3fb51 落点修正；守卫 `fullresync_ts_double_apply_test.go`——post-fix 绿（ctr=5==K）/ pre-fix e5dc482 worktree 红（ctr=10==2K 双应用）——`HandlePSyncAfterTSRead` 钩子（psync.go，生产 nil） |
 | §3 split-brain 家族 flake | 2026-09-01 | 负载敏感时序扰动（gossip HelloInterval 500ms），非共识缺陷；三重测移除 `t.Parallel()`；家族维持 documented-unreliable |

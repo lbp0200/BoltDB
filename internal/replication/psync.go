@@ -18,6 +18,13 @@ type PSyncResult struct {
 	TS         uint64 // 主侧 ts 水位（S2 PSYNC-ts——④）
 }
 
+// HandlePSyncAfterTSRead 测试钩子（生产恒 nil——零开销）：FULLRESYNC 分支在
+// HandlePSync 锁外读 currentTS（psync.go:122）之后、返回之前调用——精确模拟
+// 「锁外读 ts 与快照实际水位（SnapshotMuLock）之间」的提交窗口（TODO §6 ②
+// 区分守卫注入点：窗口内提交 K 条非幂等命令 → pre-fix 通告旧 ts → 从侧断连重连
+// 后重发已在 RDB 内的区间 → 双应用）。测试内设置 + defer 置回 nil。
+var HandlePSyncAfterTSRead func()
+
 // HandlePSync 处理PSYNC命令（主节点端）
 func HandlePSync(rm *ReplicationManager, replId string, offset int64, ts uint64) (*PSyncResult, error) {
 	rm.mu.RLock()
@@ -120,6 +127,10 @@ func HandlePSync(rm *ReplicationManager, replId string, offset int64, ts uint64)
 
 	// 需要全量同步
 	currentTS, _ := rm.store.ReplLogCurrentTS()
+	// 测试钩子：锁外读 currentTS 之后（TODO §6 ②——窗口内提交注入点——生产 nil）
+	if HandlePSyncAfterTSRead != nil {
+		HandlePSyncAfterTSRead()
+	}
 	logger.Logger.Info().
 		Str("requested_repl_id", replId).
 		Str("current_repl_id", currentReplId).
