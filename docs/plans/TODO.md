@@ -55,6 +55,15 @@ WAIT / INFO `master_repl_offset` / GETACK / monitor 迁移。**backlog 环仍 Ap
 2. 换算表双轨核验持续通过（`ReplConversionTable.AlignCheck`——过渡期验证锚）；
 3. feed-mode 规模验证零丢失持续（`TestRegressionPsyncReconnectNoLossFeed` 退役前再复跑）。
 
+**gate 现状（2026-09-05 核验——阶段 1 全部落地后）**：
+- **gate 2 持续通过**：换算表 5 测试远程 -race 全 PASS（DualTrack/DetectsDivergence/
+  ConcurrentWriters/Empty + TestTSReplayEquivalence——1.65s）；
+- **gate 3 持续通过**：`TestRegressionPsyncReconnectNoLossFeed` 复跑 PASS 45.53s
+  （零 MISSING/EXTRA/MISMATCH）；
+- **gate 1 未满足（唯一剩余）**：部署内字节从侧退役——部署面——需运维确认部署
+  内从侧全量 `--feed-loop` 且无 ts=0 请求进入 PSYNC——代码面无法核验——阶段 2
+  实施等待此 gate
+
 **删除面审计与实施蓝图（2026-09-05——代码面已核对——gate 满足后的执行顺序）**：
 
 | 删除点 | 生产调用点（现状） | gate 相关性 |
