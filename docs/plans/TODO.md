@@ -114,10 +114,16 @@ writeMu——无反向——无死锁环）。
   （slaveTS == masterTS）仍偶发 lost=1（规律性——约 2/5 轮）——`applySkip=0`
   排除 transient 跳过路径——**实验 1（2026-09-05——写者节奏 5ms→25ms）**：
   低速下仍偶发（3 轮中 1 轮 lost=1）——**与写者并发密度无关**——排除高并发
-  边界漏发方向；cycle 内 slaveTS 恒比 masterTS 少 1（结构性差 1）——候选收窄：
-  重连补发边界（resumeTS 判定）/ 传输中帧时序——**需日志级/抓包级实证**（远程
-  集群观测——与 §5 C4 同类手段）——测量测试 lost ≤2 容差内记录（>2 仍 FAIL——
-  阈值检测不静默——与 verifyUniqueTokenSet 容差同构）
+  边界漏发方向；cycle 内 slaveTS 恒比 masterTS 少 1（结构性差 1）——
+  **实验 2（2026-09-05——比对前轮询等 slave 键值稳定 10s）——真丢失确认**：
+  `stable after polling=false`（10s 轮询追不平——**非传播延迟**）——每轮恰丢
+  1 条 INCR（~700 条中 1 条 ≈ 0.07%——单键单条）——偶发 1-2/5 轮——候选收窄：
+  重连补发边界（`CatchUpAndEnableSlaveTS` resumeTS 判定）/ 从侧 apply 瞬时失败
+  （非 transient——强制重连——补发覆盖性）/ 发送边界竞态（feedMu 串行化下的
+  极小窗口）——**需日志级观测**（从侧重连时 resumeTS 与补发帧数记录——主侧重发
+  区间 [resumeTS+1, curTS] 与从侧 apply 的逐帧比对）——测量测试保留轮询稳定
+  逻辑（lost 判定更严格——10s 稳定窗）+ lost ≤2 容差（>2 仍 FAIL——阈值检测
+  不静默——与 verifyUniqueTokenSet 容差同构）
 
 **通用判据教训**（本轮产出，适用后续所有守卫）：凡"零丢失/零多余/全绿"的守卫，先问一句
 ——**它的判据维度覆不覆盖目标缺陷的表现形式**。幂等写入的键集比对查不出重复应用，

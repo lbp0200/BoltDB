@@ -159,19 +159,43 @@ func TestRegressionConcurrentFeedSlaveReplayRate(t *testing.T) {
 	sc := redis.NewClient(&redis.Options{Addr: slave.Addr, DialTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second})
 	defer sc.Close()
 
+	// 实验 2（lost 开放项定向——区分传播延迟 vs 真丢失）：先取 master 值（停写后
+	// 静止）→ 轮询等 slave 全部键值 == master（最长 10s）——超时仍有差异 = 真丢失
+	// （传播延迟已排除）。
+	mv := make([]int64, writers)
+	for i := 0; i < writers; i++ {
+		mv[i] = getInt(ctx, t, master.Client, fmt.Sprintf("replay:ctr:%d", i))
+	}
+	stable := false
+	for attempt := 0; attempt < 20; attempt++ {
+		equal := true
+		for i := 0; i < writers; i++ {
+			v, err := sc.Get(ctx, fmt.Sprintf("replay:ctr:%d", i)).Int64()
+			if err != nil || v != mv[i] {
+				equal = false
+				break
+			}
+		}
+		if equal {
+			stable = true
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Logf("replay-rate: slave values stable after polling=%v (master=%v)", stable, mv)
+
 	dup := 0
 	lost := 0
 	for i := 0; i < writers; i++ {
 		key := fmt.Sprintf("replay:ctr:%d", i)
-		mv := getInt(ctx, t, master.Client, key)
 		sv := getInt(ctx, t, sc, key)
-		if sv > mv {
+		if sv > mv[i] {
 			dup++
 			t.Logf("replay-rate: DUPLICATE-APPLY %s: master=%d slave=%d (+%d)",
-				key, mv, sv, sv-mv)
-		} else if sv < mv {
+				key, mv[i], sv, sv-mv[i])
+		} else if sv < mv[i] {
 			lost++
-			t.Logf("replay-rate: LOST %s: master=%d slave=%d", key, mv, sv)
+			t.Logf("replay-rate: LOST %s: master=%d slave=%d", key, mv[i], sv)
 		}
 	}
 
