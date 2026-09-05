@@ -304,6 +304,15 @@ writeMu——无反向——无死锁环）。
      **30/30 轮全保真**（本地 4052 次并发写，远程 -race 252 次同样保真）。
      探测器有效性由构造保证：若载入侧真丢条目，逐键读会落到错误分支或值不等；
      DBSize 为全局键数比对，任何静默跳过/解析错位都会在此暴露。
+   - **补上一处空白守卫（新）**——`rdb_rebuild_vs_replay_equiv_test.go`：此前**没有任何
+     测试比过「A 重建态 = RDB 载入空 store」与「B 追平态 = 空 store 按 ts 重放全部帧」
+     是否同态**（`replay_guard_test.go` 比的是 log 帧 vs 字节 backlog，
+     `rdb_roundtrip_fidelity_test.go` 比的是生成+载入 vs 生成时主侧态）。生产里一条命令
+     只走其中一条，两者一旦不等即「同一历史、接入方式不同、结果不同」——与 lost 同型。
+     **实测：ts≤58 共 58 帧、13 键逐键一致（含被 DEL 的键与 TTL 桶）→ 等价成立，
+     该维度现由常驻守卫覆盖**。探针同时充当「log-key 语义跳过清单」检查器（改数据不写帧
+     的命令会让 B 缺该改动而 A 有——本轮未见）。耗时 0.07s、纯确定无并发，
+     故**故意不加 `-short` 门控**——它是这一维度唯一能进 CI 的守卫。
    - **由此得到的结构性结论（可证明，不只靠测量）**：MaxUint64 读者只会
      **多含**（读到 snapshotTS 之后的提交），**绝不会少含**。故
      **RDB 侧结构上不可能造成 lost——它最多造成 dup**（多含的键其帧 ts > snapshotTS
@@ -351,6 +360,52 @@ writeMu——无反向——无死锁环）。
 的定义恰是**把部署推向全 feed 模式**（字节从侧退役）。lost 只出现在 feed 双侧路径，
 故 gate 1 一旦达成，"默认关所以非阻塞"的前提即失效，0.07% 的静默单条丢失转为线上问题。
 **lost 的定位应先于或至少并行于 gate 1 的部署动作**，不宜排在阶段 2 之后。
+
+### 7. 确认缺陷：ZINCRBY 复制不等价 + apply 层系统性「解析失败即报成功」
+
+> 2026-09-05 由命令族等价扫面首跑抓到，**确定性可复现**（与并发、与 0.07% 偶发无关）。
+> 位置：`internal/replication/rdb_rebuild_vs_replay_equiv_test.go`
+> → `TestRDBRebuild_EquivSweepAcrossCommandFamilies`（该例现按 `knownDefects` 表 Skip，
+> 修复落地后删表项即自动变回归守卫）。
+> **注意覆盖面**：扫面按 CI 资源惯例门控在 `-short` 之外（14 例 × 3 store），
+> 即 **CI 不跑扫面**——CI 常驻的是窄版 `TestRDBRebuild_EquivalentToFrameReplay`
+> （3 store / 0.07s / 无 ZINCRBY）。修复时请把 ZINCRBY 一并加进窄版，别只靠扫面。
+
+**两处根因，缺一不可构成静默**：
+
+1. **编码侧参数序颠倒**——`internal/store/zcard_score.go:210` 把 log 值写成
+   `ZINCRBY <key> <member> <increment>`；而主侧权威解析是
+   `ZINCRBY <key> <increment> <member>`（`internal/server/zset_commands.go:981-985`：
+   `key=args[0]`、`delta=args[1]`、`member=args[2]`）。
+2. **apply 侧把协议错误吞成成功**——`internal/store/write_command.go:817-826`：
+   `if delta, err := ParseFloat(args[2]); err == nil { … }` **`return nil`**——
+   `args[2]` 是 member（非数字）时解析失败，**返回 nil＝"该命令已成功应用"**。
+
+**实测（同一历史，三条状态）**：主侧 `m1:11` ／ A(RDB 载入空 store) `m1:11` ／
+**B(按 ts 重放 log 帧) `m1:1`**。即：走 FULLRESYNC 重建的从侧正确，走 CONTINUE 帧追平的
+从侧**永久少一次 ZINCRBY，且全程零错误、零 applySkip 计数、零停滞触发**。
+
+**为什么这是 lost 方向上最值钱的一条**：§6 的四层检查结论是"INCRBY 路径无静默失败路径"，
+但 `WriteCommand` 的默认失败模式恰恰是**"报成功但什么都没做"**——实测统计（脚本按函数体
+`write_command.go:26-2613` 逐行扫）：**209 个 `case` 命令分支里 107 处整行 `return nil`**，
+其中 **24 处紧邻 `ParseFloat/ParseInt/Atoi`**（解析失败即返回成功）、**42 处紧邻
+`len(args)` 判定**（参数数不足即返回成功），另有 41 处其他 `return nil`。
+Parse 类 24 站的绝对行号：238 251 264 277 603 613 624 736 747 **825(ZINCRBY)** 869 893
+1103 1134 1154 1178 1198 1222 1316 1728 1760 2139 2245 2605。
+
+含义：**任何一帧的参数形状与该分支期望不完全一致，就会被静默丢弃**——表现为
+"帧全部 apply 完成 + 计数偏小 + 零错误 + 零 applySkip + 零停滞"，与 §6 lost 签名逐项吻合。
+INCR 族本轮扫面 PASS，但 lost 是**偶发**的，偶发恰好对应"只在某种参数形状/某种命令变体下
+触发"的静默分支。建议把 §6 的搜索从"时序竞态"转向**逐分支审计这 66 处 malformed→success
+站点**：改为返回明确错误（协议不匹配＝不可应用的帧必须可见），然后复跑多周期 KILL 规模
+守卫看 lost 是否消失。
+
+**修复面（属复制语义改动，按规矩等用户裁决，未擅自实施）**：
+① `zcard_score.go:210` 参数序改为 `key increment member`；
+② `write_command.go` 各 `return nil` 的解析失败分支改为返回错误（让从侧走
+   "执行失败→重新同步"的既有可见路径，而不是静默丢弃）；
+③ 兼容性注记：①只影响新写入的帧，**已落盘的旧序帧仍会被 ②之后的 apply 层判为错误**
+   → 会触发一次重连/重建而非丢数据（可接受），但需在实施时确认 backlog/log 键的重放窗口。
 
 ## 架构边界（已决策：不做）
 
