@@ -59,6 +59,10 @@
 >    复制 8.0s + cluster 13.1s 重测组）全绿——停滞+降级事件合计 = **0 < 2**
 >    ——§7 门槛"`--full` 停滞+降级合计 < 2"满足——判据翻转验证闭环完整
 >    （A/B A 组 15/15 + B 组 15/15 + 纯对照 15/15 + 守卫全绿 + --full 0 事件）。
+>    **复制守卫复跑（2026-09-05——判据翻转后 AGENTS.md 强制项）**：
+>    `TestRegressionSnapshotFullresyncOffset`（58.5s）+ `TestRegressionPsyncReconnectNoLoss`
+>    （75.5s）+ feed 变体 `TestRegressionPsyncReconnectNoLossFeed`（46.8s）全绿——
+>    停滞/降级事件均 0——判据翻转对快照边界/重连零丢失路径无回归。
 > 2. 架构级：**A4 复制记账引擎序列化——已立项（2026-09-03）**——managed-mode ts 迁移
 >    （S0 引擎研究 ✅ → **S1-A1 应用层 key 锁层 ✅（2026-09-03——补差 + 覆盖完备性复核
 >    双里程碑）** → **S1-A2 切引擎 ✅（2026-09-03——§10 附5——全量验证绿）** → S2 复制
