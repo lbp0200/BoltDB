@@ -37,6 +37,13 @@ WAIT / INFO `master_repl_offset` / GETACK / monitor 迁移。**backlog 环仍 Ap
   L0Collapse/SplitBrain/Failover/Pubsub/RdbConcurrent/ShutdownRace/DeterministicReplay/
   ExpireCondition/ClientBuffer）+ cmd/integration 关键批次（复制核心 8 + MasterSlave 族
   6 + 传播族/shutdown/断连 42.2s）全绿——字节模式与 feed 模式双轨零回归
+- **最终门禁确认（2026-09-05——18 提交后）**：internal 全包 -race -short 11 包全绿
+  （replication 70.0s / server 44.7s / store 127.1s / cluster / sentinel 等）+ cmd/boltDB
+  + cmd/integration 命令功能批次（String/List/Hash/Set/ZSet/Stream/Geo/HLL/TimeSeries/
+  PubSub/Expire/TTL——86.6s）全绿——**已知既有失败**：`TestBackupManager_BackupBadger`
+  （internal/backup——panic: This API can not be called in managed mode——backup 包
+  最近改动 14735f8（历史提交）——与今日改动无关——S1-A2 managed 切换后的既有兼容
+  问题——待专门处理——不入今日范围）
 
 ### 2. A4 阶段 2——删除 backlog 内存环（gate 严格——不可在线回滚）
 
