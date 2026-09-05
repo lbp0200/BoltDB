@@ -445,6 +445,23 @@ INCR 族本轮扫面 PASS，但 lost 是**偶发**的，偶发恰好对应"只�
 （行号清单见上）未逐一修复——留作后续系统性工作（lost 家族纵深——偶发 lost
 是否由某站点的 malformed→success 触发——见上文「建议」段）。
 
+**apply 层系统性审计修复（2026-09-06——自主模式——用户可复核）**：遗留的 Parse
+类 + 相邻参数校验 return nil 站点**已逐站审计并修复**（同 ZINCRBY 模式——协议
+不匹配的帧必须可见——走「执行失败→重新同步」既有路径）——**修复集（11 组 /
+25+ 处）**：INCRBYFLOAT/SETRANGE（`_` 忽略解析错误——196/207）／LSET/LREM/LTRIM
+（600/609/619）／SETBIT（1103）／ZUNIONSTORE+ZINTERSTORE（numKeys/WEIGHTS/
+AGGREGATE——1138+/1182+）／GEOSEARCHSTORE（FROMMEMBER/FROMLONLAT/BYRADIUS/
+BYBOX/COUNT 边界——1723-1796）／XACKDEL（IDS/numids——2137-2146）／SET TTL
+（EX/PX/EXAT/PXAT 解析失败静默跳过——48-87——从侧永久无 TTL 的一致性隐患）——
+**合法保持（不修）**：default 数字命令跳过（2608——防级联重同步风暴——注释确认）、
+GEOSEARCHSTORE FROMMEMBER 0,0 坐标（主侧镜像未写）、BYBOX width/height≤0（主侧
+镜像未写）、BITFIELD（WriteCommand 无静默点——operations 原样传 store 层解析）、
+len(args) 边界不足的全站性模式（209 case 全局——本轮控制范围不修——留后续）。
+**验证（2026-09-06）**：本地 BUILD+VET+lint 0 issues——远程 store 全包 -race
+-short 绿 131.4s + replication 全包 -race -short 绿 51.97s + 等价扫面 19 例+窄版
+转正（ok 5.9s——修复不破坏正常帧）——**lost 家族纵深收尾**（malformed→success
+静默面系统性消除——偶发 lost 的该方向假设闭环——见 §6 已收口）。
+
 **同族新缺陷（2026-09-06——等价扫面扩展 HINCRBYFLOAT 例抓到——已修复）**：
 `HIncrByFloat`/`HIncrBy` 单独创建 hash 键时不写 typeKey（`TYPE_` 标记——对照
 HMSet:418 写 `txn.Set(typeKey, KeyTypeHash)`）——**RDB 生成按 `TYPE_` 前缀遍历
@@ -462,10 +479,12 @@ INCRBYFLOAT / ZUNIONSTORE+ZINTERSTORE / GEOADD+GEOSEARCH / XADD+XTRIM——
 string 浮点 / zset 聚合 / geo / stream 族）——远程 -race 全 PASS（ok 5.774s）
 ——**无新确定性缺陷**（编码侧 log 值参数序均与 apply 解析一致——与已修的
 ZINCRBY（编码参数序 + apply return nil）与 HINCRBYFLOAT（无 typeKey → RDB
-漏键）形成对照）——**Parse 类 return nil 剩余站点**（SET TTL 参数 / LSET/LTRIM /
-stream 其他等）留作防御性后续（正常帧不触发——malformed 帧仅在旧版本坏帧时——
-已修两处覆盖主要风险面——lost 偶发若由某站点的 malformed→success 触发——见
-上文「建议」段——继续逐站审计）。
+漏键）形成对照）——**Parse 类 return nil 剩余站点已系统性修复（2026-09-06——见上「apply 层系统性
+审计修复」）**——SET TTL 四分支 / LSET/LREM/LTRIM / SETBIT / INCRBYFLOAT /
+SETRANGE / ZUNIONSTORE+ZINTERSTORE / GEOSEARCHSTORE / XACKDEL——25+ 处
+malformed→success 已改为明确错误（协议不匹配＝不可应用的帧必须可见）——
+len 边界不足的全站性模式（42 处）与 default 数字跳过（2608——防级联风暴）
+保持不修（范围控制——见上）。
 
 **复现命令（一条即中，无需撞竞态）**：
 

@@ -46,43 +46,55 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 				opt := strings.ToUpper(string(args[i]))
 				switch opt {
 				case "EX":
-					if i+1 < len(args) {
-						if sec, err := strconv.ParseInt(string(args[i+1]), 10, 64); err == nil {
-							ttlDuration = time.Duration(sec) * time.Second
-							hasExpiry = true
-						}
+					if i+1 >= len(args) {
+						return fmt.Errorf("invalid SET EX: missing seconds")
 					}
+					sec, secErr := strconv.ParseInt(string(args[i+1]), 10, 64)
+					if secErr != nil {
+						return fmt.Errorf("invalid SET EX seconds %q: %w", args[i+1], secErr)
+					}
+					ttlDuration = time.Duration(sec) * time.Second
+					hasExpiry = true
 					i += 2
 				case "PX":
-					if i+1 < len(args) {
-						if ms, err := strconv.ParseInt(string(args[i+1]), 10, 64); err == nil {
-							ttlDuration = time.Duration(ms) * time.Millisecond
-							hasExpiry = true
-						}
+					if i+1 >= len(args) {
+						return fmt.Errorf("invalid SET PX: missing milliseconds")
 					}
+					ms, msErr := strconv.ParseInt(string(args[i+1]), 10, 64)
+					if msErr != nil {
+						return fmt.Errorf("invalid SET PX milliseconds %q: %w", args[i+1], msErr)
+					}
+					ttlDuration = time.Duration(ms) * time.Millisecond
+					hasExpiry = true
 					i += 2
 				case "EXAT":
-					if i+1 < len(args) {
-						if ts, err := strconv.ParseInt(string(args[i+1]), 10, 64); err == nil {
-							ttlDuration = time.Until(time.Unix(ts, 0))
-							if ttlDuration < 0 {
-								immediateExpire = true
-							} else {
-								hasExpiry = true
-							}
-						}
+					if i+1 >= len(args) {
+						return fmt.Errorf("invalid SET EXAT: missing timestamp")
+					}
+					ts, tsErr := strconv.ParseInt(string(args[i+1]), 10, 64)
+					if tsErr != nil {
+						return fmt.Errorf("invalid SET EXAT timestamp %q: %w", args[i+1], tsErr)
+					}
+					ttlDuration = time.Until(time.Unix(ts, 0))
+					if ttlDuration < 0 {
+						immediateExpire = true
+					} else {
+						hasExpiry = true
 					}
 					i += 2
 				case "PXAT":
-					if i+1 < len(args) {
-						if ts, err := strconv.ParseInt(string(args[i+1]), 10, 64); err == nil {
-							ttlDuration = time.Until(time.UnixMilli(ts))
-							if ttlDuration < 0 {
-								immediateExpire = true
-							} else {
-								hasExpiry = true
-							}
-						}
+					if i+1 >= len(args) {
+						return fmt.Errorf("invalid SET PXAT: missing timestamp")
+					}
+					ts, tsErr := strconv.ParseInt(string(args[i+1]), 10, 64)
+					if tsErr != nil {
+						return fmt.Errorf("invalid SET PXAT timestamp %q: %w", args[i+1], tsErr)
+					}
+					ttlDuration = time.Until(time.UnixMilli(ts))
+					if ttlDuration < 0 {
+						immediateExpire = true
+					} else {
+						hasExpiry = true
 					}
 					i += 2
 				case "NX":
@@ -196,7 +208,10 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 	case "INCRBYFLOAT":
 		if len(args) >= 3 {
 			key := string(args[1])
-			delta, _ := strconv.ParseFloat(string(args[2]), 64)
+			delta, dErr := strconv.ParseFloat(string(args[2]), 64)
+			if dErr != nil {
+				return fmt.Errorf("invalid INCRBYFLOAT delta %q: %w", args[2], dErr)
+			}
 			_, err := s.INCRBYFLOAT(key, delta)
 			return err
 		}
@@ -204,7 +219,10 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 	case "SETRANGE":
 		if len(args) >= 4 {
 			key := string(args[1])
-			offset, _ := strconv.Atoi(string(args[2]))
+			offset, oErr := strconv.Atoi(string(args[2]))
+			if oErr != nil {
+				return fmt.Errorf("invalid SETRANGE offset %q: %w", args[2], oErr)
+			}
 			value := string(args[3])
 			_, err := s.SetRange(key, offset, value)
 			return err
@@ -597,31 +615,36 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 	case "LSET":
 		if len(args) >= 4 {
 			key := string(args[1])
-			if index, err := strconv.ParseInt(string(args[2]), 10, 64); err == nil {
-				return s.LSet(key, index, string(args[3]))
+			index, iErr := strconv.ParseInt(string(args[2]), 10, 64)
+			if iErr != nil {
+				return fmt.Errorf("invalid LSET index %q: %w", args[2], iErr)
 			}
-			return nil
+			return s.LSet(key, index, string(args[3]))
 		}
 
 	case "LREM":
 		if len(args) >= 4 {
 			key := string(args[1])
-			if count, err := strconv.ParseInt(string(args[2]), 10, 64); err == nil {
-				_, err := s.LRem(key, count, string(args[3]))
-				return err
+			count, cErr := strconv.ParseInt(string(args[2]), 10, 64)
+			if cErr != nil {
+				return fmt.Errorf("invalid LREM count %q: %w", args[2], cErr)
 			}
-			return nil
+			_, err := s.LRem(key, count, string(args[3]))
+			return err
 		}
 
 	case "LTRIM":
 		if len(args) >= 4 {
 			key := string(args[1])
-			if start, err := strconv.ParseInt(string(args[2]), 10, 64); err == nil {
-				if stop, err := strconv.ParseInt(string(args[3]), 10, 64); err == nil {
-					return s.LTrim(key, start, stop)
-				}
+			start, sErr := strconv.ParseInt(string(args[2]), 10, 64)
+			if sErr != nil {
+				return fmt.Errorf("invalid LTRIM start %q: %w", args[2], sErr)
 			}
-			return nil
+			stop, eErr := strconv.ParseInt(string(args[3]), 10, 64)
+			if eErr != nil {
+				return fmt.Errorf("invalid LTRIM stop %q: %w", args[3], eErr)
+			}
+			return s.LTrim(key, start, stop)
 		}
 
 	case "SADD":
@@ -1101,12 +1124,15 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 		if len(args) >= 4 {
 			key := string(args[1])
 			offset, oErr := strconv.Atoi(string(args[2]))
-			bit, bErr := strconv.Atoi(string(args[3]))
-			if oErr == nil && bErr == nil {
-				_, err := s.SetBit(key, offset, bit)
-				return err
+			if oErr != nil {
+				return fmt.Errorf("invalid SETBIT offset %q: %w", args[2], oErr)
 			}
-			return nil
+			bit, bErr := strconv.Atoi(string(args[3]))
+			if bErr != nil {
+				return fmt.Errorf("invalid SETBIT bit %q: %w", args[3], bErr)
+			}
+			_, err := s.SetBit(key, offset, bit)
+			return err
 		}
 
 	case "BITOP":
@@ -1137,7 +1163,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			destination := string(args[1])
 			numKeys, nErr := strconv.Atoi(string(args[2]))
 			if nErr != nil || numKeys < 1 || 3+numKeys > len(args) {
-				return nil
+				return fmt.Errorf("invalid ZUNIONSTORE numkeys %q: parsed=%d args=%d", args[2], numKeys, len(args))
 			}
 			keys := make([]string, numKeys)
 			for i := 0; i < numKeys; i++ {
@@ -1151,20 +1177,20 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 				switch opt {
 				case "WEIGHTS":
 					if idx+numKeys >= len(args) {
-						return nil
+						return fmt.Errorf("invalid ZUNIONSTORE WEIGHTS: need %d weights, args end at %d", numKeys, len(args))
 					}
 					weights = make([]float64, numKeys)
 					for j := 0; j < numKeys; j++ {
 						w, wErr := strconv.ParseFloat(string(args[idx+1+j]), 64)
 						if wErr != nil {
-							return nil
+							return fmt.Errorf("invalid ZUNIONSTORE weight %q: %w", args[idx+1+j], wErr)
 						}
 						weights[j] = w
 					}
 					idx += 1 + numKeys
 				case "AGGREGATE":
 					if idx+1 >= len(args) {
-						return nil
+						return fmt.Errorf("invalid ZUNIONSTORE AGGREGATE: missing mode")
 					}
 					aggregate = strings.ToUpper(string(args[idx+1]))
 					idx += 2
@@ -1181,7 +1207,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			destination := string(args[1])
 			numKeys, nErr := strconv.Atoi(string(args[2]))
 			if nErr != nil || numKeys < 1 || 3+numKeys > len(args) {
-				return nil
+				return fmt.Errorf("invalid ZINTERSTORE numkeys %q: parsed=%d args=%d", args[2], numKeys, len(args))
 			}
 			keys := make([]string, numKeys)
 			for i := 0; i < numKeys; i++ {
@@ -1195,20 +1221,20 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 				switch opt {
 				case "WEIGHTS":
 					if idx+numKeys >= len(args) {
-						return nil
+						return fmt.Errorf("invalid ZINTERSTORE WEIGHTS: need %d weights, args end at %d", numKeys, len(args))
 					}
 					weights = make([]float64, numKeys)
 					for j := 0; j < numKeys; j++ {
 						w, wErr := strconv.ParseFloat(string(args[idx+1+j]), 64)
 						if wErr != nil {
-							return nil
+							return fmt.Errorf("invalid ZINTERSTORE weight %q: %w", args[idx+1+j], wErr)
 						}
 						weights[j] = w
 					}
 					idx += 1 + numKeys
 				case "AGGREGATE":
 					if idx+1 >= len(args) {
-						return nil
+						return fmt.Errorf("invalid ZINTERSTORE AGGREGATE: missing mode")
 					}
 					aggregate = strings.ToUpper(string(args[idx+1]))
 					idx += 2
@@ -1706,11 +1732,18 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			i := 3
 			if i < len(args) && strings.ToUpper(string(args[i])) == "FROMMEMBER" {
 				if i+1 >= len(args) {
-					return nil
+					return fmt.Errorf("invalid GEOSEARCHSTORE FROMMEMBER: missing member")
 				}
 				member := string(args[i+1])
 				positions, gpErr := s.GeoPos(srcKey, member)
-				if gpErr != nil || len(positions) == 0 || (positions[0][0] == 0 && positions[0][1] == 0) {
+				if gpErr != nil {
+					return fmt.Errorf("GEOSEARCHSTORE FROMMEMBER GeoPos %q: %w", member, gpErr)
+				}
+				if len(positions) == 0 {
+					return fmt.Errorf("GEOSEARCHSTORE FROMMEMBER: member %q not found", member)
+				}
+				if positions[0][0] == 0 && positions[0][1] == 0 {
+					// 主侧镜像：坐标为 0,0 时主侧返回 0 未写——从侧跳过一致。
 					return nil
 				}
 				centerLon = positions[0][1]
@@ -1718,7 +1751,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 				i += 2
 			} else if i < len(args) && strings.ToUpper(string(args[i])) == "FROMLONLAT" {
 				if i+2 >= len(args) {
-					return nil
+					return fmt.Errorf("invalid GEOSEARCHSTORE FROMLONLAT: missing coordinates")
 				}
 				var parseErr error
 				centerLon, parseErr = strconv.ParseFloat(string(args[i+1]), 64)
@@ -1731,14 +1764,14 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 				}
 				i += 3
 			} else {
-				return nil
+				return fmt.Errorf("invalid GEOSEARCHSTORE: expected FROMMEMBER or FROMLONLAT at arg %d", i)
 			}
 			if i >= len(args) {
-				return nil
+				return fmt.Errorf("invalid GEOSEARCHSTORE: missing BYRADIUS/BYBOX clause")
 			}
 			if strings.ToUpper(string(args[i])) == "BYRADIUS" {
 				if i+2 >= len(args) {
-					return nil
+					return fmt.Errorf("invalid GEOSEARCHSTORE BYRADIUS: missing radius/unit")
 				}
 				var parseErr error
 				radius, parseErr = strconv.ParseFloat(string(args[i+1]), 64)
@@ -1749,7 +1782,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 				i += 3
 			} else if strings.ToUpper(string(args[i])) == "BYBOX" {
 				if i+3 >= len(args) {
-					return nil
+					return fmt.Errorf("invalid GEOSEARCHSTORE BYBOX: missing width/height/unit")
 				}
 				var parseErr error
 				width, parseErr := strconv.ParseFloat(string(args[i+1]), 64)
@@ -1770,7 +1803,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 				searchByBox = true
 				i += 4
 			} else {
-				return nil
+				return fmt.Errorf("invalid GEOSEARCHSTORE: expected BYRADIUS or BYBOX at arg %d", i)
 			}
 			for i < len(args) {
 				opt := strings.ToUpper(string(args[i]))
@@ -1779,7 +1812,7 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 					i++
 				case "COUNT":
 					if i+1 >= len(args) {
-						return nil
+						return fmt.Errorf("invalid GEOSEARCHSTORE COUNT: missing count")
 					}
 					var parseErr error
 					count, parseErr = strconv.Atoi(string(args[i+1]))
@@ -2135,14 +2168,15 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 				idsStart = 4
 			}
 			if idsStart >= len(args) || strings.ToUpper(string(args[idsStart])) != "IDS" {
-				return nil
+				return fmt.Errorf("invalid XACKDEL: expected IDS clause at arg %d", idsStart)
 			}
 			if idsStart+1 >= len(args) {
-				return nil
+				return fmt.Errorf("invalid XACKDEL: missing ID count after IDS")
 			}
 			numIDs, nErr := strconv.Atoi(string(args[idsStart+1]))
 			if nErr != nil || numIDs < 1 || idsStart+2+numIDs > len(args) {
-				return nil
+				return fmt.Errorf("invalid XACKDEL numids %q: parsed=%d idsStart=%d args=%d",
+					args[idsStart+1], numIDs, idsStart, len(args))
 			}
 			ids := make([]string, numIDs)
 			for i := 0; i < numIDs; i++ {
