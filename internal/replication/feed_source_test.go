@@ -121,3 +121,29 @@ func TestVerifyFeedTSContinuity(t *testing.T) {
 		t.Fatalf("gap entries: error missing expected ts: %v", err)
 	}
 }
+
+// TestCheckFeedTSGap 验证从侧帧 ts 连续性检测（lost 定论修复——2026-09-06——
+// KVrocks「迭代器离散即断开」模式从侧版）：prevTS==0（首帧）跳过；连续（ts==
+// prevTS+1）通过；跳变（ts != prevTS+1）报错（含期望 ts——断开重连补发覆盖空洞）。
+func TestCheckFeedTSGap(t *testing.T) {
+	t.Parallel()
+	// 首帧（prevTS==0——初始/字节模式）：跳过检查（logStartTS 边界合法 gap）
+	if err := checkFeedTSGap(0, 3); err != nil {
+		t.Fatalf("first frame (prevTS=0): unexpected error: %v", err)
+	}
+	// 连续（ts == prevTS+1）：通过
+	if err := checkFeedTSGap(99, 100); err != nil {
+		t.Fatalf("continuous frame: unexpected error: %v", err)
+	}
+	// 跳变（ts != prevTS+1）：报错（含期望 ts）
+	err := checkFeedTSGap(99, 101)
+	if err == nil {
+		t.Fatal("gap frame: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "ts gap") {
+		t.Fatalf("gap frame: unexpected error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "expected 100") {
+		t.Fatalf("gap frame: error missing expected ts: %v", err)
+	}
+}

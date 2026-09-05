@@ -292,7 +292,18 @@ writeMu——无反向——无死锁环）。
   - **修复方向（下一轮）**：从侧接收层加「帧 ts 连续性检测」（收到帧 ts 跳变
     即断开重连——触发补发覆盖空洞——KVrocks 模式从侧版）或重连补发起点改为
     「从侧帧 ts 空洞感知」（resumeTS 取空洞前——补发覆盖空洞区间）——
-    lost 偶发以当前定级保留（0.07%——feed 模式默认关——非阻塞）
+    **修复已实施（2026-09-06）**：`checkFeedTSGap`（reconnect.go——REPLLOG 分支
+    apply 前——prevTS>0 且 ts != prevTS+1 → 返回错误断开重连——此时 lastAppliedTS
+    未追平——PSYNC 补发 [lastAppliedTS+1,...] 覆盖空洞——首帧 lastAppliedTS==0
+    跳过（logStartTS 边界合法 gap））+ 单测 TestCheckFeedTSGap（首帧/连续/跳变
+    三边界——本地 lint 0）——验证：replication 全包远程 -race 绿 49.1s（首轮
+    FAIL 为并行 flake——该测试场景无 REPLLOG 与修复无关——单跑/复跑均 PASS）
+    ——复制核心守卫 5 个全 PASS（PsyncReconnectNoLossFeed 45.4s/FeedModeTSSemantics/
+    FullresyncTsDoubleApplyGuard/HalfUpgradeByteSlave/DuplicateWindowMeasurement
+    ——100.4s）——concurrent 守卫复跑 3 轮 0 lost（初步——lost 偶发样本——
+    统计确证需更多轮 -count）——**lost 定级：修复落地——待多轮统计确证后
+    收口**——偶发（0.07%——feed 模式默认关）以当前定级保留（修复已生效——
+    漏帧后的下一帧立即断开重连——补发覆盖空洞——结构性消除永久丢失）
 
 **通用判据教训**（本轮产出，适用后续所有守卫）：凡"零丢失/零多余/全绿"的守卫，先问一句
 ——**它的判据维度覆不覆盖目标缺陷的表现形式**。幂等写入的键集比对查不出重复应用，

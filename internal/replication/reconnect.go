@@ -383,6 +383,18 @@ func (sr *SlaveReconnector) sendPSYNC(mc *MasterConnection) (fullResync bool, er
 	return false, fmt.Errorf("unexpected PSYNC response: %s", respStr)
 }
 
+// checkFeedTSGap 从侧帧 ts 连续性检测（lost 定论修复——2026-09-06——KVrocks
+// 「迭代器离散即断开」模式从侧版）：prevTS>0 且 ts 跳变（!= prevTS+1）→ 错误
+// （断开重连——PSYNC 补发 [lastAppliedTS+1, ...] 覆盖空洞——而非静默 apply 跳过
+// 导致追平后中间漏帧永久丢失）；prevTS==0（首帧——初始/字节模式）跳过检查
+// （logStartTS 边界合法 gap——如 EARLY ts=3 起）。
+func checkFeedTSGap(prevTS, ts uint64) error {
+	if prevTS > 0 && ts != prevTS+1 {
+		return fmt.Errorf("feed ts gap at ts=%d (expected %d): 从侧帧空洞——断开重连补发", ts, prevTS+1)
+	}
+	return nil
+}
+
 func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 	// 从 stopCh 派生 context，使阻塞操作（如 XReadGroup）可被 shutdown 取消
 	replCtx, replCancel := context.WithCancel(context.Background())
@@ -560,6 +572,15 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 			ts, feedCmd, err := feedEntryParse(req.Args)
 			if err != nil {
 				return fmt.Errorf("invalid %s feed entry: %w", feedEntryCommand, err)
+			}
+			// 帧 ts 连续性检测（lost 定论修复——2026-09-06——KVrocks「迭代器离散
+			// 即断开」模式从侧版）：漏收帧（中间 ts 空洞）后的下一帧到达时——ts !=
+			// lastAppliedTS+1——立即断开重连（此时 lastAppliedTS 未追平——PSYNC
+			// 补发 [lastAppliedTS+1, ...] 覆盖空洞——而非静默 apply 跳过导致追平后
+			// 中间漏帧永久丢失）。首帧（lastAppliedTS==0——初始/字节模式）跳过检查
+			// （logStartTS 边界合法 gap——如 EARLY ts=3 起）。
+			if err := checkFeedTSGap(sr.lastAppliedTS.Load(), ts); err != nil {
+				return err
 			}
 			sr.lastDataTime.Store(time.Now().UnixNano())
 			cmdBytes := serializeCommand(req.Args)
