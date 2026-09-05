@@ -85,11 +85,34 @@ WAIT / INFO `master_repl_offset` / GETACK / monitor 迁移。**backlog 环仍 Ap
 （`FeedSetEnabled(snapshotTS+1)`——RDB 快照点 == snapshotTS——补发从 snapshotTS+1
 起——无需字节 catch-up——`CatchUpAndEnableSlaveTS` 等价路径——阶段 2 唯一行为
 改造）；GETACK 字节字段（handler:332 第 3 参）保留兼容（旧主/旧从——EncodeReplconfAck
-4 参形态不变——字节值恒 0 或随环删移除——实施时定）。
+4 参形态不变——字节值恒 0（2026-09-06 预研定论——见下「预研结论」）。
 **实施顺序**：① 部署全 feed（gate 1 确认）→ ② 换算表最后一次 AlignCheck + 规模守卫
 复跑（gate 2/3）→ ③ FULLRESYNC ts 激活改造（CatchUpAndEnableSlave 删除）→ ④
 字节分支/环/WAL 删除 → ⑤ 守卫更新（FULLRESYNC ts 激活守卫 + 4 守卫 ts 化核对）→
 ⑥ 全量回归（regressions + cmd/integration）。
+
+**预研结论（2026-09-06——gate 1 等待期设计核对——实施细节已定——少未知）**：
+- **FULLRESYNC ts 激活（蓝图第 ③ 步）——设计可行**：snapshotTS 已在 handler:85
+  写锁内读取（与 snapshotOffset 同位——FULLRESYNC 响应已含 `+FULLRESYNC %s %d %d`
+  ——从侧存为 lastAppliedTS）——`FeedSetEnabled(snapshotTS+1)` 与现有激活等价
+  （CatchUpAndEnableSlave:595-606 追平后也是 `FeedSetEnabled(true, curTS+1)`——
+  直接激活时 curTS=snapshotTS——FeedSlave 从 snapshotTS+1 读 log 增量——覆盖
+  RDB 快照点到当前水位的所有帧——无需字节 catch-up）——propMu 竞态保护模式已有
+  （replication.go:588-608——propMu 内激活——写路径 RLock 阻塞——无丢失无重复）——
+  **实施**：新增 `CatchUpAndEnableSlaveTS(slave, snapshotTS)`（跳过字节 catch-up——
+  直接 propMu 内 FeedSetEnabled(true, snapshotTS+1) + SetReady(true)）——
+  handler:125 改调；handler:198（字节 CONTINUE——ts==0 从侧）随 gate 1 退役同删；
+- **GETACK/ACK 字节字段——定论：恒 0（保持 4 参形态）**：EncodeReplconfAck
+  4 参形态（`REPLCONF ACK <offset> <ts>`——feed_wire.go:38）保持——offset 字段
+  恒 0（gate 1 后无字节从侧——无实际语义——ts 为唯一主字段）——旧 3 参主/从按
+  len 判定忽略第 4 参——向后兼容——handler:332 的 `GetBacklogCurrentOffset()`
+  → 0；handler:74（FULLRESYNC 响应 offset 字段恒 0——snapshotTS 已有）；
+  131/187（字节 catch-up 起点——随 ts 激活删除）；
+- **gate 1 达成后实施清单（更新——少未知）**：① 部署全 feed → ② 换算表最后
+  AlignCheck + 规模守卫 → ③ CatchUpAndEnableSlaveTS 新增 + handler:125/198 改
+  （ts 激活替代字节 catch-up）→ ④ 删字节分支/环/WAL（BacklogWAL/ReplicationBacklog/
+  GetBacklogCurrentOffset 的 10 处调用点——74/131/187/332 按上定论处理）→
+  ⑤ 守卫更新 → ⑥ 全量回归。
 
 ### 3. dw A/B ≤1/15 正式验收（gate 于阶段 2 之后）
 
