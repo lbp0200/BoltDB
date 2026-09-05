@@ -23,11 +23,14 @@ WAIT / INFO `master_repl_offset` / GETACK / monitor 迁移。**backlog 环仍 Ap
   从侧从不主动上报 REPLCONF ACK（只在主侧 GETACK 请求时回复——而主侧从不发 GETACK）
   → 主侧 UpdateSlaveAckTS 永不触发 → WAIT 恒 0——reconnect.go 周期 goroutine 改为
   每周期先主动上报 `REPLCONF ACK <lastOffset> <lastAppliedTS>`（真实 Redis 从侧语义）。
-  **剩余**：换算表桥的半升级窗口实测（ack ts==0 字节从侧）+ `framework.WaitForReplicaSync`
-  的 feed 模式字节/ts 错域比较——**已修（2026-09-05）**：新增 `GetSlaveLastAppliedTS`
-  + WaitForReplicaSync 的 feed 模式 ts 判据分支（slave lastAppliedTS >= master
-  currentTS——applied 语义）——远程 feed 守卫复跑无回归；监控兼容注记（INFO/ROLE/
-  monitor/collector 的 feed 模式 ts 语义）已入 a4 附8 风险① + 阶段 2 gate
+  **剩余**：`framework.WaitForReplicaSync` 的 feed 模式字节/ts 错域比较——**已修
+  （2026-09-05）**：新增 `GetSlaveLastAppliedTS` + WaitForReplicaSync 的 feed 模式
+  ts 判据分支（slave lastAppliedTS >= master currentTS——applied 语义）——远程
+  feed 守卫复跑无回归；监控兼容注记（INFO/ROLE/monitor/collector 的 feed 模式 ts
+  语义）已入 a4 附8 风险①；**半升级窗口实测已闭合（2026-09-05）**：
+  `TestRegressionHalfUpgradeByteSlave`——feed 主侧 + 字节从侧（ts=0）混合——字节
+  从侧 FULLRESYNC + 字节 catch-up + 断连重连自愈全通过（数据面无丢失）——阶段 1
+  双轨并存兼容承诺验证；**剩余**：阶段 2 gate 1（部署内字节从侧退役）
 
 ### 2. A4 阶段 2——删除 backlog 内存环（gate 严格——不可在线回滚）
 
