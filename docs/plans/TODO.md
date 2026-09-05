@@ -599,6 +599,16 @@ MSET/MSETNX 分支校验失败静默点已顺手修（102714d）。
 转正）——store 包全包远程 -race -short 绿 131.4s（lpush_rpop.go 修复无回归）
 ——本地 BUILD+VET 0。
 
+**backup 包修复（2026-09-06——tier-A 替代 internal/... 全量暴露——既有问题非
+今天回归）**：`TestBackupManager_BackupBadger` 确定性 panic（`This API can not
+be called in managed mode`）——根因：store 以 `badger.OpenManaged` 打开
+（define.go:499——复制需要 managed 事务）——badger v4.9.6 `db.Backup()` 内部
+`NewStream()`（stream.go:491——managed 模式 panic）——**BackupBadger 在 store
+上必然 panic（功能从未可用）**——修复：`badger_backup.go` 改用 View 只读事务
+遍历 + len-prefixed key/value 快照（Backup/Restore/RestoreTo 三处配套——
+managed 兼容）——验证：backup 包全包绿 2.8s + internal/... 全量绿（tier-A
+替代单元测试部分完成——server/replication/store 等全绿）。
+
 **复现命令（一条即中，无需撞竞态）**：
 
 ```bash

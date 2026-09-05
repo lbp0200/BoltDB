@@ -1,6 +1,9 @@
 package backup
 
 import (
+	"bufio"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -53,9 +56,35 @@ func (bbm *BadgerBackupManager) Backup(backupDir string) (string, error) {
 		}
 	}()
 
-	// 执行备份
-	_, err = bbm.db.Backup(file, 0)
-	if err != nil {
+	// 执行备份（managed DB 兼容：badger 原生 Backup 内部 NewStream 在 managed
+	// 模式 panic（v4.9.x stream.go）——改用 View 只读事务遍历 + len-prefixed
+	// 全量 key/value 快照——恢复端（Restore/RestoreTo）配套读取）
+	if err := bbm.db.View(func(txn *badger.Txn) error {
+		it := txn.NewIterator(badger.DefaultIteratorOptions)
+		defer it.Close()
+		w := bufio.NewWriter(file)
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			key := item.KeyCopy(nil)
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			if err := binary.Write(w, binary.LittleEndian, uint32(len(key))); err != nil {
+				return err
+			}
+			if _, err := w.Write(key); err != nil {
+				return err
+			}
+			if err := binary.Write(w, binary.LittleEndian, uint32(len(val))); err != nil {
+				return err
+			}
+			if _, err := w.Write(val); err != nil {
+				return err
+			}
+		}
+		return w.Flush()
+	}); err != nil {
 		return "", fmt.Errorf("backup failed: %w", err)
 	}
 
@@ -125,9 +154,34 @@ func (bbm *BadgerBackupManager) Restore(backupFile string) error {
 		}
 	}()
 
-	// 执行恢复
-	err = bbm.db.Load(file, 1)
-	if err != nil {
+	// 执行恢复（配套自实现备份格式：len-prefixed key/value 读取 + Update 写入）
+	if err := bbm.db.Update(func(txn *badger.Txn) error {
+		r := bufio.NewReader(file)
+		for {
+			var keyLen uint32
+			if err := binary.Read(r, binary.LittleEndian, &keyLen); err != nil {
+				if errors.Is(err, io.EOF) {
+					return nil
+				}
+				return err
+			}
+			key := make([]byte, keyLen)
+			if _, err := io.ReadFull(r, key); err != nil {
+				return err
+			}
+			var valLen uint32
+			if err := binary.Read(r, binary.LittleEndian, &valLen); err != nil {
+				return err
+			}
+			val := make([]byte, valLen)
+			if _, err := io.ReadFull(r, val); err != nil {
+				return err
+			}
+			if err := txn.Set(key, val); err != nil {
+				return err
+			}
+		}
+	}); err != nil {
 		logger.Logger.Error().Err(err).Str("backup_file", backupFile).Msg("restore failed")
 		return fmt.Errorf("restore failed: %w", err)
 	}
@@ -169,8 +223,34 @@ func RestoreTo(backupFile, dbPath string) error {
 		}
 	}()
 
-	// 执行恢复
-	err = db.Load(file, 1)
+	// 执行恢复（配套自实现备份格式：len-prefixed key/value 读取 + Update 写入）
+	err = db.Update(func(txn *badger.Txn) error {
+		r := bufio.NewReader(file)
+		for {
+			var keyLen uint32
+			if err := binary.Read(r, binary.LittleEndian, &keyLen); err != nil {
+				if errors.Is(err, io.EOF) {
+					return nil
+				}
+				return err
+			}
+			key := make([]byte, keyLen)
+			if _, err := io.ReadFull(r, key); err != nil {
+				return err
+			}
+			var valLen uint32
+			if err := binary.Read(r, binary.LittleEndian, &valLen); err != nil {
+				return err
+			}
+			val := make([]byte, valLen)
+			if _, err := io.ReadFull(r, val); err != nil {
+				return err
+			}
+			if err := txn.Set(key, val); err != nil {
+				return err
+			}
+		}
+	})
 	if err != nil {
 		logger.Logger.Error().Err(err).Str("backup_file", backupFile).Str("db_path", dbPath).Msg("restore failed")
 		return fmt.Errorf("restore failed: %w", err)
