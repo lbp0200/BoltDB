@@ -616,6 +616,14 @@ APPEND/RPUSH/LPUSH 三处参数不足静默点（malformed→success → 明确�
 同 MSET/SETEX/XCLAIM 族统一）——验证：store 包全包远程 -race -short 绿
 132.8s——本地 BUILD+VET 0。
 
+**len 边界全站抽查评估 + LMPOP/ZMPOP 静默点修复（2026-09-06——同族收尾）**：
+write_command.go 共 265 处 len(args) 边界检查——仅 3 处 `return nil` 静默点：
+`:27` WriteCommand 入口空帧守卫（合理——保留）+ `LMPOP/ZMPOP` 的 numkeys 解析
+失败静默（:905/:929——同族站点——修复：len 边界 + numkeys 解析 → 明确错误
+（`invalid LMPOP/ZMPOP args/numkeys`——与 MSET/XCLAIM 族统一——正常帧
+（LMPOP 编码含 numkeys——ZMPOP 防御性死代码）不受影响）——验证：store 包全包
+远程 -race -short 绿 132.0s——gofmt+BUILD+VET 0。
+
 **复现命令（一条即中，无需撞竞态）**：
 
 ```bash
