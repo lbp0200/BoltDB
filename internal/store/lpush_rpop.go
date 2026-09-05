@@ -427,13 +427,13 @@ func (s *BotreonStore) LMPop(keys []string, modifier string, count int) (string,
 
 			return s.listUpdateMeta(txn, key, currentLength, currentStart, currentEnd)
 		}, 30, func() []byte {
-			// D4 全重放：LMPOP key... <LEFT|RIGHT> count
-			args := make([][]byte, 0, 1+len(keys)+2)
-			args = append(args, []byte("LMPOP"))
+			// D4 全重放：LMPOP numkeys key... <LEFT|RIGHT> COUNT count
+			args := make([][]byte, 0, 3+len(keys)+2)
+			args = append(args, []byte("LMPOP"), []byte(strconv.Itoa(len(keys))))
 			for _, k := range keys {
 				args = append(args, []byte(k))
 			}
-			args = append(args, []byte(modifier), []byte(strconv.Itoa(count)))
+			args = append(args, []byte(modifier), []byte("COUNT"), []byte(strconv.Itoa(count)))
 			return encodePropagateCommand(args...)
 		}())
 		s.keyLockMgr.Unlock(key)

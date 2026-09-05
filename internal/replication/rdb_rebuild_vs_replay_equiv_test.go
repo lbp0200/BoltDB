@@ -259,6 +259,16 @@ func getOrMissing(s *store.BotreonStore, key string) string {
 	return v
 }
 
+// setMembers 读集合成员，排序后逗号串（digest 辅助——第五批 set 聚合/SMOVE 例用）。
+func setMembers(s *store.BotreonStore, key string) string {
+	m, err := s.SMembers(key)
+	if err != nil {
+		return "<missing>"
+	}
+	sort.Strings(m)
+	return strings.Join(m, ",")
+}
+
 // diffDigest 报告 want 与 got 的差异条目（键名 + 两边值）。
 func diffDigest(who string, want, got map[string]string) []string {
 	var out []string
@@ -771,6 +781,86 @@ func TestRDBRebuild_EquivSweepAcrossCommandFamilies(t *testing.T) {
 			a, _ := s.TTL("sw:se")
 			b, _ := s.TTL("sw:ps")
 			return ttlPresence(a) + "/" + ttlPresence(b) + "/" + getOrMissing(s, "sw:se") + getOrMissing(s, "sw:ps")
+		}},
+
+		{"MSET/MSETNX", func(t *testing.T, s *store.BotreonStore) {
+			if err := s.MSet("sw:ms1", "v1", "sw:ms2", "v2"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.MSetNX("sw:mn1", "n1", "sw:mn2", "n2"); err != nil {
+				t.Fatal(err)
+			}
+		}, func(s *store.BotreonStore) string {
+			a, _ := s.Get("sw:ms1")
+			b, _ := s.Get("sw:ms2")
+			c, _ := s.Get("sw:mn1")
+			d, _ := s.Get("sw:mn2")
+			return a + "/" + b + "/" + c + "/" + d
+		}},
+
+		{"SINTERSTORE/SUNIONSTORE/SDIFFSTORE", func(t *testing.T, s *store.BotreonStore) {
+			if _, err := s.SAdd("sw:sa", "a", "b", "c"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.SAdd("sw:sb", "b", "c", "d"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.SInterStore("sw:si", "sw:sa", "sw:sb"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.SUnionStore("sw:su", "sw:sa", "sw:sb"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.SDiffStore("sw:sd", "sw:sa", "sw:sb"); err != nil {
+				t.Fatal(err)
+			}
+		}, func(s *store.BotreonStore) string {
+			return setMembers(s, "sw:si") + "/" + setMembers(s, "sw:su") + "/" + setMembers(s, "sw:sd")
+		}},
+
+		{"RPOPLPUSH/LMOVE", func(t *testing.T, s *store.BotreonStore) {
+			if _, err := s.RPush("sw:rs", "a", "b", "c"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.RPush("sw:rd", "x"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.RPopLPush("sw:rs", "sw:rd"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.LMove("sw:rd", "sw:rs", "LEFT", "RIGHT"); err != nil {
+				t.Fatal(err)
+			}
+		}, func(s *store.BotreonStore) string {
+			l1, _ := s.LRange("sw:rs", 0, -1)
+			l2, _ := s.LRange("sw:rd", 0, -1)
+			return strings.Join(l1, ",") + "/" + strings.Join(l2, ",")
+		}},
+
+		{"LMPOP", func(t *testing.T, s *store.BotreonStore) {
+			if _, err := s.RPush("sw:lm", "a", "b", "c"); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := s.LMPop([]string{"sw:lm"}, "LEFT", 2); err != nil {
+				t.Fatal(err)
+			}
+		}, func(s *store.BotreonStore) string {
+			l, _ := s.LRange("sw:lm", 0, -1)
+			return strings.Join(l, ",")
+		}},
+
+		{"SMOVE", func(t *testing.T, s *store.BotreonStore) {
+			if _, err := s.SAdd("sw:ss1", "m1", "m2"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.SAdd("sw:ss2", "m3"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.SMove("sw:ss1", "sw:ss2", "m1"); err != nil {
+				t.Fatal(err)
+			}
+		}, func(s *store.BotreonStore) string {
+			return setMembers(s, "sw:ss1") + "/" + setMembers(s, "sw:ss2")
 		}},
 	}
 

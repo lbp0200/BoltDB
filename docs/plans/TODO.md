@@ -580,6 +580,25 @@ WriteCommand XSETID 分支参数序一致；SetWithTTL 写 SET 帧（PXAT）—�
 消费组状态——ok 1.343s）——**CI 常驻防回归**（stream 消费组复制若再引入缺陷——
 窄版立即红）。
 
+**等价扫面扩展（第五批——2026-09-06——27→32 例——list 移动/set 聚合/MSet 族
+——抓到 1 个新确定性缺陷）**：新增 MSET/MSETNX / SINTERSTORE+SUNIONSTORE+
+SDIFFSTORE / RPOPLPUSH+LMOVE / LMPOP / SMOVE（string 多键 / set 聚合 / list
+移动 / list 多键弹出 / set 移动）——远程 -race 全绿（ok 8.464s）——
+**新缺陷 ⑤ LMPOP log 帧缺 COUNT 前缀——从侧 count 丢失**（真实缺陷——主从
+list 失步静默）：LMPop 的 log 编码写 `LMPOP numkeys key... <LEFT|RIGHT> count`
+（无 COUNT 前缀）——WriteCommand LMPOP 分支期待 `LEFT COUNT count`（Redis
+标准）——count 解析失败保持 1——从侧只弹 1 个（实测 B="b,c" vs 主侧/A="c"
+——主侧弹 2 从侧弹 1——apply err=nil 静默）——修复：编码加 COUNT 前缀
+（`LEFT COUNT 2`——对齐 apply 分支）——**同族确认**：ZMPop 不写 ZMPOP 帧
+（内部调用 ZPopMax/ZPopMin——ZPOPMAX/ZPOPMIN 帧——单键弹 count——语义一致
+——复制正确——ZMPOP 分支为防御性死代码）；list 移动（RPopLPush/LMove/BLMove
+——RPOPLPUSH/LMOVE 帧）与 set 聚合（SInter/SUnion/SDiffStore——聚合帧）与
+MSet/MSetNX（MSET/MSETNX 帧）经检查 log 编码 + apply 分支双全（无缺陷）——
+MSET/MSETNX 分支校验失败静默点已顺手修（102714d）。
+**验证（2026-09-06）**：扫面 32 例远程 -race 全绿（ok 8.464s——含 LMPOP 例
+转正）——store 包全包远程 -race -short 绿 131.4s（lpush_rpop.go 修复无回归）
+——本地 BUILD+VET 0。
+
 **复现命令（一条即中，无需撞竞态）**：
 
 ```bash
