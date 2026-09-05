@@ -165,9 +165,16 @@ writeMu——无反向——无死锁环）。
   覆盖早期帧）——从侧计数与主侧差 1（重建/重放的边界差）——**根因定向：
   FULLRESYNC 重建路径的 feed 补发起点（CatchUpAndEnableSlave 的 FeedSetEnabled
   curTS+1 vs 从侧重连判定）与 RDB 载入的计数一致性**——LOST-DIAG 已含主侧 log
-  早期帧打印（EARLY——复现时自动输出 ts≤12 帧内容确认）——**下一步：复现时
-  确认 EARLY 帧 + 检查 FULLRESYNC 重建路径的 feed 起点（CatchUpAndEnableSlave
-  激活水位 vs 从侧 lastAppliedTS 初值）**
+  早期帧打印（EARLY——复现时自动输出 ts≤12 帧内容确认）——
+  **重建路径代码级检查（2026-09-05）**：主侧 feed 激活水位 = `curTS+1`
+  （CatchUpAndEnableSlave:573——无「feed 起点=logStartTS」路径）；从侧
+  FULLRESYNC 响应 ts 解析（reconnect.go:366-369——lastAppliedTS = snapshotTS
+  ——第 4 字段）正确；sendPSYNC psyncTS = lastAppliedTS（仅首次 "?" 时 0——
+  主侧 ts==0 判定降级 FULLRESYNC）——**ts=4/6/7/9 早期帧在代码级无直接来源
+  路径**——FlushDB 证据确凿（从侧经历 FULLRESYNC 重建）但「重建后收到早期帧」
+  的机制需**EARLY 复现实证**（LOST-DIAG 已就绪——lost 复现时输出主侧 log 早期
+  帧 vs 从侧实际收到帧比对——确认 ts=4 帧是否为主侧重发/从侧残留）——
+  **下一步**：lost 复现（偶发——多轮 -count）时捕获 EARLY 输出完成比对
 
 **通用判据教训**（本轮产出，适用后续所有守卫）：凡"零丢失/零多余/全绿"的守卫，先问一句
 ——**它的判据维度覆不覆盖目标缺陷的表现形式**。幂等写入的键集比对查不出重复应用，
