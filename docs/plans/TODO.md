@@ -70,10 +70,25 @@ DW_READ_PROBE=1 ...                                      # 探针开 = §7 完�
 - 前置三查：① `DEBUG GC` 已完成（GC 期间 1MB SET 减速 1350×）；② 无残留 redis-benchmark；
   ③ `-r` 必带（否则覆盖写同一 key）；测完 FLUSHDB
 
-### 5. 发散悖论（C4）根因定位
+### 5. ✅ 发散悖论（C4）——**feed 模式结构性消失（2026-09-05 分析定论）——仅字节路径残留**
 
-主侧发送字节 vs 从侧接收字节的**抓包级**直接比对（层 D——外部工具）。是「恢复路径重设计
-（层 C：降级无损化）」与 A4 S3 的前提。§1c 失败链的最后一环至今未实证。
+原定义：主侧发送字节 vs 从侧接收字节的**抓包级**直接比对（层 D——外部工具）——「恢复
+路径重设计（层 C：降级无损化）」与 A4 S3 的前提——§1c 失败链最后一环（历史：七环节
+代码级精确 + 逐命令/ACK/应用历史三维度 0 异常——从侧视角不可见——f88187d 定位穷尽）。
+
+**feed 模式结构性消失（2026-09-05——代码路径分析 + 守卫引用）**：feed 模式（双侧
+--feed-loop）重连判定全程 **ts 域**——PSYNC-ts 整数比较（psync.go:55 `ts ∈
+[logStartTS, currentTS]`——出范围降级 FULLRESYNC——安全重建：从侧 FlushDB + 载入
+RDB 全新状态——无从侧旧字节 offset 的边界依赖）；重连补发 CatchUpAndEnableSlaveTS
+（resumeTS+1——ts 整数）；从侧续播点 lastAppliedTS（ts）——**StartsAtCommandBoundary
+字节边界判定完全不参与 feed 重连路径**——字节边界错位（悖论）无存在空间。
+守卫覆盖：`psync_ts_test.go:55`（ts 越界降级）+ `TestFeedModeReconnectResume/TsCatchUp`
+（feed 重连 CONTINUE ts 域）+ `TestRegressionPsyncReconnectNoLossFeed`（规模守卫）。
+
+**残留面与退役**：悖论仅字节路径（ts==0 旧从侧——psync.go:79-118 字节判定）——阶段 2
+gate 1（部署内字节从侧退役）后彻底消除——**层 D 抓包级比对降级为「仅字节路径退役前
+可选验证」——不再阻塞 feed 部署的层 C 恢复路径评估**（C2/C3 的字节语义重放设计仍被
+字节路径的 C4 约束——随 gate 1 退役一并解禁）。
 
 ### 6. ✅ 并发 FeedSlave 重发——**已修复（2026-09-05——feedMu 游标锁——a4 §10 附8.1 选项 1）**
 
