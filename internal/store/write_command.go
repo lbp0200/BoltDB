@@ -1278,7 +1278,10 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			key := string(args[1])
 			group := string(args[2])
 			consumer := string(args[3])
-			minIdleTime, _ := strconv.ParseInt(string(args[4]), 10, 64)
+			minIdleTime, mErr := strconv.ParseInt(string(args[4]), 10, 64)
+			if mErr != nil {
+				return fmt.Errorf("invalid XCLAIM min-idle %q: %w", args[4], mErr)
+			}
 			var opts XClaimOptions
 			opts.MinIdleTime = minIdleTime
 			ids := make([]string, 0, len(args)-5)

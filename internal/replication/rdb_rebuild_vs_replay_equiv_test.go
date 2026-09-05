@@ -644,6 +644,85 @@ func TestRDBRebuild_EquivSweepAcrossCommandFamilies(t *testing.T) {
 			sort.Strings(o)
 			return strings.Join(o, ",")
 		}},
+
+		{"XGROUP/XGROUP SETID/CREATECONSUMER/DESTROY", func(t *testing.T, s *store.BotreonStore) {
+			if _, err := s.XAdd("sw:xg", store.StreamXAddOptions{}, "*", map[string]string{"f1": "v1"}); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.XGroupCreate("sw:xg", "g1", "0"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.XGroupCreateConsumer("sw:xg", "g1", "c1"); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.XGroupSetID("sw:xg", "g1", "0-0"); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.XGroupDestroy("sw:xg", "g1"); err != nil {
+				t.Fatal(err)
+			}
+		}, func(s *store.BotreonStore) string {
+			groups, _ := s.XInfoGroups("sw:xg")
+			names := make([]string, 0, len(groups))
+			for _, g := range groups {
+				names = append(names, g.Name)
+			}
+			sort.Strings(names)
+			n, _ := s.XLen("sw:xg")
+			return fmt.Sprintf("%d/%s", n, strings.Join(names, ","))
+		}},
+
+		{"XREADGROUP/XNACK", func(t *testing.T, s *store.BotreonStore) {
+			id1, err := s.XAdd("sw:xn", store.StreamXAddOptions{}, "*", map[string]string{"f1": "v1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.XAdd("sw:xn", store.StreamXAddOptions{}, "*", map[string]string{"f2": "v2"}); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.XGroupCreate("sw:xn", "g1", "0"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.XReadGroup(context.Background(), "g1", "c1", 10, 0, "sw:xn"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.XNack("sw:xn", "g1", "c1", id1); err != nil {
+				t.Fatal(err)
+			}
+		}, func(s *store.BotreonStore) string {
+			groups, _ := s.XInfoGroups("sw:xn")
+			pending := 0
+			for _, g := range groups {
+				pending += len(g.Pending)
+			}
+			return fmt.Sprintf("pending=%d", pending)
+		}},
+
+		{"XCLAIM", func(t *testing.T, s *store.BotreonStore) {
+			id1, err := s.XAdd("sw:xc", store.StreamXAddOptions{}, "*", map[string]string{"f1": "v1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.XGroupCreate("sw:xc", "g1", "0"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.XReadGroup(context.Background(), "g1", "c1", 10, 0, "sw:xc"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.XClaim("sw:xc", "g1", "c2", store.XClaimOptions{}, id1); err != nil {
+				t.Fatal(err)
+			}
+		}, func(s *store.BotreonStore) string {
+			groups, _ := s.XInfoGroups("sw:xc")
+			o := make([]string, 0, len(groups))
+			for _, g := range groups {
+				for cname := range g.Consumers {
+					o = append(o, cname)
+				}
+			}
+			sort.Strings(o)
+			return strings.Join(o, ",")
+		}},
 	}
 
 	// knownDefects 登记「本扫面已确认不等价、但修复尚未落地」的命令族。

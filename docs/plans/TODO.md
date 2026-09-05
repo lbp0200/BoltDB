@@ -533,6 +533,32 @@ GEOSEARCHSTORE 例等价保持（无新缺陷——编码/apply 一致）。
 ——store 包全包远程 -race -short 绿 134.8s（linsert/set/ts_source/xadd 修复
 无回归）——本地 BUILD+VET 0 issues。
 
+**等价扫面扩展（第三批——2026-09-06——22→25 例——stream 消费组纵深——又抓到
+3 个新确定性缺陷）**：新增 XGROUP/XGROUP SETID/CREATECONSUMER/DESTROY /
+XREADGROUP+XNACK / XCLAIM（stream 消费组生命周期 / PEL 释放 / PEL 转移）——
+远程 -race 全绿（ok 6.779s）——
+**新缺陷 ③ XGROUP 族 log 编码参数序错位**（真实缺陷——组没建——下游全失效）：
+xgroup.go 的 log 编码写 `XGROUP key CREATE group 0`（args[1]=key）——WriteCommand
+XGROUP 分支读 args[1] 作 sub=CREATE、args[2] 作 key=CREATE——**错位——组没建**——
+XACK/XREADGROUP/XCLAIM/XNACK 等依赖组的帧在从侧全失效（XCLAIM 例重放失败
+NOGROUP 直接证据——XACKDEL 例转正但 XACK 静默失败被 digest 掩盖）——修复：
+4 处参数序改 `XGROUP <sub> key ...`（CREATE/CREATECONSUMER/DELCONSUMER/DESTROY
+——对齐 WriteCommand XGROUP 分支）；**另 XGroupSetID 不写 log**（同 LREM 族
+传播缺失——LastDeliveredID 不复制——补 encodePropagateCommand
+（`XGROUP SETID key group id`））——
+**新缺陷 ④ XReadGroup 不写 log**（真实缺陷——stream 消费组状态复制缺失）：
+PEL/consumer/LastDeliveredID 的读取变更不进复制日志——从侧收不到 XREADGROUP
+——WriteCommand XREADGROUP 分支（设计意图复制——注释「Replicate PEL
+mutations」）成死代码——XACK/XCLAIM/XNACK 等依赖 PEL 的命令在从侧静默失效
+（实测 B pending=0 / Consumers 空 vs 主侧/A pending=2 / c1）——修复：
+XReadGroup 改用 `retryUpdateLazy`（logValue 延迟求值——fn 后读 result——无新
+消息不写空帧）+ XREADGROUP 帧编码（`XREADGROUP [COUNT n] GROUP g c STREAMS
+key... >`——对齐 WriteCommand 分支）——**顺手**：WriteCommand XCLAIM
+`minIdleTime,_` 忽略解析错误 → 明确错误（apply 层审计遗漏站点——同族统一）。
+**验证（2026-09-06）**：扫面 25 例远程 -race 全绿（ok 6.779s——含新例转正）——
+store 包全包远程 -race -short 绿 128.3s（xgroup/xreadgroup/write_command 修复
+无回归）——本地 BUILD+VET 0 issues。
+
 **复现命令（一条即中，无需撞竞态）**：
 
 ```bash

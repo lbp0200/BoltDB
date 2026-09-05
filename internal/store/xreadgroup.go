@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -33,7 +34,7 @@ func (s *BotreonStore) XReadGroup(ctx context.Context, group, consumer string, c
 	// 锁只覆盖非阻塞读段：阻塞等待（下方 xReadGroupBlocking）必须在锁外——
 	// 若持 key 锁等待，XADD（需同 key 锁）无法推进 → 等待永不唤醒（死锁）。
 	unlock := s.keyLockMgr.LockMulti(keys)
-	err := s.retryUpdate(func(txn *badger.Txn) error {
+	err := s.retryUpdateLazy(func(txn *badger.Txn) error {
 		now := time.Now().UnixNano() / int64(time.Millisecond)
 
 		for _, key := range keys {
@@ -137,7 +138,29 @@ func (s *BotreonStore) XReadGroup(ctx context.Context, group, consumer string, c
 			}
 		}
 		return nil
-	}, 30)
+	}, 30, func() []byte {
+		// D4 全重放：XREADGROUP [COUNT n] GROUP group consumer STREAMS key... >
+		// （stream 消费组状态复制——PEL/consumer/LastDeliveredID——WriteCommand
+		// XREADGROUP 分支按此格式解析——id 参数被忽略（store 用 LastDeliveredID
+		// 游标）——无新消息时不写 log 避免空帧膨胀）
+		if len(result) == 0 {
+			return nil
+		}
+		args := make([][]byte, 0, 5+2*len(keys))
+		args = append(args, []byte("XREADGROUP"))
+		if count > 0 {
+			args = append(args, []byte("COUNT"), []byte(strconv.FormatInt(count, 10)))
+		}
+		args = append(args, []byte("GROUP"), []byte(group), []byte(consumer))
+		args = append(args, []byte("STREAMS"))
+		for _, k := range keys {
+			args = append(args, []byte(k))
+		}
+		for range keys {
+			args = append(args, []byte(">"))
+		}
+		return encodePropagateCommand(args...)
+	})
 	unlock()
 
 	if block >= 0 && len(result) == 0 && len(keys) > 0 {
