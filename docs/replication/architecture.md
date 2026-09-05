@@ -26,6 +26,39 @@ Any write that committed to BadgerDB before `GetMasterReplOffset()` was called i
 guaranteed visible in the MVCC snapshot. Writes that committed after are covered
 by the backlog.
 
+### What actually makes the snapshot consistent (corrected 2026-09-05)
+
+The store runs BadgerDB in **managed mode** (`OpenManaged`, since S1-A2 `b9083a3`).
+In that mode `db.View()` is *not* a point-in-time snapshot read: Badger's `View`
+falls through to `NewTransactionAt(math.MaxUint64, false)` (badger v4.9.6
+`txn.go:786-794`, whose own doc comment says "If View is used with managed
+transactions, it would assume a read timestamp of MaxUint64"). A reader at
+`readTs = MaxUint64` sees **each key's newest version at the moment the iterator
+reaches that key**, so the row above ("MVCC snapshot") describes a timeline that the
+RDB generator does not use, and `GenerateRDB` gets **zero isolation from MVCC**.
+
+Consistency therefore rests entirely on one thing: the `snapshotMu` **write lock**,
+held by the FULLRESYNC handler across `snapshotTS` capture → the whole RDB iteration
+→ the flush (`replication_handler.go:64`). The matching read fence is taken in exactly
+one place — `processRequest` (`handler_core.go:738-739`) around commit → Propagate.
+Two consequences that are easy to get wrong:
+
+- The direction that *is* safe: anything committed before the watermark read is
+  visible (a MaxUint64 reader never misses committed data).
+- The direction that is **not** protected by MVCC: any store write that reaches
+  Badger without going through `processRequest` is unfenced and can land *in the
+  middle* of the RDB iteration, yielding a torn snapshot (key A read before the
+  write, key B after). Static scan on 2026-09-05 found no such concurrent writer
+  (`NextStartup` runs only at startup — `cmd/boltDB/main.go:260`; no `h.Db.*` writes
+  outside `*_commands.go`), so this is a **structural dependency, not an observed
+  defect**. Whether a *fenced* writer's multi-key commit is published atomically to a
+  MaxUint64 reader is unverified — tracked as the "torn RDB" candidate in
+  `docs/plans/TODO.md` §6.
+
+`GenerateRDBWithOffset`'s inline comment ("这是 View 内的一个时间点，不一定是 MVCC
+快照的实际边界") was already honest about this; the prose above and the `AGENTS.md`
+"GenerateRDB Invariants" line previously claimed the opposite.
+
 ## Handshake Sequence
 
 When a BoltDB replica connects to a master:
@@ -110,6 +143,9 @@ After a FULLRESYNC, the slave's `lastOffset` is reset from the offset in the
 RDB generation for FULLRESYNC follows these invariants:
 
 - All reads happen in a single `db.View` transaction → consistent point-in-time snapshot
+  *(managed mode: the View reads at `MaxUint64`, so this property is provided by the
+  `snapshotMu` write lock, **not** by MVCC — see
+  [What actually makes the snapshot consistent](#what-actually-makes-the-snapshot-consistent-corrected-2026-09-05))*
 - `PrefetchValues: false` on the TYPE_ iterator → no prefetch memory pressure
 - Value keys and list/hash/set/zset data are read with explicit `txn.Get()` /
   sub-iterators from the same transaction

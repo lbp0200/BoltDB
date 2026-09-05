@@ -64,6 +64,12 @@ WAIT / INFO `master_repl_offset` / GETACK / monitor 迁移。**backlog 环仍 Ap
   内从侧全量 `--feed-loop` 且无 ts=0 请求进入 PSYNC——代码面无法核验——阶段 2
   实施等待此 gate
 
+> **依赖链注记（2026-09-05）**：gate 1 同时阻塞三件事——① 本节阶段 2 实施
+> ② §3 dw ≤1/15 正式验收 ③ §5 C4 字节路径残留清除。它是**运维面事实**，代码侧无
+> 任何动作可推进它。同时注意它与 §6 lost 的顺序关系（见 §6 末「定级与顺序冲突」）：
+> 达成 gate 1 = 把 lost 从"默认关不阻塞"变成线上暴露，故 **lost 定级应收于 gate 1 之前**。
+> 当前代码侧唯一可独立推进的是 §6 候选 ④（RDB 撕裂确定性实验）。
+
 **删除面审计与实施蓝图（2026-09-05——代码面已核对——gate 满足后的执行顺序）**：
 
 | 删除点 | 生产调用点（现状） | gate 相关性 |
@@ -271,6 +277,39 @@ writeMu——无反向——无死锁环）。
 ——**它的判据维度覆不覆盖目标缺陷的表现形式**。幂等写入的键集比对查不出重复应用，
 一如严格相等断言查不出顺序错乱。守卫写完后到 **pre-fix commit 上跑一次确认会红**
 （`git worktree` 代价很低）是唯一可靠的自检。
+
+**候选 ④「RDB 撕裂」——managed 模式下快照没有 MVCC 隔离（2026-09-05 代码级证明）**：
+
+1. **证明**：badger v4.9.6 `DB.View()` 在 `managedTxns` 下走
+   `NewTransactionAt(math.MaxUint64, false)`（`txn.go:786-794`；其自带注释"assume a
+   read timestamp of MaxUint64"）。故 `GenerateRDB` 的 View **不是** point-in-time
+   快照——它读的是"迭代器到达该键那一刻的最新版本"，逐键各读各的时点。
+2. **因此**：RDB 的一致性 100% 由 `snapshotMu` 写锁提供（`replication_handler.go:64`
+   跨 `snapshotTS` 捕获 → 整个 RDB 迭代 → flush），读栅栏全仓只有一处
+   （`processRequest`——`handler_core.go:738-739`）。**任何不走 `processRequest` 的
+   store 写都不受此栅栏约束，可以落在 RDB 迭代中间 → 撕裂快照。**
+3. **静态扫描未发现绕过者**（2026-09-05）：`NextStartup` 仅启动期
+   （`cmd/boltDB/main.go:260`），server 包 `*_commands.go` 之外无 `h.Db.*` 写，
+   cluster 侧 0 处——**故这是结构依赖，不是已观测缺陷**。
+4. **关键未决**：被栅栏保护的写者，其**多键 txn**（meta + data + log 键同批）是否对
+   MaxUint64 读者**原子发布**——badger 写批 apply 路径未读完。若发布非原子，
+   则即使有栅栏也可能读到半条命令。
+5. **与 lost 全部证据吻合**（这是它优于已排除的候选 1/2 的地方）：丢 1-2 条
+   `log==master>slave`、从侧 lastAppliedTS 追平（撕裂发生在**重建载入的那份 RDB 里**，
+   不在补发流上）、`applySkip=0`、**只在多周期（6 KILL）出现而单次重连不丢**
+   （每个 KILL 周期一次 FULLRESYNC 重建 = 一次撕裂机会，命中率随周期数累积）、
+   实验 6 的 FlushDB 证据（键值重置为 1 = 确实经历了重建）。
+6. **确定性实验（不撞竞态——待做）**：并发 INCR 写者 + 反复
+   `GenerateRDBWithSnapshotLock` → 把 RDB 载入全新 store → 逐键断言
+   「载入态 == 主侧 snapshotTS 时刻态」。判据按上面的教训用 **INCR 计数**，不用键集合。
+   失配率 > 0 → 候选 ④ 成立并可直接给出机制；恒为 0 → 据实排除并记录判据。
+7. 相关文档断言已纠正：`AGENTS.md` GenerateRDB Invariants、
+   `architecture.md`「MVCC snapshot / point-in-time」两处原写法与本证明相反。
+
+**定级与顺序冲突（2026-09-05 提出）**：本项现记「feed 模式默认关——非阻塞」，而 §2 gate 1
+的定义恰是**把部署推向全 feed 模式**（字节从侧退役）。lost 只出现在 feed 双侧路径，
+故 gate 1 一旦达成，"默认关所以非阻塞"的前提即失效，0.07% 的静默单条丢失转为线上问题。
+**lost 的定位应先于或至少并行于 gate 1 的部署动作**，不宜排在阶段 2 之后。
 
 ## 架构边界（已决策：不做）
 
