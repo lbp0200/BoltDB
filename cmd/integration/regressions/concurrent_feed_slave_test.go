@@ -1,6 +1,7 @@
 package regressions
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"sync"
@@ -63,6 +64,8 @@ func TestRegressionConcurrentFeedSlaveReplayRate(t *testing.T) {
 	}
 
 	const writers = 4
+	// 实验 4（lost 定向——6 周期复现 + lost 诊断）：cycles=6（多周期——实验 3 已
+	// 证单周期不丢）；writerInterval=5ms（高密度——放大断连窗口写入）。
 	const cycles = 6
 
 	stop := make(chan struct{})
@@ -70,9 +73,9 @@ func TestRegressionConcurrentFeedSlaveReplayRate(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(writers)
-	// 写者节奏 25ms（实验 1 确认——lost 开放项与写者并发密度无关——5ms 与 25ms
-	// 皆偶发 lost=1——保留低速减少 CI 时长——TODO §6 开放项）。
-	const writerInterval = 25 * time.Millisecond
+	// 写者节奏 5ms（实验 3 单周期聚焦——高密度——放大断连窗口写入；实验 1 已
+	// 确认 lost 与密度无关——TODO §6 开放项）。
+	const writerInterval = 5 * time.Millisecond
 	for i := 0; i < writers; i++ {
 		id := i
 		go func() {
@@ -203,6 +206,25 @@ func TestRegressionConcurrentFeedSlaveReplayRate(t *testing.T) {
 		writers, dup, lost,
 		getInt(ctx, t, master.Client, "replay:ctr:0"),
 		getInt(ctx, t, sc, "replay:ctr:0"))
+
+	// 实验 4（lost 诊断——区分补发漏发 vs 从侧 apply 丢失）：lost 时打印
+	// slaveTS/masterTS（收敛判定是否真实追平）+ 主侧 log 中从侧未 apply 的帧数
+	// （ReplLogEntriesFrom(slaveTS+1)——非空 = 补发漏发确认）+ 主侧 log 中
+	// replay:ctr:* 的 INCR 命令总数（> slave 实际计数 = 有 INCR 命令未生效）。
+	if lost > 0 || !stable {
+		slaveTS := slave.replMgr.GetSlaveLastAppliedTS()
+		masterTS := master.GetMasterOffset() // feed 模式 = ts
+		unapplied, _ := master.DB.ReplLogEntriesFrom(slaveTS + 1)
+		allEntries, _ := master.DB.ReplLogEntries()
+		incrCmds := 0
+		for _, e := range allEntries {
+			if bytes.Contains(e.Value, []byte("INCRBY")) && bytes.Contains(e.Value, []byte("replay:ctr")) {
+				incrCmds++
+			}
+		}
+		t.Logf("replay-rate: LOST-DIAG slaveTS=%d masterTS=%d unappliedEntries=%d masterLogIncrCmds=%d (dup=%d lost=%d stable=%v)",
+			slaveTS, uint64(masterTS), len(unapplied), incrCmds, dup, lost, stable)
+	}
 
 	// dup 断言：恒 0（feedMu 修复——并发 FeedSlave 重发已原子化——pre-fix 上此断言红）。
 	// lost 容差 ≤2：已知开放项——停写 ts 追平后仍偶发 lost=1（规律性——被重复 apply

@@ -117,13 +117,18 @@ writeMu——无反向——无死锁环）。
   边界漏发方向；cycle 内 slaveTS 恒比 masterTS 少 1（结构性差 1）——
   **实验 2（2026-09-05——比对前轮询等 slave 键值稳定 10s）——真丢失确认**：
   `stable after polling=false`（10s 轮询追不平——**非传播延迟**）——每轮恰丢
-  1 条 INCR（~700 条中 1 条 ≈ 0.07%——单键单条）——偶发 1-2/5 轮——候选收窄：
-  重连补发边界（`CatchUpAndEnableSlaveTS` resumeTS 判定）/ 从侧 apply 瞬时失败
-  （非 transient——强制重连——补发覆盖性）/ 发送边界竞态（feedMu 串行化下的
-  极小窗口）——**需日志级观测**（从侧重连时 resumeTS 与补发帧数记录——主侧重发
-  区间 [resumeTS+1, curTS] 与从侧 apply 的逐帧比对）——测量测试保留轮询稳定
-  逻辑（lost 判定更严格——10s 稳定窗）+ lost ≤2 容差（>2 仍 FAIL——阈值检测
-  不静默——与 verifyUniqueTokenSet 容差同构）
+  1 条 INCR（~700 条中 1 条 ≈ 0.07%——单键单条）——偶发 1-2/5 轮——
+  **实验 3（2026-09-05——单周期聚焦 cycles=1）——单次重连不丢**（5/5 轮全绿）
+  ——丢失只在**多周期（6 KILL）交互**出现——非单次重连边界；
+  **实验 4（2026-09-05——6 周期 + LOST-DIAG）——补发漏发排除**：
+  lost 轮 `slaveTS==masterTS(5668) unappliedEntries=0 masterLogIncrCmds=5666`
+  ——主侧 log 无从侧未 apply 帧（ReplLogEntriesFrom(slaveTS+1) 空）——从侧
+  lastAppliedTS 真实追平——**但 INCR 计数仍少 1**——丢失发生在**从侧 apply/
+  存储层**（apply 了全部帧但某条结果未生效——store 层 INCRBY 代码检查排除
+  「返回 nil 未写入」明显路径——retryUpdate 重试耗尽必返回错误）——**需从侧
+  apply 逐帧日志观测**（帧 ts/命令 + INCR 执行前后计数——C5 探针用后即清）——
+  测量测试保留轮询稳定逻辑 + LOST-DIAG 打印 + lost ≤2 容差（>2 仍 FAIL——
+  阈值检测不静默——与 verifyUniqueTokenSet 容差同构）
 
 **通用判据教训**（本轮产出，适用后续所有守卫）：凡"零丢失/零多余/全绿"的守卫，先问一句
 ——**它的判据维度覆不覆盖目标缺陷的表现形式**。幂等写入的键集比对查不出重复应用，
