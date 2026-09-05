@@ -559,6 +559,17 @@ key... >`——对齐 WriteCommand 分支）——**顺手**：WriteCommand XCLA
 store 包全包远程 -race -short 绿 128.3s（xgroup/xreadgroup/write_command 修复
 无回归）——本地 BUILD+VET 0 issues。
 
+**等价扫面扩展（第四批——2026-09-06——25→27 例——无新缺陷）**：新增 XSETID /
+SETEX+PSETEX（stream 元数据（LastDeliveredID）/string TTL 变体）——远程 -race
+全绿（ok 7.368s）——**无新确定性缺陷**（XSetID 的 log 编码（xtrim.go）与
+WriteCommand XSETID 分支参数序一致；SetWithTTL 写 SET 帧（PXAT）——SETEX 分支
+解析一致）——**顺手修复**：WriteCommand SETEX 分支 `seconds,_` 忽略解析错误 →
+明确错误（apply 层审计遗漏站点——同族统一——SETEX 例的正常帧不受影响）。
+**验证（2026-09-06）**：扫面 27 例远程 -race 全绿（ok 7.368s）——store 包全包
+远程 -race -short 绿 133.9s（SETEX 修复无回归）——本地 BUILD+VET 0 issues——
+扫面扩展至此覆盖 string/list/hash/set/zset/geo/stream 全族 27 例——边际收益
+递减（后续批次转其他验证方向）。
+
 **复现命令（一条即中，无需撞竞态）**：
 
 ```bash

@@ -155,7 +155,10 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 	case "SETEX":
 		if len(args) >= 4 {
 			key := string(args[1])
-			seconds, _ := strconv.ParseInt(string(args[2]), 10, 64)
+			seconds, sErr := strconv.ParseInt(string(args[2]), 10, 64)
+			if sErr != nil {
+				return fmt.Errorf("invalid SETEX seconds %q: %w", args[2], sErr)
+			}
 			value := string(args[3])
 			return s.SetEX(key, value, int(seconds))
 		}

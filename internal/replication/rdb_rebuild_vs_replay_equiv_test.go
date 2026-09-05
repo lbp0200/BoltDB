@@ -723,6 +723,31 @@ func TestRDBRebuild_EquivSweepAcrossCommandFamilies(t *testing.T) {
 			sort.Strings(o)
 			return strings.Join(o, ",")
 		}},
+
+		{"XSETID", func(t *testing.T, s *store.BotreonStore) {
+			if _, err := s.XAdd("sw:xsi", store.StreamXAddOptions{}, "*", map[string]string{"f1": "v1"}); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.XSetID("sw:xsi", "1-0", 1, ""); err != nil {
+				t.Fatal(err)
+			}
+		}, func(s *store.BotreonStore) string {
+			n, _ := s.XLen("sw:xsi")
+			return fmt.Sprintf("%d", n)
+		}},
+
+		{"SETEX/PSETEX", func(t *testing.T, s *store.BotreonStore) {
+			if err := s.SetEX("sw:se", "v1", 3600); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.PSETEX("sw:ps", "v2", 3600000); err != nil {
+				t.Fatal(err)
+			}
+		}, func(s *store.BotreonStore) string {
+			a, _ := s.TTL("sw:se")
+			b, _ := s.TTL("sw:ps")
+			return ttlPresence(a) + "/" + ttlPresence(b) + "/" + getOrMissing(s, "sw:se") + getOrMissing(s, "sw:ps")
+		}},
 	}
 
 	// knownDefects 登记「本扫面已确认不等价、但修复尚未落地」的命令族。
