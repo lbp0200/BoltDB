@@ -423,6 +423,16 @@ HMSet:418 写 `txn.Set(typeKey, KeyTypeHash)`）——**RDB 生成按 `TYPE_` �
 15 例全 PASS + 窄版 PASS——远程 -race ok 5.556s）。**扫面用例已永久加入**
 （HINCRBYFLOAT——15 例——CI 外门控；窄版未加——hash 浮点族可后续视需加）。
 
+**等价扫面扩展（2026-09-06——lost 家族纵深验证）**：扫面 15→19 例（新增
+INCRBYFLOAT / ZUNIONSTORE+ZINTERSTORE / GEOADD+GEOSEARCH / XADD+XTRIM——
+string 浮点 / zset 聚合 / geo / stream 族）——远程 -race 全 PASS（ok 5.774s）
+——**无新确定性缺陷**（编码侧 log 值参数序均与 apply 解析一致——与已修的
+ZINCRBY（编码参数序 + apply return nil）与 HINCRBYFLOAT（无 typeKey → RDB
+漏键）形成对照）——**Parse 类 return nil 剩余站点**（SET TTL 参数 / LSET/LTRIM /
+stream 其他等）留作防御性后续（正常帧不触发——malformed 帧仅在旧版本坏帧时——
+已修两处覆盖主要风险面——lost 偶发若由某站点的 malformed→success 触发——见
+上文「建议」段——继续逐站审计）。
+
 **复现命令（一条即中，无需撞竞态）**：
 
 ```bash

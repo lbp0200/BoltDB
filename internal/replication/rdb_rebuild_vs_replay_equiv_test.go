@@ -292,6 +292,15 @@ func TestRDBRebuild_EquivSweepAcrossCommandFamilies(t *testing.T) {
 			}
 		}, func(s *store.BotreonStore) string { return getOrMissing(s, "sw:c") }},
 
+		{"INCRBYFLOAT", func(t *testing.T, s *store.BotreonStore) {
+			if _, err := s.INCRBYFLOAT("sw:if", 1.5); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.INCRBYFLOAT("sw:if", 2.25); err != nil {
+				t.Fatal(err)
+			}
+		}, func(s *store.BotreonStore) string { return getOrMissing(s, "sw:if") }},
+
 		{"APPEND/SETRANGE/GETSET", func(t *testing.T, s *store.BotreonStore) {
 			if err := s.Set("sw:s", "hello"); err != nil {
 				t.Fatal(err)
@@ -433,6 +442,68 @@ func TestRDBRebuild_EquivSweepAcrossCommandFamilies(t *testing.T) {
 				o = append(o, fmt.Sprintf("%s:%g", m.Member, m.Score))
 			}
 			return strings.Join(o, ",")
+		}},
+
+		{"ZUNIONSTORE/ZINTERSTORE", func(t *testing.T, s *store.BotreonStore) {
+			if err := s.ZAdd("sw:za", []store.ZSetMember{{Member: "m1", Score: 1}, {Member: "m2", Score: 2}}); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.ZAdd("sw:zb", []store.ZSetMember{{Member: "m2", Score: 3}, {Member: "m3", Score: 4}}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.ZUnionStore("sw:zu", []string{"sw:za", "sw:zb"}, []float64{1, 2}, "SUM"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.ZInterStore("sw:zi", []string{"sw:za", "sw:zb"}, []float64{1, 1}, "SUM"); err != nil {
+				t.Fatal(err)
+			}
+		}, func(s *store.BotreonStore) string {
+			zu, _ := s.ZRange("sw:zu", 0, -1)
+			zi, _ := s.ZRange("sw:zi", 0, -1)
+			o := make([]string, 0, len(zu)+len(zi))
+			for _, m := range zu {
+				o = append(o, "zu:"+m.Member+":"+fmt.Sprintf("%g", m.Score))
+			}
+			for _, m := range zi {
+				o = append(o, "zi:"+m.Member+":"+fmt.Sprintf("%g", m.Score))
+			}
+			sort.Strings(o)
+			return strings.Join(o, ",")
+		}},
+
+		{"GEOADD/GEOSEARCH", func(t *testing.T, s *store.BotreonStore) {
+			if _, err := s.GeoAdd("sw:g", []store.GeoMember{{Member: "p1", Lat: 38.11, Lon: 13.36}}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.GeoAdd("sw:g", []store.GeoMember{{Member: "p2", Lat: 38.71, Lon: 15.52}}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.GeoSearch("sw:g", 13.5, 38.5, 500, "km", 10, false, false, false); err != nil {
+				t.Fatal(err)
+			}
+		}, func(s *store.BotreonStore) string {
+			res, _ := s.GeoSearch("sw:g", 0, 0, 20000, "km", 10, false, false, false)
+			o := make([]string, 0, len(res))
+			for _, r := range res {
+				o = append(o, r.Member)
+			}
+			sort.Strings(o)
+			return strings.Join(o, ",")
+		}},
+
+		{"XADD/XTRIM", func(t *testing.T, s *store.BotreonStore) {
+			if _, err := s.XAdd("sw:x", store.StreamXAddOptions{}, "*", map[string]string{"f1": "v1"}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.XAdd("sw:x", store.StreamXAddOptions{}, "*", map[string]string{"f2": "v2"}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.XTrim("sw:x", 1, ""); err != nil {
+				t.Fatal(err)
+			}
+		}, func(s *store.BotreonStore) string {
+			n, _ := s.XLen("sw:x")
+			return fmt.Sprintf("%d", n)
 		}},
 
 		{"RENAME", func(t *testing.T, s *store.BotreonStore) {
