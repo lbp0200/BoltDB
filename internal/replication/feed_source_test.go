@@ -2,7 +2,10 @@ package replication
 
 import (
 	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/lbp0200/BoltDB/internal/store"
 )
 
 // TestFeedEntriesFromAlignment 验证 master 侧 sender 的事件对齐与增量切片：
@@ -80,5 +83,41 @@ func TestFeedEntriesFromAlignment(t *testing.T) {
 		if ts != entries[n/2+i].TS {
 			t.Fatalf("incremental wire[%d] ts = %d, want %d", i, ts, entries[n/2+i].TS)
 		}
+	}
+}
+
+// TestVerifyFeedTSContinuity 验证 log 键 ts 空洞检测（KVrocks「迭代器离散即断开」
+// 模式——2026-09-06）：跳变条目（中间 ts 缺失）→ 明确错误；连续条目 → nil。
+// 纯函数单测（不依赖 db——无需真实空洞构造——首条边界不校验）。
+func TestVerifyFeedTSContinuity(t *testing.T) {
+	t.Parallel()
+	entry := func(ts uint64) store.ReplLogEntry { return store.ReplLogEntry{TS: ts} }
+
+	// 连续：nil
+	if err := verifyFeedTSContinuity([]store.ReplLogEntry{entry(1), entry(2), entry(3)}); err != nil {
+		t.Fatalf("continuous entries: unexpected error: %v", err)
+	}
+	// 空/单条：nil（无跳变可检）
+	if err := verifyFeedTSContinuity(nil); err != nil {
+		t.Fatalf("empty entries: unexpected error: %v", err)
+	}
+	if err := verifyFeedTSContinuity([]store.ReplLogEntry{entry(7)}); err != nil {
+		t.Fatalf("single entry: unexpected error: %v", err)
+	}
+	// 首条边界不校验（since/logStartTS 合法 gap）：[3,4,5] 连续 → nil
+	if err := verifyFeedTSContinuity([]store.ReplLogEntry{entry(3), entry(4), entry(5)}); err != nil {
+		t.Fatalf("offset-continuous entries: unexpected error: %v", err)
+	}
+
+	// 空洞（中间缺失）：明确错误含 ts gap + 期望 ts（空洞 ts=2 缺失——报 ts=3 expected 2）
+	err := verifyFeedTSContinuity([]store.ReplLogEntry{entry(1), entry(3), entry(4)})
+	if err == nil {
+		t.Fatal("gap entries: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "ts gap") {
+		t.Fatalf("gap entries: unexpected error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "expected 2") {
+		t.Fatalf("gap entries: error missing expected ts: %v", err)
 	}
 }

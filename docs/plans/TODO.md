@@ -235,7 +235,15 @@ writeMu——无反向——无死锁环）。
   （KVrocks FeedSlaveThread::loop「迭代器离散即断开」模式——feed 补发检测 log
   键 ts 跳变/空洞——检测到即断开重连而非静默——纵深防御）；②（原候选 3）
   FULLRESYNC 重建后重放起点/RDB 载入交错的逐帧日志观测（探针——用后即清）；
-  ③（保留）从侧逐帧收到序列 vs 主侧 log 比对（LOST-DIAG EARLY 累积）
+  ③（保留）从侧逐帧收到序列 vs 主侧 log 比对（LOST-DIAG EARLY 累积）——
+  **候选 ① 已实施（2026-09-06）**：feed_source.go 提取 `verifyFeedTSContinuity`
+  （log 键 ts 逐条严格连续检测——跳变即明确错误——调用方断开从侧重连——不静默
+  跳过空洞帧——KVrocks「迭代器离散即断开」模式）+ FeedEntriesFrom 调用（发送前
+  检测）——单测 `TestVerifyFeedTSContinuity`（连续/空/单条/首条边界/空洞 5 场景
+  ——纯函数——不依赖 db）——本地 lint 0 + 远程 replication 全包 49.7s 绿——
+  lost 数据显示 log==master 一致（非空洞）——检测定位为**排除工具 + 防未探索
+  空洞路径**（log 键写入失败/删除场景目前静默——加固后可见）——若 lost 复现时
+  空洞检测未触发——进一步确认 lost 非空洞方向（候选 ② 观测接续）
 
 **通用判据教训**（本轮产出，适用后续所有守卫）：凡"零丢失/零多余/全绿"的守卫，先问一句
 ——**它的判据维度覆不覆盖目标缺陷的表现形式**。幂等写入的键集比对查不出重复应用，

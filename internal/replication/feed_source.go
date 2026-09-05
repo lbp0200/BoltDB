@@ -3,6 +3,8 @@ package replication
 import (
 	"fmt"
 	"strconv"
+
+	"github.com/lbp0200/BoltDB/internal/store"
 )
 
 // parseCommandEvents 解析 RESP 命令流为逐命令参数切片（全参数——feed 值源对齐用）。
@@ -70,9 +72,27 @@ func parseReplLogValue(logValue []byte) ([]string, error) {
 // 读取经 store.ReplLogEntriesFrom(since) 增量 seek（replLogKey(since) 定位首个
 // ts>=since 的日志键——O(log N) seek + 顺序迭代——非 O(n) 全量扫描——backlog 退役
 // 尾项：增量续传源切 log-key 的读侧）。
+// verifyFeedTSContinuity 验证 log 键条目的 ts 逐条严格连续（KVrocks「迭代器离散
+// 即断开」模式——2026-09-06）：中间跳变（log 键缺失/删除）→ 明确错误——调用方
+// 断开从侧触发重连（可见性——而非静默推进游标跳过空洞帧导致从侧静默少 apply——
+// lost 开放项同族加固）。首条不校验（since/logStartTS 边界合法 gap——补发路径的
+// since 恒 ≥ logStartTS——但首条边界不设硬断言避免误报）。
+func verifyFeedTSContinuity(entries []store.ReplLogEntry) error {
+	for i := 1; i < len(entries); i++ {
+		if entries[i].TS != entries[i-1].TS+1 {
+			return fmt.Errorf("feed log ts gap at ts=%d (expected %d): log 键空洞——断开从侧重连",
+				entries[i].TS, entries[i-1].TS+1)
+		}
+	}
+	return nil
+}
+
 func (rm *ReplicationManager) FeedEntriesFrom(since uint64) ([][]string, error) {
 	entries, err := rm.store.ReplLogEntriesFrom(since)
 	if err != nil {
+		return nil, err
+	}
+	if err := verifyFeedTSContinuity(entries); err != nil {
 		return nil, err
 	}
 	out := make([][]string, 0, len(entries))
