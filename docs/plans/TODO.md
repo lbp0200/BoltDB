@@ -424,9 +424,10 @@ writeMu——无反向——无死锁环）。
 > 位置：`internal/replication/rdb_rebuild_vs_replay_equiv_test.go`
 > → `TestRDBRebuild_EquivSweepAcrossCommandFamilies`——**已修复（2026-09-06）——
 > knownDefects 表项已删——该例自动转正为回归守卫**。
-> **注意覆盖面**：扫面按 CI 资源惯例门控在 `-short` 之外（14 例 × 3 store），
+> **注意覆盖面**：扫面按 CI 资源惯例门控在 `-short` 之外（27 例 × 3 store），
 > 即 **CI 不跑扫面**——CI 常驻的是窄版 `TestRDBRebuild_EquivalentToFrameReplay`
-> （3 store / 0.07s——**已把 ZINCRBY/ZREM 加进窄版（2026-09-06）——CI 常驻覆盖**）。
+> （3 store / 0.29s——**已把 ZINCRBY/ZREM/XGROUP/XREADGROUP 加进窄版（2026-09-06）
+> ——CI 常驻覆盖——14 键两态逐键一致（帧 64 条）**）。
 
 **两处根因，缺一不可构成静默**：
 
