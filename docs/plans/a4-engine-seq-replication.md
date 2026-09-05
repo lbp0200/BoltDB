@@ -641,3 +641,95 @@ D 写路径开销未可观测**。
 - **验证测试**：`TestFullresyncTsDomainInvariant`（internal/replication/
   fullresync_ts_invariant_test.go——FULLRESYNC 响应 ts ≤ catch-up 起点 ts +
   FeedSinceTS == currentTS+1 + FeedEntriesFrom 无交集三段断言）——远程 -race 绿。
+
+### §10 附9：S0→S2 实施结果链（2026-09-03 ~ 09-05——自 TODO §1c-残留 迁入归档）
+
+> 本节为**已完成**阶段的实测记录归档（原逐条堆叠在 `docs/plans/TODO.md`，2026-09-05
+> 整理 TODO 时迁入此处——TODO 只承载未完成工作）。设计依据见 §8~§10 附8。
+
+**S1-A1 补充（附 3 之外）**：写路径覆盖完备性复核——retryUpdate 全量审计 25 候选，
+22 空洞修复（`45be299`——含 XReadGroup 作用域锁——**阻塞等待必须在锁外**）；
+LMove/RPopLPush 为假阳性（列表族 `lockListKeysOrdered` 已覆盖）；NextStartup/RenameNX
+例外核实。store + replication 跨包远程 -race 绿 + lint 0 → S1-A2 前置（key 锁覆盖
+完备）已证。S1-A2 切换落地于 `b9083a3`。
+
+**S2 定案与地基**：用户裁决方案 D（kvrocks 式 log-in-commit——RocksDB SequenceNumber
+记账 + log-data 与数据同批 + WAL 回读传播）。已提交：D 地基（`bd0c854`——commitTS 同批
+传播日志键 `REPLLOG_+tsBE`——日志键 ts 天然 = 数据 commit ts——无竞态 / 无 ctx 流穿 /
+无提交串行化）+ string 族扩展（`6fd372e`——12 写站点标识性日志值）。
+
+- **C5 基准归因核验教训（2026-09-03）**：初测 SET 路径 -race 158-165µs/op vs S1-A2 基线
+  120（看似 +30-37%）被同条件紧邻 A/B **推翻**——D-on 417µs vs pre-D 438µs（~5% 噪声内）。
+  初测为跨时机器漂移伪影（20 分钟内两批次 158-165 vs 417-438 = ~2.7x）。**bench 跨时
+  对比不可靠——同条件 A/B 必需**。D 的每写 +1 日志键开销在当前噪声下未可观测。
+
+**D 覆盖全写面（2026-09-04——~90 写站点）**：hash `ffb91af` / list `5233ab2` / set
+`f1efb8f` / zset `b0c7e57` / stream `e369cd0` / geo `f1a9c77` / 收尾 `5a5a56a`
+（json/hll/ts/rename/linsert/expire + Del/LMove/LTrim/LSet/泛型 + 语义跳过清单）——
+各族定向 + 远程 -race 全绿 + lint 0。
+
+**读侧分级-1 闭环（2026-09-04）**：读侧探针（`11f1deb`——`store.ReplLogEntries` 公共读
+helper + log 键 vs backlog 事件级比对）+ 并发 ts 单调探针（`2253a47`——8×25 并发 SET 下
+log 键 ts 严格升序无碰撞——远程 -race 无 DATA RACE）+ 兼容三套回归全绿。
+
+**feed 协议 ①-⑤ + feed-loop + 生产接线（2026-09-04）**：① wire `e322be9`（REPLLOG
+(ts, 全命令) flattened——嵌套 bulk 无收益否决）；② sender + 从侧分支 `298c87d`（增量
+sender + 从侧 REPLLOG apply + lastAppliedTS 推进 + 字节 lastOffset 双轨）；③ ACK-ts
+`15d5f7b`；④ PSYNC-ts `26403e1`（4 参整数边界——ts==0 字节模式保留）；⑤ 验证门槛
+`a3b0cb2`（ts 重放守卫——日志键回放 == 字节 backlog 回放事件级等价）+ `b043c63`/`cc3ca39`
+4 守卫 ts 双轨重写（含 GETACK 4 参测试修复 `1263d50`）。feed-loop 增量流 `982057b` +
+E2E 闭环 `6838470` + 生产接线 `07fd694`（`--feed-loop` 默认关；三套件 feed-mode 零回归）。
+
+**退役阻断与真修复链（2026-09-04——四步定位，教训密集）**：
+1. **首次实测阻断**：`TestFeedModeScaleNoLoss` 结构下 feed-mode missing=2499/3666——根因
+   = `FeedEntriesFrom` 值源对齐（log 键序 ↔ backlog 事件序）在并发写者下分叉
+   （processRequest 共享 snapshotMu.RLock——commit-A/commit-B/append-B/append-A 交错
+   → log 序 (A,B) vs backlog 序 (B,A) → 错误关联 → 从侧错位/缺失）。
+2. **对齐硬化（过渡安全网）**：每条目校验 log 键标识符值 vs 事件命令+键——失败模式从
+   "missing=2499 数据丢失"变为"convergence 停滞（lag=5184）"——**错误关联已防，可用性
+   仍缺**（feed 报错→从侧停滞）。
+3. **D4 值源切换全族（12 族 ~90 站点标识符值→全重放值）**：`7035868` string（SetWithTTL
+   用 PXAT 绝对 TTL——gc-test 比例 0.5→0.25 适配——2x vlog 写放大实证）→ `08dd4d5` hash
+   → `f94d050` list → `700a9dc` set → `e398ee1` zset（ZADD pairs+flags + Z\*STORE helper）
+   → `e2253ed` stream（XCLAIM/XAUTOCLAIM options + XGROUP 四子命令）→ `58243f5` geo
+   （BYRADIUS/BYBOX——lon-lat-member 序）→ `eb41fb1` json → `b6efdae` hll → `7e61b23`
+   rename → `1bea7ee` base（相对 TTL 标准形态——PERSIST 免改）→ `c40eecf` ts。
+4. **零对齐切换（`b9a7fa4`）**：`FeedEntriesFrom` 值源 = log 键自身全重放命令
+   （`parseReplLogValue`——无 backlog 事件读取/对齐）——并发 commit/append 分叉
+   **结构性消除**；对齐硬化 `verifyFeedAlignment` 退役。
+5. **复跑仍 missing=2473/3818 ≈65% → 根因上移至投递层**：missing key 跨 writer/seq
+   **分散**（非尾部连续）+ slave 字节 offset 超前 ~93k（D4 全重放值更大——双轨测量伪影）
+   ——**根因 = 重连 `CatchUpAndEnableSlave` 走 backlog 字节 catch-up（按从侧漂移的字节
+   offset）后跳 `feedSinceTS=curTS+1`——字节域与 ts 域 REPLLOG 流坐标不兼容 → 间隙命令
+   既不在字节补发也不在增量流 → 丢失**。治本 = 重连改 ts 域（`2c8ecd0`），非 D4/零对齐可解。
+6. **治本确认（2026-09-04）**：新增 `TestRegressionPsyncReconnectNoLossFeed` 远程 -race
+   PASS（45.8s：tokens=5636 recon=6 goroutine-delta=4——**零 MISSING/EXTRA/VALUE
+   MISMATCH**；slave offset 超前 712074 为 feed 模式已知双轨测量伪影——非关键）。
+
+**backlog 退役前置进度（2026-09-04 ~ 09-05）**：`ReplLogEntriesFrom` 增量 seek 转正
+（`ea6704a`——replLogKey(since) O(log N) seek + 顺序迭代——消除 O(n) 全量扫描）+ WAL
+字节记账双轨切换（`2e1e68b`——feed-loop 开启时跳过 `wal.Append` + maybeTruncateBacklogWAL
+——log-key 为权威持久化源；backlog 内存环保留为 offset 水位；`--feed-loop` 关闭即恢复
+字节 WAL 记账 = 回滚开关）+ 换算表落地（`ReplConversionTable` / conversion_table.go——
+OffsetToTS/TSToOffset/AlignCheck + 空表边界；含分叉检测 + 8×25 并发鲁棒；接入
+`TestTSReplayEquivalence` 末尾 AlignCheck 断言）+ RDB 线性化点 ts 化前置验证（附 8 末）。
+
+**dw A/B 基线数据（§7 协议——双轨下重复窗口度量）**：
+- 纯对照（无探针）`-count=15`（5 批 × 3 次，远程 -race）：批次 1/2/4/5 全绿 + 批次 3
+  内 1 次 FAIL（单跑复跑 PASS 39.7s——gap=0 / extra=0 / match / send_drop=0 apply_skip=0
+  lag=0——**非数据丢失**，为已知 §1c flake 面；该测试走字节模式 FULLRESYNC，feed-loop
+  改动无因果链）→ 判定：14/15 + 1 flake，不构成回归。
+- 探针开（从侧 LLen 读探针 `DW_READ_PROBE=1`——每 ~10ms 一轮 ≈ 每 10 ACK 节奏——模拟 §1c
+  读争用）`-count=15`：**15/15 全绿**，同窗口纯对照亦 15/15，两侧 0 失败 0 停滞。
+- 正式 ≤1/15 验收仍 gate 于复制切换后（backlog 内存环删除）。
+- **跨机对比教训**：远程宿主为 192.168.1.251 非 GCP 10.1.2.16——跨机数据不可比。
+
+**--full 发版基线（2026-09-05——无 -short 全量）**：replication 48.3s + server 40.1s +
+store 253.6s + cmd/integration 复制重测组 8.0s + cluster 重测组 13.2s
+（MultiNode/Gossip/SlotSync/MigrateSlotUnderLoad/Failover/BlockingFuzz 全 PASS）全绿；
+soak 类（TestClusterSoak/TestSoak\*）属 tier-C nightly（SOAK_DURATION=1h），不阻塞 PR gate。
+
+**剩余（→ TODO §1）**：阶段 1（offset 改 ts 源）与阶段 2（删环）——见 §10 附8 消费者迁移表
+与两阶段步骤；阶段 1 落点修正（FULLRESYNC ts 移入写锁）**代码已在 2026-09-05 改出但尚未
+提交**，且缺一个能区分修复前后的守卫（`TestFullresyncTsDomainInvariant` 在 pre-fix 上同样
+通过——不具区分能力）。
