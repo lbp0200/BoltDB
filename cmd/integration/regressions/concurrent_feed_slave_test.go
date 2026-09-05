@@ -64,8 +64,8 @@ func TestRegressionConcurrentFeedSlaveReplayRate(t *testing.T) {
 	}
 
 	const writers = 4
-	// 实验 4（lost 定向——6 周期复现 + lost 诊断）：cycles=6（多周期——实验 3 已
-	// 证单周期不丢）；writerInterval=5ms（高密度——放大断连窗口写入）。
+	// cycles=6（常规——lost 偶发复现窗口；实验 6 探针会话用 10 提高触发概率——
+	// 探针已按 C5 用后即清）；writerInterval=5ms（高密度——lost 与密度无关已证）。
 	const cycles = 6
 
 	stop := make(chan struct{})
@@ -232,8 +232,15 @@ func TestRegressionConcurrentFeedSlaveReplayRate(t *testing.T) {
 			diag += fmt.Sprintf("ctr:%d log=%d master=%d slave=%d; ",
 				i, logIncr[i], getInt(ctx, t, master.Client, key), getInt(ctx, t, sc, key))
 		}
-		t.Logf("replay-rate: LOST-DIAG slaveTS=%d masterTS=%d unappliedEntries=%d [%s](dup=%d lost=%d stable=%v)",
-			slaveTS, uint64(masterTS), len(unapplied), diag, dup, lost, stable)
+		// 实验 6（比对定位）：主侧 log 前 12 条帧（ts + 命令）——确认探针捕获的
+		// 异常帧 ts=4/6/7/9 是否为每个键的首条 INCR（从侧 FULLRESYNC 后从早期
+		// ts 重放的证据——lost 机制 = FULLRESYNC 重建 + 早期帧重放的计数差）。
+		early := ""
+		for i := 0; i < len(allEntries) && i < 12; i++ {
+			early += fmt.Sprintf("[ts=%d %s]", allEntries[i].TS, truncateLogCmd(allEntries[i].Value, 40))
+		}
+		t.Logf("replay-rate: LOST-DIAG slaveTS=%d masterTS=%d unappliedEntries=%d [%s](dup=%d lost=%d stable=%v) EARLY=%s",
+			slaveTS, uint64(masterTS), len(unapplied), diag, dup, lost, stable, early)
 	}
 
 	// dup 断言：恒 0（feedMu 修复——并发 FeedSlave 重发已原子化——pre-fix 上此断言红）。
@@ -250,4 +257,14 @@ func TestRegressionConcurrentFeedSlaveReplayRate(t *testing.T) {
 	} else {
 		t.Logf("replay-rate: no duplicate apply, no loss — feedMu 游标锁修复生效")
 	}
+}
+
+// truncateLogCmd 截断 log 值用于诊断打印（RESP 命令的可读前缀——实验 6 EARLY
+// 帧比对用——LOST-DIAG lost 时输出主侧 log 早期帧内容）。
+func truncateLogCmd(v []byte, max int) string {
+	s := string(v)
+	if len(s) > max {
+		return s[:max] + "..."
+	}
+	return s
 }

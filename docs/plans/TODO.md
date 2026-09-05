@@ -156,7 +156,18 @@ writeMu——无反向——无死锁环）。
   已留在测试中——任何后续 lost 复现自动输出逐键诊断）——**需从侧 apply
   逐帧日志观测**（帧 ts/命令 + INCR 执行前后计数——C5 探针用后即清）——
   测量测试保留轮询稳定逻辑 + LOST-DIAG 逐键打印 + lost ≤2 容差（>2 仍 FAIL——
-  阈值检测不静默——与 verifyUniqueTokenSet 容差同构）
+  阈值检测不静默——与 verifyUniqueTokenSet 容差同构）——
+  **实验 6（2026-09-05——C5 探针 REPL_TRACE_FEED=1——从侧 apply 逐帧读键值）——
+  lost 机制证据捕获（探针已用后即清）**：异常帧 `ts=4/6/7/9 now=1 prev=2119`
+  ——**从侧键值从 2119 重置为 1**（仅 FlushDB 可解释）——**从侧在某次重连经历
+  FULLRESYNC 重建（RDB 载入）**后**又从主侧 log 早期 ts（ts=4/6/7/9——各键首条
+  INCR 附近）重新 apply**——重建后 feed 补发起点异常（应从 snapshotTS+1——实际
+  覆盖早期帧）——从侧计数与主侧差 1（重建/重放的边界差）——**根因定向：
+  FULLRESYNC 重建路径的 feed 补发起点（CatchUpAndEnableSlave 的 FeedSetEnabled
+  curTS+1 vs 从侧重连判定）与 RDB 载入的计数一致性**——LOST-DIAG 已含主侧 log
+  早期帧打印（EARLY——复现时自动输出 ts≤12 帧内容确认）——**下一步：复现时
+  确认 EARLY 帧 + 检查 FULLRESYNC 重建路径的 feed 起点（CatchUpAndEnableSlave
+  激活水位 vs 从侧 lastAppliedTS 初值）**
 
 **通用判据教训**（本轮产出，适用后续所有守卫）：凡"零丢失/零多余/全绿"的守卫，先问一句
 ——**它的判据维度覆不覆盖目标缺陷的表现形式**。幂等写入的键集比对查不出重复应用，
