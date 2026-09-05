@@ -125,9 +125,16 @@ writeMu——无反向——无死锁环）。
   ——主侧 log 无从侧未 apply 帧（ReplLogEntriesFrom(slaveTS+1) 空）——从侧
   lastAppliedTS 真实追平——**但 INCR 计数仍少 1**——丢失发生在**从侧 apply/
   存储层**（apply 了全部帧但某条结果未生效——store 层 INCRBY 代码检查排除
-  「返回 nil 未写入」明显路径——retryUpdate 重试耗尽必返回错误）——**需从侧
-  apply 逐帧日志观测**（帧 ts/命令 + INCR 执行前后计数——C5 探针用后即清）——
-  测量测试保留轮询稳定逻辑 + LOST-DIAG 打印 + lost ≤2 容差（>2 仍 FAIL——
+  「返回 nil 未写入」明显路径——retryUpdate 重试耗尽必返回错误）——
+  **实验 5（2026-09-05——LOST-DIAG 升级逐键三方比对——工具就绪）**：
+  lost 时逐键打印 `log[key] INCR 命令数 vs master[key] 计数 vs slave[key]`
+  ——定性推理：`log==master>slave` 不可能自洽（实验 4 已证从侧追平——从侧
+  lastAppliedTS 覆盖全部 ≤masterTS 帧）——唯一自洽解释 = **主侧 log 冗余**
+  （log 记录了未生效/多余的 INCR 命令——PropagateCommand 与执行的分叉？）或
+  **匹配误报**——待复现数据确认（lost 偶发——连续 8 轮未复现——LOST-DIAG
+  已留在测试中——任何后续 lost 复现自动输出逐键诊断）——**需从侧 apply
+  逐帧日志观测**（帧 ts/命令 + INCR 执行前后计数——C5 探针用后即清）——
+  测量测试保留轮询稳定逻辑 + LOST-DIAG 逐键打印 + lost ≤2 容差（>2 仍 FAIL——
   阈值检测不静默——与 verifyUniqueTokenSet 容差同构）
 
 **通用判据教训**（本轮产出，适用后续所有守卫）：凡"零丢失/零多余/全绿"的守卫，先问一句

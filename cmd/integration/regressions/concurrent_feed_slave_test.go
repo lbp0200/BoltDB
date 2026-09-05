@@ -207,23 +207,33 @@ func TestRegressionConcurrentFeedSlaveReplayRate(t *testing.T) {
 		getInt(ctx, t, master.Client, "replay:ctr:0"),
 		getInt(ctx, t, sc, "replay:ctr:0"))
 
-	// 实验 4（lost 诊断——区分补发漏发 vs 从侧 apply 丢失）：lost 时打印
-	// slaveTS/masterTS（收敛判定是否真实追平）+ 主侧 log 中从侧未 apply 的帧数
-	// （ReplLogEntriesFrom(slaveTS+1)——非空 = 补发漏发确认）+ 主侧 log 中
-	// replay:ctr:* 的 INCR 命令总数（> slave 实际计数 = 有 INCR 命令未生效）。
+	// 实验 5（lost 定位——逐键三方比对）：lost 时逐键统计主侧 log 中该键的 INCR
+	// 命令数 vs 主侧计数 vs 从侧计数——定位：
+	//   log > master  → 主侧 log 冗余（log 记录了未生效/多余的 INCR 命令）；
+	//   log == master > slave → 从侧少 apply 一条（从侧 apply/存储层路径）；
+	//   log 匹配误报（子串误匹配非 INCR 命令）亦可暴露。
 	if lost > 0 || !stable {
 		slaveTS := slave.replMgr.GetSlaveLastAppliedTS()
 		masterTS := master.GetMasterOffset() // feed 模式 = ts
 		unapplied, _ := master.DB.ReplLogEntriesFrom(slaveTS + 1)
 		allEntries, _ := master.DB.ReplLogEntries()
-		incrCmds := 0
+		logIncr := make([]int, writers)
 		for _, e := range allEntries {
-			if bytes.Contains(e.Value, []byte("INCRBY")) && bytes.Contains(e.Value, []byte("replay:ctr")) {
-				incrCmds++
+			for i := 0; i < writers; i++ {
+				if bytes.Contains(e.Value, []byte("INCRBY")) && bytes.Contains(e.Value, []byte(fmt.Sprintf("replay:ctr:%d", i))) {
+					logIncr[i]++
+					break
+				}
 			}
 		}
-		t.Logf("replay-rate: LOST-DIAG slaveTS=%d masterTS=%d unappliedEntries=%d masterLogIncrCmds=%d (dup=%d lost=%d stable=%v)",
-			slaveTS, uint64(masterTS), len(unapplied), incrCmds, dup, lost, stable)
+		diag := ""
+		for i := 0; i < writers; i++ {
+			key := fmt.Sprintf("replay:ctr:%d", i)
+			diag += fmt.Sprintf("ctr:%d log=%d master=%d slave=%d; ",
+				i, logIncr[i], getInt(ctx, t, master.Client, key), getInt(ctx, t, sc, key))
+		}
+		t.Logf("replay-rate: LOST-DIAG slaveTS=%d masterTS=%d unappliedEntries=%d [%s](dup=%d lost=%d stable=%v)",
+			slaveTS, uint64(masterTS), len(unapplied), diag, dup, lost, stable)
 	}
 
 	// dup 断言：恒 0（feedMu 修复——并发 FeedSlave 重发已原子化——pre-fix 上此断言红）。
