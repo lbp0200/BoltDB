@@ -63,6 +63,9 @@
 >    `TestRegressionSnapshotFullresyncOffset`（58.5s）+ `TestRegressionPsyncReconnectNoLoss`
 >    （75.5s）+ feed 变体 `TestRegressionPsyncReconnectNoLossFeed`（46.8s）全绿——
 >    停滞/降级事件均 0——判据翻转对快照边界/重连零丢失路径无回归。
+>    **三套兼容套件复跑（2026-09-05——判据翻转后）**：cli 93/93 + py 247/247 +
+>    node 122/122（合计 462/462）全绿——判据翻转 + INFO `repl_apply_idle_ms`
+>    新字段对命令面零回归。
 > 2. 架构级：**A4 复制记账引擎序列化——已立项（2026-09-03）**——managed-mode ts 迁移
 >    （S0 引擎研究 ✅ → **S1-A1 应用层 key 锁层 ✅（2026-09-03——补差 + 覆盖完备性复核
 >    双里程碑）** → **S1-A2 切引擎 ✅（2026-09-03——§10 附5——全量验证绿）** → S2 复制
