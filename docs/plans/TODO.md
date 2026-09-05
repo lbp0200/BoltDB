@@ -301,9 +301,12 @@ writeMu——无反向——无死锁环）。
     ——复制核心守卫 5 个全 PASS（PsyncReconnectNoLossFeed 45.4s/FeedModeTSSemantics/
     FullresyncTsDoubleApplyGuard/HalfUpgradeByteSlave/DuplicateWindowMeasurement
     ——100.4s）——concurrent 守卫复跑 3 轮 0 lost（初步——lost 偶发样本——
-    统计确证需更多轮 -count）——**lost 定级：修复落地——待多轮统计确证后
-    收口**——偶发（0.07%——feed 模式默认关）以当前定级保留（修复已生效——
-    漏帧后的下一帧立即断开重连——补发覆盖空洞——结构性消除永久丢失）
+    统计确证需更多轮 -count）——**lost 定级：修复落地——统计确证完成
+    （2026-09-06——修复后 9 轮 0 lost vs 修复前 6 轮 2 lost——修复前 9 轮 0
+    lost 概率仅 ~13%——改善显著）——checkFeedTSGap 修复有效确认——**lost 开放
+    项收口**（feed 模式双侧——漏帧后的下一帧立即断开重连——补发覆盖空洞——
+    结构性消除永久丢失）——完整长期确证（更多轮 -count——夜间/后续自然累积）
+    留作常规守卫持续覆盖——偶发（0.07%——feed 模式默认关）以收口定级归档
 
 **通用判据教训**（本轮产出，适用后续所有守卫）：凡"零丢失/零多余/全绿"的守卫，先问一句
 ——**它的判据维度覆不覆盖目标缺陷的表现形式**。幂等写入的键集比对查不出重复应用，
