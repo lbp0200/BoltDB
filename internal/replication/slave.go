@@ -33,6 +33,13 @@ type SlaveConnection struct {
 	mu          sync.RWMutex
 	closeOnce   sync.Once
 	writeMu     sync.Mutex // 写锁：SendCommand/SendBacklogData 互斥，与 Close 不冲突
+	// feedMu: 每从侧 feed 游标锁（TODO §6 修复——a4 §10 附8.1 选项 1）——串行化
+	// FeedSlave 的「读游标 feedSinceTS → 发送 → 推进」三步（读-发-推非原子时并发
+	// FeedSlave 调用——live-push‖live-push / gap‖live-push——可重发同一 ts 区间
+	// → 从侧无去重 → 重复 apply——测量 5/5 轮 × 4/4 键复现）。锁序：propMu.RLock
+	// → feedMu → writeMu（SendCommand 内）——现有锁无反向（writeMu 持有者不反向
+	// 取 feedMu/propMu——无死锁环）。
+	feedMu sync.Mutex
 }
 
 // NewSlaveConnection 创建新的从节点连接

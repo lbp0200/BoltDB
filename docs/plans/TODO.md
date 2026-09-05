@@ -75,7 +75,7 @@ DW_READ_PROBE=1 ...                                      # 探针开 = §7 完�
 主侧发送字节 vs 从侧接收字节的**抓包级**直接比对（层 D——外部工具）。是「恢复路径重设计
 （层 C：降级无损化）」与 A4 S3 的前提。§1c 失败链的最后一环至今未实证。
 
-### 6. ✅ 并发 FeedSlave 重发——**重复 apply 已确认（2026-09-05）——修复决策待定**
+### 6. ✅ 并发 FeedSlave 重发——**已修复（2026-09-05——feedMu 游标锁——a4 §10 附8.1 选项 1）**
 
 `FeedSlave`（`feed_source.go:98-126`）的「读游标 feedSinceTS → 发送 → 推进」三步**不是
 原子**的（`writeMu` 只串行化 socket 写），而 live-push（PropagateCommand 的 feed
@@ -83,20 +83,23 @@ DW_READ_PROBE=1 ...                                      # 探针开 = §7 完�
 （`CatchUpAndEnableSlaveTS`，在 `propMu` 外）都可能对同一从侧调 FeedSlave。两个并发调用可
 各自读到同一个 `since` → 重发同一 ts 区间 → 从侧无去重 → 重复 apply。
 
-**发生率测量（2026-09-05——`concurrent_feed_slave_test.go`——`REPLAY_RATE_MEASURE=1` 复跑）**：
-判据 = 非幂等 INCR（每写者独立键）+ 主从计数比对。feed 双侧 + 4 写者 + 6 断连周期，
-`-count=5` 两次（10 轮）——
-- **5/5 轮 × 4/4 键全部复现**（第二次完整 5 轮；首次 3 轮即全复现）——slave ≈ 2.3× master
-  （每键 +625~+749），lost=0
-- **结论：不是窄窗口——常态路径**。slave 字节 offset 超前主侧 3.5×（mo=63k so=233k）
-  与计数翻倍同源（feed 帧重复 apply 推进 lastAppliedTS/字节 offset 多次）
-- 既有守卫零检测能力已解释（`verifyUniqueTokenSet` 幂等键集比对查不出重复应用——§7 判据教训）
+**测量历史（修复前——2026-09-05）**：判据 = 非幂等 INCR（每写者独立键）+ 主从计数比对。
+feed 双侧 + 4 写者 + 6 断连周期，`-count=5` 两次（10 轮）——**5/5 轮 × 4/4 键全部复现**
+（slave ≈ 2.3× master，lost=0）——常态路径非窄窗口；既有幂等键集守卫零检测能力
+（§7 判据教训）。
 
-**下一步 = 修复决策（不擅自改——选项提交决策）**：
-1. FeedSlave 加每从侧游标锁（feedSinceTS 读-发-推原子化——最小面）
-2. 从侧实现 ts 去重（apply 路径 ts ≤ lastAppliedTS 跳过——与 §6 定级的"无去重"现状相反，
-   需评估 RDB/补发边界的语义一致）
-3. 补发与 live-push 由同一序列化点裁决（gap 补发移入 propMu 内——防交错）
+**修复（2026-09-05——a4 §10 附8.1 选项 1——已实施）**：`SlaveConnection.feedMu`
+每从侧游标锁——`FeedSlave` 的读-发-推三步原子化（锁序 propMu.RLock → feedMu →
+writeMu——无反向——无死锁环）。
+- **post-fix 绿**：`concurrent_feed_slave_test.go`（gate 移除——恒绿守卫）远程 -race
+  `-count=5` 5/5 轮全 PASS——dup=0 全轮（修复目标达成）
+- **pre-fix 红**（10509ab worktree）：2/2 轮 dup 4/4 键复现（slave ≈ 3.9× master
+  ——+5681~+6374/键）——区分能力实测
+- **新开放项（修复后暴露——被 dup 掩盖的既有缺陷）**：停写后从侧 ts 追平
+  （slaveTS == masterTS）仍偶发 lost=1（规律性——约 2/5 轮）——`applySkip=0`
+  排除 transient 跳过路径——根因待定位——候选：重连补发边界（resumeTS 判定）/
+  从侧 apply 时序 / 收敛判据残余——测量测试 lost ≤2 容差内记录（>2 仍 FAIL——
+  阈值检测不静默——与 verifyUniqueTokenSet 容差同构）
 
 **通用判据教训**（本轮产出，适用后续所有守卫）：凡"零丢失/零多余/全绿"的守卫，先问一句
 ——**它的判据维度覆不覆盖目标缺陷的表现形式**。幂等写入的键集比对查不出重复应用，

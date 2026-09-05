@@ -95,10 +95,20 @@ func (rm *ReplicationManager) FeedEntriesFrom(since uint64) ([][]string, error) 
 // 模式从侧 lastOffset 允许漂移——停滞判据以 ts 形式为准（masterTS==0 旧主字节兜底
 // 不受影响——feed 模式要求 ts 化主从）。读取已转 ReplLogEntriesFrom 增量 seek
 // （O(log N) seek——非全量扫描——见 FeedEntriesFrom）。
+//
+// 并发正确性（TODO §6 修复——a4 §10 附8.1 选项 1）：本方法的「读游标 → 发送 →
+// 推进」三步在 feedMu 内原子（每从侧游标锁——feedSinceTS 读-发-推串行化）——
+// 否则并发调用（live-push 在 propMu.RLock 内并行 + gap 补发在 propMu 外）可各自
+// 读到同一 since → 重发同一 ts 区间 → 从侧无 ts 去重 → 重复 apply（非幂等命令
+// 双应用——数据发散——测量 5/5 轮 × 4/4 键复现——slave ≈ 2.3× master）。
+// 锁序：feedMu → writeMu（SendCommand 内）——propMu.RLock 外层（live-push 路径）
+// 先于 feedMu——现有锁无反向——无死锁环。
 func (rm *ReplicationManager) FeedSlave(slave *SlaveConnection) error {
 	if !slave.FeedIsEnabled() {
 		return nil
 	}
+	slave.feedMu.Lock()
+	defer slave.feedMu.Unlock()
 	since := slave.FeedSinceTS()
 	entries, err := rm.FeedEntriesFrom(since)
 	if err != nil {

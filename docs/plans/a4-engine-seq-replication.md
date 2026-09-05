@@ -689,9 +689,13 @@ D 写路径开销未可观测**。
 选项 2（从侧 ts 去重）可作纵深防御叠加（防未来其他重发路径——如字节路径残留）。
 选项 3 结构性不完整 + 写锁内 I/O——否决。
 
-**决策流程（TODO §6——不擅自改）**：本评估为决策材料——实施需人裁决（或用户授权）。
-实施后守卫形态：`concurrent_feed_slave_test.go` 移除 REPLAY_RATE_MEASURE gate
-（断言应恒绿）+ pre-fix（本评估前的提交）worktree 确认会红（与 §6 ② 同法）。
+**决策流程（TODO §6）**：**已实施（2026-09-05——选项 1——feedMu 每从侧游标锁）**：
+`SlaveConnection.feedMu` + `FeedSlave` 读-发-推原子化（锁序 propMu.RLock → feedMu →
+writeMu——无反向——无死锁环）。守卫形态落地：`concurrent_feed_slave_test.go`
+移除 REPLAY_RATE_MEASURE gate（恒绿守卫）——**post-fix 绿**（远程 -race -count=5
+5/5 轮全 PASS——dup=0 全轮）+ **pre-fix 红**（10509ab worktree——2/2 轮 dup 4/4
+键复现——slave ≈ 3.9× master——区分能力实测）。**新开放项**：停写后 ts 追平仍偶发
+lost=1（被 dup 掩盖的既有缺陷——applySkip=0 排除 transient——根因待定位——TODO §6）。
 
 ### §10 附9：S0→S2 实施结果链（2026-09-03 ~ 09-05——自 TODO §1c-残留 迁入归档）
 
