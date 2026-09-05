@@ -188,25 +188,27 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 		}
 
 	case "MSET":
-		if len(args) >= 3 && (len(args)-1)%2 == 0 {
-			for i := 1; i < len(args); i += 2 {
-				if err := s.Set(string(args[i]), string(args[i+1])); err != nil {
-					return fmt.Errorf("%s %s: %w", cmd, string(args[i]), err)
-				}
-			}
-			return nil
+		if len(args) < 3 || (len(args)-1)%2 != 0 {
+			return fmt.Errorf("invalid MSET args: want key value pairs, got %d args", len(args)-1)
 		}
+		for i := 1; i < len(args); i += 2 {
+			if err := s.Set(string(args[i]), string(args[i+1])); err != nil {
+				return fmt.Errorf("%s %s: %w", cmd, string(args[i]), err)
+			}
+		}
+		return nil
 
 	case "MSETNX":
 		// MSETNX 是条件设置：所有 key 都不存在才设置（与 master 语义一致）
-		if len(args) >= 3 && (len(args)-1)%2 == 0 {
-			pairs := make([]string, 0, len(args)-1)
-			for i := 1; i < len(args); i++ {
-				pairs = append(pairs, string(args[i]))
-			}
-			_, err := s.MSetNX(pairs...)
-			return err
+		if len(args) < 3 || (len(args)-1)%2 != 0 {
+			return fmt.Errorf("invalid MSETNX args: want key value pairs, got %d args", len(args)-1)
 		}
+		pairs := make([]string, 0, len(args)-1)
+		for i := 1; i < len(args); i++ {
+			pairs = append(pairs, string(args[i]))
+		}
+		_, err := s.MSetNX(pairs...)
+		return err
 
 	case "INCRBYFLOAT":
 		if len(args) >= 3 {
