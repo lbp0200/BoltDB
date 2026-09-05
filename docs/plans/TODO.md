@@ -254,7 +254,18 @@ writeMu——无反向——无死锁环）。
   路径——badger 事务提交但写入未生效的静默边界）——post 值探针（apply-before/
   after 配对）已备——lost 复现偶发（本轮 9 轮未中）——**post 值捕获待续**
   （复现时捕获「pre==post 值未变」帧——LOST-DIAG 已留测试内——探针 C5 纪律
-  重新加装后捕获）
+  重新加装后捕获）——**INCRBY 代码级四层检查（2026-09-06——机制定论推进）**：
+  从侧 apply 链路逐层核查（WriteCommand INCR/INCRBY 分支 → s.INCRBY
+  [string.go:356-394——keyLockMgr + retryUpdate 读-改-写] → commitTS 统一封装
+  → ReadRESP 逐条解析 [reconnect.go:449]）——**四层均无静默失败路径**：
+  ① badger 事务原子（CommitAt——提交即生效——「提交成功未写入」结构性排除）；
+  ② TTL/类型检查（ErrWrongType 返回错误→重连——不静默）；③ 接收/解析层
+  （ReadRESP 逐条解析——失败即断开重连——漏读/跳读结构性排除）；④ transient
+  跳过（applySkip——lastAppliedTS 不推进——卡住触发 B2 停滞重连——不静默且
+  lost 轮追平无跳过）——**「帧级 apply 静默失败」假设代码级排除**——lost 真实
+  来源仍开放（0.07% 偶发——多周期 KILL 交互——时序竞态候选——主侧重发/补发
+  与从侧重连/重建边界）——**最终证据途径 = post 值帧级捕获**（lost 复现时
+  捕获「值变化异常」帧——LOST-DIAG 已留——偶发难复现——以当前定级保留）
 
 **通用判据教训**（本轮产出，适用后续所有守卫）：凡"零丢失/零多余/全绿"的守卫，先问一句
 ——**它的判据维度覆不覆盖目标缺陷的表现形式**。幂等写入的键集比对查不出重复应用，
