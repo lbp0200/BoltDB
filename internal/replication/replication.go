@@ -510,9 +510,16 @@ func (rm *ReplicationManager) SetFeedLoop(enabled bool) {
 // 激活（FeedSetEnabled + SetReady）在 propMu 内原子完成（与字节路径
 // CatchUpAndEnableSlave 的激活语义一致——极小窗口——不阻塞写路径）；gap 补发在
 // propMu 外——FeedSlave 经 SendCommand 要求 Ready（slave.go:130），故先激活再补发。
-// 补发窗口内与 live-push 的潜在双发（PropagateCommand 亦从 feedSinceTS=resumeTS+1
-// 起 FeedSlave）由从侧 lastAppliedTS 去重兜底（ts <= lastAppliedTS 跳过——reconnect.go）
-// ——无丢失——补发完成后游标推进到最后已发 ts+1——后续 live-push 无缝续传。
+// 补发与 live-push 不会各发一份：两者都只经 FeedSlave 读同一个每从侧游标
+// feedSinceTS（PropagateCommand 的 feed 分支同样调 FeedSlave），补发完成后游标推进到
+// 最后已发 ts+1——后续 live-push 无缝续传。
+// 注意：**从侧没有 ts 去重**（历史注释曾称"ts <= lastAppliedTS 跳过"——该机制不存在；
+// 从侧 apply 路径对每条命令无条件执行，全包仅 psync.go CONTINUE 区间判定与
+// reconnect.go 收敛判据两处比较 ts）。因此防双发完全依赖上面那个共享游标：
+// FeedSlave 的"读游标→发送→推进"（feed_source.go）不是原子的（writeMu 只串行化 socket
+// 写），同一从侧上的并发 FeedSlave 调用可能重发同一 ts 区间而从侧重复 apply。
+// 该风险的可达率未实测（feed-mode 规模守卫 TestRegressionPsyncReconnectNoLossFeed
+// 零 EXTRA/MISMATCH 通过——与本推断相左，尚无解释）——视为开放项，勿当既成结论。
 // On error Ready stays true（已激活——由调用方 RemoveSlave 清理）。
 func (rm *ReplicationManager) CatchUpAndEnableSlaveTS(slave *SlaveConnection, resumeTS uint64) error {
 	// 激活 + Ready 在 propMu 内原子（防与 live-push 交错——字节路径同构）。

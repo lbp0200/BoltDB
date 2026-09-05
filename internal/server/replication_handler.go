@@ -72,13 +72,24 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 		defer unlock()
 
 		snapshotOffset := h.Replication.GetMasterReplOffset()
+		// RDB 线性化点 ts 化落点（a4 §10 附8 阶段 1 前置——869dfa4 验证）：FULLRESYNC
+		// 响应的 ts 字段必须与 snapshotOffset 同位（写锁内）读取——psync.go:122 的
+		// currentTS 在 HandlePSync（SnapshotMuLock 之前）锁外读，可能早于快照实际
+		// 水位。从侧把该字段直接存为 lastAppliedTS（reconnect.go:361）——既是重连
+		// 续播点（sendPSYNC 第 4 参）。后果不是"重传浪费"：从侧**无 ts 去重**
+		// （apply 路径无条件执行——见 CatchUpAndEnableSlaveTS 注释），若在 FULLRESYNC
+		// 后尚未 apply 任何一条命令就断连重连，从侧以过旧 ts 续播 → 主侧重发
+		// (staleTs, snapshotTs] 区间 → 该区间命令已在 RDB 内又被执行一遍
+		// （INCR/XADD/LPUSH 等非幂等命令双应用——数据发散）。
+		// 暴露面：仅 feed 模式（--feed-loop——默认关时该字段不参与续播判定）。
+		snapshotTS, _ := h.Db.ReplLogCurrentTS()
 		rdbData, err := replication.GenerateRDBWithSnapshotLock(h.Db)
 		if err != nil {
 			logger.Logger.Error().Err(err).Msg("生成RDB数据失败")
 			return proto.NewError("ERR failed to generate RDB")
 		}
 
-		response := fmt.Sprintf("+FULLRESYNC %s %d %d\r\n", result.ReplId, snapshotOffset, result.TS)
+		response := fmt.Sprintf("+FULLRESYNC %s %d %d\r\n", result.ReplId, snapshotOffset, snapshotTS)
 		if _, err := writer.WriteString(response); err != nil {
 			logger.Logger.Error().Err(err).Msg("发送FULLRESYNC失败")
 			return proto.NewError("ERR failed to send FULLRESYNC")
