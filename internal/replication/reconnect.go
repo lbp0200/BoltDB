@@ -401,12 +401,23 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 	// 回复（见 replication_handler.go handleSlaveReplicationConnection 的
 	// GETACK 分支）。readCommandLoop 用该回复检测投递停滞的尾巴缺口。
 	// replCtx 取消（readCommandLoop 返回 / shutdown）时本 goroutine 退出。
+	//
+	// 阶段 1（a4 §10 附8——WAIT ts 判据数据面）：每周期**先主动上报** REPLCONF
+	// ACK <lastOffset> <lastAppliedTS>（真实 Redis 从侧语义）——此前从侧只在
+	// 主侧 GETACK 请求时回复 ACK，而主侧从不发 GETACK → 主侧 UpdateSlaveAckTS
+	// 永不触发 → WAIT 判据（GetReplAckTS >= master ts）恒 0（既有缺口——无测试
+	// 暴露——阶段 1 语义守卫 TestRegressionFeedModeTSSemantics 首次覆盖）。
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
+				ackOffset := sr.lastOffset.Load()
+				ackTS := sr.lastAppliedTS.Load()
+				if err := sr.writeRespToMaster(mc, EncodeReplconfAck(ackOffset, ackTS)); err != nil {
+					return
+				}
 				if err := sr.writeRespToMaster(mc, []byte("*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n")); err != nil {
 					return
 				}

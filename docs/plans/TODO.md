@@ -17,8 +17,15 @@ WAIT / INFO `master_repl_offset` / GETACK / monitor 迁移。**backlog 环仍 Ap
 - 风险注记：INFO `master_repl_offset` 语义变化（字节→ts）需监控兼容性说明
 - **实施状态（2026-09-05）**：`GetMasterReplOffset` 改 ts 源 + `GetBacklogCurrentOffset`
   字节直读面（内部字节路径全迁移）+ WAIT ts 判据（`GetReplAckTS`）已落地——远程 -race
-  全绿（replication 49.3s + server）+ 复制守卫复跑通过；**剩余**：换算表桥的半升级窗口
-  实测（ack ts==0 字节从侧）+ INFO/ROLE/monitor 语义变化的监控兼容注记 + 阶段 2 gate
+  全绿（replication 49.3s + server）+ 复制守卫复跑通过；**语义守卫**
+  `TestRegressionFeedModeTSSemantics`（feed 模式 INFO master_repl_offset == currentTS /
+  ROLE offset == ts / WAIT 1 返回 ≥1——ts 判据）已补——**并暴露并修复既有缺口**：
+  从侧从不主动上报 REPLCONF ACK（只在主侧 GETACK 请求时回复——而主侧从不发 GETACK）
+  → 主侧 UpdateSlaveAckTS 永不触发 → WAIT 恒 0——reconnect.go 周期 goroutine 改为
+  每周期先主动上报 `REPLCONF ACK <lastOffset> <lastAppliedTS>`（真实 Redis 从侧语义）。
+  **剩余**：换算表桥的半升级窗口实测（ack ts==0 字节从侧）+ INFO/ROLE/monitor 语义
+  变化的监控兼容注记 + `framework.WaitForReplicaSync` 在 feed 模式的字节/ts 错域比较
+  注记（现有 feed 守卫依赖 slave 字节 offset >= master ts 的偶然成立——需 ts 判据）+ 阶段 2 gate
 
 ### 2. A4 阶段 2——删除 backlog 内存环（gate 严格——不可在线回滚）
 
