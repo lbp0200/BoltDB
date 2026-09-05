@@ -79,6 +79,21 @@ func TestRDBRebuild_EquivalentToFrameReplay(t *testing.T) {
 	if _, err := src.ZRem("eq:zset", "z1"); err != nil {
 		t.Fatalf("ZRem: %v", err)
 	}
+	// XGROUP 族/XREADGROUP 确定性重放（2026-09-06 第三批修复——XGROUP 参数序
+	// 错位 + XReadGroup 传播缺失——修复后窄版常驻回归守卫——stream 消费组状态）
+	id1, err := src.XAdd("eq:xg", store.StreamXAddOptions{}, "*", map[string]string{"f1": "v1"})
+	if err != nil {
+		t.Fatalf("XAdd: %v", err)
+	}
+	if err := src.XGroupCreate("eq:xg", "g1", "0"); err != nil {
+		t.Fatalf("XGroupCreate: %v", err)
+	}
+	if _, err := src.XReadGroup(context.Background(), "g1", "c1", 10, 0, "eq:xg"); err != nil {
+		t.Fatalf("XReadGroup: %v", err)
+	}
+	if _, err := src.XNack("eq:xg", "g1", "c1", id1); err != nil {
+		t.Fatalf("XNack: %v", err)
+	}
 
 	// ---- A：写锁内取水位 + 生成 RDB ----
 	src.SnapshotMuLock()
@@ -214,6 +229,15 @@ func stateDigest(t *testing.T, s *store.BotreonStore) map[string]string {
 		d["eq:ttl~presence"] = ttlPresence(ttl)
 	} else {
 		d["eq:ttl~presence"] = "err"
+	}
+	// stream 消费组状态（XGROUP/XREADGROUP/XNACK——第三批修复的常驻覆盖）
+	if xn, err := s.XLen("eq:xg"); err == nil {
+		d["eq:xg"] = fmt.Sprintf("len=%d", xn)
+		if groups, gErr := s.XInfoGroups("eq:xg"); gErr == nil {
+			for _, g := range groups {
+				d["eq:xg"] += "|" + g.Name + ":pending=" + strconv.Itoa(len(g.Pending))
+			}
+		}
 	}
 	return d
 }

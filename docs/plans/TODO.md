@@ -570,6 +570,15 @@ WriteCommand XSETID 分支参数序一致；SetWithTTL 写 SET 帧（PXAT）—�
 扫面扩展至此覆盖 string/list/hash/set/zset/geo/stream 全族 27 例——边际收益
 递减（后续批次转其他验证方向）。
 
+**窄版常驻守卫扩展（2026-09-06——CI 常驻覆盖 stream 消费组）**：
+`TestRDBRebuild_EquivalentToFrameReplay`（窄版——CI 常驻 0.3s——不做 -short
+门控）操作序列加入 XAdd+XGroupCreate+XReadGroup+XNack（eq:xg——stream 消费组
+状态复制——第三批修复的 XGROUP 参数序错位/XReadGroup 传播缺失的**常驻回归
+守卫**）——stateDigest 追加 eq:xg（XLen + XInfoGroups 组名/pending）——
+验证：窄版远程 -race PASS（0.29s——14 键两态逐键一致——帧 64 条——含 eq:xg
+消费组状态——ok 1.343s）——**CI 常驻防回归**（stream 消费组复制若再引入缺陷——
+窄版立即红）。
+
 **复现命令（一条即中，无需撞竞态）**：
 
 ```bash
