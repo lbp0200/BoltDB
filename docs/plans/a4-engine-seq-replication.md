@@ -784,7 +784,49 @@ store 253.6s + cmd/integration 复制重测组 8.0s + cluster 重测组 13.2s
 （MultiNode/Gossip/SlotSync/MigrateSlotUnderLoad/Failover/BlockingFuzz 全 PASS）全绿；
 soak 类（TestClusterSoak/TestSoak\*）属 tier-C nightly（SOAK_DURATION=1h），不阻塞 PR gate。
 
-**剩余（→ TODO §1）**：阶段 1（offset 改 ts 源）与阶段 2（删环）——见 §10 附8 消费者迁移表
-与两阶段步骤；阶段 1 落点修正（FULLRESYNC ts 移入写锁）**代码已在 2026-09-05 改出但尚未
-提交**，且缺一个能区分修复前后的守卫（`TestFullresyncTsDomainInvariant` 在 pre-fix 上同样
-通过——不具区分能力）。
+**剩余（→ TODO §1——2026-09-05 晚间归档更新）**：阶段 1（offset 改 ts 源）**已实施**
+（`7c273e4`——GetMasterReplOffset 改 ts 源 + `GetBacklogCurrentOffset` 字节直读面 +
+WAIT/INFO/GETACK/monitor 迁移 + 回滚开关 feedLoop）——见附 8「阶段 1 实施状态」；
+阶段 1 落点修正（FULLRESYNC ts 移入写锁 `5a3fb51`）+ **区分守卫已补**
+（`ea09aae`——`fullresync_ts_double_apply_test.go`——post-fix 绿 ctr=5==K /
+pre-fix e5dc482 worktree 红 ctr=10==2K——区分能力实测）。阶段 2（删环）gate 1
+（部署内字节从侧退役）未满足——删除面审计与实施蓝图见 TODO §2（bcfa8da 入册）。
+
+**阶段 1 全链实施（2026-09-05 晚间——offset 水位改 ts 源——附 8 阶段 1 实施状态）**：
+- 主体 `7c273e4`（GetMasterReplOffset 改 ts 源 + GetBacklogCurrentOffset 字节直读面
+  + CatchUpAndEnableSlave 字节循环直读 + WAIT ts 判据 + FeedLoopEnabled/GetReplAckTS
+  访问面）；
+- 语义守卫 `2003494`（TestRegressionFeedModeTSSemantics——INFO/ROLE ts 语义 + WAIT
+  ts 判据——**暴露并修复既有缺口**：从侧从不主动上报 REPLCONF ACK（只在主侧 GETACK
+  请求时回复——而主侧从不发 GETACK）→ 主侧 UpdateSlaveAckTS 永不触发 → WAIT 恒
+  0——reconnect.go 周期 goroutine 改为每周期先主动上报 REPLCONF ACK <offset> <ts>）；
+- 同步判据 + 监控注记 `82aa601`（WaitForReplicaSync feed 模式 ts 判据——
+  GetSlaveLastAppliedTS；INFO/ROLE/monitor/collector 的 ts 语义注记入附 8 风险①）；
+- 半升级窗口守卫 `7b0253c`（TestRegressionHalfUpgradeByteSlave——feed 主侧 + 字节
+  从侧混合同步——双轨兼容承诺验证）；
+- 全量回归 `9aa1c94`（regressions 全量 9 批次 + cmd/integration 关键批次零回归）；
+- 最终门禁 `c9722ec`（internal 全包 11 包绿 + 命令功能批次——backup 既有失败
+  TestBackupManager_BackupBadger 记录——S1-A2 managed 切换后兼容问题——不入今日范围）。
+
+**feedMu 修复（2026-09-05——§6 选项 1——附 8.1）**：`e304a07`（SlaveConnection.feedMu
+每从侧游标锁——FeedSlave 读-发-推原子化——锁序 propMu.RLock → feedMu → writeMu——
+并发 FeedSlave 重复 apply（测量 5/5 轮 × 4/4 键——slave ≈ 2.3×）消除——post-fix 绿
+（dup=0 全轮）+ pre-fix 红（10509ab worktree——2/2 轮 dup 4/4 键——区分能力实测）。
+
+**lost 开放项定位链（2026-09-05——真丢失 0.07%/轮——feedMu 修复后暴露——TODO §6）**：
+`8498fe8`/`e1ec2b2`/`08dbe62`/`d050ab3`/`2367460`/`03e93a9`/`ebce365`——实验 1-6
+（写者密度无关 → 真丢失确认 → 单次重连不丢 → 补发漏发排除 → LOST-DIAG 逐键工具 →
+C5 探针捕获异常帧 ts=4/6/7/9 now=1 prev=2119——FULLRESYNC 重建 + 重放主侧 log 早期
+内容）——根因定向 FULLRESYNC 重建路径——代码级无直接解（feed 起点 curTS+1 / 从侧
+ts=snapshotTS 均正确）——定级保留（0.07% 偶发单条——feed 模式默认关——非阻塞）——
+LOST-DIAG EARLY 打印就绪（复现自然累积证据）。
+
+**C4 发散悖论定论（2026-09-05）**：`e1fd352`——feed 模式（双侧 --feed-loop）重连判定
+全程 ts 域（PSYNC-ts 整数比较 + 降级 FULLRESYNC 安全重建 + resumeTS+1 补发）——
+StartsAtCommandBoundary 字节边界不参与——悖论结构性消失——仅字节路径残留（gate 1
+退役后彻底消除）——层 D 抓包级比对降级为可选验证。
+
+**阶段 2 实施蓝图（2026-09-05）**：`bcfa8da`——删除面 6 项审计（CatchUpAndEnableSlave
+/SendBacklogData/psync 字节分支/BacklogWAL/环 + GetBacklogCurrentOffset/GetMasterReplOffset
+字节回退）+ 关键设计点（FULLRESYNC 后 ts 域激活替代字节 catch-up）+ 实施顺序
+（gate 1 部署 → gate 2/3 核验 → 改造 → 删除 → 守卫 → 回归）——见 TODO §2。
