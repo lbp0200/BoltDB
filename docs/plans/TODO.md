@@ -6,7 +6,7 @@
 
 ## 待办
 
-### 1. A4 阶段 1——offset 水位改 ts 源（双轨并存——可回滚）
+### 1. ✅ A4 阶段 1——offset 水位改 ts 源——已完成（2026-09-05——剩余并入 §2 gate 1）
 
 `GetMasterReplOffset` 改读 ts 源（`store.ReplLogCurrentTS()`）；RDB snapshot 线性化点改 ts；
 WAIT / INFO `master_repl_offset` / GETACK / monitor 迁移。**backlog 环仍 Append 但无消费者**
@@ -113,6 +113,13 @@ DW_READ_PROBE=1 ...                                      # 探针开 = §7 完�
 （tombstone 卡空 L0）。
 
 - **下一步**：`scale-data-filler`（按 CLUSTER SHARDS/SLOTS 分组 pipeline）或分段小批量重测
+- **工具就绪（2026-09-05 确认）**：`cmd/scale-data-filler` 已实现按槽分组 pipeline
+  （CLUSTER SHARDS/SLOTS → 槽位归属分组 → 每组普通 client pipeline——避免跨槽
+  Exec 整批失败——批上限 16MB——失败逐 key 重试——含 DBSIZE 确认 + measureGET）——
+  等待 10.1.2.16 可达即可启动测量
+- **机器可达性（2026-09-05 多次重试）**：10.1.2.16（GCP VM elex-gm0135）多次 SSH
+  均 Operation timed out——网络恢复前无法启动基线——192.168.1.251（HDD——非 SSD
+  基线环境）不可替代
 - 前置三查：① `DEBUG GC` 已完成（GC 期间 1MB SET 减速 1350×）；② 无残留 redis-benchmark；
   ③ `-r` 必带（否则覆盖写同一 key）；测完 FLUSHDB
 
@@ -250,4 +257,7 @@ writeMu——无反向——无死锁环）。
 | GETACK 回复参数量测试（`handler_coverage5_test.go:649` 3 参→4 参） | 2026-09-04 | 断言改 4 参 + 校验第 4 参 == currentTS——远程 server 全包绿 43.3s；注：`handler_depth_test.go:1304` 走 3 参路径，断言 3 参正确，不在范围 |
 | v8.52.0 发版基线（`--full` 无 -short 全量） | 2026-09-05 | a4 §10 附9——soak 类属 tier-C nightly，不阻塞 PR gate |
 | §6 FULLRESYNC 线性化点 ts 移入写锁 + **区分守卫** | 2026-09-05 | 5a3fb51 落点修正；守卫 `fullresync_ts_double_apply_test.go`——post-fix 绿（ctr=5==K）/ pre-fix e5dc482 worktree 红（ctr=10==2K 双应用）——`HandlePSyncAfterTSRead` 钩子（psync.go，生产 nil） |
+| **A4 阶段 1（offset 水位改 ts 源）** | 2026-09-05 | a4 §10 附9（实施结果链）+ TODO §1——7c273e4 主体 + 2003494 语义守卫/WAIT 缺口修复 + 82aa601 同步判据 + 7b0253c 半升级窗口 + 9aa1c94 全量回归 + c9722ec 最终门禁——剩余（阶段 2 gate 1）见 TODO §2 |
+| **§6 并发 FeedSlave 重发（feedMu 游标锁）** | 2026-09-05 | a4 §10 附8.1 选项 1——e304a07 实施——post-fix `-count=5` 全绿（dup=0）/ pre-fix 10509ab worktree 红（2/2 轮 dup 4/4 键）——恒绿守卫 `concurrent_feed_slave_test.go`——新开放项（lost=1 偶发）见 TODO §6 |
+| **C4 发散悖论（feed 模式结构性消失）** | 2026-09-05 | TODO §5——e1fd352——重连判定全程 ts 域（PSYNC-ts 整数比较 + 降级 FULLRESYNC + resumeTS+1）——字节边界不参与——仅字节路径残留（gate 1 退役后彻底消除）——层 D 降级可选验证 |
 | §3 split-brain 家族 flake | 2026-09-01 | 负载敏感时序扰动（gossip HelloInterval 500ms），非共识缺陷；三重测移除 `t.Parallel()`；家族维持 documented-unreliable |
