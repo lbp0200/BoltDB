@@ -1344,9 +1344,13 @@ func WriteCommand(s *BotreonStore, args [][]byte, ctx context.Context) error {
 			switch tok {
 			case "COUNT":
 				if i+1 >= len(args) {
-					return nil
+					return fmt.Errorf("invalid XREADGROUP COUNT: missing count")
 				}
-				count, _ = strconv.ParseInt(string(args[i+1]), 10, 64)
+				var cErr error
+				count, cErr = strconv.ParseInt(string(args[i+1]), 10, 64)
+				if cErr != nil {
+					return fmt.Errorf("invalid XREADGROUP COUNT %q: %w", args[i+1], cErr)
+				}
 				i += 2
 			case "BLOCK":
 				// Non-blocking apply on replica
