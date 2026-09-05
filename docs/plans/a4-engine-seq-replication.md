@@ -666,6 +666,33 @@ D 写路径开销未可观测**。
   fullresync_ts_invariant_test.go——FULLRESYNC 响应 ts ≤ catch-up 起点 ts +
   FeedSinceTS == currentTS+1 + FeedEntriesFrom 无交集三段断言）——远程 -race 绿。
 
+### §10 附 8.1：并发 FeedSlave 重复 apply——修复决策评估（2026-09-05——待决策）
+
+> 背景：TODO §6——`FeedSlave`（feed_source.go:98-126）「读游标 feedSinceTS →
+> 发送 → 推进」三步非原子（writeMu 只串行化 socket 写）——live-push（PropagateCommand
+> feed 分支——propMu.RLock——**多写者可同时持有 RLock 并行**）与 gap 补发
+> （CatchUpAndEnableSlaveTS——propMu 外）都可能对同一从侧调 FeedSlave——并发调用
+> 各自读到同一 since → 重发同一 ts 区间 → 从侧无 ts 去重 → 重复 apply。
+> **测量已确认**（`concurrent_feed_slave_test.go`——REPLAY_RATE_MEASURE=1）：
+> 4 写者 + 6 断连周期 × 10 轮全复现——slave ≈ 2.3× master（INCR 计数翻倍——
+> 非幂等双应用——数据发散），lost=0——**常态路径非窄窗口**。
+
+**三选项评估**（完整性 / 改动面 / 风险）：
+
+| 选项 | 完整性 | 改动面 | 风险 | 结论 |
+|---|---|---|---|---|
+| 1. FeedSlave 加每从侧游标锁（feedMu——读-发-推原子化） | **完整**——所有 FeedSlave 调用串行化（live-push‖live-push 与 gap‖live-push 皆解决——测量复现的两个组合） | 最小——SlaveConnection 加 feedMu + FeedSlave 包临界区；锁序 propMu.RLock → feedMu → writeMu（SendCommand 内）——现有锁无反向（writeMu 持有者不反向取 feedMu/propMu） | 低——独立锁、短临界、多从侧各锁独立 | **推荐** |
+| 2. 从侧实现 ts 去重（apply 路径 ts ≤ lastAppliedTS 跳过） | 完整（最终一致兜底） | 中等——reconnect.go apply 路径 + 判据精确性（REPLLOG ts 严格升序——乱序即丢数据）+ 新守卫 | 中高——去重判据错误 = 真丢失；从侧语义变更（与"无去重"现状相反）需 FULLRESYNC/RDB 边界重验 | 可选叠加（纵深防御） |
+| 3. 补发与 live-push 由同一序列化点裁决（gap 补发移入 propMu 内） | **不完整**——只解决 gap‖live-push；live-push‖live-push（propMu.RLock 并行——多写者常态）仍重发——测量主导组合未覆盖 | 中——CatchUpAndEnableSlaveTS 结构改动 | 高——propMu 写锁内做网络 I/O（SendCommand）阻塞全部写路径 RLock——性能灾难 | **否决** |
+
+**推荐**：选项 1（每从侧游标锁）为主——完整、最小面、无语义变化、无性能灾难；
+选项 2（从侧 ts 去重）可作纵深防御叠加（防未来其他重发路径——如字节路径残留）。
+选项 3 结构性不完整 + 写锁内 I/O——否决。
+
+**决策流程（TODO §6——不擅自改）**：本评估为决策材料——实施需人裁决（或用户授权）。
+实施后守卫形态：`concurrent_feed_slave_test.go` 移除 REPLAY_RATE_MEASURE gate
+（断言应恒绿）+ pre-fix（本评估前的提交）worktree 确认会红（与 §6 ② 同法）。
+
 ### §10 附9：S0→S2 实施结果链（2026-09-03 ~ 09-05——自 TODO §1c-残留 迁入归档）
 
 > 本节为**已完成**阶段的实测记录归档（原逐条堆叠在 `docs/plans/TODO.md`，2026-09-05
