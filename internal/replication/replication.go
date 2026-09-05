@@ -327,6 +327,18 @@ func (rm *ReplicationManager) GetSlaveReplOffset() int64 {
 	return 0
 }
 
+// GetSlaveLastAppliedTS 获取从节点已应用的直接主侧 ts 水位（slave 角色时有效——
+// S2 feed 协议——阶段 1：framework.WaitForReplicaSync 的 feed 模式 ts 判据数据源
+// ——与 GetSlaveReplOffset（字节域）错域——feed 部署下用 ts 面做同步判据）。
+func (rm *ReplicationManager) GetSlaveLastAppliedTS() uint64 {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	if rm.slaveReconnector != nil {
+		return rm.slaveReconnector.GetLastAppliedTS()
+	}
+	return 0
+}
+
 // GetSlaveApplyIdleMs 返回从侧最近一次成功应用复制命令后的空闲毫秒数
 // （B2 应用进度探针——INFO repl_apply_idle_ms 数据源——§1c 冻结链的
 // "收到数据但应用卡住"检测面）。0 = 从侧不在复制或从未应用。

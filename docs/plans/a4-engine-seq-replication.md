@@ -632,10 +632,15 @@ D 写路径开销未可观测**。
   （`--feed-loop`）保留为启动要求（回滚 = 阶段 1 状态需代码还原——阶段 2 不可在线回滚，
   故 gate 必须严格）。
 
-**风险**：① INFO master_repl_offset 语义变化（字节→ts）——客户端/监控兼容注记；
-② 半升级窗口（部分从侧字节）——换算表桥（§10 附7 (ii) 升级桥）；③ RDB 线性化点迁移
-——保持"快照点 ts = catch-up 起点 ts+1"不变式（与 FULLRESYNC 守卫同构——4 守卫重写
-以表核验）。
+**风险**：① INFO master_repl_offset 语义变化（字节→ts）——客户端/监控兼容注记：
+   feed 模式（--feed-loop 开）下 `INFO master_repl_offset` / `ROLE` offset 字段 /
+   monitor `MasterOffset` / collector `MasterReplOffsetFn` 均为 log 键最大 ts
+   （单调小步增长——量级远小于字节 offset——语义 = "已提交命令的 ts 水位"而非
+   "已传播字节"——与从侧字节 offset 不可直接比较）；字节模式（默认）不变。
+   监控告警阈值若跨 feed 开关复用会失配——部署切换时需复核（2026-09-05 注记）。
+   ② 半升级窗口（部分从侧字节）——换算表桥（§10 附7 (ii) 升级桥）；③ RDB 线性化点迁移
+   ——保持"快照点 ts = catch-up 起点 ts+1"不变式（与 FULLRESYNC 守卫同构——4 守卫重写
+   以表核验）。
 
 **RDB 线性化点 ts 化——前置验证（2026-09-05——阶段 1 先行）**：
 - **勘察**：FULLRESYNC 分支 snapshotOffset（handler:74）在 SnapshotMuLock 写锁内捕获

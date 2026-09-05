@@ -141,6 +141,13 @@ func (sr *SlaveReconnector) GetLastOffset() int64 {
 	return sr.lastOffset.Load()
 }
 
+// GetLastAppliedTS 返回从侧已应用的直接主侧 ts 水位（S2 feed 协议——REPLLOG
+// 条目 ts——同步判据的 ts 面——阶段 1：framework.WaitForReplicaSync 的 feed
+// 模式判据数据源）。
+func (sr *SlaveReconnector) GetLastAppliedTS() uint64 {
+	return sr.lastAppliedTS.Load()
+}
+
 // GetApplyIdle 返回最近一次成功应用复制命令后的空闲时长（B2 应用进度探针——
 // 停滞检测改测应用进度的采集面：lastDataTime 持续刷新而应用卡住时此值增长）。
 func (sr *SlaveReconnector) GetApplyIdle() time.Duration {

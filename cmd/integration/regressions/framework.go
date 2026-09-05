@@ -234,6 +234,11 @@ func (s *RegressionServer) StopSlave() {
 
 // WaitForReplicaSync 等待 slave 的 offset 追上 master，最多等待 timeout
 func (s *RegressionServer) WaitForReplicaSync(ctx context.Context, master, slave *RegressionServer, timeout time.Duration) bool {
+	// 阶段 1（a4 §10 附8——offset 水位改 ts 源）：feed 模式（--feed-loop）下
+	// master 侧 GetMasterReplOffset 已返回 ts 水位（与 slave 侧字节 offset 错域）
+	// ——同步判据必须同域：ts 面（slave lastAppliedTS >= master currentTS——
+	// applied 语义——GetSlaveLastAppliedTS）。字节模式保持字节比较（现状）。
+	feedMode := master.replMgr.FeedLoopEnabled()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		select {
@@ -241,10 +246,18 @@ func (s *RegressionServer) WaitForReplicaSync(ctx context.Context, master, slave
 			return false
 		default:
 		}
-		masterOff := master.replMgr.GetMasterReplOffset()
-		slaveOff := slave.replMgr.GetSlaveReplOffset()
-		if slaveOff >= masterOff {
-			return true
+		if feedMode {
+			masterTS := master.replMgr.GetMasterReplOffset() // ts 域
+			// #nosec G115——masterTS 由非负 ts 装入 int64
+			if slave.replMgr.GetSlaveLastAppliedTS() >= uint64(masterTS) {
+				return true
+			}
+		} else {
+			masterOff := master.replMgr.GetMasterReplOffset()
+			slaveOff := slave.replMgr.GetSlaveReplOffset()
+			if slaveOff >= masterOff {
+				return true
+			}
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
