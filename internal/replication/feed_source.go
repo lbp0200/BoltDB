@@ -112,7 +112,7 @@ func (rm *ReplicationManager) FeedSlave(slave *SlaveConnection) error {
 		for j, a := range args {
 			argBytes[j] = []byte(a)
 		}
-		if err := slave.SendCommand(serializeCommand(argBytes), rm.GetMasterReplOffset()); err != nil {
+		if err := slave.SendCommand(serializeCommand(argBytes), rm.GetBacklogCurrentOffset()); err != nil {
 			return err
 		}
 	}

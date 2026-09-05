@@ -228,13 +228,24 @@ func (h *Handler) handleWAIT(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewInteger(0)
 	}
 
+	// 阶段 1（a4 §10 附8——offset 水位改 ts 源）：feed 模式（--feed-loop）下主侧
+	// 等待目标 = ts 水位（GetMasterReplOffset 返回 ts）——从侧确认面同域比较
+	// （GetReplAckTS——S2 ACK-ts 双轨 applied 语义）；字节模式 = 字节比较（现状）。
+	// ack ts == 0（字节从侧未上报 ts）不满足 ts 判据——半升级窗口由换算表桥兜底
+	// （a4 §10 附7 (ii)——阶段 1 注记）。
+	feedTS := h.Replication.FeedLoopEnabled()
 	targetOffset := h.Replication.GetMasterReplOffset()
 	deadline := time.Now().Add(time.Duration(timeoutMs) * time.Millisecond)
 
 	for {
 		acked := 0
 		for _, slave := range h.Replication.GetSlaves() {
-			if slave.GetReplAckOffset() >= targetOffset {
+			if feedTS {
+				// #nosec G115——targetOffset 由非负 ts 装入 int64
+				if slave.GetReplAckTS() >= uint64(targetOffset) {
+					acked++
+				}
+			} else if slave.GetReplAckOffset() >= targetOffset {
 				acked++
 			}
 		}

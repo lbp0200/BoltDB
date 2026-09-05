@@ -15,6 +15,10 @@ WAIT / INFO `master_repl_offset` / GETACK / monitor 迁移。**backlog 环仍 Ap
 - 消费者迁移表（17 处）+ 两阶段步骤 → `a4-engine-seq-replication.md` §10 附8
 - 前置已齐：PSYNC-ts / ACK-ts / feed-loop 接线 / 重连 ts 域 / 增量 seek / WAL 双轨 / 换算表
 - 风险注记：INFO `master_repl_offset` 语义变化（字节→ts）需监控兼容性说明
+- **实施状态（2026-09-05）**：`GetMasterReplOffset` 改 ts 源 + `GetBacklogCurrentOffset`
+  字节直读面（内部字节路径全迁移）+ WAIT ts 判据（`GetReplAckTS`）已落地——远程 -race
+  全绿（replication 49.3s + server）+ 复制守卫复跑通过；**剩余**：换算表桥的半升级窗口
+  实测（ack ts==0 字节从侧）+ INFO/ROLE/monitor 语义变化的监控兼容注记 + 阶段 2 gate
 
 ### 2. A4 阶段 2——删除 backlog 内存环（gate 严格——不可在线回滚）
 

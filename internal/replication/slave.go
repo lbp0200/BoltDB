@@ -121,6 +121,12 @@ func (sc *SlaveConnection) GetReplAckOffset() int64 {
 	return sc.ReplAckOffset.Load()
 }
 
+// GetReplAckTS 获取从节点确认的主侧 ts 水位（S2 ACK-ts 双轨——applied 语义——
+// WAIT ts 化判据的从侧确认面——阶段 1：ack ts == 0 = 字节从侧未上报 ts）。
+func (sc *SlaveConnection) GetReplAckTS() uint64 {
+	return sc.ReplAckTS.Load()
+}
+
 // SendCommand 发送命令到从节点
 // 使用 writeMu 而非 sc.mu，避免与 Close() 的锁链死锁。
 func (sc *SlaveConnection) SendCommand(cmdBytes []byte, offset int64) error {

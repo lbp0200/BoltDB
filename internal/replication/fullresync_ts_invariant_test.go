@@ -61,13 +61,15 @@ func TestFullresyncTsDomainInvariant(t *testing.T) {
 	}
 
 	// [3] 字节 catch-up + feed-mode 激活（CatchUpAndEnableSlave——replication.go:523）
+	// 阶段 1（a4 §10 附8）：字节路径起点必须取 backlog 字节水位（GetBacklogCurrentOffset）
+	// ——GetMasterReplOffset 在 feed 模式下已返回 ts 域值（喂给字节 catch-up 会错域）。
 	server, client := net.Pipe()
 	defer server.Close()
 	defer client.Close()
 	_ = client // 测试仅验证激活水位——不读流帧
 	sc := NewSlaveConnection(server)
 	rm.AddSlave(sc)
-	if err := rm.CatchUpAndEnableSlave(sc, rm.GetMasterReplOffset()); err != nil {
+	if err := rm.CatchUpAndEnableSlave(sc, rm.GetBacklogCurrentOffset()); err != nil {
 		t.Fatalf("CatchUpAndEnableSlave: %v", err)
 	}
 	defer rm.RemoveSlave(sc.ID)

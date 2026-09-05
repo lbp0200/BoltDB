@@ -21,7 +21,7 @@ func TestCatchUpAndEnableSlave_EmptyGapSetsReady(t *testing.T) {
 	slave := NewSlaveConnection(newMockConn())
 	rm.AddSlave(slave)
 
-	start := rm.GetMasterReplOffset()
+	start := rm.GetBacklogCurrentOffset()
 	if err := rm.CatchUpAndEnableSlave(slave, start); err != nil {
 		t.Fatalf("empty-gap catch-up: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestCatchUpAndEnableSlave_ConcurrentPropagateNoDupNoHole(t *testing.T) {
 	for i := 0; i < prefill; i++ {
 		rm.PropagateCommand([][]byte{[]byte("SET"), []byte(fmt.Sprintf("pre:%d", i)), []byte("1")})
 	}
-	startOffset := rm.GetMasterReplOffset()
+	startOffset := rm.GetBacklogCurrentOffset()
 	assert.True(t, startOffset > 0)
 
 	conn := newMockConn()

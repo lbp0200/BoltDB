@@ -71,7 +71,7 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 		}
 		defer unlock()
 
-		snapshotOffset := h.Replication.GetMasterReplOffset()
+		snapshotOffset := h.Replication.GetBacklogCurrentOffset()
 		// RDB 线性化点 ts 化落点（a4 §10 附8 阶段 1 前置——869dfa4 验证）：FULLRESYNC
 		// 响应的 ts 字段必须与 snapshotOffset 同位（写锁内）读取——psync.go:122 的
 		// currentTS 在 HandlePSync（SnapshotMuLock 之前）锁外读，可能早于快照实际
@@ -128,7 +128,7 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 			return nil
 		}
 
-		currentOffset := h.Replication.GetMasterReplOffset()
+		currentOffset := h.Replication.GetBacklogCurrentOffset()
 		logger.Logger.Info().
 			Str("slave_addr", remoteAddr).
 			Str("repl_id", result.ReplId).
@@ -184,7 +184,7 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 			// 先发送 backlog（[result.Offset, currentOffset)）再注册 slave。
 			// 此时 slave 不在 ReplicationManager.slaves 中，PropagateCommand
 			// 不会向其 live-push。
-			currentOffset := h.Replication.GetMasterReplOffset()
+			currentOffset := h.Replication.GetBacklogCurrentOffset()
 			if err := replication.SendBacklogData(slaveConn, backlog, result.Offset, currentOffset); err != nil {
 				logger.Logger.Error().Err(err).
 					Int64("start_offset", result.Offset).
@@ -329,7 +329,7 @@ func (h *Handler) handleSlaveReplicationConnection(ctx context.Context, slave *r
 		// RESP 数组命令，使从节点 readCommandLoop 能直接解析。
 		if cmd == "REPLCONF" && len(req.Args) >= 2 &&
 			strings.ToUpper(string(req.Args[1])) == "GETACK" {
-			masterOffset := h.Replication.GetMasterReplOffset()
+			masterOffset := h.Replication.GetBacklogCurrentOffset()
 			currentTS, _ := h.Replication.CurrentTS()
 			ackResp := replication.EncodeReplconfAck(masterOffset, currentTS)
 			if err := slave.WriteAndFlush([]byte(ackResp)); err != nil {

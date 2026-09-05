@@ -617,6 +617,16 @@ D 写路径开销未可观测**。
 - **阶段 1——offset 改 ts 源（双轨并存——backlog 环降为影子）**：`GetMasterReplOffset`
   改读 ts 源；RDB snapshot 线性化点改 ts；WAIT/INFO/GETACK 迁移；backlog 环仍 Append
   但无消费者（影子——换算表核验双轨一致）——此阶段**可回滚**（配置开关切回字节源）。
+  - **实施状态（2026-09-05）**：`GetMasterReplOffset` 改读 ts 源（feedLoop 开时 =
+    `store.ReplLogCurrentTS`——int64 承载——#nosec G115）；新增 `GetBacklogCurrentOffset`
+    字节直读面（内部字节路径——FULLRESYNC 快照点 / CONTINUE 字节补发 /
+    CatchUpAndEnableSlave 循环 / GETACK 字节字段 / REPLCONF GETACK / FeedSlave 字节
+    track——全部迁移不经 GetMasterReplOffset——避免 ts 域值进字节路径）；WAIT 迁移 ts
+    判据（feed 模式 = ack ts 比较 `GetReplAckTS`——字节从侧 ack ts==0 不满足——半升级
+    窗口由换算表桥兜底注记）；INFO `master_repl_offset` / ROLE / monitor / collector
+    自动跟随（语义注记——风险①）；回滚 = feedLoop 关（字节源——现状默认）。
+    验证：远程 -race（replication 49.3s + server 绿）+ 复制守卫复跑（NoLossFeed
+    45.5s + FullresyncTsDoubleApplyGuard 2.74s + NoLoss 28.5s）全绿。
 - **阶段 2——删除环（gate 通过后）**：删 `ReplicationBacklog`/`BacklogWAL`/
   `SendBacklogData`/`CatchUpAndEnableSlave` 字节循环/psync 字节分支——配置化开关
   （`--feed-loop`）保留为启动要求（回滚 = 阶段 1 状态需代码还原——阶段 2 不可在线回滚，

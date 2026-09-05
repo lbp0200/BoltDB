@@ -227,18 +227,32 @@ func (rm *ReplicationManager) GetReplicationID() string {
 
 // GetMasterReplOffset 获取主节点复制偏移量。
 //
-// 偏移量就是 backlog 的连续写入水位，二者必须是同一个数：该值会被
-//   - +FULLRESYNC 通告给从节点（从节点原样存为自己的 lastOffset，reconnect.go sendPSYNC）
-//   - 当作 backlog.GetRange 的切片起点（从节点的字节流从它开始）
-//   - 用于 PSYNC CONTINUE 的可用性与命令边界判定
+// 阶段 1（a4 §10 附8——offset 水位改 ts 源）：feed 模式（--feed-loop 开）下主侧
+// 对外水位 = log 键最大 ts（store.ReplLogCurrentTS）——backlog 环降为影子（仍
+// Append 但无对外消费者——换算表核验双轨一致）。回滚：feedLoop 关 = 字节源
+// （backlog.GetCurrentOffset——阶段 2 退役前的默认）。
 //
-// 这三处都要求它落在命令边界上。原先另设的 `masterReplOffset += len(cmdBytes)`
-// 计数器做不到：Append 在环锁下连续推进，求和却按完成顺序累加，两者可以分叉
-// （实测：并发传播下 13.5% 的采样读到落后值；在真实 FULLRESYNC 窗口内约 1% 的
-// 通告值切不出整条命令，因为该临界区只阻塞提交、不阻塞传播）。让偏移量等于环
-// 水位后，分叉在结构上不再可能。见 repl_offset_boundary_test.go 与
-// docs/failures/repl-offset-boundary-drift.md。
+// 语义注记：feed 模式部署下返回值从「字节 offset」变为「ts 水位」——INFO
+// master_repl_offset / ROLE / WAIT 目标 / monitor / collector 等**对外水位**
+// 消费者随之变化（监控兼容性——a4 §10 附8 风险①）。内部字节路径
+// （FULLRESYNC 快照点 / CONTINUE 字节补发 / CatchUpAndEnableSlave 字节循环 /
+// GETACK 字节字段 / FeedSlave 字节 track）一律改走 GetBacklogCurrentOffset
+// （字节直读——不经本方法——避免拿到 ts 域值当字节起点）。
 func (rm *ReplicationManager) GetMasterReplOffset() int64 {
+	if rm.feedLoop.Load() {
+		ts, _ := rm.store.ReplLogCurrentTS()
+		// #nosec G115——ts 单调小步增长，远低于 MaxInt64
+		return int64(ts)
+	}
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	return rm.backlog.GetCurrentOffset()
+}
+
+// GetBacklogCurrentOffset 读取 backlog 环的字节写入水位（backlog 影子兼容——
+// 阶段 1 双轨：内部字节路径的直读面——经 GetMasterReplOffset 会拿到 ts 域值）。
+// 阶段 2 删除环时本方法与字节路径一并退役（a4 §10 附8 迁移表）。
+func (rm *ReplicationManager) GetBacklogCurrentOffset() int64 {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
 	return rm.backlog.GetCurrentOffset()
@@ -503,6 +517,12 @@ func (rm *ReplicationManager) SetFeedLoop(enabled bool) {
 	rm.feedLoop.Store(enabled)
 }
 
+// FeedLoopEnabled 返回 feed 模式是否开启（阶段 1——offset 水位域判定：feed 开 =
+// 对外水位 ts 域（GetMasterReplOffset 返回 ts）；关 = 字节域）。
+func (rm *ReplicationManager) FeedLoopEnabled() bool {
+	return rm.feedLoop.Load()
+}
+
 // CatchUpAndEnableSlaveTS 为 feed 模式重连从侧做 **ts 域增量 catch-up**（S2 分级-3——
 // 重连改 ts 域——backlog 影子退役治本）：从 resumeTS+1 起经 FeedSlave 同步补发
 // [resumeTS+1, curTS] 的 REPLLOG gap（log 键值源零对齐——不再走字节 SendBacklogData，
@@ -543,7 +563,7 @@ func (rm *ReplicationManager) CatchUpAndEnableSlaveTS(slave *SlaveConnection, re
 func (rm *ReplicationManager) CatchUpAndEnableSlave(slave *SlaveConnection, startOffset int64) error {
 	backlog := rm.GetBacklog()
 	for {
-		endOffset := rm.GetMasterReplOffset()
+		endOffset := rm.GetBacklogCurrentOffset()
 		if endOffset > startOffset {
 			if err := SendBacklogData(slave, backlog, startOffset, endOffset); err != nil {
 				return err
@@ -554,7 +574,7 @@ func (rm *ReplicationManager) CatchUpAndEnableSlave(slave *SlaveConnection, star
 		// Appears caught up. Hold propMu so no live SendCommand runs while
 		// we re-check offset and flip Ready.
 		rm.propMu.Lock()
-		end2 := rm.GetMasterReplOffset()
+		end2 := rm.GetBacklogCurrentOffset()
 		if end2 > startOffset {
 			rm.propMu.Unlock()
 			continue
