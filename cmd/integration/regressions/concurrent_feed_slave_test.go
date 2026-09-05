@@ -70,6 +70,9 @@ func TestRegressionConcurrentFeedSlaveReplayRate(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(writers)
+	// 写者节奏 25ms（实验 1 确认——lost 开放项与写者并发密度无关——5ms 与 25ms
+	// 皆偶发 lost=1——保留低速减少 CI 时长——TODO §6 开放项）。
+	const writerInterval = 25 * time.Millisecond
 	for i := 0; i < writers; i++ {
 		id := i
 		go func() {
@@ -89,7 +92,7 @@ func TestRegressionConcurrentFeedSlaveReplayRate(t *testing.T) {
 					return
 				}
 				select {
-				case <-time.After(5 * time.Millisecond):
+				case <-time.After(writerInterval):
 				case <-stop:
 					return
 				}
