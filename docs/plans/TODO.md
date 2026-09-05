@@ -71,6 +71,8 @@ DW_READ_PROBE=1 ...                                      # 探针开 = §7 完�
   需补一个在 pre-fix commit 上实测会红的守卫（`git worktree` 跑一次代价很低）。守卫形态建议：
   INCR 计数断言——主节点在锁外读 ts 之后、取写锁之前提交 K 条 INCR，从侧 FULLRESYNC 后
   **立刻**断连重连（不经任何 apply），最终 slave 计数应 == K（双应用则 == 2K）。
+  **与 §7 的发生率测量共用同一 harness**（同一判据形态：非幂等写入 + 主从计数比对）——
+  一起做，别写两遍。
 - 未完成前**不得**标为「阶段 1 前置已完成」。
 
 ### 7. 开放项：同一从侧上并发 FeedSlave 是否重发同一 ts 区间
@@ -81,10 +83,32 @@ DW_READ_PROBE=1 ...                                      # 探针开 = §7 完�
 （`CatchUpAndEnableSlaveTS`，在 `propMu` 外）都可能对同一从侧调 FeedSlave。两个并发调用可
 各自读到同一个 `since` → 重发同一 ts 区间 → 从侧无去重 → 重复 apply。
 
-**与观测相左，故未定级**：`TestRegressionPsyncReconnectNoLossFeed`（3 writers）零
-EXTRA/MISMATCH 通过——本推断与它矛盾且尚无解释。**先测可达率再谈修复**（按真实程序顺序
-采样，不做竞态撞窗口）；确认后再在「FeedSlave 加每从侧游标锁 / 从侧实现 ts 去重 /
-补发与 live-push 由同一序列化点裁决」之间作为选项提交决策，不擅自改。
+**与观测相左——已解释（2026-09-05）：那个"零 EXTRA/MISMATCH"对本缺陷零检测能力。**
+`TestRegressionPsyncReconnectNoLossFeed` 的判据是 `verifyUniqueTokenSet`
+（`psync_reconnect_noloss_test.go:201`——两边键集合比对 + 逐键 GET 比值），写入用
+`writeUniqueToken`（同文件 :173——每序列号一个**新唯一键**的 SET）。同一份
+`SET unq:w1:5 tok:1:5` 被 apply 两遍，键还在、值不变——**在"键集合"和"值一致"两个判据
+维度上都不留痕迹**。所以该守卫通过 ≠ 不存在重复应用，它只是测不到。反证解除。
+
+**前提侧已穷尽核对**：`FeedSlave` 全仓只有两个调用者——`replication.go:439`（live-push，
+在 `propMu.RLock` 内）与 `replication.go:530`（gap 补发，在 `propMu` 外）；
+`PropagateCommand` 的生产调用点按客户端连接分布（`handler_core.go:821` 等），天然并发。
+即"同一从侧上并发 FeedSlave"不是人造交错，是常态形状。
+
+**下一步 = 测发生率（未做）**：判据必须换成**非幂等**写入才有意义——
+`INCR`（双应用 → 计数翻倍）或 `RPUSH`（双应用 → 列表变长）。形态：feed 模式双侧
+`EnableFeedLoop` + 多写者写**不同键** + 若干断连周期，跑 N 轮比对主从两侧值。
+`master == slave` → 推断不成立，据实降级并记录判据；`slave > master` → 重复 apply 确认。
+**可与 §6 ② 的区分守卫共用同一 harness**（§6 的断言正好也是 INCR 计数 == K）。
+
+**通用判据教训（本轮产出，适用后续所有守卫）**：凡"零丢失/零多余/全绿"的守卫，先问一句
+——**它的判据维度覆不覆盖目标缺陷的表现形式**。幂等写入的键集比对查不出重复应用，
+一如严格相等断言查不出顺序错乱。守卫写完后到 **pre-fix commit 上跑一次确认会红**
+（`git worktree` 代价很低）是唯一可靠的自检。
+
+**先测可达率再谈修复**（按真实程序顺序采样，不做竞态撞窗口）；确认后再在
+「FeedSlave 加每从侧游标锁 / 从侧实现 ts 去重 / 补发与 live-push 由同一序列化点裁决」
+之间作为选项提交决策，不擅自改。
 
 ## 架构边界（已决策：不做）
 
