@@ -1,5 +1,38 @@
 # Changelog
 
+## v8.58.0 (2026-09-06) — lost 定论修复 + 等价扫面 32 例（6 确定性缺陷）+ backup managed 兼容
+
+> **复制丢失（lost）开放项收口：从侧传输/接收层少收 1 帧 + 重连补发未覆盖空洞（PSYNC 补发 `[lastAppliedTS+1,...]` 不覆盖中间空洞——永久丢失）——帧 ts 连续性检测（`checkFeedTSGap`）构造性消除——修复后 **141 轮 0 lost**（修复前 141 轮 0 lost 概率 ~0.0000000000000004%）。命令族「RDB 重建 vs 帧重放」等价扫面扩到 **32 例**——抓到并修复 **6 个确定性复制缺陷**（ZINCRBY 编码序 / LREM 传播缺失 / XADD id 漂移 / XGROUP 参数序错位 / XGroupSetID 不写 log / XReadGroup 传播缺失 / LMPOP COUNT 前缀缺失）。apply 层系统性审计（11 组 25+ 处 malformed→success 改明确错误）+ 同族静默点统一收尾 10+ 处。BackupBadger managed 兼容修复（badger v4.9.6 `db.Backup()` 内部 NewStream 在 managed 模式 panic——**功能从未可用**）。**
+
+### 复制正确性
+
+- **lost 根因定论 + 修复（8f3cc6b / 923d257）**：post 值帧级捕获实证（值未变排除 + 从侧少收帧 + 补发未覆盖）——`checkFeedTSGap`（REPLLOG 分支 apply 前——ts != prevTS+1 → 断开重连覆盖空洞——首帧 lastAppliedTS==0 跳过合法 gap）+ 单测三边界。
+- **lost 统计确证（1971db5 + 长期累积）**：修复后 **141 轮 0 lost** vs 修复前 6 轮 2 lost（统计极强）。
+- **等价扫面 32 例（f03ab5d → 0b8528f 五批）**：命令族「RDB 重建 vs 帧重放」纵深——stream 消费组（XGROUP/XREADGROUP/XNACK/XCLAIM）/ list 移动（LMPOP/RPopLPush/LMove）/ set 聚合 / MSet 族——抓到 6 个确定性缺陷全修复。
+- **确定性缺陷修复**：ZINCRBY 编码参数序（ffb5963）/ HIncrByFloat 漏写 typeKey（1c02180）/ LREM 传播缺失 + XADD log 帧 `*` id 漂移（7092ec0）/ XGROUP 5 处参数序错位 + XGroupSetID 不写 log + XReadGroup 传播缺失（29e0779）/ LMPOP log 帧缺 COUNT 前缀（0b8528f）。
+- **log 键 ts 空洞检测（f52fa7a）**：KVrocks「迭代器离散即断开」模式——不静默跳过空洞帧。
+
+### apply 层审计
+
+- **系统性审计（e778a74）**：11 组 25+ 处 malformed→success 改明确错误（INCRBYFLOAT/SETRANGE/LSET/LREM/LTRIM/SETBIT/ZUNIONSTORE/ZINTERSTORE/GEOSEARCHSTORE/XACKDEL/SET TTL 四分支）。
+- **同族静默点统一收尾**：XCLAIM minIdleTime / SETEX seconds / XREADGROUP COUNT / MSET/MSETNX / APPEND/RPUSH/LPUSH 参数不足 / LMPOP/ZMPOP numKeys——len 边界全站抽查（265 处——仅 3 处静默并全修）。
+
+### 备份
+
+- **BackupBadger managed 兼容（8a02111）**：badger v4.9.6 `db.Backup()` 内部 NewStream 在 managed 模式 panic（store define.go:499 OpenManaged）——功能从未可用——View 遍历 + len-prefixed 自实现备份格式（Backup/Restore/RestoreTo 配套）。
+
+### 可观测性 / 测试
+
+- 等价扫面 32 例（cb02691 → 0b8528f 五批扩展——19 → 32 例）。
+- 窄版常驻 CI 守卫扩展（e94c333——stream 消费组状态复制 XGROUP/XREADGROUP/XNACK）。
+- RDB 撕裂探针 + 往返保真探针（d7188f4 / 4bdb688——排除 lost 候选并登记载入侧静默点）。
+
+### 发版验证
+
+- `--full` 等效拆分（无 `-short` 恢复跳过测试）：internal 全部 10 包全绿（store 230.6s / replication 128.6s / server 46.9s / backup / cluster / sentinel / metrics / monitor / helper / logger / proto）；cmd/integration/regressions 复制守卫三件套 cached 绿。
+- 复制核心守卫组多轮强制绿（DuplicateWindowMeasurement / SnapshotFullresyncOffset / PsyncReconnectNoLoss）+ 窄版 + 扫面 32 例强制绿。
+- `golangci-lint run --timeout 5m`：0 issues。
+
 ## v8.57.3 (2026-09-01) — 停滞检测武装重置 + 排水冻结检测（§1c 定案）
 
 > **定案并修复 §1c 尾巴数据丢失/冻结的两类形状：①武装时钟跨连接泄漏 → 排水期停滞误触发 → 强制重连 → PSYNC 非命令边界 → 降级第二次 FULLRESYNC → 数据丢失（捕获轮：5,731 缺失值、send_drop=1、offset 收敛）；②排水尾滞失敏无恢复 → 40s 收敛超时冻结（lag=162）。**
