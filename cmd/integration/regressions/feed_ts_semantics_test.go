@@ -14,11 +14,11 @@ import (
 // TestRegressionFeedModeTSSemantics 验证 A4 阶段 1（offset 水位改 ts 源——a4 §10
 // 附8）的对外语义（feed 模式——--feed-loop）：
 //
-//   (i)   INFO master_repl_offset == 主侧 currentTS（log 键最大 ts——ts 水位——
-//         非字节 offset——语义注记风险①）；
-//   (ii)  ROLE offset 字段 == ts（sentinel 兼容展示随水位切换）；
-//   (iii) WAIT 1 在从侧同步后返回 ≥1——WAIT 判据走 ts 域（GetReplAckTS >= master
-//         ts——S2 ACK-ts applied 语义——非字节比较——handleWAIT feedTS 分支）。
+//	(i)   INFO master_repl_offset == 主侧 currentTS（log 键最大 ts——ts 水位——
+//	      非字节 offset——语义注记风险①）；
+//	(ii)  ROLE offset 字段 == ts（sentinel 兼容展示随水位切换）；
+//	(iii) WAIT 1 在从侧同步后返回 ≥1——WAIT 判据走 ts 域（GetReplAckTS >= master
+//	      ts——S2 ACK-ts applied 语义——非字节比较——handleWAIT feedTS 分支）。
 //
 // 回滚面：feedLoop 关（字节模式——现状默认）下 INFO master_repl_offset 仍为字节
 // 水位——本守卫仅 feed 模式生效。同步判据用**数据面轮询**（从侧读到预置键——

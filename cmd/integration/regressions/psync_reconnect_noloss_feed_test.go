@@ -163,4 +163,3 @@ func TestRegressionPsyncReconnectNoLossFeed(t *testing.T) {
 		t.Logf("psync-loss-feed: goroutine delta = %d (ok)", delta)
 	}
 }
-

@@ -10,18 +10,20 @@ import (
 // "快照点 ts = catch-up 起点 ts+1"（a4 §10 附8 阶段 1 前置验证）：
 //
 // 时序（当前实现）：
-//   [1] HandlePSync 锁外读 currentTS → FULLRESYNC 响应第 4 字段 result.TS
-//   [2] （新提交可落——锁外读与快照之间无栅栏）
-//   [3] CatchUpAndEnableSlave 字节 catch-up 完成后 feed-mode 激活
-//       feedSinceTS = ReplLogCurrentTS()+1（propMu 内读——激活水位 ≥ 快照水位）
+//
+//	[1] HandlePSync 锁外读 currentTS → FULLRESYNC 响应第 4 字段 result.TS
+//	[2] （新提交可落——锁外读与快照之间无栅栏）
+//	[3] CatchUpAndEnableSlave 字节 catch-up 完成后 feed-mode 激活
+//	    feedSinceTS = ReplLogCurrentTS()+1（propMu 内读——激活水位 ≥ 快照水位）
 //
 // 不变式断言（成立性验证）：
-//   (i)   result.TS ≤ 激活时刻 FeedSinceTS()-1——FULLRESYNC 响应 ts 不越过
-//         catch-up 起点 ts（从侧 lastAppliedTS 初值不会导致重复补发起点）；
-//   (ii)  FeedSinceTS() == 激活时刻 ReplLogCurrentTS()+1——feed 严格从
-//         当前水位+1 起（不重叠不遗漏）；
-//   (iii) FeedEntriesFrom(FeedSinceTS()) 返回严格 ≥ 该 ts 的增量（log 键
-//         ts 升序）——补发区间与快照覆盖无交集。
+//
+//	(i)   result.TS ≤ 激活时刻 FeedSinceTS()-1——FULLRESYNC 响应 ts 不越过
+//	      catch-up 起点 ts（从侧 lastAppliedTS 初值不会导致重复补发起点）；
+//	(ii)  FeedSinceTS() == 激活时刻 ReplLogCurrentTS()+1——feed 严格从
+//	      当前水位+1 起（不重叠不遗漏）；
+//	(iii) FeedEntriesFrom(FeedSinceTS()) 返回严格 ≥ 该 ts 的增量（log 键
+//	      ts 升序）——补发区间与快照覆盖无交集。
 func TestFullresyncTsDomainInvariant(t *testing.T) {
 	t.Parallel()
 	s := setupTestStore(t)

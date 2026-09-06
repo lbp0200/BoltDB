@@ -11,7 +11,9 @@ import (
 // (i) Count == 写入数（backlog 条目数 == 日志键数——双轨一致）；
 // (ii) 偏移严格递增 + ts 严格递增；
 // (iii) 双向换算往返一致（OffsetToTS(TSToOffset(ts)) == ts 起始事件——
-//      TSToOffset 取 >= ts 的首条目偏移，OffsetToTS 落回该条目）；
+//
+//	TSToOffset 取 >= ts 的首条目偏移，OffsetToTS 落回该条目）；
+//
 // (iv) AlignCheck == true（建表后无新增写——双轨未分叉）。
 func TestConversionTableDualTrack(t *testing.T) {
 	t.Parallel()
