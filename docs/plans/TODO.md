@@ -143,9 +143,26 @@ lost 调查产出（2026-09-05/06——探针实测裁决后剩余**未落地建
   logger.Warn + continue }`——**二进制流解析中途错位后继续往下读**，其后所有条目按错位字节解析，
   却仍向上报"载入成功"。**建议：解析失败即整体失败**（返回 error 让 FULLRESYNC 重做），不 continue。
 
-**当前状态**：格式正确的 RDB 不触发这些分支（往返保真探针 30/30 全保真——rdb_roundtrip_fidelity_test.go
-——含 set/zset/TTL/全局 DBSize）；触发条件应是解码器与编码器在某类型上不一致（未知类型字节 /
-长度编码边界 / `0xFFFFFFFF` 秒毫秒分界附近）——**未修（非紧急——正常帧不触发）**。
+**当前状态：已修复（b26523e，2026-09-07）**——延续 lost 家族 FIX DON'T HIDE 精神，生成侧 + 载入侧
+共 ~50 处"读取失败 continue/break"静默跳过全部改 fail-fast：
+- **生成侧（rdb.go `GenerateRDBWithOffset` View 闭包）**：12 处键值读取失败 + 5 处编码
+  （`enc.WriteXxxKeyValue`）失败 → return err（原 continue 静默产部分快照）。stream groups 保持
+  可选读取（合法无 group，不 fail）。错误经 replication_handler.go:86-90 / backup/rdb_backup.go:39-42
+  已传播到 PSYNC/BackupRDB 返回值 → 从侧重连重建。
+- **载入侧（rdb_loader.go `LoadFromBuffer`）**：~30 处 per-key parse 失败（STRING/LIST/SET/HASH/ZSET/
+  STREAM/JSON/TIME_SERIES/GEO/HLL + type-15 consumer-groups/PEL 深层解析）continue/break → return err；
+  `default: return nil`（未知 typeByte 静默成功）→ return err。**关键**：type-15 stream-groups/PEL 块
+  parse 失败原静默 break/continue 会让 decoder desync、后续所有键错位解析（最危险，已修）。
+
+**安全论证**：健康 store 下这些是死代码分支（store consistency check define.go:370-380 把"TYPE_ exists
+but data missing"当真损坏报错——TYPE_ 与 value 设计上原子一致）；仅真损坏时 fail-fast，从侧重连重建
+而非静默丢数据。健康路径零回归。验证：build all OK + gofmt clean + vet exit 0 + 本地 RDB 测试全绿
+（exit 0）+ 远程 -race ./internal/replication/... PASS（84s，含 TestRDBLengthEncoding）。
+
+**expire-time 错误丢弃也一并修复**：`rdb_loader.go:~197` 原 `expireTime, _ := readExpireTime()` 丢弃解码错误
+→ 真截断/损坏时 ttl 保持 0 → 带 TTL 键被**静默永久化**。经查 `readExpireTime` 对 no-TTL 键返回 `(0,nil)`
+（无 error）、仅真截断/损坏才 err——故加 err 检查不误伤合法无-TTL 路径，已改 fail-fast。至此 §5 生成侧 +
+载入侧**所有**静默 parse/读取失败点（含 expire-time）全部 fail-fast，无残留。
 
 ## 方法论（守卫写作——lost 调查产出——保留）
 

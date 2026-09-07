@@ -193,8 +193,11 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 			}
 		}
 
-		// 读取过期时间
-		expireTime, _ := dec.readExpireTime()
+		// 读取过期时间（no-TTL 键返回 (0,nil)——无 error；真截断/损坏才 err）
+		expireTime, eErr := dec.readExpireTime()
+		if eErr != nil {
+			return fmt.Errorf("读取过期时间失败: %w", eErr)
+		}
 		var ttl time.Duration
 		if expireTime > 0 {
 			if expireTime > 0xFFFFFFFF {
