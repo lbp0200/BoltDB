@@ -159,6 +159,11 @@ but data missing"当真损坏报错——TYPE_ 与 value 设计上原子一致�
 而非静默丢数据。健康路径零回归。验证：build all OK + gofmt clean + vet exit 0 + 本地 RDB 测试全绿
 （exit 0）+ 远程 -race ./internal/replication/... PASS（84s，含 TestRDBLengthEncoding）。
 
+**集成层端到端补验（2026-09-07——10.1.2.16 恢复后收口 loader blast radius）**：`TestReplicationCompleteness_*`
+（全类型 String/List/Hash/Set/ZSet/**Stream w-groups**/JSON/HLL/Geo 的 RDB 生成→传输→载入端到端）远程 -race
+PASS + FULLRESYNC 回归守卫组（FullresyncKeyLoss / SnapshotFullresyncOffset / PsyncReconnectNoLossFeed）远程
+-race PASS——确认 fail-fast 不误伤健康 RDB（loader 改动 blast radius 全绿闭环）。
+
 **expire-time 错误丢弃也一并修复**：`rdb_loader.go:~197` 原 `expireTime, _ := readExpireTime()` 丢弃解码错误
 → 真截断/损坏时 ttl 保持 0 → 带 TTL 键被**静默永久化**。经查 `readExpireTime` 对 no-TTL 键返回 `(0,nil)`
 （无 error）、仅真截断/损坏才 err——故加 err 检查不误伤合法无-TTL 路径，已改 fail-fast。至此 §5 生成侧 +
