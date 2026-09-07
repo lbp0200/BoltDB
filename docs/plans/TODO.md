@@ -102,16 +102,28 @@ DW_READ_PROBE=1 ...                                      # 探针开 = §7 完�
 （疑 L0/vlog 压实风暴）——**根因未定位**，SSD 基线仍缺。vlog 6.3G 残留为已知 badger 机制
 （tombstone 卡空 L0）。
 
-- **下一步**：`scale-data-filler`（按 CLUSTER SHARDS/SLOTS 分组 pipeline）或分段小批量重测
-- **测量机器（恢复后）= 10.1.2.16**（SSD 环境——scale-data-filler 已就绪）——
-  **挂起（2026-09-06——用户决定暂缓）**：10.1.2.16（GCP VM elex-gm0135）暂时
-  不可达（网络——**过几天恢复可用——非弃用**）——恢复后 SSD 基线回 10.1.2.16
-  测（SSH 接入：elex-gm0135/~/.ssh/google_compute_engine——部署集群 + 全流程
-  测量——工具与前置三查已就绪）——192.168.1.251（实测 HDD 3.6T——非 SSD——
-  无 boltDB 集群部署——6337/6338/6339 无监听）仅作暂缓期参考（HDD 写路径行为
-  不同——基线不可比）
-- 前置三查：① `DEBUG GC` 已完成（GC 期间 1MB SET 减速 1350×）；② 无残留 redis-benchmark；
-  ③ `-r` 必带（否则覆盖写同一 key）；测完 FLUSHDB
+- **复测结果（2026-09-07——10.1.2.16 NVMe SSD——scale-data-filler 1MB SET）**：
+  在 **NVMe SSD**（`/home/elex-gm0135/ssd-bench/node1`，`/dev/nvme0n1p3` Samsung 960 PRO）
+  起独立单节点 cluster（端口 7337——不动生产集群），跑 `scale-data-filler -size 60GB
+  -value-size 1MB -concurrency 20`：**全程零塌陷，稳定 127-161 keys/s（≈130 MB/s）**，
+  60GB / 61438 keys 全部写完，`store_write_l0_rejected:0 / l0_delayed:0`（L0 反压零）——
+  **与 §4「166→5 ops/s 崩塌」决定性对照：NVMe 上不塌**
+- **根因假设转向（2026-09-07）**：§4 一直称测量机器为"SSD 环境"，但现有生产集群
+  `-dir=/usr/local/boltdb_data` 实际落 **HDD（sda1，rotational=1）**——机器确有 NVMe
+  SSD（nvme0n1）但数据没落上去。**§4「写路径塌陷」极可能是数据落 HDD 分区所致**
+  （HDD 持续随机写 + compaction 风暴崩到个位数 IOPS 属物理极限），**非存储引擎 bug**——
+  NVMe 零塌陷已排除引擎侧问题
+- **HDD A/B 对照（决定性，2026-09-07）**：同负载在 HDD（`/usr/local/boltdb_data-hddtest/node1`，
+  端口 7338，`/dev/sda1`）复跑——**复现塌陷**：启动 ~17 keys/s → **单调崩塌至 9 keys/s
+  （停滞 2.6%）** + compaction 间歇回升 18-19（锯齿），与 §4「166→5 ops/s 崩塌」同型。
+  **根因锁定：数据落 HDD 分区的磁盘物理极限（HDD 持续随机写 + compaction 风暴），非存储引擎 bug**——
+  NVMe 零塌陷 vs HDD 单调崩塌的 A/B 对照排除了引擎侧问题。**§4 关闭**
+- **测量机器 = 10.1.2.16**（已恢复可达——SSH：elex-gm0135/~/.ssh/google_compute_engine）——
+  NVMe SSD = `/home`（nvme0n1p3，224G 空闲）；HDD = `/usr/local`（sda1）。
+  **工具**：本地 `cmd/scale-data-filler`（`GOOS=linux GOARCH=amd64 go build` + scp——远程无 Go）
+- 前置三查（已核）：① GC 前置健康；② 无残留 redis-benchmark；③ `-r`/多 key 必带（否则覆盖写
+  同一 key——注意 scale-data-filler 用确定性 key `scale:k:NNN`，重复跑会覆盖写 → **DBSIZE 不变**，
+  判吞吐看 filler.log 的 keys/s，非 DBSIZE delta）；测完 FLUSHDB
 
 ### 5. 遗留鲁棒性：RDB 生成/载入侧静默点（候选 ⑥/⑦——非 lost 机制——同类静默丢数据风险）
 
