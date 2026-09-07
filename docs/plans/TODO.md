@@ -149,7 +149,7 @@ lost 调查产出（2026-09-05/06——探针实测裁决后剩余**未落地建
   （`enc.WriteXxxKeyValue`）失败 → return err（原 continue 静默产部分快照）。stream groups 保持
   可选读取（合法无 group，不 fail）。错误经 replication_handler.go:86-90 / backup/rdb_backup.go:39-42
   已传播到 PSYNC/BackupRDB 返回值 → 从侧重连重建。
-- **载入侧（rdb_loader.go `LoadFromBuffer`）**：~30 处 per-key parse 失败（STRING/LIST/SET/HASH/ZSET/
+- **载入侧（rdb_loader.go `loadRDBEntries`——由 `LoadRDB`/`LoadRDBWithStore` 驱动，reconnect.go:295 在 FULLRESYNC 调用）**：~30 处 per-key parse 失败（STRING/LIST/SET/HASH/ZSET/
   STREAM/JSON/TIME_SERIES/GEO/HLL + type-15 consumer-groups/PEL 深层解析）continue/break → return err；
   `default: return nil`（未知 typeByte 静默成功）→ return err。**关键**：type-15 stream-groups/PEL 块
   parse 失败原静默 break/continue 会让 decoder desync、后续所有键错位解析（最危险，已修）。
