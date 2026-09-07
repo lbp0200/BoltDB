@@ -95,92 +95,6 @@ bash scripts/remote-test.sh -race -timeout 180s -v ./cmd/integration/regressions
 DW_READ_PROBE=1 ...                                      # 探针开 = §7 完整形态
 ```
 
-### 4. SSD 写入基线复测（v8.52.0 遗留——疑写路径塌陷）
-
-**未解现象**：2026-09-03 基准测到 GC 前置健康（rewritten=0）后，1MB SET 负载启动 ~166 ops/s
-（≈166 MB/s）→ **崩塌至 ~5 ops/s**（21 分钟仅 9.5%——中止）。持续负载下写路径塌陷
-（疑 L0/vlog 压实风暴）——**根因未定位**，SSD 基线仍缺。vlog 6.3G 残留为已知 badger 机制
-（tombstone 卡空 L0）。
-
-- **复测结果（2026-09-07——10.1.2.16 NVMe SSD——scale-data-filler 1MB SET）**：
-  在 **NVMe SSD**（`/home/elex-gm0135/ssd-bench/node1`，`/dev/nvme0n1p3` Samsung 960 PRO）
-  起独立单节点 cluster（端口 7337——不动生产集群），跑 `scale-data-filler -size 60GB
-  -value-size 1MB -concurrency 20`：**全程零塌陷，稳定 127-161 keys/s（≈130 MB/s）**，
-  60GB / 61438 keys 全部写完，`store_write_l0_rejected:0 / l0_delayed:0`（L0 反压零）——
-  **与 §4「166→5 ops/s 崩塌」决定性对照：NVMe 上不塌**
-- **根因假设转向（2026-09-07）**：§4 一直称测量机器为"SSD 环境"，但现有生产集群
-  `-dir=/usr/local/boltdb_data` 实际落 **HDD（sda1，rotational=1）**——机器确有 NVMe
-  SSD（nvme0n1）但数据没落上去。**§4「写路径塌陷」极可能是数据落 HDD 分区所致**
-  （HDD 持续随机写 + compaction 风暴崩到个位数 IOPS 属物理极限），**非存储引擎 bug**——
-  NVMe 零塌陷已排除引擎侧问题
-- **HDD A/B 对照（决定性，2026-09-07）**：同负载在 HDD（`/usr/local/boltdb_data-hddtest/node1`，
-  端口 7338，`/dev/sda1`）复跑——**复现塌陷**：启动 ~17 keys/s → **单调崩塌至 9 keys/s
-  （停滞 2.6%）** + compaction 间歇回升 18-19（锯齿），与 §4「166→5 ops/s 崩塌」同型。
-  **根因锁定：数据落 HDD 分区的磁盘物理极限（HDD 持续随机写 + compaction 风暴），非存储引擎 bug**——
-  NVMe 零塌陷 vs HDD 单调崩塌的 A/B 对照排除了引擎侧问题。**§4 关闭**
-- **测量机器 = 10.1.2.16**（已恢复可达——SSH：elex-gm0135/~/.ssh/google_compute_engine）——
-  NVMe SSD = `/home`（nvme0n1p3，224G 空闲）；HDD = `/usr/local`（sda1）。
-  **工具**：本地 `cmd/scale-data-filler`（`GOOS=linux GOARCH=amd64 go build` + scp——远程无 Go）
-- 前置三查（已核）：① GC 前置健康；② 无残留 redis-benchmark；③ `-r`/多 key 必带（否则覆盖写
-  同一 key——注意 scale-data-filler 用确定性 key `scale:k:NNN`，重复跑会覆盖写 → **DBSIZE 不变**，
-  判吞吐看 filler.log 的 keys/s，非 DBSIZE delta）；测完 FLUSHDB
-
-### 5. 遗留鲁棒性：RDB 生成/载入侧静默点（候选 ⑥/⑦——非 lost 机制——同类静默丢数据风险）
-
-lost 调查产出（2026-09-05/06——探针实测裁决后剩余**未落地建议**——与 lost 签名不符
-（MISSING ≠ 计数偏小）——鲁棒性缺陷而非已观测丢失——**建议改为显式失败**）：
-
-- **生成侧（rdb.go:475-496 起）**：键类型读失败（`item.ValueCopy` err）、字符串值读失败
-  （`readStringInTxn` err）都是 `logger.Warn` + `continue`——该键直接不进 RDB，而
-  FULLRESYNC 仍照常成功交付；`WriteStringKeyValue` 失败也只 Warn、不中止不返回错误。
-  表现 = 从侧永久少键，主从两侧都不报错。与本仓库纪律（`verifyFeedTSContinuity`
-  ——「迭代器离散即断开」不静默跳过空洞帧）同型——**建议同样改为显式失败**
-  （快照不完整就别交付）。
-- **载入侧（rdb_loader.go:197 起——四处）**：① `expireTime, _ := readExpireTime()`
-  丢弃解码错误 → ttl 保持 0 → 带 TTL 的键被**永久化为不过期**（从侧多出主侧已失效的键）；
-  ② `if expireTime > now` 之外的分支——RDB 里已过期条目 ttl=0 同样变成**永不过期**而非跳过；
-  ③ `typeByte, _ := ReadByte()` 忽略错误；④ `key, err := readString(); if err != nil {
-  logger.Warn + continue }`——**二进制流解析中途错位后继续往下读**，其后所有条目按错位字节解析，
-  却仍向上报"载入成功"。**建议：解析失败即整体失败**（返回 error 让 FULLRESYNC 重做），不 continue。
-
-**当前状态：已修复（b26523e，2026-09-07）**——延续 lost 家族 FIX DON'T HIDE 精神，生成侧 + 载入侧
-共 ~50 处"读取失败 continue/break"静默跳过全部改 fail-fast：
-- **生成侧（rdb.go `GenerateRDBWithOffset` View 闭包）**：12 处键值读取失败 + 5 处编码
-  （`enc.WriteXxxKeyValue`）失败 → return err（原 continue 静默产部分快照）。stream groups 保持
-  可选读取（合法无 group，不 fail）。错误经 replication_handler.go:86-90 / backup/rdb_backup.go:39-42
-  已传播到 PSYNC/BackupRDB 返回值 → 从侧重连重建。
-- **载入侧（rdb_loader.go `loadRDBEntries`——由 `LoadRDB`/`LoadRDBWithStore` 驱动，reconnect.go:295 在 FULLRESYNC 调用）**：~30 处 per-key parse 失败（STRING/LIST/SET/HASH/ZSET/
-  STREAM/JSON/TIME_SERIES/GEO/HLL + type-15 consumer-groups/PEL 深层解析）continue/break → return err；
-  `default: return nil`（未知 typeByte 静默成功）→ return err。**关键**：type-15 stream-groups/PEL 块
-  parse 失败原静默 break/continue 会让 decoder desync、后续所有键错位解析（最危险，已修）。
-
-**安全论证**：健康 store 下这些是死代码分支（store consistency check define.go:370-380 把"TYPE_ exists
-but data missing"当真损坏报错——TYPE_ 与 value 设计上原子一致）；仅真损坏时 fail-fast，从侧重连重建
-而非静默丢数据。健康路径零回归。验证：build all OK + gofmt clean + vet exit 0 + 本地 RDB 测试全绿
-（exit 0）+ 远程 -race ./internal/replication/... PASS（84s，含 TestRDBLengthEncoding）。
-
-**集成层端到端补验（2026-09-07——10.1.2.16 恢复后收口 loader blast radius）**：`TestReplicationCompleteness_*`
-（全类型 String/List/Hash/Set/ZSet/**Stream w-groups**/JSON/HLL/Geo 的 RDB 生成→传输→载入端到端）远程 -race
-PASS + FULLRESYNC 回归守卫组（FullresyncKeyLoss / SnapshotFullresyncOffset / PsyncReconnectNoLossFeed）远程
--race PASS——确认 fail-fast 不误伤健康 RDB（loader 改动 blast radius 全绿闭环）。
-
-**expire-time 错误丢弃也一并修复**：`rdb_loader.go:~197` 原 `expireTime, _ := readExpireTime()` 丢弃解码错误
-→ 真截断/损坏时 ttl 保持 0 → 带 TTL 键被**静默永久化**。经查 `readExpireTime` 对 no-TTL 键返回 `(0,nil)`
-（无 error）、仅真截断/损坏才 err——故加 err 检查不误伤合法无-TTL 路径，已改 fail-fast。至此 §5 生成侧 +
-载入侧**所有**静默 parse/读取失败点（含 expire-time）全部 fail-fast，无残留。
-
-**fail-fast 判别守卫（distinguishing guard——2026-09-07）**：`internal/replication/rdb_failfast_test.go`
-两例成对——① `TestLoadRDBFailFast_UnknownTypeByte`：手工构造 RDB 字节流 `[REDIS0009][type=0x0A 未知][key='k']`，
-在 switch `default:` 处即返回（**不触及尾部 CRC64 块**——故不受既有 CRC 兜底掩盖），断言 `LoadRDBWithStore`
-返回 error；② `TestLoadRDBFailFast_HealthyStringLoads`：健康 RDB 无错载入 + roundtrip，防止 fail-fast 过度收紧误伤合法字符串。
-**pre-fix RED / post-fix GREEN 已实测**（AGENTS.md pre-fix red 金标准）：在 `b26523e^`(=c49967a) worktree
-（`default:` 仍为静默 `return nil`）上跑同一测试 → ① RED（FAIL，exit 1），post-fix 绿。远程 -race PASS。
-
-**独立代码评审（2026-09-07）**：对 §5 fail-fast diff（c49967a..HEAD，internal/replication）跑 code_review——
-single-depth **无问题**（3 changed files）。deep 模式本 scope 两次均 0/4 维度报错（基础设施失败非缺陷，
-未再重试）。结合既有各层验证（pre-fix RED/post-fix GREEN + 全类型 e2e roundtrip + FULLRESYNC 守卫组
-+ 远程 -race），对"合法路径被误报 error→spurious FULLRESYNC 循环 / 漏改点"这一可用性关键风险已充分覆盖。
-
 ## 方法论（守卫写作——lost 调查产出——保留）
 
 **通用判据教训**：凡"零丢失/零多余/全绿"的守卫，先问一句——**它的判据维度覆不覆盖目标缺陷
@@ -225,3 +139,5 @@ exit 0。判绿必须看 `go test` 自身的退出码（`set -o pipefail`，或�
 | **C4 发散悖论（feed 模式结构性消失）** | 2026-09-05 | TODO §5——e1fd352——重连判定全程 ts 域（PSYNC-ts 整数比较 + 降级 FULLRESYNC + resumeTS+1）——字节边界不参与——仅字节路径残留（gate 1 退役后彻底消除）——层 D 降级可选验证 |
 | §3 split-brain 家族 flake | 2026-09-01 | 负载敏感时序扰动（gossip HelloInterval 500ms），非共识缺陷；三重测移除 `t.Parallel()`；家族维持 documented-unreliable |
 | **v8.58.0 发版（56 提交——lost 定论修复 + 等价扫面 32 例 6 确定性缺陷 + apply 审计 11 组 + backup managed 兼容）** | 2026-09-06 | `CHANGELOG.md` v8.58.0——checkFeedTSGap 修复（141 轮 0 lost）——internal 全 10 包无 -short 全绿 + 复制守卫三件套 + lint 0 issues |
+| **§4 SSD 写入基线根因定论关闭** | 2026-09-07 | c49967a——NVMe（Samsung 960 PRO）零塌陷 130 keys/s vs HDD（sda1）单调崩塌 17→9 keys/s A/B 决定性对照——根因 = 数据落 HDD 分区的磁盘物理极限，非存储引擎 bug |
+| **§5 RDB 生成/载入侧 fail-fast + 判别守卫** | 2026-09-07 | `CHANGELOG.md` v8.58.1——b26523e（~50 处 continue→return err）+ 00e41a6（expire-time 补漏）+ 39f048d（判别守卫 pre-fix RED/post-fix GREEN）——remote -race + e2e roundtrip + code_review single-depth clean |
