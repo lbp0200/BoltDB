@@ -221,8 +221,7 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 		// 读取键
 		key, err := dec.readString()
 		if err != nil {
-			logger.Logger.Warn().Err(err).Msg("读取RDB键失败，跳过")
-			continue
+			return fmt.Errorf("读取RDB键失败: %w", err)
 		}
 
 		// 遇到非字符串类型时，先刷新字符串缓冲区
@@ -239,8 +238,7 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 		case 0: // STRING
 			value, err := dec.readString()
 			if err != nil {
-				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取字符串值失败，跳过")
-				continue
+				return fmt.Errorf("读取字符串值失败 key=%s: %w", key, err)
 			}
 			entries = append(entries, store.StringEntry{
 				Key:   key,
@@ -257,15 +255,13 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 		case 1: // LIST
 			length, err := dec.readLength()
 			if err != nil {
-				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取列表长度失败，跳过")
-				continue
+				return fmt.Errorf("读取列表长度失败 key=%s: %w", key, err)
 			}
 			values := make([]string, 0, length)
 			for i := uint64(0); i < length; i++ {
 				val, err := dec.readString()
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("读取列表元素失败，跳过")
-					continue
+					return fmt.Errorf("读取列表元素失败 key=%s: %w", key, err)
 				}
 				values = append(values, val)
 			}
@@ -283,14 +279,12 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 		case 2: // SET
 			length, err := dec.readLength()
 			if err != nil {
-				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取集合长度失败，跳过")
-				continue
+				return fmt.Errorf("读取集合长度失败 key=%s: %w", key, err)
 			}
 			for i := uint64(0); i < length; i++ {
 				member, err := dec.readString()
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("读取集合元素失败，跳过")
-					continue
+					return fmt.Errorf("读取集合元素失败 key=%s: %w", key, err)
 				}
 				if _, err := s.SAdd(key, member); err != nil {
 					logger.Logger.Warn().Str("key", key).Err(err).Msg("存储集合值失败")
@@ -305,19 +299,16 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 		case 3: // HASH
 			length, err := dec.readLength()
 			if err != nil {
-				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取哈希长度失败，跳过")
-				continue
+				return fmt.Errorf("读取哈希长度失败 key=%s: %w", key, err)
 			}
 			for i := uint64(0); i < length; i++ {
 				field, err := dec.readString()
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("读取哈希字段失败，跳过")
-					continue
+					return fmt.Errorf("读取哈希字段失败 key=%s: %w", key, err)
 				}
 				value, err := dec.readString()
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Str("field", field).Err(err).Msg("读取哈希值失败，跳过")
-					continue
+					return fmt.Errorf("读取哈希值失败 key=%s field=%s: %w", key, field, err)
 				}
 				if err := s.HSet(key, field, value); err != nil {
 					logger.Logger.Warn().Str("key", key).Str("field", field).Err(err).Msg("存储哈希值失败")
@@ -332,25 +323,21 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 		case 4: // ZSET (SortedSet)
 			length, err := dec.readLength()
 			if err != nil {
-				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取有序集合长度失败，跳过")
-				continue
+				return fmt.Errorf("读取有序集合长度失败 key=%s: %w", key, err)
 			}
 			members := make([]store.ZSetMember, 0, length)
 			for i := uint64(0); i < length; i++ {
 				member, err := dec.readString()
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("读取有序集合成员失败，跳过")
-					continue
+					return fmt.Errorf("读取有序集合成员失败 key=%s: %w", key, err)
 				}
 				scoreBytes, err := dec.readBytes()
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Str("member", member).Err(err).Msg("读取有序集合分数失败，跳过")
-					continue
+					return fmt.Errorf("读取有序集合分数失败 key=%s member=%s: %w", key, member, err)
 				}
 				score, err := strconv.ParseFloat(string(scoreBytes), 64)
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Str("member", member).Err(err).Msg("解析有序集合分数失败，跳过")
-					continue
+					return fmt.Errorf("解析有序集合分数失败 key=%s member=%s: %w", key, member, err)
 				}
 				members = append(members, store.ZSetMember{Member: member, Score: score})
 			}
@@ -368,46 +355,38 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 		case 5, 15: // STREAM (5=entries only; 15=entries+groups/PEL)
 			_, err := dec.readLength() // total length (skip, use numEntries below)
 			if err != nil {
-				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream长度失败，跳过")
-				continue
+				return fmt.Errorf("读取stream长度失败 key=%s: %w", key, err)
 			}
 			_, err = dec.readString()
 			if err != nil {
-				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream firstID失败，跳过")
-				continue
+				return fmt.Errorf("读取stream firstID失败 key=%s: %w", key, err)
 			}
 			_, err = dec.readString()
 			if err != nil {
-				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream lastID失败，跳过")
-				continue
+				return fmt.Errorf("读取stream lastID失败 key=%s: %w", key, err)
 			}
 			numEntries, err := dec.readLength()
 			if err != nil {
-				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream条目数失败，跳过")
-				continue
+				return fmt.Errorf("读取stream条目数失败 key=%s: %w", key, err)
 			}
 			for i := uint64(0); i < numEntries; i++ {
 				entryID, err := dec.readString()
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream条目ID失败，跳过")
-					continue
+					return fmt.Errorf("读取stream条目ID失败 key=%s: %w", key, err)
 				}
 				numFields, err := dec.readLength()
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream字段数失败，跳过")
-					continue
+					return fmt.Errorf("读取stream字段数失败 key=%s: %w", key, err)
 				}
 				fields := make(map[string]string)
 				for j := uint64(0); j < numFields; j++ {
 					fieldName, err := dec.readString()
 					if err != nil {
-						logger.Logger.Warn().Str("key", key).Err(err).Msg("读取stream字段名失败，跳过")
-						continue
+						return fmt.Errorf("读取stream字段名失败 key=%s: %w", key, err)
 					}
 					fieldValue, err := dec.readString()
 					if err != nil {
-						logger.Logger.Warn().Str("key", key).Str("field", fieldName).Err(err).Msg("读取stream字段值失败，跳过")
-						continue
+						return fmt.Errorf("读取stream字段值失败 key=%s field=%s: %w", key, fieldName, err)
 					}
 					fields[fieldName] = fieldValue
 				}
@@ -419,19 +398,16 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 			if typeByte == 15 {
 				numGroups, gErr := dec.readLength()
 				if gErr != nil {
-					logger.Logger.Warn().Str("key", key).Err(gErr).Msg("读取stream groups数失败")
-					continue
+					return fmt.Errorf("读取stream groups数失败 key=%s: %w", key, gErr)
 				}
 				for gi := uint64(0); gi < numGroups; gi++ {
 					gName, err := dec.readString()
 					if err != nil {
-						logger.Logger.Warn().Str("key", key).Err(err).Msg("读取group name失败")
-						break
+						return fmt.Errorf("读取stream group name失败 key=%s: %w", key, err)
 					}
 					lastID, err := dec.readString()
 					if err != nil {
-						logger.Logger.Warn().Str("key", key).Err(err).Msg("读取group lastDeliveredID失败")
-						break
+						return fmt.Errorf("读取stream group lastDeliveredID失败 key=%s: %w", key, err)
 					}
 					group := &store.StreamGroup{
 						Name:            gName,
@@ -441,40 +417,38 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 					}
 					nCons, err := dec.readLength()
 					if err != nil {
-						logger.Logger.Warn().Str("key", key).Err(err).Msg("读取group consumers失败")
-						break
+						return fmt.Errorf("读取stream group consumers数失败 key=%s: %w", key, err)
 					}
 					for ci := uint64(0); ci < nCons; ci++ {
 						cName, err := dec.readString()
 						if err != nil {
-							break
+							return fmt.Errorf("读取stream consumer name失败 key=%s: %w", key, err)
 						}
 						var lastSeen int64
 						if err := binary.Read(dec.buf, binary.LittleEndian, &lastSeen); err != nil {
-							break
+							return fmt.Errorf("读取stream consumer lastSeen失败 key=%s: %w", key, err)
 						}
 						group.Consumers[cName] = &store.StreamConsumer{Name: cName, LastSeen: lastSeen}
 					}
 					nPend, err := dec.readLength()
 					if err != nil {
-						logger.Logger.Warn().Str("key", key).Err(err).Msg("读取group pending失败")
-						break
+						return fmt.Errorf("读取stream group pending数失败 key=%s: %w", key, err)
 					}
 					for pi := uint64(0); pi < nPend; pi++ {
 						pID, err := dec.readString()
 						if err != nil {
-							break
+							return fmt.Errorf("读取stream pending entry ID失败 key=%s: %w", key, err)
 						}
 						pCons, err := dec.readString()
 						if err != nil {
-							break
+							return fmt.Errorf("读取stream pending consumer失败 key=%s: %w", key, err)
 						}
 						var dCount, lastDel int64
 						if err := binary.Read(dec.buf, binary.LittleEndian, &dCount); err != nil {
-							break
+							return fmt.Errorf("读取stream pending delivery count失败 key=%s: %w", key, err)
 						}
 						if err := binary.Read(dec.buf, binary.LittleEndian, &lastDel); err != nil {
-							break
+							return fmt.Errorf("读取stream pending last delivery失败 key=%s: %w", key, err)
 						}
 						group.Pending[pID] = &store.StreamPendingEntry{
 							ID:            pID,
@@ -497,24 +471,20 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 		case 6: // GEO
 			length, err := dec.readLength()
 			if err != nil {
-				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取geo长度失败，跳过")
-				continue
+				return fmt.Errorf("读取geo长度失败 key=%s: %w", key, err)
 			}
 			var geoMembers []store.GeoMember
 			for i := uint64(0); i < length; i++ {
 				member, err := dec.readString()
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("读取geo成员失败，跳过")
-					continue
+					return fmt.Errorf("读取geo成员失败 key=%s: %w", key, err)
 				}
 				var lat, lon float64
 				if err := binary.Read(dec.buf, binary.LittleEndian, &lat); err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("读取geo纬度失败，跳过")
-					continue
+					return fmt.Errorf("读取geo纬度失败 key=%s: %w", key, err)
 				}
 				if err := binary.Read(dec.buf, binary.LittleEndian, &lon); err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("读取geo经度失败，跳过")
-					continue
+					return fmt.Errorf("读取geo经度失败 key=%s: %w", key, err)
 				}
 				geoMembers = append(geoMembers, store.GeoMember{Member: member, Lat: lat, Lon: lon})
 			}
@@ -532,8 +502,7 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 		case 7: // JSON
 			value, err := dec.readString()
 			if err != nil {
-				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取JSON值失败，跳过")
-				continue
+				return fmt.Errorf("读取JSON值失败 key=%s: %w", key, err)
 			}
 			if _, _, err := s.JSONSet(key, "$", value, false, false); err != nil {
 				logger.Logger.Warn().Str("key", key).Err(err).Msg("存储JSON值失败")
@@ -547,8 +516,7 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 		case 9: // HLL
 			data, err := dec.readBytes()
 			if err != nil {
-				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取HLL数据失败，跳过")
-				continue
+				return fmt.Errorf("读取HLL数据失败 key=%s: %w", key, err)
 			}
 			if err := s.RestoreHLL(key, data); err != nil {
 				logger.Logger.Warn().Str("key", key).Err(err).Msg("存储HLL值失败")
@@ -562,19 +530,16 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 		case 8: // TIMESERIES
 			length, err := dec.readLength()
 			if err != nil {
-				logger.Logger.Warn().Str("key", key).Err(err).Msg("读取time series长度失败，跳过")
-				continue
+				return fmt.Errorf("读取time series长度失败 key=%s: %w", key, err)
 			}
 			for i := uint64(0); i < length; i++ {
 				var timestamp int64
 				var value float64
 				if err := binary.Read(dec.buf, binary.LittleEndian, &timestamp); err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("读取time series时间戳失败，跳过")
-					continue
+					return fmt.Errorf("读取time series时间戳失败 key=%s: %w", key, err)
 				}
 				if err := binary.Read(dec.buf, binary.LittleEndian, &value); err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("读取time series值失败，跳过")
-					continue
+					return fmt.Errorf("读取time series值失败 key=%s: %w", key, err)
 				}
 				opts := store.TSAddOptions{}
 				if _, err := s.TSAdd(key, timestamp, value, opts); err != nil {
@@ -592,8 +557,7 @@ func loadRDBEntries(dec *RDBDecoder, s *store.BotreonStore) error {
 			logger.Logger.Debug().Msg("跳过数据库选择器")
 
 		default:
-			logger.Logger.Warn().Uint8("type", typeByte).Str("key", key).Msg("未知的RDB数据类型，跳过")
-			return nil
+			return fmt.Errorf("未知的RDB数据类型 type=0x%02x key=%s", typeByte, key)
 		}
 	}
 

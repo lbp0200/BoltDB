@@ -475,8 +475,7 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 
 			typeVal, err := item.ValueCopy(nil)
 			if err != nil {
-				logger.Logger.Warn().Str("key", key).Err(err).Msg("获取键类型失败")
-				continue
+				return fmt.Errorf("获取键类型失败 key=%s: %w", key, err)
 			}
 			keyType := string(typeVal)
 
@@ -487,58 +486,52 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 			case store.KeyTypeString:
 				value, err := readStringInTxn(txn, key)
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取字符串值失败")
-					continue
+					return fmt.Errorf("获取字符串值失败 key=%s: %w", key, err)
 				}
 				if err := enc.WriteStringKeyValue(key, value, ttl); err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入字符串值到RDB失败")
+					return fmt.Errorf("写入字符串值到RDB失败 key=%s: %w", key, err)
 				}
 
 			case store.KeyTypeList:
 				values, err := readListInTxn(txn, key)
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取列表值失败")
-					continue
+					return fmt.Errorf("获取列表值失败 key=%s: %w", key, err)
 				}
 				if err := enc.WriteListKeyValue(key, values, ttl); err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入列表值到RDB失败")
+					return fmt.Errorf("写入列表值到RDB失败 key=%s: %w", key, err)
 				}
 
 			case store.KeyTypeHash:
 				fields, err := readHashInTxn(txn, key)
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取哈希值失败")
-					continue
+					return fmt.Errorf("获取哈希值失败 key=%s: %w", key, err)
 				}
 				if err := enc.WriteHashKeyValue(key, fields, ttl); err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入哈希值到RDB失败")
+					return fmt.Errorf("写入哈希值到RDB失败 key=%s: %w", key, err)
 				}
 
 			case store.KeyTypeSet:
 				members, err := readSetInTxn(txn, key)
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取集合值失败")
-					continue
+					return fmt.Errorf("获取集合值失败 key=%s: %w", key, err)
 				}
 				if err := enc.WriteSetKeyValue(key, members, ttl); err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入集合值到RDB失败")
+					return fmt.Errorf("写入集合值到RDB失败 key=%s: %w", key, err)
 				}
 
 			case store.KeyTypeSortedSet:
 				members, err := readZSetInTxn(txn, key)
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取有序集合值失败")
-					continue
+					return fmt.Errorf("获取有序集合值失败 key=%s: %w", key, err)
 				}
 				if err := enc.WriteSortedSetKeyValue(key, members, ttl); err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入有序集合值到RDB失败")
+					return fmt.Errorf("写入有序集合值到RDB失败 key=%s: %w", key, err)
 				}
 
 			case store.KeyTypeStream:
 				entries, err := readStreamInTxn(txn, key)
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取stream值失败")
-					continue
+					return fmt.Errorf("获取stream值失败 key=%s: %w", key, err)
 				}
 				groups, gErr := readStreamGroupsInTxn(txn, key)
 				if gErr != nil {
@@ -546,47 +539,43 @@ func GenerateRDBWithOffset(s *store.BotreonStore, offsetFn func() int64) ([]byte
 					groups = nil
 				}
 				if err := enc.WriteStreamKeyValueWithTTL(key, entries, groups, ttl); err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入stream值到RDB失败")
+					return fmt.Errorf("写入stream值到RDB失败 key=%s: %w", key, err)
 				}
 
 			case store.KeyTypeJSON:
 				value, err := readJSONInTxn(txn, key)
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取JSON值失败")
-					continue
+					return fmt.Errorf("获取JSON值失败 key=%s: %w", key, err)
 				}
 				if err := enc.WriteJSONKeyValueWithTTL(key, value, ttl); err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入JSON值到RDB失败")
+					return fmt.Errorf("写入JSON值到RDB失败 key=%s: %w", key, err)
 				}
 
 			case store.KeyTypeTimeSeries:
 				points, err := readTimeSeriesInTxn(txn, key)
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取time series值失败")
-					continue
+					return fmt.Errorf("获取time series值失败 key=%s: %w", key, err)
 				}
 				if err := enc.WriteTimeSeriesKeyValueWithTTL(key, points, ttl); err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入time series值到RDB失败")
+					return fmt.Errorf("写入time series值到RDB失败 key=%s: %w", key, err)
 				}
 
 			case store.KeyTypeGeo:
 				members, err := readGeoInTxn(txn, key)
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取geo值失败")
-					continue
+					return fmt.Errorf("获取geo值失败 key=%s: %w", key, err)
 				}
 				if err := enc.WriteGeoKeyValue(key, members, ttl); err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入geo值到RDB失败")
+					return fmt.Errorf("写入geo值到RDB失败 key=%s: %w", key, err)
 				}
 
 			case store.KeyTypeHyperLogLog:
 				data, err := readHLLInTxn(txn, key)
 				if err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("获取HLL值失败")
-					continue
+					return fmt.Errorf("获取HLL值失败 key=%s: %w", key, err)
 				}
 				if err := enc.WriteHLLKeyValueWithTTL(key, data, ttl); err != nil {
-					logger.Logger.Warn().Str("key", key).Err(err).Msg("写入HLL值到RDB失败")
+					return fmt.Errorf("写入HLL值到RDB失败 key=%s: %w", key, err)
 				}
 
 			default:
