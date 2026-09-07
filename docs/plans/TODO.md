@@ -169,6 +169,13 @@ PASS + FULLRESYNC 回归守卫组（FullresyncKeyLoss / SnapshotFullresyncOffset
 （无 error）、仅真截断/损坏才 err——故加 err 检查不误伤合法无-TTL 路径，已改 fail-fast。至此 §5 生成侧 +
 载入侧**所有**静默 parse/读取失败点（含 expire-time）全部 fail-fast，无残留。
 
+**fail-fast 判别守卫（distinguishing guard——2026-09-07）**：`internal/replication/rdb_failfast_test.go`
+两例成对——① `TestLoadRDBFailFast_UnknownTypeByte`：手工构造 RDB 字节流 `[REDIS0009][type=0x0A 未知][key='k']`，
+在 switch `default:` 处即返回（**不触及尾部 CRC64 块**——故不受既有 CRC 兜底掩盖），断言 `LoadRDBWithStore`
+返回 error；② `TestLoadRDBFailFast_HealthyStringLoads`：健康 RDB 无错载入 + roundtrip，防止 fail-fast 过度收紧误伤合法字符串。
+**pre-fix RED / post-fix GREEN 已实测**（AGENTS.md pre-fix red 金标准）：在 `b26523e^`(=c49967a) worktree
+（`default:` 仍为静默 `return nil`）上跑同一测试 → ① RED（FAIL，exit 1），post-fix 绿。远程 -race PASS。
+
 ## 方法论（守卫写作——lost 调查产出——保留）
 
 **通用判据教训**：凡"零丢失/零多余/全绿"的守卫，先问一句——**它的判据维度覆不覆盖目标缺陷
