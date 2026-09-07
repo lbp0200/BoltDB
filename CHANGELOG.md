@@ -1,5 +1,27 @@
 # Changelog
 
+## v8.58.1 (2026-09-07) — RDB 生成/载入 fail-fast（§5）+ 判别守卫
+
+> **RDB 快照静默丢数据点改 fail-fast**：生成侧 12 处读取 + 5 处编码错误原 `continue`→`return err`；载入侧 ~30 处 per-key parse 失败 + type-15 stream-groups/PEL 深层解析 + `default: return nil`（未知 typeByte 静默跳过）全改 fail-fast——decoder desync（parse 失败后继续读 → 后续键错位解析仍报"载入成功"）与静默跳键两类丢数据消除。expire-time 解码错误丢弃点补漏（原 `_` 吞掉真截断 → 损坏键静默永久化）。**判别守卫** pre-fix RED/post-fix GREEN 实测。**
+
+### RDB fail-fast（§5）
+
+- **生成侧（b26523e）**：`GenerateRDBWithOffset` View 闭包内 12 处读取 + 5 处编码错误 `continue`→`return err`——结尾原恒 `return nil` 改 return err → 任何 RDB 生成错误经 PSYNC/BackupRDB 传播到从侧。
+- **载入侧（b26523e）**：`loadRDBEntries` ~30 处 per-key parse 失败 + type-15 stream-groups/PEL consumer groups 深层解析 + `default: return nil`（未知 typeByte）全改 fail-fast——decoder desync 与静默跳键消除。
+- **expire-time 补漏（00e41a6）**：`readExpireTime` no-TTL 返回 `(0,nil)`、真截断返回 `(0,err)`——原 `expireTime, _ :=` 吞掉真损坏使键静默永久化，改 fail-fast。
+- **错误传播链确认**：`replication_handler.go:86-90`（PSYNC）+ `backup/rdb_backup.go:39-42`（BackupRDB）均传播 GenerateRDB error → 从侧重连/备份失败可观测。
+
+### 测试
+
+- **判别守卫（39f048d）**：新增 `rdb_failfast_test.go`——①未知 typeByte(0x0A)手工构造流（绕过尾部 CRC64）→ 断言 error；②健康 RDB roundtrip → 防过度收紧误伤合法键。**pre-fix worktree（c49967a，`default:` 仍 `return nil`）实测 RED / post-fix GREEN**——AGENTS.md pre-fix red 金标准。
+- **安全论证**：store consistency check 把"TYPE_ exists but data missing"当真损坏报错；TYPE_ 与 value 设计上原子一致 → 健康 store 零回归，仅真损坏触发。stream groups 保持可选（无 group 合法）不 fail-fast。
+
+### 发版验证
+
+- `--full`（远程 `-race -p=2` ./internal/... + ./cmd/integration/...）：全部包绿；唯一红 = 已知并行时序 flake 家族（`TestSlaveReconnector_readCommandLoop_ApplySkipIncrementsCount` + Sentinel split-brain convergence ×2——全包并发触发、**standalone `-race -count=3` 全 PASS**，非本变更回归）。
+- §5 判别守卫 + RDB 测试远程 `-race ./internal/replication/...` PASS。
+- `golangci-lint run --timeout 5m`：0 issues；`gofmt -l .` clean（CI 权威 gofmt gate，含 _test.go）。
+
 ## v8.58.0 (2026-09-06) — lost 定论修复 + 等价扫面 32 例（6 确定性缺陷）+ backup managed 兼容
 
 > **复制丢失（lost）开放项收口：从侧传输/接收层少收 1 帧 + 重连补发未覆盖空洞（PSYNC 补发 `[lastAppliedTS+1,...]` 不覆盖中间空洞——永久丢失）——帧 ts 连续性检测（`checkFeedTSGap`）构造性消除——修复后 **141 轮 0 lost**（修复前 141 轮 0 lost 概率 ~0.0000000000000004%）。命令族「RDB 重建 vs 帧重放」等价扫面扩到 **32 例**——抓到并修复 **6 个确定性复制缺陷**（ZINCRBY 编码序 / LREM 传播缺失 / XADD id 漂移 / XGROUP 参数序错位 / XGroupSetID 不写 log / XReadGroup 传播缺失 / LMPOP COUNT 前缀缺失）。apply 层系统性审计（11 组 25+ 处 malformed→success 改明确错误）+ 同族静默点统一收尾 10+ 处。BackupBadger managed 兼容修复（badger v4.9.6 `db.Backup()` 内部 NewStream 在 managed 模式 panic——**功能从未可用**）。**
