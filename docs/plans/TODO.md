@@ -176,6 +176,11 @@ PASS + FULLRESYNC 回归守卫组（FullresyncKeyLoss / SnapshotFullresyncOffset
 **pre-fix RED / post-fix GREEN 已实测**（AGENTS.md pre-fix red 金标准）：在 `b26523e^`(=c49967a) worktree
 （`default:` 仍为静默 `return nil`）上跑同一测试 → ① RED（FAIL，exit 1），post-fix 绿。远程 -race PASS。
 
+**独立代码评审（2026-09-07）**：对 §5 fail-fast diff（c49967a..HEAD，internal/replication）跑 code_review——
+single-depth **无问题**（3 changed files）。deep 模式本 scope 两次均 0/4 维度报错（基础设施失败非缺陷，
+未再重试）。结合既有各层验证（pre-fix RED/post-fix GREEN + 全类型 e2e roundtrip + FULLRESYNC 守卫组
++ 远程 -race），对"合法路径被误报 error→spurious FULLRESYNC 循环 / 漏改点"这一可用性关键风险已充分覆盖。
+
 ## 方法论（守卫写作——lost 调查产出——保留）
 
 **通用判据教训**：凡"零丢失/零多余/全绿"的守卫，先问一句——**它的判据维度覆不覆盖目标缺陷
