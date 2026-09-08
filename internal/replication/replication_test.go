@@ -52,27 +52,6 @@ func TestReplicationManager_Role(t *testing.T) {
 	assert.Equal(t, RoleMaster, rm.GetRole())
 }
 
-func TestReplicationManager_ReplOffset(t *testing.T) {
-	t.Parallel()
-	testStore := setupTestStore(t)
-	rm := NewReplicationManager(testStore)
-
-	// 初始 offset 是 0
-	assert.Equal(t, int64(0), rm.GetMasterReplOffset())
-
-	// offset 即 backlog 水位，可被启动恢复前移（不回退）
-	rm.SetMasterReplOffset(100)
-	assert.Equal(t, int64(100), rm.GetMasterReplOffset())
-	rm.SetMasterReplOffset(50)
-	assert.Equal(t, int64(100), rm.GetMasterReplOffset())
-
-	// 传播命令推进 offset，且推进量就是入环字节数
-	rm.PropagateCommand([][]byte{[]byte("SET"), []byte("k"), []byte("v")})
-	advanced := rm.GetMasterReplOffset()
-	assert.True(t, advanced > 100)
-	assert.Equal(t, advanced, rm.GetBacklog().GetCurrentOffset())
-}
-
 func TestReplicationManager_MasterAddr(t *testing.T) {
 	t.Parallel()
 	testStore := setupTestStore(t)
@@ -103,16 +82,6 @@ func TestReplicationManager_SlaveManagement(t *testing.T) {
 	assert.Equal(t, 0, len(slaves))
 }
 
-func TestReplicationManager_Backlog(t *testing.T) {
-	t.Parallel()
-	testStore := setupTestStore(t)
-	rm := NewReplicationManager(testStore)
-
-	backlog := rm.GetBacklog()
-	assert.NotEqual(t, nil, backlog)
-	assert.Equal(t, int64(1024*1024), backlog.GetSize()) // 1MB
-}
-
 func TestReplicationManager_GenerateReplId(t *testing.T) {
 	t.Parallel()
 	testStore := setupTestStore(t)
@@ -121,67 +90,6 @@ func TestReplicationManager_GenerateReplId(t *testing.T) {
 	replId := rm.GetReplicationID()
 	assert.NotEqual(t, "", replId)
 	assert.Equal(t, 40, len(replId)) // 40 字符的十六进制
-}
-
-func TestReplicationManager_PropagateCommand(t *testing.T) {
-	t.Parallel()
-	testStore := setupTestStore(t)
-	rm := NewReplicationManager(testStore)
-
-	// PropagateCommand 现在总是记录到 backlog 并更新 offset，
-	// 确保断连期间的写操作不会丢失
-	cmd := [][]byte{[]byte("SET"), []byte("key"), []byte("value")}
-	rm.PropagateCommand(cmd)
-
-	assert.Equal(t, int64(0), rm.GetReplSendDropCount())
-
-	// offset 应该增加了（即使没有从节点）
-	cmdBytes := serializeCommand(cmd)
-	t.Logf("offset after propagate (no slaves): %d", rm.GetMasterReplOffset())
-	assert.Equal(t, int64(len(cmdBytes)), rm.GetMasterReplOffset())
-
-	// backlog 应该包含命令
-	backlog := rm.GetBacklog()
-	data, err := backlog.GetRange(0, int64(len(cmdBytes)))
-	assert.NoError(t, err)
-	assert.Equal(t, cmdBytes, data)
-}
-
-func TestReplicationManager_WALTruncateTriggered(t *testing.T) {
-	// Not parallel — WAL I/O
-	testStore := setupTestStore(t)
-	rm := NewReplicationManager(testStore)
-	rm.SetBacklogSize(64 * 1024)
-
-	dir := t.TempDir()
-	wal, err := NewBacklogWAL(dir)
-	assert.NoError(t, err)
-	defer wal.Close()
-	rm.SetBacklogWAL(wal)
-
-	// Write enough commands to exceed walTruncateFactor × backlog size
-	// (128KB threshold, 27-byte commands → 10K commands ≈ 270KB).
-	const n = 10000
-	for i := 0; i < n; i++ {
-		rm.PropagateCommand([][]byte{[]byte("SET"), []byte("k"), []byte("v")})
-	}
-
-	// File must be bounded: truncated back to roughly the live window
-	// instead of holding all n commands (which would be ~270KB+).
-	sz, err := wal.GetFileSize()
-	assert.NoError(t, err)
-	if sz > 2*64*1024+4096 {
-		t.Fatalf("WAL size %d not bounded by threshold", sz)
-	}
-
-	// Replay must reconstruct exactly the same offset as the live backlog.
-	// Flush first: entries still in the 64KB write buffer are not on disk yet.
-	err = wal.Flush()
-	assert.NoError(t, err)
-	replayed := NewReplicationBacklog(64 * 1024)
-	err = wal.Replay(replayed)
-	assert.NoError(t, err)
-	assert.Equal(t, rm.GetBacklog().GetCurrentOffset(), replayed.GetCurrentOffset())
 }
 
 func TestReplicationManager_MultipleSlaveIds(t *testing.T) {

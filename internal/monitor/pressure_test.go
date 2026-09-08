@@ -152,7 +152,6 @@ func TestFormatSnapshot_WithReplication(t *testing.T) {
 		LastL0Score:     2.0,
 		MasterOffset:    5000,
 		SlaveOffset:     4900,
-		BacklogSize:     65536,
 		ReconnectCount:  2,
 		ConnectedSlaves: 1,
 	}

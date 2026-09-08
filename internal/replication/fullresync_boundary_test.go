@@ -11,12 +11,14 @@ import (
 
 // The linearizable FULLRESYNC boundary (Issue #3):
 //
-//	RDB snapshot ∩ backlog gap [snapshotOffset, currentOffset) = ∅
+//	RDB snapshot captures store state at a consistent ts point; writes committed
+//	before the snapshot MUST appear in the RDB. post-snapshot writes have higher
+//	ts and are by construction NOT in the RDB — no byte-level "duplicate window"
+//	exists in ts-domain (the log IS the source; RDB reads from store state).
 //
-// processRequest holds snapshotMu.RLock across executeCommand (commit) and
-// PropagateCommand (backlog.Append = offset). FULLRESYNC holds the write lock
-// across snapshotOffset → View, so it cannot start while a write is between
-// commit and append.
+// processRequest holds snapshotMu.RLock across executeCommand (commit);
+// FULLRESYNC holds the write lock across View, so it cannot start while a
+// write is between commit and the next read.
 func TestFullresyncBoundary_CommittedButUnpropagatedWrite(t *testing.T) {
 	t.Parallel()
 
@@ -39,31 +41,16 @@ func TestFullresyncBoundary_CommittedButUnpropagatedWrite(t *testing.T) {
 	s.SnapshotMuRUnlock()
 
 	s.SnapshotMuLock()
-	snapshotOffset := rm.GetMasterReplOffset()
 	rdbData, err := GenerateRDBWithSnapshotLock(s)
 	s.SnapshotMuUnlock()
 	assert.NoError(t, err)
 
-	currentOffset := rm.GetMasterReplOffset()
-	var gap []byte
-	if currentOffset > snapshotOffset {
-		gap, err = rm.GetBacklog().GetRange(snapshotOffset, currentOffset)
-		assert.NoError(t, err)
+	// Fenced write (committed before snapshot point) MUST be in the RDB.
+	if !bytes.Contains(rdbData, []byte("boundary:probe")) {
+		t.Error("fenced write missing from RDB snapshot")
 	}
 
-	inRDB := bytes.Contains(rdbData, []byte("boundary:probe"))
-	inGap := bytes.Contains(gap, []byte("boundary:probe"))
-	if inRDB && inGap {
-		t.Errorf("duplicate window is not zero: W is in the RDB snapshot AND in backlog [%d,%d)",
-			snapshotOffset, currentOffset)
-	}
-	if !inRDB {
-		t.Errorf("fenced write missing from RDB (offset=%d)", snapshotOffset)
-	}
-
-	// ts 双轨（S2——④ PSYNC-ts 透镜）：fenced 写经 commit 必已写传播日志键——
-	// 日志键存在性为快照一致性提供 ts 侧断言（与字节 gap 口径一致的双轨验证：
-	// 日志键回放 == 字节 backlog 回放由 replay 守卫显式覆盖）。
+	// ts 透镜：fenced 写经 commit 必已写传播日志键——快照一致性 ts 侧断言。
 	logEntries, err := s.ReplLogEntries()
 	assert.NoError(t, err)
 	fencedLogFound := false

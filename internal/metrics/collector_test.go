@@ -54,8 +54,6 @@ func TestCollector_Snapshot_WithAllFunctions(t *testing.T) {
 	c.ReplSendDropFn = func() int64 { return 4 }
 	c.ReplApplySkipFn = func() int64 { return 2 }
 	c.SlaveCountFn = func() int { return 3 }
-	c.BacklogSizeFn = func() int64 { return 50000 }
-	c.BacklogAvailFn = func() int64 { return 30000 }
 	c.RoleFn = func() string { return "slave" }
 	c.ActiveClientsFn = func() int { return 10 }
 	c.BlockedClientsFn = func() int { return 2 }
@@ -81,8 +79,6 @@ func TestCollector_Snapshot_WithAllFunctions(t *testing.T) {
 	assert.Equal(t, int64(2), s.ReplApplySkip)
 	assert.Equal(t, 3, s.SlaveCount)
 
-	assert.Equal(t, int64(50000), s.BacklogSize)
-	assert.Equal(t, int64(30000), s.BacklogAvailable)
 	assert.Equal(t, "slave", s.Role)
 
 	assert.Equal(t, 10, s.ActiveClients)

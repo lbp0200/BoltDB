@@ -20,7 +20,6 @@ func TestFeedLoopIncrementalSend(t *testing.T) {
 	rm := NewReplicationManager(s)
 	defer rm.Stop()
 	rm.SetRole(RoleMaster)
-	rm.SetFeedLoop(true)
 
 	server, client := net.Pipe()
 	defer server.Close()

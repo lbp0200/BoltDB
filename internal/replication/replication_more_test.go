@@ -95,21 +95,6 @@ func TestLoadRDBWithStore_InvalidData(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// TestReplicationBacklog_Additional tests for ReplicationBacklog
-func TestReplicationBacklog_Additional(t *testing.T) {
-	t.Parallel()
-	backlog := NewReplicationBacklog(1000)
-
-	// Test Append and GetRange
-	backlog.Append([]byte("test data"))
-	backlog.Append([]byte("more data"))
-
-	// Get range
-	data, err := backlog.GetRange(0, 20)
-	assert.NoError(t, err)
-	assert.Equal(t, 18, len(data)) // "test data" (9) + "more data" (9) = 18 bytes
-}
-
 // TestReplicationManager_Stop tests ReplicationManager Stop
 func TestReplicationManager_Stop(t *testing.T) {
 	t.Parallel()

@@ -15,9 +15,6 @@ func TestPSyncTSRange(t *testing.T) {
 	s := setupTestStore(t)
 	rm := NewReplicationManager(s)
 	rm.SetRole(RoleMaster)
-	// PSYNC-ts 边界判定（④）属 feed-loop 场景语义（ts 域 CONTINUE 仅在 feed-loop
-	// 开启时生效——feed-loop 关闭时 ts>0 走 FULLRESYNC，见 psync.go HandlePSync）。
-	rm.SetFeedLoop(true)
 	defer rm.Stop()
 
 	const n = 10
@@ -63,11 +60,14 @@ func TestPSyncTSRange(t *testing.T) {
 		t.Fatalf("fullresync result TS = %d, want current ts %d", res.TS, lastTS)
 	}
 
-	// 字节模式（ts=0——旧从节点）→ 走原字节判定（replId 匹配 + offset 0 → CONTINUE）
+	// ts=0（首次连接 / 无历史游标）→ FULLRESYNC（携带主侧 currentTS）
 	res0, err := HandlePSync(rm, replID, 0, 0)
 	assert.NoError(t, err)
 	assert.NotNil(t, res0)
-	if res0.FullResync {
-		t.Fatal("byte-mode (ts=0) with matching replId and offset 0 should CONTINUE")
+	if !res0.FullResync {
+		t.Fatal("ts=0 (no prior cursor) should FULLRESYNC")
+	}
+	if res0.TS != lastTS {
+		t.Fatalf("fullresync result TS = %d, want current ts %d", res0.TS, lastTS)
 	}
 }

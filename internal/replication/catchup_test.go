@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,7 +14,10 @@ import (
 	"github.com/zeebo/assert"
 )
 
-func TestCatchUpAndEnableSlave_EmptyGapSetsReady(t *testing.T) {
+// TestCatchUpAndEnableSlaveTS_EmptyGapSetsReady 验证 ts 域 catch-up 空 gap：无写入时
+// CatchUpAndEnableSlaveTS(slave, 0) → FeedSlave 读 [1, curTS] 为空 → 直接返回 nil——
+// slave 翻 Ready，游标停在 resumeTS+1=1（无已发条目）。
+func TestCatchUpAndEnableSlaveTS_EmptyGapSetsReady(t *testing.T) {
 	t.Parallel()
 	rm := NewReplicationManager(setupTestStore(t))
 	defer rm.Stop()
@@ -21,19 +25,27 @@ func TestCatchUpAndEnableSlave_EmptyGapSetsReady(t *testing.T) {
 	slave := NewSlaveConnection(newMockConn())
 	rm.AddSlave(slave)
 
-	start := rm.GetBacklogCurrentOffset()
-	if err := rm.CatchUpAndEnableSlave(slave, start); err != nil {
+	if err := rm.CatchUpAndEnableSlaveTS(slave, 0); err != nil {
 		t.Fatalf("empty-gap catch-up: %v", err)
 	}
 	assert.True(t, slave.IsReady())
-	assert.Equal(t, start, slave.GetReplOffset())
+	assert.Equal(t, uint64(1), slave.FeedSinceTS()) // resumeTS+1，无已发条目 → 游标停在 1
 }
 
-func TestCatchUpAndEnableSlave_SendFailureLeavesNotReady(t *testing.T) {
+// TestCatchUpAndEnableSlaveTS_SendFailureReturnsErr 验证 ts 域 catch-up 发送失败：feed
+// 写入失败时方法返回 error（供调用方摘除）。注意——Ready 在 propMu 内原子翻 true（早于
+// feed，防与 live-push 交错），故失败不重置 Ready；从侧摘除是调用方责任（生产路径
+// replication_handler.go 两处 catch-up 失败即 RemoveSlave）。此守卫断言：err 非空 + 从侧
+// 仍在管理列表（方法自身不摘除）。
+func TestCatchUpAndEnableSlaveTS_SendFailureReturnsErr(t *testing.T) {
 	t.Parallel()
-	rm := NewReplicationManager(setupTestStore(t))
+	s := setupTestStore(t)
+	rm := NewReplicationManager(s)
 	defer rm.Stop()
 
+	if err := s.Set("k", "v"); err != nil {
+		t.Fatal(err)
+	}
 	rm.PropagateCommand([][]byte{[]byte("SET"), []byte("k"), []byte("v")})
 	assert.True(t, rm.GetMasterReplOffset() > 0)
 
@@ -42,16 +54,20 @@ func TestCatchUpAndEnableSlave_SendFailureLeavesNotReady(t *testing.T) {
 	slave := NewSlaveConnection(conn)
 	rm.AddSlave(slave)
 
-	err := rm.CatchUpAndEnableSlave(slave, 0)
+	err := rm.CatchUpAndEnableSlaveTS(slave, 0)
 	assert.True(t, err != nil)
-	assert.False(t, slave.IsReady())
-	assert.Equal(t, int64(0), slave.GetReplOffset())
-	assert.Equal(t, 1, rm.GetSlaveCount())
+	assert.Equal(t, 1, rm.GetSlaveCount()) // 方法不摘除——调用方责任
 }
 
-func TestCatchUpAndEnableSlave_ConcurrentPropagateNoDupNoHole(t *testing.T) {
+// TestCatchUpAndEnableSlaveTS_ConcurrentPropagateNoDupNoHole 验证 ts 域并发补发无重复
+// 无空洞（lost 家族守卫）：预填 prefill 条 → 以"预填后 currentTS"为 resume 点做 ts catch-up
+// （FeedSlave 读 [resumeTS+1, curTS]）→ 并发 writers 持续 PropagateCommand（feed-only，
+// 全部经 FeedSlave 走共享 feedSinceTS 游标——单调推进 ⇒ 每条恰好一次）→ 补发窗口与 live
+// push 的并集覆盖所有并发命令、无重复、无空洞。
+func TestCatchUpAndEnableSlaveTS_ConcurrentPropagateNoDupNoHole(t *testing.T) {
 	t.Parallel()
-	rm := NewReplicationManager(setupTestStore(t))
+	s := setupTestStore(t)
+	rm := NewReplicationManager(s)
 	defer rm.Stop()
 
 	const (
@@ -60,10 +76,12 @@ func TestCatchUpAndEnableSlave_ConcurrentPropagateNoDupNoHole(t *testing.T) {
 		perWriter = 40
 	)
 	for i := 0; i < prefill; i++ {
-		rm.PropagateCommand([][]byte{[]byte("SET"), []byte(fmt.Sprintf("pre:%d", i)), []byte("1")})
+		if err := s.Set(fmt.Sprintf("pre:%d", i), "1"); err != nil {
+			t.Fatal(err)
+		}
 	}
-	startOffset := rm.GetBacklogCurrentOffset()
-	assert.True(t, startOffset > 0)
+	resumeTS, _ := s.ReplLogCurrentTS()
+	assert.True(t, resumeTS > 0)
 
 	conn := newMockConn()
 	slave := NewSlaveConnection(conn)
@@ -80,37 +98,45 @@ func TestCatchUpAndEnableSlave_ConcurrentPropagateNoDupNoHole(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < perWriter; i++ {
 				n := nextKey.Add(1)
+				key := fmt.Sprintf("live:%d", n)
+				// 镜像生产路径：真实 store 写（推进 ts）→ PropagateCommand（feed 推给从侧）。
+				if err := s.Set(key, "1"); err != nil {
+					t.Error(err)
+					return
+				}
 				rm.PropagateCommand([][]byte{
 					[]byte("SET"),
-					[]byte(fmt.Sprintf("live:%d", n)),
+					[]byte(key),
 					[]byte("1"),
 				})
 			}
 		}()
 	}
 
-	if err := rm.CatchUpAndEnableSlave(slave, startOffset); err != nil {
+	if err := rm.CatchUpAndEnableSlaveTS(slave, resumeTS); err != nil {
 		t.Fatalf("catch-up: %v", err)
 	}
 	wg.Wait()
 
 	assert.True(t, slave.IsReady())
 	assert.Equal(t, int64(0), rm.GetReplSendDropCount())
-	// SendCommand stores the command's start offset, not the backlog
-	// watermark, so slave.GetReplOffset() may sit one command behind
-	// GetMasterReplOffset() after a live push. Completeness is the stream.
 
-	got := parseBacklogCommands(t, conn.writeBuffer)
+	got := parseFeedCommands(t, conn.writeBuffer)
 	want := writers * perWriter
 	if len(got) != want {
 		t.Fatalf("catch-up+live stream: got %d commands, want %d (dup or hole)", len(got), want)
 	}
 	seen := make(map[string]int, want)
-	for _, args := range got {
-		if len(args) != 3 || string(args[0]) != "SET" {
-			t.Fatalf("unexpected command on slave stream: %q", args)
+	var lastTS uint64
+	for _, f := range got {
+		if f.ts < lastTS {
+			t.Fatalf("feed ts regression: %d < %d (must be ascending)", f.ts, lastTS)
 		}
-		key := string(args[1])
+		lastTS = f.ts
+		if len(f.cmd) != 3 || f.cmd[0] != "SET" {
+			t.Fatalf("unexpected command on slave stream: %v", f.cmd)
+		}
+		key := f.cmd[1]
 		seen[key]++
 		if seen[key] > 1 {
 			t.Fatalf("command for %s delivered twice (gap-fill raced with live push)", key)
@@ -121,18 +147,36 @@ func TestCatchUpAndEnableSlave_ConcurrentPropagateNoDupNoHole(t *testing.T) {
 	}
 }
 
-func parseBacklogCommands(t *testing.T, data []byte) [][][]byte {
+// feedFrame 是一条已解析的 REPLLOG wire 帧（ts + 内层命令）。
+type feedFrame struct {
+	ts  uint64
+	cmd []string
+}
+
+// parseFeedCommands 解析 feed wire 帧序列（每帧 [REPLLOG, ts, cmd...]），返回 (ts + 内层命令)。
+func parseFeedCommands(t *testing.T, data []byte) []feedFrame {
 	t.Helper()
 	r := bufio.NewReader(bytes.NewReader(data))
-	var out [][][]byte
+	var out []feedFrame
 	for {
 		resp, err := proto.ReadRESP(r)
 		if err != nil {
 			if err == io.EOF {
 				return out
 			}
-			t.Fatalf("parse slave stream after %d commands: %v", len(out), err)
+			t.Fatalf("parse slave stream after %d frames: %v", len(out), err)
 		}
-		out = append(out, resp.Args)
+		args := make([]string, len(resp.Args))
+		for i, a := range resp.Args {
+			args[i] = string(a)
+		}
+		if len(args) < 3 || args[0] != feedEntryCommand {
+			t.Fatalf("not a REPLLOG frame: %v", args)
+		}
+		ts, err := strconv.ParseUint(args[1], 10, 64)
+		if err != nil {
+			t.Fatalf("frame ts parse: %v", err)
+		}
+		out = append(out, feedFrame{ts: ts, cmd: args[2:]})
 	}
 }

@@ -1301,7 +1301,7 @@ func TestSentinelBoundary_ReplconfGetack(t *testing.T) {
 	resp := handler.executeCommand(state, "REPLCONF", [][]byte{[]byte("GETACK"), []byte("*")}, "127.0.0.1:12345")
 	arr, ok := resp.(*proto.Array)
 	assert.True(t, ok)
-	assert.Equal(t, 3, len(arr.Args))
+	assert.Equal(t, 4, len(arr.Args))
 	assert.Equal(t, []byte("REPLCONF"), arr.Args[0])
 	assert.Equal(t, []byte("ACK"), arr.Args[1])
 }

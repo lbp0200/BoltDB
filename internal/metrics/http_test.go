@@ -148,8 +148,6 @@ func TestAttachHTTP_DebugVars_AllFields(t *testing.T) {
 	c.SlaveReplOffsetFn = func() int64 { return 4900 }
 	c.ReconnectCountFn = func() int64 { return 2 }
 	c.SlaveCountFn = func() int { return 1 }
-	c.BacklogSizeFn = func() int64 { return 65536 }
-	c.BacklogAvailFn = func() int64 { return 32768 }
 	c.RoleFn = func() string { return "slave" }
 	c.ActiveClientsFn = func() int { return 8 }
 	c.BlockedClientsFn = func() int { return 1 }
@@ -189,8 +187,6 @@ func TestAttachHTTP_DebugVars_AllFields(t *testing.T) {
 	assert.Equal(t, 3, result.PubSubClients)
 	assert.Equal(t, 12, result.PubSubSubs)
 	assert.Equal(t, int64(1048576), result.TotalOutputBytes)
-	assert.Equal(t, int64(65536), result.BacklogSize)
-	assert.Equal(t, int64(32768), result.BacklogAvailable)
 }
 
 func TestServeMetrics_AddrInError(t *testing.T) {

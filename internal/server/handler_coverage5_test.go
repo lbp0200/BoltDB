@@ -627,7 +627,6 @@ func TestHandleSlaveReplicationConnection_RepliesToGetAck(t *testing.T) {
 
 	handler.Replication = replication.NewReplicationManager(handler.Db)
 	defer handler.Replication.Stop()
-	handler.Replication.SetMasterReplOffset(12345)
 
 	serverEnd, clientEnd := net.Pipe()
 	defer serverEnd.Close()
@@ -646,14 +645,15 @@ func TestHandleSlaveReplicationConnection_RepliesToGetAck(t *testing.T) {
 
 	resp, err := proto.ReadRESP(bufio.NewReader(serverEnd))
 	assert.NoError(t, err)
-	// S2 ACK-ts 双轨（15d5f7b）：主侧 GETACK 回复为 4 参 REPLCONF ACK <offset> <ts>
-	// ——第 4 参 = currentTS（本测试无写路径——fresh ReplicationManager → 0）。
+	// S2 ACK-ts（15d5f7b）：主侧 GETACK 回复为 4 参 REPLCONF ACK <offset> <ts>
+	// ——offset 恒 0（ts 域），第 4 参 = currentTS（本测试无写路径——fresh
+	// ReplicationManager → 0）。
 	if len(resp.Args) != 4 {
 		t.Fatalf("GETACK reply has %d args, want 4", len(resp.Args))
 	}
 	assert.Equal(t, "REPLCONF", string(resp.Args[0]))
 	assert.Equal(t, "ACK", string(resp.Args[1]))
-	assert.Equal(t, "12345", string(resp.Args[2]))
+	assert.Equal(t, "0", string(resp.Args[2]))
 	assert.Equal(t, "0", string(resp.Args[3]))
 
 	serverEnd.Close()

@@ -182,7 +182,7 @@ func TestSendFullResync(t *testing.T) {
 	conn := newMockConn()
 	slave := NewSlaveConnection(conn)
 
-	err := SendFullResync(slave, "test-repl-id", 100, 0)
+	err := SendFullResync(slave, "test-repl-id", 100)
 	assert.NoError(t, err)
 
 	// 验证写入的数据包含 FULLRESYNC
@@ -195,44 +195,11 @@ func TestSendContinueResync(t *testing.T) {
 	conn := newMockConn()
 	slave := NewSlaveConnection(conn)
 
-	err := SendContinueResync(slave, "test-repl-id", 100)
+	err := SendContinueResync(slave, "test-repl-id")
 	assert.NoError(t, err)
 
 	// 验证写入的数据包含 CONTINUE
 	assert.True(t, strings.Contains(string(conn.writeBuffer), "CONTINUE"))
-}
-
-// TestSendBacklogData tests SendBacklogData function
-func TestSendBacklogData(t *testing.T) {
-	t.Parallel()
-	conn := newMockConn()
-	slave := NewSlaveConnection(conn)
-
-	// 创建一个 backlog 并添加数据
-	backlog := NewReplicationBacklog(1000)
-	backlog.Append([]byte("test command"))
-
-	err := SendBacklogData(slave, backlog, 0, 100)
-	assert.NoError(t, err)
-
-	// 验证有数据写入
-	assert.True(t, len(conn.writeBuffer) > 0)
-}
-
-// TestSendBacklogData_EmptyRange tests SendBacklogData with empty range
-func TestSendBacklogData_EmptyRange(t *testing.T) {
-	t.Parallel()
-	conn := newMockConn()
-	slave := NewSlaveConnection(conn)
-
-	// 创建一个 backlog 并添加数据
-	backlog := NewReplicationBacklog(1000)
-	backlog.Append([]byte("test command"))
-
-	// 请求超出范围的偏移量
-	err := SendBacklogData(slave, backlog, 1000, 2000)
-	// 可能返回错误或空数据
-	_ = err
 }
 
 // TestSlaveConnection_SendRDB tests SendRDB function

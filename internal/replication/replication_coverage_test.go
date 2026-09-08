@@ -555,12 +555,11 @@ func TestHandlePSync_ValidPartialSync(t *testing.T) {
 	}
 }
 
-// TestHandlePSync_MidCommandOffsetFallsBackToFullResync 验证防御性边界校验：
-// 当从节点请求的 offset 落在一个命令字节中间（非命令边界）时，PSYNC 必须
-// 降级为 FULLRESYNC，而不是返回 CONTINUE 把错位字节流发给从节点
-// （否则从节点 ReadRESP 会把 key 名误当命令名，触发 K:HASH:47 类 mis-frame
-// 与无限重同步）。
-func TestHandlePSync_MidCommandOffsetFallsBackToFullResync(t *testing.T) {
+// TestHandlePSync_TsOutOfLogRangeFallsBackToFullResync 验证 ts 域防御性边界校验：
+// 请求的 ts 超出主侧 log 键范围（< logStartTS 或 > currentTS）时，PSYNC 必须降级为
+// FULLRESYNC，而不是返回 CONTINUE——ts 域下每个 ts 都是完整命令边界（无字节 mis-frame
+// 概念），防御性边界 = log 键范围之外的点不可作 CONTINUE 起点。
+func TestHandlePSync_TsOutOfLogRangeFallsBackToFullResync(t *testing.T) {
 	t.Parallel()
 	testStore := setupTestStore(t)
 	rm := NewReplicationManager(testStore)
@@ -568,14 +567,14 @@ func TestHandlePSync_MidCommandOffsetFallsBackToFullResync(t *testing.T) {
 
 	rm.SetRole(RoleMaster)
 
-	// 写入一条命令，使 backlog 含至少一个命令（以 '*' 开头）。
-	rm.PropagateCommand([][]byte{[]byte("SET"), []byte("key"), []byte("value")})
+	// 真实 store 写推进 ts（log 键水位）——ts 域下只有 store 写推进水位。
+	assert.NoError(t, testStore.Set("key", "value"))
 
-	currentOffset := rm.GetMasterReplOffset()
-	assert.True(t, currentOffset > 1)
+	currentTS, _ := testStore.ReplLogCurrentTS()
+	assert.True(t, currentTS > 0)
 
-	// 请求命令中间的字节（currentOffset-1 是命令最后一字节，非边界）。
-	result, err := HandlePSync(rm, rm.GetReplicationID(), currentOffset-1, 0)
+	// 请求超出当前水位（future ts）→ 不可作 CONTINUE 起点 → FULLRESYNC
+	result, err := HandlePSync(rm, rm.GetReplicationID(), 0, currentTS+1)
 	assert.NoError(t, err)
 	assert.True(t, result != nil)
 	assert.True(t, result.FullResync)
@@ -633,19 +632,28 @@ func TestPropagateCommand_SendFailureIncrementsDropCount(t *testing.T) {
 	rm := NewReplicationManager(testStore)
 	defer rm.Stop()
 
+	// 先激活从侧 feed（CatchUpAndEnableSlaveTS：feedEnabled + Ready）——
+	// 空 log 时 catch-up 无发送即成功返回。
 	conn := newMockConn()
-	conn.writeErr = fmt.Errorf("write boom")
 	slaveConn := NewSlaveConnection(conn)
-	slaveConn.SetReady(true)
 	rm.AddSlave(slaveConn)
+	if err := rm.CatchUpAndEnableSlaveTS(slaveConn, 0); err != nil {
+		t.Fatalf("catch-up: %v", err)
+	}
 
-	assert.Equal(t, int64(0), rm.GetReplSendDropCount())
+	// 从现在起 conn 写失败——live push 失败 → drop count 递增
+	conn.writeErr = fmt.Errorf("write boom")
+	if err := testStore.Set("k", "v"); err != nil {
+		t.Fatal(err)
+	}
 	rm.PropagateCommand([][]byte{[]byte("SET"), []byte("k"), []byte("v")})
 	assert.Equal(t, int64(1), rm.GetReplSendDropCount())
 	assert.Equal(t, int64(0), rm.GetReplApplySkipCount())
 
-	// Command is still in the backlog even though live push failed.
-	assert.True(t, rm.GetMasterReplOffset() > 0)
+	// 命令仍在 log 键中（live push 失败不影响持久化——重连 catch-up 可补发）
+	curTS, err := testStore.ReplLogCurrentTS()
+	assert.NoError(t, err)
+	assert.True(t, curTS > 0)
 }
 
 // TestReplicationManager_MultipleSlaves tests managing multiple slaves

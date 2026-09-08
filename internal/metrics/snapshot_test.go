@@ -55,8 +55,6 @@ func TestSnapshot_String(t *testing.T) {
 		ReplicationLag:   0,
 		ReconnectCount:   3,
 		SlaveCount:       2,
-		BacklogSize:      65536,
-		BacklogAvailable: 32768,
 		ActiveClients:    4,
 		BlockedClients:   1,
 		MonitorClients:   0,
@@ -73,7 +71,6 @@ func TestSnapshot_String(t *testing.T) {
 	assert.True(t, strings.Contains(out, "Repl:"))
 	assert.True(t, strings.Contains(out, "role=master"))
 	assert.True(t, strings.Contains(out, "master_offset=500"))
-	assert.True(t, strings.Contains(out, "Backlog:"))
 	assert.True(t, strings.Contains(out, "Clients:"))
 	assert.True(t, strings.Contains(out, "active=4"))
 	assert.True(t, strings.Contains(out, "blocked=1"))

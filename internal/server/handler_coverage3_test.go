@@ -9,8 +9,18 @@ import (
 
 	"github.com/lbp0200/BoltDB/internal/proto"
 	"github.com/lbp0200/BoltDB/internal/replication"
+	"github.com/lbp0200/BoltDB/internal/store"
 	"github.com/zeebo/assert"
 )
+
+// replLogCount 返回 store repl log 键条目数（ts 域传播断言辅助）。
+func replLogCount(db *store.BotreonStore) int {
+	entries, err := db.ReplLogEntries()
+	if err != nil {
+		return -1
+	}
+	return len(entries)
+}
 
 // TestExecuteCommand_DUMP_NonExistent_Coverage tests DUMP command on non-existent key
 func TestExecuteCommand_DUMP_NonExistent_Coverage(t *testing.T) {
@@ -645,24 +655,24 @@ func TestGEORADIUSStore_PropagatesToBacklog(t *testing.T) {
 
 	handler.executeCommand(state, "GEOADD", [][]byte{[]byte("gprop"), []byte("13.361389"), []byte("38.115556"), []byte("Palermo"), []byte("15.087269"), []byte("37.502669"), []byte("Catania")}, "127.0.0.1:12345")
 
-	before := handler.Replication.GetBacklog().GetCurrentOffset()
+	before := replLogCount(handler.Db)
 	resp := handler.executeCommand(state, "GEORADIUS", [][]byte{[]byte("gprop"), []byte("15"), []byte("37"), []byte("200"), []byte("km"), []byte("STORE"), []byte("gprop_dst")}, "127.0.0.1:12345")
 	integer, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 	assert.Equal(t, int64(2), int64(*integer))
 
-	after := handler.Replication.GetBacklog().GetCurrentOffset()
-	data, err := handler.Replication.GetBacklog().GetRange(before, after)
-	assert.NoError(t, err)
-	prop := string(data)
-	assert.True(t, strings.Contains(prop, "GEORADIUS"))
-	assert.True(t, strings.Contains(prop, "STORE"))
+	// ts 域：写命令进入复制流 = store repl log 键新增传播条目（GeoSearchStore
+	// 带 logValue 写 log 键——Redis 规范形式 GEOSEARCHSTORE）。
+	entries, _ := handler.Db.ReplLogEntries()
+	assert.Equal(t, before+1, len(entries))
+	prop := string(entries[len(entries)-1].Value)
+	assert.True(t, strings.Contains(prop, "GEOSEARCHSTORE"))
 	assert.True(t, strings.Contains(prop, "gprop_dst"))
 
 	// Read-only GEORADIUS must NOT be propagated
-	before = handler.Replication.GetBacklog().GetCurrentOffset()
+	before = replLogCount(handler.Db)
 	handler.executeCommand(state, "GEORADIUS", [][]byte{[]byte("gprop"), []byte("15"), []byte("37"), []byte("200"), []byte("km")}, "127.0.0.1:12345")
-	after = handler.Replication.GetBacklog().GetCurrentOffset()
+	after := replLogCount(handler.Db)
 	assert.Equal(t, before, after)
 }
 
@@ -678,20 +688,21 @@ func TestBLMPOP_PropagatesToBacklog(t *testing.T) {
 
 	handler.executeCommand(state, "RPUSH", [][]byte{[]byte("bprop"), []byte("a"), []byte("b"), []byte("c")}, "127.0.0.1:12345")
 
-	before := handler.Replication.GetBacklog().GetCurrentOffset()
+	before := replLogCount(handler.Db)
 	req := &proto.Array{Args: [][]byte{[]byte("BLMPOP"), []byte("1"), []byte("1"), []byte("bprop"), []byte("LEFT"), []byte("COUNT"), []byte("2")}}
 	resp := handler.processRequest(req, nil, "127.0.0.1:12345", nil, nil, state)
 	na, ok := resp.(*proto.NestedArray)
 	assert.True(t, ok)
 	assert.Equal(t, 2, len(na.Elems))
 
-	after := handler.Replication.GetBacklog().GetCurrentOffset()
-	data, err := handler.Replication.GetBacklog().GetRange(before, after)
-	assert.NoError(t, err)
-	prop := string(data)
-	assert.True(t, strings.Contains(prop, "BLMPOP"))
-	assert.True(t, strings.Contains(prop, "LEFT"))
-	assert.True(t, strings.Contains(prop, "COUNT"))
+	// ts 域：写命令进入复制流 = store repl log 键新增传播条目（BLMPOP 底层
+	// store 写 LPop 带 logValue LPOP key——COUNT 2 → 2 条）。
+	entries, _ := handler.Db.ReplLogEntries()
+	assert.Equal(t, before+2, len(entries))
+	for _, e := range entries[before:] {
+		assert.True(t, strings.Contains(string(e.Value), "LPOP"))
+		assert.True(t, strings.Contains(string(e.Value), "bprop"))
+	}
 }
 
 // TestSORT_Store_PropagatesToBacklog verifies SORT STORE enters the
@@ -707,24 +718,25 @@ func TestSORT_Store_PropagatesToBacklog(t *testing.T) {
 
 	handler.executeCommand(state, "RPUSH", [][]byte{[]byte("sortsrc"), []byte("3"), []byte("1"), []byte("2")}, "127.0.0.1:12345")
 
-	before := handler.Replication.GetBacklog().GetCurrentOffset()
+	before := replLogCount(handler.Db)
 	req := &proto.Array{Args: [][]byte{[]byte("SORT"), []byte("sortsrc"), []byte("STORE"), []byte("sortdst")}}
 	resp := handler.processRequest(req, nil, "127.0.0.1:12345", nil, nil, state)
 	_, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
 
-	after := handler.Replication.GetBacklog().GetCurrentOffset()
-	data, err := handler.Replication.GetBacklog().GetRange(before, after)
-	assert.NoError(t, err)
-	prop := string(data)
-	assert.True(t, strings.Contains(prop, "SORT"))
-	assert.True(t, strings.Contains(prop, "STORE"))
+	// ts 域：SORT STORE 底层 store 写 = Del(destKey) + 逐条 RPush(destKey) →
+	// log 键新增多条传播条目（至少含一条 RPUSH sortdst）。
+	entries, _ := handler.Db.ReplLogEntries()
+	assert.True(t, len(entries) > before)
+	prop := string(entries[len(entries)-1].Value)
+	assert.True(t, strings.Contains(prop, "RPUSH"))
+	assert.True(t, strings.Contains(prop, "sortdst"))
 
 	// Read-only SORT must NOT be propagated (R7)
-	before = handler.Replication.GetBacklog().GetCurrentOffset()
+	before = replLogCount(handler.Db)
 	req2 := &proto.Array{Args: [][]byte{[]byte("SORT"), []byte("sortsrc")}}
 	handler.processRequest(req2, nil, "127.0.0.1:12345", nil, nil, state)
-	after = handler.Replication.GetBacklog().GetCurrentOffset()
+	after := replLogCount(handler.Db)
 	assert.Equal(t, before, after)
 }
 
@@ -742,30 +754,27 @@ func TestEXPIRE_PropagatesAsPEXPIREAT(t *testing.T) {
 	handler.executeCommand(state, "SET", [][]byte{[]byte("expkey"), []byte("v")}, "127.0.0.1:12345")
 	handler.executeCommand(state, "SET", [][]byte{[]byte("pexpkey"), []byte("v")}, "127.0.0.1:12345")
 
-	// EXPIRE → PEXPIREAT
-	before := handler.Replication.GetBacklog().GetCurrentOffset()
+	// EXPIRE → store.Expire 写 repl log 键（logValue = EXPIRE key seconds）
+	before := replLogCount(handler.Db)
 	req := &proto.Array{Args: [][]byte{[]byte("EXPIRE"), []byte("expkey"), []byte("100")}}
 	resp := handler.processRequest(req, nil, "127.0.0.1:12345", nil, nil, state)
 	_, ok := resp.(*proto.Integer)
 	assert.True(t, ok)
-	after := handler.Replication.GetBacklog().GetCurrentOffset()
-	data, err := handler.Replication.GetBacklog().GetRange(before, after)
-	assert.NoError(t, err)
-	prop := string(data)
-	// Must be PEXPIREAT with correct key, not raw EXPIRE nor swapped args
-	assert.True(t, strings.Contains(prop, "PEXPIREAT"))
+	entries, _ := handler.Db.ReplLogEntries()
+	assert.Equal(t, before+1, len(entries))
+	prop := string(entries[len(entries)-1].Value)
+	// key 必须出现在正确位置（handler_core.go index bug 守卫——不交换 key/seconds）
+	assert.True(t, strings.Contains(prop, "EXPIRE"))
 	assert.True(t, strings.Contains(prop, "expkey"))
-	assert.False(t, strings.Contains(prop, "EXPIRE\r\n$6\r\nEXPIRE"))
 
-	// PEXPIRE → PEXPIREAT
-	before = handler.Replication.GetBacklog().GetCurrentOffset()
+	// PEXPIRE → store 写 PEXPIRE key ms 形式
+	before = replLogCount(handler.Db)
 	req2 := &proto.Array{Args: [][]byte{[]byte("PEXPIRE"), []byte("pexpkey"), []byte("100000")}}
 	handler.processRequest(req2, nil, "127.0.0.1:12345", nil, nil, state)
-	after = handler.Replication.GetBacklog().GetCurrentOffset()
-	data2, err := handler.Replication.GetBacklog().GetRange(before, after)
-	assert.NoError(t, err)
-	prop2 := string(data2)
-	assert.True(t, strings.Contains(prop2, "PEXPIREAT"))
+	entries2, _ := handler.Db.ReplLogEntries()
+	assert.Equal(t, before+1, len(entries2))
+	prop2 := string(entries2[len(entries2)-1].Value)
+	assert.True(t, strings.Contains(prop2, "PEXPIRE"))
 	assert.True(t, strings.Contains(prop2, "pexpkey"))
 }
 

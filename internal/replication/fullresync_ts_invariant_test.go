@@ -13,8 +13,8 @@ import (
 //
 //	[1] HandlePSync 锁外读 currentTS → FULLRESYNC 响应第 4 字段 result.TS
 //	[2] （新提交可落——锁外读与快照之间无栅栏）
-//	[3] CatchUpAndEnableSlave 字节 catch-up 完成后 feed-mode 激活
-//	    feedSinceTS = ReplLogCurrentTS()+1（propMu 内读——激活水位 ≥ 快照水位）
+//	[3] CatchUpAndEnableSlaveTS ts catch-up 完成后 feed-mode 激活
+//	    feedSinceTS = resumeTS+1（resumeTS = 当前 log 水位——激活水位 ≥ 快照水位）
 //
 // 不变式断言（成立性验证）：
 //
@@ -29,7 +29,6 @@ func TestFullresyncTsDomainInvariant(t *testing.T) {
 	s := setupTestStore(t)
 	rm := NewReplicationManager(s)
 	rm.SetRole(RoleMaster)
-	rm.SetFeedLoop(true)
 	defer rm.Stop()
 
 	const n = 10
@@ -62,25 +61,28 @@ func TestFullresyncTsDomainInvariant(t *testing.T) {
 		rm.PropagateCommand([][]byte{[]byte("SET"), []byte(k), []byte("v")})
 	}
 
-	// [3] 字节 catch-up + feed-mode 激活（CatchUpAndEnableSlave——replication.go:523）
-	// 阶段 1（a4 §10 附8）：字节路径起点必须取 backlog 字节水位（GetBacklogCurrentOffset）
-	// ——GetMasterReplOffset 在 feed 模式下已返回 ts 域值（喂给字节 catch-up 会错域）。
+	// [3] ts catch-up + feed-mode 激活（CatchUpAndEnableSlaveTS）：resumeTS = 当前 log 水位
+	// ——feedSinceTS = resumeTS+1——补发区间 [resumeTS+1, curTS] 为空（无新写）= no-op。
 	server, client := net.Pipe()
 	defer server.Close()
 	defer client.Close()
 	_ = client // 测试仅验证激活水位——不读流帧
 	sc := NewSlaveConnection(server)
 	rm.AddSlave(sc)
-	if err := rm.CatchUpAndEnableSlave(sc, rm.GetBacklogCurrentOffset()); err != nil {
-		t.Fatalf("CatchUpAndEnableSlave: %v", err)
+	resumeTS, err := s.ReplLogCurrentTS()
+	if err != nil {
+		t.Fatalf("ReplLogCurrentTS: %v", err)
+	}
+	if err := rm.CatchUpAndEnableSlaveTS(sc, resumeTS); err != nil {
+		t.Fatalf("CatchUpAndEnableSlaveTS: %v", err)
 	}
 	defer rm.RemoveSlave(sc.ID)
 
 	if !sc.FeedIsEnabled() {
-		t.Fatal("feed-mode activation expected after byte catch-up")
+		t.Fatal("feed-mode activation expected after ts catch-up")
 	}
 
-	// (ii) feedSinceTS = 激活时刻 ReplLogCurrentTS()+1（propMu 内读——不重叠不遗漏）
+	// (ii) feedSinceTS = resumeTS+1（resumeTS = 激活时刻 log 水位——不重叠不遗漏）
 	wantTS, err := rm.store.ReplLogCurrentTS()
 	if err != nil {
 		t.Fatalf("ReplLogCurrentTS: %v", err)

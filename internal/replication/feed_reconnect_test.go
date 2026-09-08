@@ -16,13 +16,12 @@ import (
 // 从 resumeTS+1 起经 FeedSlave 补发（log 键值源零对齐——不再走字节 SendBacklogData，
 // byte 坐标错域问题结构性消除——见 9435523 根因记录）。
 // 保留断连窗口 gap 可恢复性核验：FeedEntriesFrom(resumeTS+1)（严格大于——已 apply 的
-// 不重发）覆盖 m 条 gap，与 backlog 断连窗口事件事件级等价（replay 守卫式对齐核验）。
+// 不重发）覆盖 m 条 gap，逐条与断连窗口写入事件级对齐（无丢失核验）。
 func TestFeedModeReconnectResume(t *testing.T) {
 	t.Parallel()
 	s := setupTestStore(t)
 	rm := NewReplicationManager(s)
 	rm.SetRole(RoleMaster)
-	rm.SetFeedLoop(true)
 	defer rm.Stop()
 
 	const n = 12
@@ -74,15 +73,7 @@ func TestFeedModeReconnectResume(t *testing.T) {
 		t.Fatalf("gap feed entries = %d, want %d (disconnect window)", len(wire), m)
 	}
 
-	// 事件级等价：gap 的 feed 命令 == backlog 断连窗口事件（resume 点后对齐）
-	raw, err := rm.backlog.GetRange(0, rm.backlog.GetCurrentOffset())
-	if err != nil {
-		t.Fatal(err)
-	}
-	events := parseCommandEvents(raw)
-	if len(events) != n+m {
-		t.Fatalf("backlog events = %d, want %d", len(events), n+m)
-	}
+	// 事件级核验：gap 的 feed 命令 == 断连窗口写入（resume 点后严格对齐——无丢失）
 	for i := range wire {
 		argBytes := make([][]byte, len(wire[i]))
 		for j, a := range wire[i] {
@@ -92,7 +83,7 @@ func TestFeedModeReconnectResume(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := events[n+i] // resume 点在事件索引 n-1（末条已 apply）——gap 从事件 n 起
+		want := []string{"SET", fmt.Sprintf("recon:k:%d", n+i), "v"} // gap 从事件 n 起（末条已 apply）
 		if len(cmd) != len(want) {
 			t.Fatalf("gap entry %d cmd %v, want %v", i, cmd, want)
 		}
@@ -115,7 +106,6 @@ func TestFeedModeReconnectTsCatchUp(t *testing.T) {
 	s := setupTestStore(t)
 	rm := NewReplicationManager(s)
 	rm.SetRole(RoleMaster)
-	rm.SetFeedLoop(true)
 	defer rm.Stop()
 
 	const n = 10

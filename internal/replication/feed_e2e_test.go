@@ -8,11 +8,10 @@ import (
 	"time"
 )
 
-// TestFeedModeEndToEnd 验证 feed-mode 的整链路闭环（S2 backlog 退役首步——实际流发送的
-// 端到端验证）：master（SetFeedLoop + CatchUpAndEnableSlave 自动激活 feed-mode）→
-// REPLLOG wire 增量 → 从侧 readCommandLoop（REPLLOG 分支 apply）→ 数据收敛 +
-// lastAppliedTS 推进。同步 pipe：master 写阻塞至从侧读——循环结束后从侧必已全部
-// apply——收敛断言确定性成立。
+// TestFeedModeEndToEnd 验证 feed-mode 的整链路闭环（实际流发送的端到端验证）：
+// master（CatchUpAndEnableSlaveTS 激活 feed-mode）→ REPLLOG wire 增量 →
+// 从侧 readCommandLoop（REPLLOG 分支 apply）→ 数据收敛 + lastAppliedTS 推进。
+// 同步 pipe：master 写阻塞至从侧读——循环结束后从侧必已全部 apply——收敛断言确定性成立。
 func TestFeedModeEndToEnd(t *testing.T) {
 	t.Parallel()
 
@@ -20,7 +19,6 @@ func TestFeedModeEndToEnd(t *testing.T) {
 	masterRM := NewReplicationManager(masterStore)
 	defer masterRM.Stop()
 	masterRM.SetRole(RoleMaster)
-	masterRM.SetFeedLoop(true)
 
 	slaveStore := setupTestStore(t)
 	slaveRM := NewReplicationManager(slaveStore)
@@ -44,15 +42,15 @@ func TestFeedModeEndToEnd(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- sr.readCommandLoop(mc) }()
 
-	// master 侧从连接 + feed-mode 自动激活（CatchUpAndEnableSlave——propMu 下
-	// FeedSetEnabled(true, curTS+1)——空 backlog 时无 catch-up 字节）
+	// master 侧从连接 + feed-mode 激活（CatchUpAndEnableSlaveTS——propMu 下
+	// FeedSetEnabled(true, resumeTS+1)——空 store 时 catch-up [1, curTS] 为空 = no-op）
 	sc := NewSlaveConnection(serverEnd)
 	masterRM.AddSlave(sc)
-	if err := masterRM.CatchUpAndEnableSlave(sc, 0); err != nil {
+	if err := masterRM.CatchUpAndEnableSlaveTS(sc, 0); err != nil {
 		t.Fatalf("catch-up: %v", err)
 	}
 	if !sc.FeedIsEnabled() {
-		t.Fatal("feed-mode not auto-activated (SetFeedLoop + CatchUpAndEnableSlave)")
+		t.Fatal("feed-mode not activated (CatchUpAndEnableSlaveTS)")
 	}
 
 	// master 写序列（feed-mode：REPLLOG 增量——非 feed 字节路径关闭——避免双 apply）

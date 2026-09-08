@@ -1,6 +1,7 @@
 package replication
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/lbp0200/BoltDB/internal/store"
@@ -104,40 +105,6 @@ func TestReplicationManagerExtended_GetSlaves(t *testing.T) {
 	assert.Equal(t, 0, len(slaves))
 }
 
-// TestReplicationManagerExtended_Offset tests replication offset
-func TestReplicationManagerExtended_Offset(t *testing.T) {
-	t.Parallel()
-	testStore := setupTestStore(t)
-	rm := NewReplicationManager(testStore)
-	defer rm.Stop()
-
-	// Initial offset should be 0
-	assert.Equal(t, int64(0), rm.GetMasterReplOffset())
-
-	// Set offset (moves the backlog watermark forward, never backward)
-	rm.SetMasterReplOffset(100)
-	assert.Equal(t, int64(100), rm.GetMasterReplOffset())
-	rm.SetMasterReplOffset(10)
-	assert.Equal(t, int64(100), rm.GetMasterReplOffset())
-
-	// Propagating advances it by exactly the bytes appended
-	rm.PropagateCommand([][]byte{[]byte("SET"), []byte("key"), []byte("value")})
-	assert.Equal(t, rm.GetBacklog().GetCurrentOffset(), rm.GetMasterReplOffset())
-	assert.True(t, rm.GetMasterReplOffset() > 100)
-}
-
-// TestReplicationManagerExtended_Backlog tests backlog
-func TestReplicationManagerExtended_Backlog(t *testing.T) {
-	t.Parallel()
-	testStore := setupTestStore(t)
-	rm := NewReplicationManager(testStore)
-	defer rm.Stop()
-
-	// Get backlog
-	backlog := rm.GetBacklog()
-	assert.True(t, backlog != nil)
-}
-
 // TestReplicationManagerExtended_MasterConnection tests master connection
 func TestReplicationManagerExtended_MasterConnection(t *testing.T) {
 	t.Parallel()
@@ -201,8 +168,8 @@ func TestReplicationManager_PersistedReplId(t *testing.T) {
 	rm.Stop()
 }
 
-// A clean shutdown persists offset and backlog together, so the watermark
-// survives a restart and reconnecting slaves can still CONTINUE.
+// A clean shutdown persists the replication ts watermark (the store's repl log),
+// so it survives a restart and reconnecting slaves can still CONTINUE from it.
 func TestReplicationManager_PersistedOffsetWithBacklog(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -212,7 +179,8 @@ func TestReplicationManager_PersistedOffsetWithBacklog(t *testing.T) {
 	rm1 := NewReplicationManager(s1)
 	rm1.SetRole(RoleMaster)
 	for i := 0; i < 4; i++ {
-		rm1.PropagateCommand([][]byte{[]byte("SET"), []byte("k"), []byte("v")})
+		// 真实 store 写推进 ts（repl log 键）——ts 域下 watermark 只由 store 写入推进。
+		assert.NoError(t, s1.Set(fmt.Sprintf("k:%d", i), "v"))
 	}
 	before := rm1.GetMasterReplOffset()
 	assert.True(t, before > 0)

@@ -1,7 +1,6 @@
 package replication
 
 import (
-	"bytes"
 	"fmt"
 	"testing"
 )
@@ -106,23 +105,4 @@ func TestReplLogShadowDualWriteConsistency(t *testing.T) {
 		}
 	}
 
-	// 读侧 B：backlog 全窗口字节流——事件级与 log 键一致
-	backlog := rm.backlog
-	cur := backlog.GetCurrentOffset()
-	backlogBytes, err := backlog.GetRange(0, cur)
-	if err != nil {
-		t.Fatal(err)
-	}
-	backlogEvents := respKeys(backlogBytes)
-	if len(backlogEvents) != n {
-		t.Fatalf("backlog event count = %d, want %d", len(backlogEvents), n)
-	}
-	for i, ev := range backlogEvents {
-		if ev != expected[i] {
-			t.Fatalf("backlog event %d = %v, want %v", i, ev, expected[i])
-		}
-	}
-	if !bytes.Equal(logValues, backlogBytes) {
-		t.Logf("shadow dual-write byte-level differs (expected: log values are identifying-form until the S2 form increment)")
-	}
 }

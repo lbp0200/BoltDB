@@ -5,9 +5,10 @@ import (
 	"testing"
 )
 
-// TestTSReplayEquivalence 验证 ts 重放守卫（§10 附7 验证门槛——backlog 退役前的双轨
-// 核验锚）：日志键回放（feed REPLLOG wire 事件序列——ts + 全命令）== 字节 backlog
-// 回放（命令事件序列）事件级等价——每事件命令参数逐项一致 + 日志键 ts 严格升序。
+// TestTSReplayEquivalence 验证 ts 重放守卫（feed REPLLOG wire 事件序列的完整性）：
+// 写入 n 条命令后，日志键回放（FeedEntriesFrom）返回 n 帧——每帧 ts 严格升序 +
+// 命令参数与写入一一对应。环已退役——原"字节 backlog 回放等价 + 换算表 AlignCheck"
+// 双轨核验锚失效；此守卫保留其核心不变量：feed wire 的 ts-ascending + 命令完整性。
 func TestTSReplayEquivalence(t *testing.T) {
 	t.Parallel()
 	s := setupTestStore(t)
@@ -23,7 +24,7 @@ func TestTSReplayEquivalence(t *testing.T) {
 		rm.PropagateCommand([][]byte{[]byte("SET"), []byte(k), []byte("v")})
 	}
 
-	// 日志键回放：feed wire（ts + 全命令——backlog 事件对齐值源）
+	// 日志键回放：feed wire（ts + 全命令）
 	wire, err := rm.FeedEntriesFrom(0)
 	if err != nil {
 		t.Fatal(err)
@@ -31,9 +32,8 @@ func TestTSReplayEquivalence(t *testing.T) {
 	if len(wire) != n {
 		t.Fatalf("feed entries = %d, want %d", len(wire), n)
 	}
-	var logReplay [][]string
 	var lastTS uint64
-	for _, args := range wire {
+	for i, args := range wire {
 		argBytes := make([][]byte, len(args))
 		for j, a := range args {
 			argBytes[j] = []byte(a)
@@ -46,41 +46,14 @@ func TestTSReplayEquivalence(t *testing.T) {
 			t.Fatalf("feed ts regression: %d < %d (ts must be ascending)", ts, lastTS)
 		}
 		lastTS = ts
-		logReplay = append(logReplay, cmd)
-	}
-
-	// 字节 backlog 回放：命令事件序列
-	raw, err := rm.backlog.GetRange(0, rm.backlog.GetCurrentOffset())
-	if err != nil {
-		t.Fatal(err)
-	}
-	backlogReplay := parseCommandEvents(raw)
-	if len(backlogReplay) != n {
-		t.Fatalf("backlog replay = %d, want %d", len(backlogReplay), n)
-	}
-
-	// 事件级等价：日志键回放命令 == backlog 回放命令（逐事件逐参数）
-	for i := range logReplay {
-		if len(logReplay[i]) != len(backlogReplay[i]) {
-			t.Fatalf("event %d arg count: log %d != backlog %d", i, len(logReplay[i]), len(backlogReplay[i]))
+		want := []string{"SET", fmt.Sprintf("replay:key:%d", i), "v"}
+		if len(cmd) != len(want) {
+			t.Fatalf("event %d arg count: got %d want %d", i, len(cmd), len(want))
 		}
-		for j := range logReplay[i] {
-			if logReplay[i][j] != backlogReplay[i][j] {
-				t.Fatalf("event %d arg %d: log %q != backlog %q", i, j, logReplay[i][j], backlogReplay[i][j])
+		for j := range want {
+			if cmd[j] != want[j] {
+				t.Fatalf("event %d arg %d: got %q want %q", i, j, cmd[j], want[j])
 			}
 		}
-	}
-
-	// 换算表核验（a4 §10 附7——验证锚接入守卫）：事件对齐构建成功（上述等价性的
-	// 强形式——offset↔ts 双向映射建表）+ AlignCheck 双轨一致（事件数 == 日志键数）。
-	tbl, err := BuildReplConversionTable(rm.GetBacklog(), s)
-	if err != nil {
-		t.Fatalf("conversion table build failed in replay guard: %v", err)
-	}
-	if tbl.Count() != n {
-		t.Fatalf("conversion table count = %d, want %d", tbl.Count(), n)
-	}
-	if cnt, ok := tbl.AlignCheck(s); !ok || cnt != n {
-		t.Fatalf("conversion table AlignCheck = (%d, %v), want (%d, true)", cnt, ok, n)
 	}
 }

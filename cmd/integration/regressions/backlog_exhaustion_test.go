@@ -61,8 +61,10 @@ func TestRegressionBacklogExhaustion(t *testing.T) {
 	// Verify known data replicated
 	verifyBacklogData(t, ctx, slave.Client, "post-sync")
 	prePartitionOffset := master.GetMasterOffset()
-	backlogSize := pm.Latest().BacklogSize
-	t.Logf("  master offset: %d  backlog size: %d bytes", prePartitionOffset, backlogSize)
+	// ts 域（ring 已删）：无字节 backlog 大小——以分区前 ts 水位作"参考窗口"，
+	// ratio = 断连窗口 ts 增量 / 既有水位（>1 表示写量远超既有 log——FULLRESYNC 分支）。
+	backlogSize := prePartitionOffset
+	t.Logf("  master offset: %d  backlog reference window: %d", prePartitionOffset, backlogSize)
 
 	// ========================================================================
 	// Phase 2: Stop slave, write heavily to exceed backlog

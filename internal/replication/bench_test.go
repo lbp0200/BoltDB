@@ -43,32 +43,6 @@ func BenchmarkGenerateRDB_WithData(b *testing.B) {
 	}
 }
 
-// BenchmarkReplicationBacklog_Append tests ReplicationBacklog Append
-func BenchmarkReplicationBacklog_Append(b *testing.B) {
-	backlog := NewReplicationBacklog(1024 * 1024)
-	data := []byte("test data")
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		backlog.Append(data)
-	}
-}
-
-// BenchmarkReplicationBacklog_GetRange tests ReplicationBacklog GetRange
-func BenchmarkReplicationBacklog_GetRange(b *testing.B) {
-	backlog := NewReplicationBacklog(1024 * 1024)
-
-	// Add some data
-	for i := 0; i < 1000; i++ {
-		backlog.Append([]byte("test data"))
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		backlog.GetRange(0, 100)
-	}
-}
-
 // BenchmarkReplicationManager_GetRole tests ReplicationManager GetRole
 func BenchmarkReplicationManager_GetRole(b *testing.B) {
 	testStore, _ := store.NewBadgerStore("/tmp/bench_role")
