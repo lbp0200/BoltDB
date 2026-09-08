@@ -71,17 +71,12 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 		}
 		defer unlock()
 
-		snapshotOffset := h.Replication.GetBacklogCurrentOffset()
 		// RDB 线性化点 ts 化落点（a4 §10 附8 阶段 1 前置——869dfa4 验证）：FULLRESYNC
-		// 响应的 ts 字段必须与 snapshotOffset 同位（写锁内）读取——psync.go:122 的
-		// currentTS 在 HandlePSync（SnapshotMuLock 之前）锁外读，可能早于快照实际
-		// 水位。从侧把该字段直接存为 lastAppliedTS（reconnect.go:361）——既是重连
-		// 续播点（sendPSYNC 第 4 参）。后果不是"重传浪费"：从侧**无 ts 去重**
-		// （apply 路径无条件执行——见 CatchUpAndEnableSlaveTS 注释），若在 FULLRESYNC
-		// 后尚未 apply 任何一条命令就断连重连，从侧以过旧 ts 续播 → 主侧重发
-		// (staleTs, snapshotTs] 区间 → 该区间命令已在 RDB 内又被执行一遍
-		// （INCR/XADD/LPUSH 等非幂等命令双应用——数据发散）。
-		// 暴露面：仅 feed 模式（--feed-loop——默认关时该字段不参与续播判定）。
+		// 响应的 ts 字段必须与快照同位（写锁内）读取。从侧把该字段直接存为 lastAppliedTS
+		// （reconnect.go:361）——既是重连续播点（sendPSYNC 第 4 参）。后果不是"重传浪费"：
+		// 从侧**无 ts 去重**（apply 路径无条件执行），若在 FULLRESYNC 后尚未 apply 任何一条
+		// 命令就断连重连，从侧以过旧 ts 续播 → 主侧重发 (staleTs, snapshotTs] 区间 → 该区间
+		// 命令已在 RDB 内又被执行一遍（INCR/XADD/LPUSH 等非幂等命令双应用——数据发散）。
 		snapshotTS, _ := h.Db.ReplLogCurrentTS()
 		rdbData, err := replication.GenerateRDBWithSnapshotLock(h.Db)
 		if err != nil {
@@ -89,7 +84,7 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 			return proto.NewError("ERR failed to generate RDB")
 		}
 
-		response := fmt.Sprintf("+FULLRESYNC %s %d %d\r\n", result.ReplId, snapshotOffset, snapshotTS)
+		response := fmt.Sprintf("+FULLRESYNC %s 0 %d\r\n", result.ReplId, snapshotTS)
 		if _, err := writer.WriteString(response); err != nil {
 			logger.Logger.Error().Err(err).Msg("发送FULLRESYNC失败")
 			return proto.NewError("ERR failed to send FULLRESYNC")
@@ -116,27 +111,27 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 			return proto.NewError("ERR failed to flush writer")
 		}
 
-		// Writes were fenced through the RDB send, so snapshotOffset is still
-		// the live watermark. CatchUp covers commands that land after unlock.
+		// Writes were fenced through the RDB send. CatchUp covers commands
+		// that land after unlock (ts 域——S2 backlog retirement).
 		unlock()
 
 		slaveConn := replication.NewSlaveConnection(conn)
 		h.Replication.AddSlave(slaveConn)
-		if err := h.Replication.CatchUpAndEnableSlave(slaveConn, snapshotOffset); err != nil {
+		if err := h.Replication.CatchUpAndEnableSlaveTS(slaveConn, snapshotTS); err != nil {
 			logger.Logger.Error().Err(err).Msg("FULLRESYNC slave catch-up failed")
 			h.Replication.RemoveSlave(slaveConn.ID)
 			return nil
 		}
 
-		currentOffset := h.Replication.GetBacklogCurrentOffset()
+		currentTS, _ := h.Db.ReplLogCurrentTS()
 		logger.Logger.Info().
 			Str("slave_addr", remoteAddr).
 			Str("repl_id", result.ReplId).
-			Int64("snapshot_offset", snapshotOffset).
-			Int64("current_offset", currentOffset).
+			Uint64("snapshot_ts", snapshotTS).
+			Uint64("current_ts", currentTS).
 			Int("rdb_size", len(rdbData)).
-			Int64("backlog_range", currentOffset-snapshotOffset).
-			Msg("发送FULLRESYNC, RDB和backlog到从节点")
+			Uint64("repllog_range", currentTS-snapshotTS).
+			Msg("发送FULLRESYNC, RDB和REPLLOG增量到从节点")
 
 		// 启动goroutine处理从节点的复制连接（接收REPLCONF ACK等）
 		h.wg.Add(1)
@@ -158,56 +153,23 @@ func (h *Handler) handlePSyncWithRDB(args [][]byte, remoteAddr string, conn net.
 
 		// 创建从节点连接（Ready=false 直到 catch-up 完成）
 		slaveConn := replication.NewSlaveConnection(conn)
-		slaveConn.SetReplOffset(result.Offset)
 
-		if result.TS > 0 {
-			// ts 域路径（feed 模式重连——S2 分级-3 治本）：跳过字节 SendBacklogData
-			// （result.Offset 为从侧 feed 域 lastOffset——与 backlog 原始命令 offset 域
-			// 不一致——读错区间会丢 gap [TS+1, curTS]）——改由 CatchUpAndEnableSlaveTS
-			// 从 result.TS+1 起经 FeedSlave 补发 REPLLOG gap（log 键值源零对齐）。
-			h.Replication.AddSlave(slaveConn)
-			if err := h.Replication.CatchUpAndEnableSlaveTS(slaveConn, result.TS); err != nil {
-				logger.Logger.Error().Err(err).
-					Uint64("resume_ts", result.TS).
-					Msg("CONTINUE ts 域 catch-up 失败")
-				h.Replication.RemoveSlave(slaveConn.ID)
-				return nil
-			}
-			logger.Logger.Info().
-				Str("slave_addr", remoteAddr).
-				Str("repl_id", result.ReplId).
+		// ts 域 catch-up（feed-only——S2 backlog 退役）：CatchUpAndEnableSlaveTS
+		// 从 result.TS+1 起经 FeedSlave 补发 REPLLOG gap（log 键值源零对齐），
+		// 同步完成后翻 Ready。
+		h.Replication.AddSlave(slaveConn)
+		if err := h.Replication.CatchUpAndEnableSlaveTS(slaveConn, result.TS); err != nil {
+			logger.Logger.Error().Err(err).
 				Uint64("resume_ts", result.TS).
-				Msg("发送CONTINUE和ts域增量到从节点")
-		} else {
-			backlog := h.Replication.GetBacklog()
-
-			// 先发送 backlog（[result.Offset, currentOffset)）再注册 slave。
-			// 此时 slave 不在 ReplicationManager.slaves 中，PropagateCommand
-			// 不会向其 live-push。
-			currentOffset := h.Replication.GetBacklogCurrentOffset()
-			if err := replication.SendBacklogData(slaveConn, backlog, result.Offset, currentOffset); err != nil {
-				logger.Logger.Error().Err(err).
-					Int64("start_offset", result.Offset).
-					Int64("end_offset", currentOffset).
-					Msg("发送CONTINUE backlog数据失败")
-				// +CONTINUE already flushed — do not write ERR after it.
-				return nil
-			}
-
-			h.Replication.AddSlave(slaveConn)
-			if err := h.Replication.CatchUpAndEnableSlave(slaveConn, currentOffset); err != nil {
-				logger.Logger.Error().Err(err).Msg("CONTINUE slave catch-up failed")
-				h.Replication.RemoveSlave(slaveConn.ID)
-				return nil
-			}
-
-			logger.Logger.Info().
-				Str("slave_addr", remoteAddr).
-				Str("repl_id", result.ReplId).
-				Int64("offset", result.Offset).
-				Int64("current_offset", currentOffset).
-				Msg("发送CONTINUE和backlog到从节点")
+				Msg("CONTINUE ts 域 catch-up 失败")
+			h.Replication.RemoveSlave(slaveConn.ID)
+			return nil
 		}
+		logger.Logger.Info().
+			Str("slave_addr", remoteAddr).
+			Str("repl_id", result.ReplId).
+			Uint64("resume_ts", result.TS).
+			Msg("发送CONTINUE和ts域增量到从节点")
 
 		// 启动goroutine处理从节点的复制连接
 		h.wg.Add(1)
@@ -329,9 +291,10 @@ func (h *Handler) handleSlaveReplicationConnection(ctx context.Context, slave *r
 		// RESP 数组命令，使从节点 readCommandLoop 能直接解析。
 		if cmd == "REPLCONF" && len(req.Args) >= 2 &&
 			strings.ToUpper(string(req.Args[1])) == "GETACK" {
-			masterOffset := h.Replication.GetBacklogCurrentOffset()
+			// ts 域（feed-only——S2 backlog 退役）：offset 字段随环移除恒 0，
+			// ts 携带主侧 currentTS。
 			currentTS, _ := h.Replication.CurrentTS()
-			ackResp := replication.EncodeReplconfAck(masterOffset, currentTS)
+			ackResp := replication.EncodeReplconfAck(0, currentTS)
 			if err := slave.WriteAndFlush([]byte(ackResp)); err != nil {
 				logger.Logger.Debug().
 					Str("slave_id", slave.ID).

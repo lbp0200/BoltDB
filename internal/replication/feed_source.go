@@ -3,6 +3,7 @@ package replication
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/lbp0200/BoltDB/internal/store"
 )
@@ -59,8 +60,17 @@ func parseCommandEvents(data []byte) [][]string {
 // commit 序 vs append 序分叉问题消失——每个 log 键携带自身完整命令）。
 func parseReplLogValue(logValue []byte) ([]string, error) {
 	idArgs := parseCommandEvents(logValue)
-	if len(idArgs) != 1 || len(idArgs[0]) < 2 {
+	if len(idArgs) != 1 || len(idArgs[0]) < 1 {
 		return nil, fmt.Errorf("unparseable repl log value %q", string(logValue))
+	}
+	// 零参命令白名单（FLUSHDB/FLUSHALL——仅命令名无参数）：FlushDB 清库传播帧
+	// 的 log 键值为 "*1\r\n$7\r\nFLUSHDB\r\n"——len==1 合法（2026-09-08 FLUSHDB
+	// 传播回归修复）。其余单参命令（无键的 PING 等）仍视为参数不足报错。
+	if len(idArgs[0]) < 2 {
+		cmd := strings.ToUpper(idArgs[0][0])
+		if cmd != "FLUSHDB" && cmd != "FLUSHALL" {
+			return nil, fmt.Errorf("unparseable repl log value %q", string(logValue))
+		}
 	}
 	return idArgs[0], nil
 }
@@ -142,7 +152,7 @@ func (rm *ReplicationManager) FeedSlave(slave *SlaveConnection) error {
 		for j, a := range args {
 			argBytes[j] = []byte(a)
 		}
-		if err := slave.SendCommand(serializeCommand(argBytes), rm.GetBacklogCurrentOffset()); err != nil {
+		if err := slave.SendCommand(serializeCommand(argBytes), 0); err != nil {
 			return err
 		}
 	}

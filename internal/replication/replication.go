@@ -18,16 +18,6 @@ const (
 	RoleSlave  = "slave"
 )
 
-// walTruncateFactor: truncate the backlog WAL when its file exceeds this
-// multiple of the in-memory backlog size. Keeps the WAL bounded to ~2x the
-// ring buffer instead of growing without limit (see BacklogWAL.Truncate).
-const walTruncateFactor int64 = 2
-
-// walCheckIntervalDivisor: re-check the WAL file size after this fraction of
-// a backlog-worth of bytes has been appended. Throttles the stat() syscall
-// off the per-command hot path.
-const walCheckIntervalDivisor int64 = 4
-
 // ReplicationManager 管理主从复制
 type ReplicationManager struct {
 	mu               sync.RWMutex
@@ -36,9 +26,6 @@ type ReplicationManager struct {
 	masterAddr       string                      // 主节点地址(当role=slave时)
 	masterConn       *MasterConnection           // 到主节点的连接(当role=slave时)
 	slaves           map[string]*SlaveConnection // 从节点连接(当role=master时)
-	backlog          *ReplicationBacklog         // 复制积压缓冲区
-	wal              *BacklogWAL                 // 持久化 WAL（nil = 不使用，向后兼容）
-	walCheckBytes    atomic.Int64                // bytes appended since last WAL size check
 	replId           string                      // 复制ID(主节点运行ID)
 	store            *store.BotreonStore         // 数据存储
 	stopped          bool                        // 是否已停止
@@ -46,106 +33,33 @@ type ReplicationManager struct {
 	tlsConfig        *tls.Config                 // TLS 配置（nil = 不使用 TLS）
 
 	// Drop-path counters for diagnosing silent replica divergence
-	// (docs/plans/TODO.md §1c). Live SendCommand failures leave the
-	// command in the backlog (catch-up / FULLRESYNC can still recover);
-	// apply skips advance replica offset without mutating the store.
+	// (docs/plans/TODO.md §1c). Live SendCommand failures are counted;
+	// catch-up / FULLRESYNC recover from the store.
 	sendDropCount  atomic.Int64
 	applySkipCount atomic.Int64
-
-	// feedLoop: 全局 feed 模式开关（S2 backlog 退役首步）——开启后新激活的从侧
-	// 走 REPLLOG 增量流（feed-mode——backlog 字节发送的双轨替代）——默认关闭
-	//（backlog 字节路径保持现状——双轨并存可切换——回滚零成本）。
-	feedLoop atomic.Bool
 }
 
-// NewReplicationManager 创建新的复制管理器
+// NewReplicationManager 创建新的复制管理器。
 // 首次启动时生成新的复制 ID；重启时从 BadgerDB 读取已有的复制 ID，
 // 使从节点可以通过 PSYNC CONTINUE 而非 FULLRESYNC 重新连接。
-// 同时加载持久化的 masterReplOffset，确保重启后 offset 连续。
 func NewReplicationManager(store *store.BotreonStore) *ReplicationManager {
-	// 尝试加载已有的 replId
 	replId, err := store.LoadReplID()
 	if err != nil {
 		logger.Logger.Warn().Err(err).Msg("Failed to load persisted replId, generating new one")
 	}
 	if replId == "" {
 		replId, _ = generateReplicationID()
-		// 持久化新生成的 replId
 		if saveErr := store.SaveReplID(replId); saveErr != nil {
 			logger.Logger.Warn().Err(saveErr).Msg("Failed to persist new replId")
 		}
 	}
 
-	// 读取持久化的 masterReplOffset：仅用于与恢复出的 backlog 水位交叉校验，
-	// 不再作为偏移量的来源。偏移量 = backlog 的连续写入水位（见 GetMasterReplOffset）；
-	// 脱离了 backlog 内容的偏移量没有意义——若把它当作水位种回空的环，
-	// HandlePSync 会用零填充的空环去满足 CONTINUE，等于给从节点发垃圾字节。
-	offset, loadOffsetErr := store.LoadMasterReplOffset()
-	if loadOffsetErr != nil {
-		logger.Logger.Warn().Err(loadOffsetErr).Msg("Failed to load persisted masterReplOffset, starting from 0")
+	return &ReplicationManager{
+		role:   RoleMaster,
+		slaves: make(map[string]*SlaveConnection),
+		replId: replId,
+		store:  store,
 	}
-
-	rm := &ReplicationManager{
-		role:    RoleMaster,
-		slaves:  make(map[string]*SlaveConnection),
-		backlog: NewReplicationBacklog(DefaultBacklogSize),
-		replId:  replId,
-		store:   store,
-	}
-
-	// 尝试加载持久化的 backlog（干净重启时保留，避免 FULLRESYNC）
-	backlogRestored := false
-	if bOff, bBuf, bSize, loadErr := store.LoadBacklog(); loadErr != nil {
-		logger.Logger.Warn().Err(loadErr).Msg("Failed to load persisted backlog")
-	} else if bBuf != nil && int64(len(bBuf)) == bSize {
-		backlogRestored = true
-		rm.backlog.mu.Lock()
-		rm.backlog.offset = bOff
-		rm.backlog.size = bSize
-		// Allocate buffer to persisted size (may differ from DefaultBacklogSize).
-		if int64(len(rm.backlog.buffer)) != bSize {
-			rm.backlog.buffer = make([]byte, bSize)
-		}
-		copy(rm.backlog.buffer, bBuf)
-		rm.backlog.mu.Unlock()
-		logger.Logger.Debug().
-			Int64("offset", bOff).
-			Int64("size", bSize).
-			Int("bytes", len(bBuf)).
-			Msg("Persisted backlog loaded on startup")
-	}
-
-	switch {
-	case backlogRestored && offset != rm.backlog.GetCurrentOffset():
-		logger.Logger.Warn().
-			Int64("persisted_offset", offset).
-			Int64("backlog_offset", rm.backlog.GetCurrentOffset()).
-			Msg("persisted masterReplOffset disagrees with restored backlog; backlog wins")
-	case !backlogRestored && offset > 0:
-		logger.Logger.Info().
-			Int64("persisted_offset", offset).
-			Msg("no backlog restored (crash or truncated); starting from offset 0, reconnecting slaves will FULLRESYNC")
-	}
-
-	return rm
-}
-
-// SetBacklogSize 设置复制积压缓冲区大小。
-// 若已有 backlog（含从 Badger 恢复的），迁移有效窗口而非丢弃历史，
-// 避免 -repl-backlog-size 在 load 之后调用时抹掉 CONTINUE 资格。
-func (rm *ReplicationManager) SetBacklogSize(size int64) {
-	rm.mu.Lock()
-	defer rm.mu.Unlock()
-	if size <= 0 {
-		size = DefaultBacklogSize
-	}
-	if size > MaxBacklogSize {
-		size = MaxBacklogSize
-	}
-	if rm.backlog != nil && rm.backlog.GetSize() == size {
-		return
-	}
-	rm.backlog = resizeBacklog(rm.backlog, size)
 }
 
 // SetTLSConfig 设置 TLS 配置（nil = 不使用 TLS）
@@ -160,40 +74,6 @@ func (rm *ReplicationManager) GetTLSConfig() *tls.Config {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
 	return rm.tlsConfig
-}
-
-// SetBacklogWAL 设置 backlog 持久化 WAL。
-// wal 为 nil 时禁用持久化（向后兼容）。
-// 如果 WAL 中有未回放的条目，会立即回放到当前 backlog 中。
-//
-// 使用示例：
-//
-//	rm.SetBacklogWAL(wal)  // 启用 WAL，自动回放未处理条目
-//	rm.SetBacklogWAL(nil)  // 禁用 WAL
-func (rm *ReplicationManager) SetBacklogWAL(wal *BacklogWAL) {
-	rm.mu.Lock()
-	defer rm.mu.Unlock()
-	rm.wal = wal
-
-	// 如果 WAL 非空，立即回放未处理的条目
-	if wal != nil {
-		if err := wal.Replay(rm.backlog); err != nil {
-			logger.Logger.Warn().Err(err).Msg("failed to replay WAL on SetBacklogWAL")
-		}
-		// Replayed entries outside the live window were never truncated in
-		// older builds, so the WAL can carry a stale multi-GB tail. Drop it
-		// now so every restart doesn't re-read the whole file.
-		if err := wal.Truncate(rm.backlog.AvailableStartOffset()); err != nil {
-			logger.Logger.Warn().Err(err).Msg("failed to truncate backlog WAL after replay")
-		}
-	}
-}
-
-// GetBacklogWAL 获取 backlog 持久化 WAL。
-func (rm *ReplicationManager) GetBacklogWAL() *BacklogWAL {
-	rm.mu.RLock()
-	defer rm.mu.RUnlock()
-	return rm.wal
 }
 
 // generateReplicationID 生成40字符的十六进制复制ID
@@ -225,45 +105,11 @@ func (rm *ReplicationManager) GetReplicationID() string {
 	return rm.replId
 }
 
-// GetMasterReplOffset 获取主节点复制偏移量。
-//
-// 阶段 1（a4 §10 附8——offset 水位改 ts 源）：feed 模式（--feed-loop 开）下主侧
-// 对外水位 = log 键最大 ts（store.ReplLogCurrentTS）——backlog 环降为影子（仍
-// Append 但无对外消费者——换算表核验双轨一致）。回滚：feedLoop 关 = 字节源
-// （backlog.GetCurrentOffset——阶段 2 退役前的默认）。
-//
-// 语义注记：feed 模式部署下返回值从「字节 offset」变为「ts 水位」——INFO
-// master_repl_offset / ROLE / WAIT 目标 / monitor / collector 等**对外水位**
-// 消费者随之变化（监控兼容性——a4 §10 附8 风险①）。内部字节路径
-// （FULLRESYNC 快照点 / CONTINUE 字节补发 / CatchUpAndEnableSlave 字节循环 /
-// GETACK 字节字段 / FeedSlave 字节 track）一律改走 GetBacklogCurrentOffset
-// （字节直读——不经本方法——避免拿到 ts 域值当字节起点）。
+// GetMasterReplOffset 获取主节点复制水位（ts 域——store.ReplLogCurrentTS）。
 func (rm *ReplicationManager) GetMasterReplOffset() int64 {
-	if rm.feedLoop.Load() {
-		ts, _ := rm.store.ReplLogCurrentTS()
-		// #nosec G115——ts 单调小步增长，远低于 MaxInt64
-		return int64(ts)
-	}
-	rm.mu.RLock()
-	defer rm.mu.RUnlock()
-	return rm.backlog.GetCurrentOffset()
-}
-
-// GetBacklogCurrentOffset 读取 backlog 环的字节写入水位（backlog 影子兼容——
-// 阶段 1 双轨：内部字节路径的直读面——经 GetMasterReplOffset 会拿到 ts 域值）。
-// 阶段 2 删除环时本方法与字节路径一并退役（a4 §10 附8 迁移表）。
-func (rm *ReplicationManager) GetBacklogCurrentOffset() int64 {
-	rm.mu.RLock()
-	defer rm.mu.RUnlock()
-	return rm.backlog.GetCurrentOffset()
-}
-
-// SetMasterReplOffset 将偏移量（= backlog 水位）前移到 offset，不回退。
-// 仅供启动恢复与测试使用；写入路径由 backlog.Append 推进。
-func (rm *ReplicationManager) SetMasterReplOffset(offset int64) {
-	rm.mu.RLock()
-	defer rm.mu.RUnlock()
-	rm.backlog.SetOffset(offset)
+	ts, _ := rm.store.ReplLogCurrentTS()
+	// #nosec G115——ts 单调小步增长，远低于 MaxInt64
+	return int64(ts)
 }
 
 // AddSlave 添加从节点连接
@@ -410,129 +256,34 @@ func (rm *ReplicationManager) GetMasterConnection() *MasterConnection {
 	return rm.masterConn
 }
 
-// GetBacklog 获取复制积压缓冲区
-func (rm *ReplicationManager) GetBacklog() *ReplicationBacklog {
-	rm.mu.RLock()
-	defer rm.mu.RUnlock()
-	return rm.backlog
-}
-
-// PropagateCommand 传播命令到所有从节点
+// PropagateCommand 传播命令到所有从节点（feed-only——REPLLOG ts 域增量流）。
+// 每条写命令经 FeedSlave 把 log 键值源 [feedSinceTS+1, curTS] 推给各 Ready 从侧；
+// 断连期间已 commit 的 log 键在重连时由 CatchUpAndEnableSlaveTS 补发（ts 域 catch-up）。
 func (rm *ReplicationManager) PropagateCommand(cmd [][]byte) {
 	rm.mu.RLock()
 	slaves := make([]*SlaveConnection, 0, len(rm.slaves))
 	for _, slave := range rm.slaves {
 		slaves = append(slaves, slave)
 	}
-	backlog := rm.backlog
-	wal := rm.wal
 	rm.mu.RUnlock()
 
-	// 总是将命令添加到backlog并更新offset，无论是否有从节点
-	// 这使得断连期间的写操作不会丢失，重连后可通过PSYNC增量同步
-	cmdBytes := serializeCommand(cmd)
-	// Append 在环锁下把字节写入并前移水位；水位即复制偏移量，因此
-	// "已入 backlog 的字节" 与 "对外通告的偏移量" 不可能再分叉，也不需要
-	// 额外的计数器递增（原先的 IncrementReplOffset(len) 按完成顺序求和，
-	// 并发时会落在命令中间）。
-	cmdOffset := backlog.Append(cmdBytes)
-
-	// 如果配置了 WAL，将命令写入持久化日志
-	// 这提供了 crash 恢复能力：即使主节点崩溃，backlog 也可以从 WAL 重建
-	// S2 backlog 退役双轨切换：feed-loop 开启时跳过 WAL 字节记账——log-key 为
-	// 权威持久化源（commit 即写日志键——backlog 退役尾项）——backlog 内存环保留
-	// （offset 水位 = PSYNC 判定/FULLRESYNC offset/字节从侧 ts=0 兼容的基础）——
-	// 重启后 backlog 空 → PSYNC 安全降级 FULLRESYNC（ts 域重建——已治本）。
-	// --feed-loop 关闭（字节模式）即完全恢复字节 WAL 记账（回滚开关）。
-	if wal != nil && !rm.feedLoop.Load() {
-		if err := wal.Append(cmdOffset, cmdBytes); err != nil {
-			logger.Logger.Warn().Err(err).Int64("offset", cmdOffset).Msg("backlog WAL append failed")
-		}
-		rm.maybeTruncateBacklogWAL(int64(len(cmdBytes)))
-	}
-
-	// Live push under propMu so slave install (CatchUpAndEnableSlave) can
-	// flip Ready without overlapping gap-fill and SendCommand for the same
-	// offset range (non-idempotent double apply).
+	// Live push under propMu so slave install (CatchUpAndEnableSlaveTS) can
+	// flip Ready without overlapping gap-fill for the same ts range
+	// (non-idempotent double apply).
 	rm.propMu.RLock()
 	defer rm.propMu.RUnlock()
 	for _, slave := range slaves {
 		if slave.IsReady() {
-			// feed-mode 从侧：走 REPLLOG 增量流（backlog 字节发送的双轨替代——S2
-			// backlog 退役首步）——FeedSlave 只发增量（feedSinceTS 起的 log 键）——
-			// 不发本命令的 backlog 字节（避免从侧双通道重复 apply）。
-			if slave.FeedIsEnabled() {
-				if err := rm.FeedSlave(slave); err != nil {
-					rm.sendDropCount.Add(1)
-					logger.Logger.Warn().
-						Str("slave_id", slave.ID).
-						Err(err).
-						Int64("send_drop_count", rm.sendDropCount.Load()).
-						Msg("feed 增量发送到从节点失败")
-					// handleSlaveReplicationConnection 会在断连时清理
-				}
-				continue
-			}
-			if err := slave.SendCommand(cmdBytes, cmdOffset); err != nil {
+			if err := rm.FeedSlave(slave); err != nil {
 				rm.sendDropCount.Add(1)
 				logger.Logger.Warn().
 					Str("slave_id", slave.ID).
 					Err(err).
 					Int64("send_drop_count", rm.sendDropCount.Load()).
-					Msg("传播命令到从节点失败")
-				// handleSlaveReplicationConnection 会在断连时清理
+					Msg("feed 增量发送到从节点失败")
 			}
 		}
 	}
-}
-
-// maybeTruncateBacklogWAL keeps the backlog WAL file bounded: once the file
-// exceeds walTruncateFactor × backlog size, entries before the live window's
-// start offset are dropped. The size check is throttled to roughly once per
-// walCheckIntervalDivisor of a backlog-worth of writes so the stat() syscall
-// stays off the per-command hot path. The counter is atomic and the check is
-// CAS-gated so this never takes the manager write lock on the hot path.
-func (rm *ReplicationManager) maybeTruncateBacklogWAL(written int64) {
-	threshold := rm.backlog.GetSize() / walCheckIntervalDivisor
-	if threshold <= 0 {
-		return
-	}
-	acc := rm.walCheckBytes.Add(written)
-	if acc < threshold {
-		return
-	}
-	// Exactly one caller wins the reset; the others skip this round.
-	if !rm.walCheckBytes.CompareAndSwap(acc, 0) {
-		return
-	}
-
-	wal := rm.GetBacklogWAL()
-	if wal == nil {
-		return
-	}
-	retainStart := rm.backlog.AvailableStartOffset()
-	sz, err := wal.GetFileSize()
-	if err != nil {
-		logger.Logger.Debug().Err(err).Msg("backlog WAL size check failed")
-		return
-	}
-	if sz > walTruncateFactor*rm.backlog.GetSize() {
-		if err := wal.Truncate(retainStart); err != nil {
-			logger.Logger.Warn().Err(err).Msg("backlog WAL truncate failed")
-		}
-	}
-}
-
-// SetFeedLoop 全局切换 feed 模式（S2 backlog 退役首步）——开启后新激活的从侧走
-// REPLLOG 增量流（feed-mode——backlog 字节发送的双轨替代）——默认关闭（回滚零成本）。
-func (rm *ReplicationManager) SetFeedLoop(enabled bool) {
-	rm.feedLoop.Store(enabled)
-}
-
-// FeedLoopEnabled 返回 feed 模式是否开启（阶段 1——offset 水位域判定：feed 开 =
-// 对外水位 ts 域（GetMasterReplOffset 返回 ts）；关 = 字节域）。
-func (rm *ReplicationManager) FeedLoopEnabled() bool {
-	return rm.feedLoop.Load()
 }
 
 // CatchUpAndEnableSlaveTS 为 feed 模式重连从侧做 **ts 域增量 catch-up**（S2 分级-3——
@@ -565,93 +316,6 @@ func (rm *ReplicationManager) CatchUpAndEnableSlaveTS(slave *SlaveConnection, re
 	return nil
 }
 
-// CatchUpAndEnableSlave drains backlog [startOffset, masterOffset) while
-// Ready=false, then sets Ready under propMu so gap-fill never races with
-// live PropagateCommand for the same offsets.
-// Slave must already be in rm.slaves (AddSlave) with Ready=false.
-// On error Ready stays false; the caller must RemoveSlave — installing a
-// not-ready slave at startOffset after a failed GetRange/write skips the
-// failed range on the next loop and leaves a hole.
-func (rm *ReplicationManager) CatchUpAndEnableSlave(slave *SlaveConnection, startOffset int64) error {
-	backlog := rm.GetBacklog()
-	for {
-		endOffset := rm.GetBacklogCurrentOffset()
-		if endOffset > startOffset {
-			if err := SendBacklogData(slave, backlog, startOffset, endOffset); err != nil {
-				return err
-			}
-			startOffset = endOffset
-			continue
-		}
-		// Appears caught up. Hold propMu so no live SendCommand runs while
-		// we re-check offset and flip Ready.
-		rm.propMu.Lock()
-		end2 := rm.GetBacklogCurrentOffset()
-		if end2 > startOffset {
-			rm.propMu.Unlock()
-			continue
-		}
-		slave.SetReplOffset(startOffset)
-		if rm.feedLoop.Load() {
-			// feed-mode 激活：feedSinceTS = 当前 log 键水位+1——激活前（RDB 快照 +
-			// backlog 字节 catch-up）已覆盖到 startOffset——从下一条起走 REPLLOG
-			// 增量——propMu 内激活（写路径 RLock 阻塞——竞态窗口写经字节路径补发
-			//（就绪翻转后 SendCommand 成功）——无丢失无重复）。
-			curTS, err := rm.store.ReplLogCurrentTS()
-			if err != nil {
-				rm.propMu.Unlock()
-				return err
-			}
-			slave.FeedSetEnabled(true, curTS+1)
-		}
-		slave.SetReady(true)
-		rm.propMu.Unlock()
-		return nil
-	}
-}
-
-// resizeBacklog builds a new ring of size newSize, copying the overlapping
-// valid window from old (if any). Logical offset is preserved for PSYNC.
-func resizeBacklog(old *ReplicationBacklog, newSize int64) *ReplicationBacklog {
-	nb := NewReplicationBacklog(newSize)
-	if old == nil {
-		return nb
-	}
-	old.mu.RLock()
-	oldOff := old.offset
-	oldSize := old.size
-	availStart := oldOff - oldSize
-	if availStart < 0 {
-		availStart = 0
-	}
-	copyStart := oldOff - newSize
-	if copyStart < availStart {
-		copyStart = availStart
-	}
-	if copyStart < 0 {
-		copyStart = 0
-	}
-	length := oldOff - copyStart
-	var data []byte
-	if length > 0 {
-		data = make([]byte, length)
-		for i := int64(0); i < length; i++ {
-			data[i] = old.buffer[(copyStart+i)%oldSize]
-		}
-	}
-	old.mu.RUnlock()
-
-	nb.mu.Lock()
-	nb.offset = oldOff
-	if length > 0 {
-		for i := int64(0); i < length; i++ {
-			nb.buffer[(copyStart+i)%newSize] = data[i]
-		}
-	}
-	nb.mu.Unlock()
-	return nb
-}
-
 // serializeCommand 序列化命令为RESP格式
 func serializeCommand(cmd [][]byte) []byte {
 	var buf []byte
@@ -673,39 +337,8 @@ func (rm *ReplicationManager) Stop() {
 	}
 	rm.stopped = true
 
-	// 在关闭连接前持久化偏移量与 backlog，确保干净重启时二者一致连续。
-	// DB 在 Stop() 之后才关闭（main.go 关闭序列），写入安全。
-	// 偏移量即 backlog 的写入水位，所以先取水位再落盘；此处已持 rm.mu，
-	// 不能再走 GetMasterReplOffset()（同一 goroutine 上 Lock 后 RLock 会自锁）。
-	if rm.store != nil {
-		rm.backlog.mu.RLock()
-		bOff := rm.backlog.offset
-		bBuf := make([]byte, len(rm.backlog.buffer))
-		copy(bBuf, rm.backlog.buffer)
-		bSize := rm.backlog.size
-		rm.backlog.mu.RUnlock()
-
-		if saveErr := rm.store.SaveMasterReplOffset(bOff); saveErr != nil {
-			logger.Logger.Warn().Err(saveErr).Int64("offset", bOff).Msg("failed to persist masterReplOffset on shutdown")
-		} else {
-			logger.Logger.Debug().Int64("offset", bOff).Msg("masterReplOffset persisted on shutdown")
-		}
-
-		// 持久化 backlog（环形缓冲区），使干净重启后从节点可以通过
-		// PSYNC CONTINUE 增量同步，避免不必要的 FULLRESYNC。
-		if saveErr := rm.store.SaveBacklog(bOff, bBuf, bSize); saveErr != nil {
-			logger.Logger.Warn().Err(saveErr).Msg("failed to persist backlog on shutdown")
-		} else {
-			logger.Logger.Debug().Int("backlog_bytes", len(bBuf)).Msg("backlog persisted on shutdown")
-		}
-	}
-
-	// 关闭 WAL（flush 剩余数据到磁盘）
-	if rm.wal != nil {
-		if closeErr := rm.wal.Close(); closeErr != nil {
-			logger.Logger.Warn().Err(closeErr).Msg("failed to close backlog WAL")
-		}
-	}
+	// 偏移量与 log 键均持久化于 store（BadgerDB）——重启后 GetMasterReplOffset =
+	// ReplLogCurrentTS 从 log 键重建，无需单独落盘 offset/backlog（环已退役）。
 
 	slaves := make([]*SlaveConnection, 0, len(rm.slaves))
 	for _, slave := range rm.slaves {

@@ -52,11 +52,12 @@ func (h *Handler) handleREPLCONF(state *connState, args [][]byte, remoteAddr str
 		}
 		return proto.OK
 	case "GETACK":
-		offset := h.Replication.GetBacklogCurrentOffset()
+		currentTS, _ := h.Replication.CurrentTS()
 		return &proto.Array{Args: [][]byte{
 			[]byte("REPLCONF"),
 			[]byte("ACK"),
-			[]byte(strconv.FormatInt(offset, 10)),
+			[]byte("0"),
+			[]byte(strconv.FormatUint(currentTS, 10)),
 		}}
 	case "SYNC":
 		return proto.OK

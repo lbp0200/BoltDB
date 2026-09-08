@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -35,8 +34,6 @@ var (
 	replicaofFlag           = flag.String("replicaof", "", "replicaof master host:port")
 	skipStartupCleanup      = flag.Bool("skip-startup-cleanup", false, "skip startup cleanup (data integrity check)")
 	clientOutputBufferLimit = flag.Int64("client-output-buffer-limit", 32<<20, "per-client output buffer hard limit in bytes (default 32MB, 0 = unlimited)")
-	replBacklogSizeFlag     = flag.String("repl-backlog-size", "", "replication backlog size (e.g. 100mb, 1gb, default 1mb)")
-	feedLoopFlag            = flag.Bool("feed-loop", false, "enable feed-mode replication (REPLLOG incremental stream to slaves, S2 backlog retirement)")
 	gossipIntervalFlag      = flag.Duration("gossip-interval", 1*time.Second, "cluster gossip PING interval (default 1s, e.g. 5s to reduce idle CPU)")
 	metricsAddrFlag         = flag.String("metrics-addr", "", "metrics HTTP listen addr (e.g. :6338, empty = disabled)")
 	maxClientsFlag          = flag.Int("maxclients", 10000, "max number of connected clients (0 = unlimited)")
@@ -277,33 +274,6 @@ func main() {
 	// 初始化复制管理器
 	replMgr := replication.NewReplicationManager(db)
 
-	// 如果指定了 -repl-backlog-size 参数，设置积压缓冲区大小
-	if *replBacklogSizeFlag != "" {
-		size, err := replication.ParseBacklogSize(*replBacklogSizeFlag)
-		if err != nil {
-			logger.Logger.Fatal().Err(err).Str("size", *replBacklogSizeFlag).Msg("Invalid backlog size")
-		}
-		replMgr.SetBacklogSize(size)
-		logger.Logger.Info().Int64("size", size).Msg("Replication backlog size set")
-	}
-
-	if *feedLoopFlag {
-		replMgr.SetFeedLoop(true)
-		logger.Logger.Info().Msg("Feed-mode replication enabled (REPLLOG incremental stream)")
-	}
-
-	// 创建并启用 backlog WAL（文件持久化），提供崩溃恢复能力
-	// WAL 以 append-only 格式记录每条写命令，主节点崩溃重启后可从 WAL 重建
-	// 内存 backlog，避免所有从节点被迫 FULLRESYNC
-	walDir := filepath.Join(*dbPathFlag, replication.WALDirName)
-	wal, walErr := replication.NewBacklogWAL(walDir)
-	if walErr != nil {
-		logger.Logger.Warn().Err(walErr).Str("dir", walDir).Msg("Failed to create backlog WAL, continuing without persistence")
-	} else {
-		replMgr.SetBacklogWAL(wal)
-		logger.Logger.Info().Str("dir", walDir).Msg("Backlog WAL enabled for crash recovery")
-	}
-
 	// TLS 配置（提前创建，供 replication 和 listener 使用）
 	tlsCfg := &server.TLSConfig{
 		CertFile: *tlsCertFlag,
@@ -381,8 +351,6 @@ func main() {
 	collector.ReplSendDropFn = replMgr.GetReplSendDropCount
 	collector.ReplApplySkipFn = replMgr.GetReplApplySkipCount
 	collector.SlaveCountFn = replMgr.GetSlaveCount
-	collector.BacklogSizeFn = func() int64 { return replMgr.GetBacklog().GetSize() }
-	collector.BacklogAvailFn = func() int64 { return replMgr.GetBacklog().GetAvailableLength() }
 	collector.RoleFn = replMgr.GetRole
 	collector.ActiveClientsFn = handler.ActiveClientCount
 	collector.BlockedClientsFn = handler.BlockedClientCount

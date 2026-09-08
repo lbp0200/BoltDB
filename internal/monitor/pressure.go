@@ -44,7 +44,6 @@ type PressureSample struct {
 	// Replication
 	MasterOffset    int64
 	SlaveOffset     int64
-	BacklogSize     int64
 	ReconnectCount  int64
 	ConnectedSlaves int
 
@@ -69,7 +68,6 @@ type jsonlSample struct {
 	LastL0Score     float64 `json:"l0"`
 	MasterOffset    int64   `json:"mo,omitempty"`
 	SlaveOffset     int64   `json:"so,omitempty"`
-	BacklogSize     int64   `json:"bl,omitempty"`
 	ReconnectCount  int64   `json:"rc,omitempty"`
 	ConnectedSlaves int     `json:"sl,omitempty"`
 	Sentinels       int     `json:"sen,omitempty"`
@@ -218,9 +216,6 @@ func (pm *PressureMonitor) sample() {
 		s.SlaveOffset = pm.replM.GetSlaveReplOffset()
 		s.ReconnectCount = pm.replM.GetReconnectCount()
 		s.ConnectedSlaves = pm.replM.GetSlaveCount()
-		if bg := pm.replM.GetBacklog(); bg != nil {
-			s.BacklogSize = bg.GetSize()
-		}
 	}
 
 	pm.mu.Lock()
@@ -248,7 +243,6 @@ func (pm *PressureMonitor) sample() {
 			LastL0Score:     s.LastL0Score,
 			MasterOffset:    s.MasterOffset,
 			SlaveOffset:     s.SlaveOffset,
-			BacklogSize:     s.BacklogSize,
 			ReconnectCount:  s.ReconnectCount,
 			ConnectedSlaves: s.ConnectedSlaves,
 			Sentinels:       s.TotalSentinels,
@@ -278,8 +272,8 @@ func FormatSnapshot(s PressureSample) string {
 	extra := s.ActiveRetries + s.L0Rejected + s.L0Delayed
 	fmt.Fprintf(&b, " pressure=%d", extra)
 	if s.MasterOffset > 0 || s.SlaveOffset > 0 {
-		fmt.Fprintf(&b, " mo=%d so=%d backlog=%d recon=%d slaves=%d",
-			s.MasterOffset, s.SlaveOffset, s.BacklogSize, s.ReconnectCount, s.ConnectedSlaves)
+		fmt.Fprintf(&b, " mo=%d so=%d recon=%d slaves=%d",
+			s.MasterOffset, s.SlaveOffset, s.ReconnectCount, s.ConnectedSlaves)
 	}
 	if s.TotalSentinels > 0 {
 		fmt.Fprintf(&b, " sentinels=%d/%d lc=%d frag=%v",

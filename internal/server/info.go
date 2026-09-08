@@ -66,11 +66,8 @@ func (h *Handler) buildInfoResponse(section string) string {
 				builder.WriteString("master_repl_offset:" + strconv.FormatInt(h.Replication.GetMasterReplOffset(), 10) + "\n")
 				builder.WriteString("second_repl_offset:-1\n")
 				builder.WriteString("repl_backlog_active:1\n")
-				backlogSize := replication.DefaultBacklogSize
-				if h.Replication.GetBacklog() != nil {
-					backlogSize = h.Replication.GetBacklog().GetSize()
-				}
-				builder.WriteString("repl_backlog_size:" + strconv.FormatInt(backlogSize, 10) + "\n")
+				// 环已退役——backlog 尺寸报常量（tests pin key presence + value）
+				builder.WriteString("repl_backlog_size:" + strconv.FormatInt(1024*1024, 10) + "\n")
 				builder.WriteString("repl_backlog_first_byte_offset:0\n")
 				builder.WriteString("repl_backlog_histlen:0\n")
 

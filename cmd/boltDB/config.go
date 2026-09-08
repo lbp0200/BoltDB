@@ -34,9 +34,7 @@ type MemoryConfig struct {
 }
 
 type ReplicationConfig struct {
-	BacklogSize string `toml:"backlog-size"`
-	ReplicaOf   string `toml:"replicaof"`
-	FeedLoop    bool   `toml:"feedloop"`
+	ReplicaOf string `toml:"replicaof"`
 }
 
 type TLSConfig struct {
@@ -63,8 +61,7 @@ func DefaultConfig() Config {
 			ProtoMaxBulkLen:         "64MB",
 		},
 		Replication: ReplicationConfig{
-			BacklogSize: "",
-			ReplicaOf:   "",
+			ReplicaOf: "",
 		},
 		TLS: TLSConfig{
 			Cert:    "",
@@ -181,17 +178,9 @@ func applyConfigOverlay(cfg *Config, seenFlags map[string]bool) map[string]bool 
 	// If user wants a specific GOMEMLIMIT, they should set the env var.
 
 	// === Replication ===
-	if !seenFlags["repl-backlog-size"] && cfg.Replication.BacklogSize != "" {
-		*replBacklogSizeFlag = cfg.Replication.BacklogSize
-		setByConfig["repl-backlog-size"] = true
-	}
 	if !seenFlags["replicaof"] && cfg.Replication.ReplicaOf != "" {
 		*replicaofFlag = cfg.Replication.ReplicaOf
 		setByConfig["replicaof"] = true
-	}
-	if !seenFlags["feed-loop"] && cfg.Replication.FeedLoop {
-		*feedLoopFlag = true
-		setByConfig["feed-loop"] = true
 	}
 
 	// === TLS ===
@@ -296,12 +285,6 @@ func dumpConfigTemplate() {
 	out("  # proto-max-bulk-len = \"%s\"\n", cfg.Memory.ProtoMaxBulkLen)
 	out("\n")
 	out("[replication]\n")
-	out("  # 复制积压缓冲区大小，格式如 \"100mb\"、\"1gb\"\n")
-	out("  # 决定 PARTIAL RESYNC (PSYNC) 能补多大范围的丢失数据\n")
-	out("  # 积压越大，从节点短时断连后越可能走 CONTINUE 而非 FULLRESYNC\n")
-	out("  # 默认: 1MB，高写入量建议: 100MB 或更大\n")
-	out("  # backlog-size = \"%s\"\n", cfg.Replication.BacklogSize)
-	out("\n")
 	out("  # 主从复制: 指定主节点地址 host:port\n")
 	out("  # 设置后本节点启动后自动连接主节点并执行 PSYNC\n")
 	out("  # 运行时也可通过 SLAVEOF / REPLICAOF 命令动态切换\n")

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/lbp0200/BoltDB/internal/proto"
-	"github.com/lbp0200/BoltDB/internal/replication"
 )
 
 // handleCONFIG 实现 CONFIG 命令
@@ -18,10 +17,6 @@ func (h *Handler) handleCONFIG(state *connState, args [][]byte, remoteAddr strin
 	switch subcommand {
 	case "GET":
 		if len(args) == 1 || (len(args) >= 2 && string(args[1]) == "*") {
-			backlogSize := replication.DefaultBacklogSize
-			if h.Replication != nil && h.Replication.GetBacklog() != nil {
-				backlogSize = h.Replication.GetBacklog().GetSize()
-			}
 			sl := h.ensureSlowlog()
 			sl.mu.Lock()
 			slowlogThreshold := sl.threshold
@@ -32,7 +27,6 @@ func (h *Handler) handleCONFIG(state *connState, args [][]byte, remoteAddr strin
 				"appendonly", "no",
 				"maxmemory", "0",
 				"maxmemory-policy", "noeviction",
-				"backlog-size", strconv.FormatInt(backlogSize, 10),
 				"slowlog-log-slower-than", strconv.FormatInt(slowlogThreshold, 10),
 				"slowlog-max-len", strconv.Itoa(slowlogMaxLen),
 			}
@@ -57,12 +51,6 @@ func (h *Handler) handleCONFIG(state *connState, args [][]byte, remoteAddr strin
 				value = "0"
 			case "maxmemory-policy":
 				value = "noeviction"
-			case "backlog-size":
-				if h.Replication != nil {
-					value = strconv.FormatInt(h.Replication.GetBacklog().GetSize(), 10)
-				} else {
-					value = strconv.FormatInt(replication.DefaultBacklogSize, 10)
-				}
 			case "slowlog-log-slower-than":
 				value = strconv.FormatInt(h.ensureSlowlog().threshold, 10)
 			case "slowlog-max-len":
@@ -85,15 +73,6 @@ func (h *Handler) handleCONFIG(state *connState, args [][]byte, remoteAddr strin
 		param := strings.ToLower(string(args[1]))
 		val := string(args[2])
 		switch param {
-		case "backlog-size":
-			if h.Replication == nil {
-				return proto.NewError("ERR no replication manager")
-			}
-			size, err := replication.ParseBacklogSize(val)
-			if err != nil {
-				return proto.NewError(fmt.Sprintf("ERR invalid backlog-size: %s", err))
-			}
-			h.Replication.SetBacklogSize(size)
 		case "slowlog-log-slower-than":
 			us, err := strconv.ParseInt(val, 10, 64)
 			if err != nil {
@@ -106,8 +85,9 @@ func (h *Handler) handleCONFIG(state *connState, args [][]byte, remoteAddr strin
 				return proto.NewError("ERR value is not an integer or out of range")
 			}
 			h.ensureSlowlog().setMaxLen(n)
-		case "save", "appendonly", "maxmemory", "maxmemory-policy":
-			// Known no-op configs: accepted for client compatibility
+		case "backlog-size", "save", "appendonly", "maxmemory", "maxmemory-policy":
+			// Known no-op configs: accepted for client compatibility.
+			// backlog-size 曾控制复制环大小——S2 backlog 退役后无实际存储，保留为 no-op。
 		default:
 			return proto.NewError(fmt.Sprintf("ERR unsupported config parameter: %s", param))
 		}

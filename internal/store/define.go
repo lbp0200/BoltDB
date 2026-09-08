@@ -754,7 +754,12 @@ func (s *BotreonStore) FlushDB() error {
 		return err
 	}
 	s.ClearCaches()
-	return nil
+	// S2 ts 域：FLUSHDB 必须写一条 REPLLOG 帧——ClearAllData 的清库删除走
+	// retryUpdate（无 logValue）不产生传播日志键，从侧 feed 增量读不到清库事件
+	// → 从侧数据不收敛（TestReplicationCompleteness_Key FLUSHDB poll 回归——
+	// 2026-09-08 删环引入）。帧值 = FLUSHDB 命令本身，从侧 apply 时执行 FlushDB
+	// 清库。清库后写：ClearAllData 会删掉旧 REPLLOG_ 键，新帧存活且 ts 单调递增。
+	return s.commitTS(func(txn *badger.Txn) error { return nil }, encodePropagateCommand([]byte("FLUSHDB")))
 }
 
 // ClearAllData 安全地清空所有数据，用于测试隔离

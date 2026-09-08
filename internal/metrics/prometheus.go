@@ -101,15 +101,6 @@ func prometheusText(s Snapshot) string {
 	b.WriteString("# TYPE boltdb_repl_apply_skip_count counter\n")
 	fmt.Fprintf(&b, "boltdb_repl_apply_skip_count %d\n", s.ReplApplySkip)
 
-	// Backlog
-	b.WriteString("# HELP boltdb_backlog_size Replication backlog size bytes\n")
-	b.WriteString("# TYPE boltdb_backlog_size gauge\n")
-	fmt.Fprintf(&b, "boltdb_backlog_size %d\n", s.BacklogSize)
-
-	b.WriteString("# HELP boltdb_backlog_available Replication backlog available bytes\n")
-	b.WriteString("# TYPE boltdb_backlog_available gauge\n")
-	fmt.Fprintf(&b, "boltdb_backlog_available %d\n", s.BacklogAvailable)
-
 	// Clients
 	b.WriteString("# HELP boltdb_clients_active Active client connections\n")
 	b.WriteString("# TYPE boltdb_clients_active gauge\n")

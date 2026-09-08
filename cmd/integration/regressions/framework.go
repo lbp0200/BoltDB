@@ -42,12 +42,10 @@ type RegressionServer struct {
 	ownDB   bool // cleanup 时是否关闭 DB
 }
 
-// EnableFeedLoop 启用该回归服务器的 feed-mode（S2 backlog 退役——rm.SetFeedLoop——
-// 真实服务器等效 --feed-loop 标志——测试内注入：新激活的从侧走 REPLLOG 增量流）。
+// EnableFeedLoop 保留为 no-op：S2 backlog 退役后 feed-mode（REPLLOG 增量流）是
+// 唯一模式——PropagateCommand 只走 ts 域、SetFeedLoop 已移除。既有回归测试
+// （feed_ts_semantics_test.go）调用此方法以声明"ts 域语义守卫"意图，行为不变。
 func (r *RegressionServer) EnableFeedLoop() {
-	if r.replMgr != nil {
-		r.replMgr.SetFeedLoop(true)
-	}
 }
 
 // StartRegression 启动一个独立的 BoltDB 服务器用于回归测试
@@ -234,11 +232,8 @@ func (s *RegressionServer) StopSlave() {
 
 // WaitForReplicaSync 等待 slave 的 offset 追上 master，最多等待 timeout
 func (s *RegressionServer) WaitForReplicaSync(ctx context.Context, master, slave *RegressionServer, timeout time.Duration) bool {
-	// 阶段 1（a4 §10 附8——offset 水位改 ts 源）：feed 模式（--feed-loop）下
-	// master 侧 GetMasterReplOffset 已返回 ts 水位（与 slave 侧字节 offset 错域）
-	// ——同步判据必须同域：ts 面（slave lastAppliedTS >= master currentTS——
-	// applied 语义——GetSlaveLastAppliedTS）。字节模式保持字节比较（现状）。
-	feedMode := master.replMgr.FeedLoopEnabled()
+	// ts 域同步判据（feed-only——S2 backlog 退役）：master 侧 GetMasterReplOffset
+	// 返回 ts 水位，从侧同域比较（GetSlaveLastAppliedTS——applied 语义）。
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		select {
@@ -246,18 +241,10 @@ func (s *RegressionServer) WaitForReplicaSync(ctx context.Context, master, slave
 			return false
 		default:
 		}
-		if feedMode {
-			masterTS := master.replMgr.GetMasterReplOffset() // ts 域
-			// #nosec G115——masterTS 由非负 ts 装入 int64
-			if slave.replMgr.GetSlaveLastAppliedTS() >= uint64(masterTS) {
-				return true
-			}
-		} else {
-			masterOff := master.replMgr.GetMasterReplOffset()
-			slaveOff := slave.replMgr.GetSlaveReplOffset()
-			if slaveOff >= masterOff {
-				return true
-			}
+		masterTS := master.replMgr.GetMasterReplOffset() // ts 域
+		// #nosec G115——masterTS 由非负 ts 装入 int64
+		if slave.replMgr.GetSlaveLastAppliedTS() >= uint64(masterTS) {
+			return true
 		}
 		time.Sleep(500 * time.Millisecond)
 	}

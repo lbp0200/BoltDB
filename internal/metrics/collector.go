@@ -19,8 +19,6 @@ type Collector struct {
 	ReplSendDropFn     func() int64
 	ReplApplySkipFn    func() int64
 	SlaveCountFn       func() int
-	BacklogSizeFn      func() int64
-	BacklogAvailFn     func() int64
 	RoleFn             func() string
 	ActiveClientsFn    func() int
 	BlockedClientsFn   func() int
@@ -73,8 +71,6 @@ func (c *Collector) refresh() Snapshot {
 	sendDrop := int64(0)
 	applySkip := int64(0)
 	slaveN := 0
-	blSize := int64(0)
-	blAvail := int64(0)
 	role := replication.RoleMaster
 	if c.MasterReplOffsetFn != nil {
 		masterOff = c.MasterReplOffsetFn()
@@ -93,12 +89,6 @@ func (c *Collector) refresh() Snapshot {
 	}
 	if c.SlaveCountFn != nil {
 		slaveN = c.SlaveCountFn()
-	}
-	if c.BacklogSizeFn != nil {
-		blSize = c.BacklogSizeFn()
-	}
-	if c.BacklogAvailFn != nil {
-		blAvail = c.BacklogAvailFn()
 	}
 	if c.RoleFn != nil {
 		role = c.RoleFn()
@@ -164,8 +154,6 @@ func (c *Collector) refresh() Snapshot {
 		ReplSendDrop:     sendDrop,
 		ReplApplySkip:    applySkip,
 		SlaveCount:       slaveN,
-		BacklogSize:      blSize,
-		BacklogAvailable: blAvail,
 		Role:             role,
 
 		ActiveClients:    activeC,

@@ -34,8 +34,6 @@ type Snapshot struct {
 	ReplSendDrop     int64  `json:"repl_send_drop_count"`
 	ReplApplySkip    int64  `json:"repl_apply_skip_count"`
 	SlaveCount       int    `json:"slave_count"`
-	BacklogSize      int64  `json:"backlog_size"`
-	BacklogAvailable int64  `json:"backlog_available"`
 	Role             string `json:"role"`
 
 	ActiveClients    int   `json:"active_clients"`
@@ -63,8 +61,6 @@ func (s Snapshot) String() string {
 		s.Goroutines, bytesStr(s.AllocBytes), bytesStr(s.HeapInuse), bytesStr(s.StackInuse), s.NumGC)
 	fmt.Fprintf(&b, "  Repl:      role=%s master_offset=%d slave_offset=%d lag=%d reconnects=%d slaves=%d send_drop=%d apply_skip=%d\n",
 		s.Role, s.MasterReplOffset, s.SlaveReplOffset, s.ReplicationLag, s.ReconnectCount, s.SlaveCount, s.ReplSendDrop, s.ReplApplySkip)
-	fmt.Fprintf(&b, "  Backlog:   size=%s available=%s\n",
-		bytesStr(uint64(s.BacklogSize)), bytesStr(uint64(s.BacklogAvailable)))
 	fmt.Fprintf(&b, "  Clients:   active=%d blocked=%d monitor=%d pubsub=%d subs=%d output=%s\n",
 		s.ActiveClients, s.BlockedClients, s.MonitorClients, s.PubSubClients, s.PubSubSubs, bytesStr(uint64(s.TotalOutputBytes)))
 	return b.String()

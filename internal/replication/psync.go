@@ -14,143 +14,76 @@ import (
 type PSyncResult struct {
 	FullResync bool   // 是否全量同步
 	ReplId     string // 复制ID
-	Offset     int64  // 复制偏移量（字节影子——S2 双轨）
-	TS         uint64 // 主侧 ts 水位（S2 PSYNC-ts——④）
+	TS         uint64 // 主侧 ts 水位（FULLRESYNC: currentTS; CONTINUE: 从侧 lastAppliedTS）
 }
 
 // HandlePSyncAfterTSRead 测试钩子（生产恒 nil——零开销）：FULLRESYNC 分支在
-// HandlePSync 锁外读 currentTS（psync.go:122）之后、返回之前调用——精确模拟
+// HandlePSync 锁外读 currentTS 之后、返回之前调用——精确模拟
 // 「锁外读 ts 与快照实际水位（SnapshotMuLock）之间」的提交窗口（TODO §6 ②
 // 区分守卫注入点：窗口内提交 K 条非幂等命令 → pre-fix 通告旧 ts → 从侧断连重连
 // 后重发已在 RDB 内的区间 → 双应用）。测试内设置 + defer 置回 nil。
 var HandlePSyncAfterTSRead func()
 
-// HandlePSync 处理PSYNC命令（主节点端）
+// HandlePSync 处理 PSYNC 命令（主节点端——feed-only / ts 域）。
+//
+// 判定逻辑：
+//   - ts == 0 → 从侧从未同步（首连）→ FULLRESYNC
+//   - replId 不匹配 → 从侧来自不同主实例 → FULLRESYNC
+//   - ts ∈ [logStartTS, currentTS] → CONTINUE（handler 做 ts 域 catch-up）
+//   - 其余 → FULLRESYNC（ts 超出 log 键范围——retention 外 / 主侧重启后 log 为空）
 func HandlePSync(rm *ReplicationManager, replId string, offset int64, ts uint64) (*PSyncResult, error) {
 	rm.mu.RLock()
 	currentReplId := rm.replId
-	backlog := rm.backlog
 	rm.mu.RUnlock()
 
-	// 偏移量即 backlog 的连续水位，与下面所有 range/boundary 判定同源；
-	// 不能再读独立计数器，否则 CONTINUE 会用一个不在命令边界上的
-	// currentOffset 去接受请求（该缺陷正是 repl_offset_boundary_test 证明的）。
-	currentOffset := backlog.GetCurrentOffset()
-
-	// 检查是否可以增量同步
-	// replId 匹配时允许 CONTINUE（offset >= 0），确保重连时
-	// 不会因为 offset == 0 触发不必要的 FULLRESYNC 造成数据丢失。
-	// 初始连接时 replId 为 "?"，不会匹配，触发 FULLRESYNC。
-	if replId == currentReplId && offset >= 0 {
-		// S2 PSYNC-ts 模式（④——第 4 参 ts > 0）：整数边界判定——ts ∈ [logStartTS,
-		// currentTS]——每个 ts 即命令边界（StartsAtCommandBoundary 字节映射在 ts 模式
-		// 退役）。ts == 0 = 旧从节点（字节模式——原有判定保留——len 向后兼容）。
-		if ts > 0 {
-			logStartTS, _ := rm.store.ReplLogStartTS()
-			currentTS, _ := rm.store.ReplLogCurrentTS()
-			// S2 PSYNC-ts（④）：ts > 0 = 从侧携带 lastAppliedTS。**仅在 feed-loop
-			// 开启时**走 ts 域 CONTINUE——gap 由 handler 的 ts 域增量 catch-up 补发
-			// （FeedSlave 从 resumeTS+1 起——log 键值源零对齐——不再走字节
-			// SendBacklogData——byte 坐标错域问题结构性消除，见 9435523 根因记录）。
-			// feed-loop 关闭（字节模式部署）时从侧 ts 来自 FULLRESYNC 响应的 4 字段
-			// （reconnect.go:334 无条件 Store——即使字节模式 lastAppliedTS 也 >0）——
-			// 其字节 offset 才是合法域——保持 9435523 行为：ts>0 落 FULLRESYNC
-			// （字节 catch-up 合法域——回归守卫依赖此行为）。
-			if rm.feedLoop.Load() {
-				// ts 出范围（log 键 retention 外——gap 无法 ts 域补）或 log 空
-				// （currentTS==0——主侧重启）时落 FULLRESYNC（从侧重建，防 dedup 跳新写）。
-				if ts >= logStartTS && ts <= currentTS {
-					logger.Logger.Info().
-						Uint64("requested_ts", ts).
-						Uint64("log_start_ts", logStartTS).
-						Uint64("current_ts", currentTS).
-						Msg("执行增量同步（ts 模式——ts 域 catch-up）")
-					return &PSyncResult{
-						FullResync: false,
-						ReplId:     currentReplId,
-						Offset:     offset,
-						TS:         ts,
-					}, nil
-				}
-				logger.Logger.Warn().
-					Uint64("requested_ts", ts).
-					Uint64("log_start_ts", logStartTS).
-					Uint64("current_ts", currentTS).
-					Msg("PSYNC-ts 不在日志键范围，降级为全量同步")
-			} else {
-				logger.Logger.Warn().
-					Uint64("requested_ts", ts).
-					Uint64("current_ts", currentTS).
-					Msg("feed-loop 关闭（字节模式）：ts>0 重连走 FULLRESYNC（字节 offset 合法域）")
-			}
-		} else {
-			// 检查backlog中是否有足够的数据（字节模式——旧从节点）
-			backlogStart := backlog.GetCurrentOffset() - backlog.GetSize()
-			if backlogStart < 0 {
-				backlogStart = 0
-			}
-
-			// 重启后 backlog 为空（currentOffset == 0）但请求的 offset > 0：
-			// backlog 中没有可发送的数据，必须降级为 FULLRESYNC。
-			// 不能仅靠 backlogStart/offset 范围判断——空 backlog 的
-			// GetCurrentOffset() == 0，range check 会误判为有效。
-			if backlog.GetCurrentOffset() == 0 && offset > 0 {
-				logger.Logger.Info().
-					Int64("requested_offset", offset).
-					Msg("backlog 为空（重启后），请求的 offset 不可用，降级为全量同步")
-			} else if offset >= backlogStart && offset <= currentOffset {
-				// 可以增量同步，但先做命令边界校验（纵深防御，见 backlog.StartsAtCommandBoundary）。
-				// 若 offset 落在一个命令字节中间（从节点 offset 失步/错位续传），
-				// 取到的字节流首字节不会是 '*'，此时降级 FULLRESYNC，
-				// 避免从节点 ReadRESP 误帧（K:HASH:47 类 mis-frame → 无限重同步）。
-				if offset < currentOffset && !backlog.StartsAtCommandBoundary(offset) {
-					logger.Logger.Warn().
-						Str("repl_id", replId).
-						Int64("offset", offset).
-						Int64("current_offset", currentOffset).
-						Msg("PSYNC CONTINUE offset 非命令边界，降级为全量同步")
-				} else {
-					// 可以增量同步
-					logger.Logger.Info().
-						Str("repl_id", replId).
-						Int64("offset", offset).
-						Msg("执行增量同步")
-					return &PSyncResult{
-						FullResync: false,
-						ReplId:     currentReplId,
-						Offset:     offset,
-					}, nil
-				}
-			}
-		}
+	if ts == 0 || replId != currentReplId {
+		return fullResyncResult(rm, replId, offset, ts), nil
 	}
 
-	// 需要全量同步
+	logStartTS, _ := rm.store.ReplLogStartTS()
 	currentTS, _ := rm.store.ReplLogCurrentTS()
-	// 测试钩子：锁外读 currentTS 之后（TODO §6 ②——窗口内提交注入点——生产 nil）
+
+	if ts >= logStartTS && ts <= currentTS {
+		logger.Logger.Info().
+			Uint64("requested_ts", ts).
+			Uint64("log_start_ts", logStartTS).
+			Uint64("current_ts", currentTS).
+			Msg("PSYNC: 执行增量同步（ts 域 catch-up）")
+		return &PSyncResult{
+			FullResync: false,
+			ReplId:     currentReplId,
+			TS:         ts,
+		}, nil
+	}
+
+	logger.Logger.Warn().
+		Uint64("requested_ts", ts).
+		Uint64("log_start_ts", logStartTS).
+		Uint64("current_ts", currentTS).
+		Msg("PSYNC: ts 不在日志键范围，降级为全量同步")
+	return fullResyncResult(rm, replId, offset, ts), nil
+}
+
+func fullResyncResult(rm *ReplicationManager, replId string, offset int64, ts uint64) *PSyncResult {
+	currentTS, _ := rm.store.ReplLogCurrentTS()
 	if HandlePSyncAfterTSRead != nil {
 		HandlePSyncAfterTSRead()
 	}
 	logger.Logger.Info().
 		Str("requested_repl_id", replId).
-		Str("current_repl_id", currentReplId).
 		Int64("requested_offset", offset).
-		Int64("current_offset", currentOffset).
 		Uint64("current_ts", currentTS).
-		Msg("执行全量同步")
+		Msg("PSYNC: 执行全量同步")
 	return &PSyncResult{
 		FullResync: true,
-		ReplId:     currentReplId,
-		Offset:     currentOffset,
+		ReplId:     rm.replId,
 		TS:         currentTS,
-	}, nil
+	}
 }
 
 // SendFullResync 发送全量同步响应
-func SendFullResync(slave *SlaveConnection, replId string, offset int64, ts uint64) error {
-	// 发送 +FULLRESYNC <replid> <offset> <ts>（S2 PSYNC-ts——第 4 字段为 currentTS——
-	// 旧从节点按字段数忽略 ts）
-	response := fmt.Sprintf("+FULLRESYNC %s %d %d\r\n", replId, offset, ts)
+func SendFullResync(slave *SlaveConnection, replId string, ts uint64) error {
+	response := fmt.Sprintf("+FULLRESYNC %s 0 %d\r\n", replId, ts)
 	if err := slave.SendResponse(proto.NewSimpleString(strings.TrimSpace(response))); err != nil {
 		return fmt.Errorf("send FULLRESYNC response failed: %w", err)
 	}
@@ -158,47 +91,11 @@ func SendFullResync(slave *SlaveConnection, replId string, offset int64, ts uint
 }
 
 // SendContinueResync 发送增量同步响应
-func SendContinueResync(slave *SlaveConnection, replId string, offset int64) error {
-	// 发送 +CONTINUE <replid>
+func SendContinueResync(slave *SlaveConnection, replId string) error {
 	response := fmt.Sprintf("+CONTINUE %s\r\n", replId)
 	if err := slave.SendResponse(proto.NewSimpleString(strings.TrimSpace(response))); err != nil {
 		return fmt.Errorf("send CONTINUE response failed: %w", err)
 	}
-	return nil
-}
-
-// SendBacklogData 发送backlog数据到从节点
-func SendBacklogData(slave *SlaveConnection, backlog *ReplicationBacklog, startOffset, endOffset int64) error {
-	if startOffset >= endOffset {
-		return nil
-	}
-	data, err := backlog.GetRange(startOffset, endOffset)
-	if err != nil {
-		return fmt.Errorf("get backlog range failed: %w", err)
-	}
-
-	if len(data) == 0 {
-		return nil
-	}
-
-	slave.writeMu.Lock()
-	defer slave.writeMu.Unlock()
-
-	if _, err := slave.Writer.Write(data); err != nil {
-		return fmt.Errorf("write backlog data failed: %w", err)
-	}
-
-	if err := slave.Writer.Flush(); err != nil {
-		return fmt.Errorf("flush backlog data failed: %w", err)
-	}
-
-	logger.Logger.Debug().
-		Str("slave_id", slave.ID).
-		Int64("start_offset", startOffset).
-		Int64("end_offset", endOffset).
-		Int("data_size", len(data)).
-		Msg("发送backlog数据到从节点")
-
 	return nil
 }
 
