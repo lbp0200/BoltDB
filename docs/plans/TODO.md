@@ -14,7 +14,8 @@
 > `476d6d9`（删环收口 + FLUSHDB 传播帧修复）+ `f48c449`（ts 域测试适配）。
 > 远程 -race 全绿（internal 全 10 包 + cmd/integration replication 相关多批次 +
 > regressions 守卫组四件套）+ lint 0 issues + gofmt 干净。遗留开放项：
-> §7 并发 FeedSlave 重发（详见 §7）——见下方索引表。
+> §6 并发 FeedSlave 重发 lost=1 偶发（dup 已 feedMu 修复；原误标 §7——与 dw 协议节
+> 混淆，权威记录见下方索引表 §6）。
 
 删 `ReplicationBacklog` / `BacklogWAL` / `SendBacklogData` / `CatchUpAndEnableSlave` 字节循环
 / psync 字节分支。`--feed-loop` 保留为启动要求（回滚需代码还原）。
@@ -147,10 +148,10 @@ exit 0。判绿必须看 `go test` 自身的退出码（`set -o pipefail`，或�
 | v8.52.0 发版基线（`--full` 无 -short 全量） | 2026-09-05 | a4 §10 附9——soak 类属 tier-C nightly，不阻塞 PR gate |
 | §6 FULLRESYNC 线性化点 ts 移入写锁 + **区分守卫** | 2026-09-05 | 5a3fb51 落点修正；守卫 `fullresync_ts_double_apply_test.go`——post-fix 绿（ctr=5==K）/ pre-fix e5dc482 worktree 红（ctr=10==2K 双应用）——`HandlePSyncAfterTSRead` 钩子（psync.go，生产 nil） |
 | **A4 阶段 1（offset 水位改 ts 源）** | 2026-09-05 | a4 §10 附9（实施结果链）+ TODO §1——7c273e4 主体 + 2003494 语义守卫/WAIT 缺口修复 + 82aa601 同步判据 + 7b0253c 半升级窗口 + 9aa1c94 全量回归 + c9722ec 最终门禁——剩余（阶段 2 gate 1）见 TODO §2 |
-| **§6 并发 FeedSlave 重发（feedMu 游标锁）** | 2026-09-05 | a4 §10 附8.1 选项 1——e304a07 实施——post-fix `-count=5` 全绿（dup=0）/ pre-fix 10509ab worktree 红（2/2 轮 dup 4/4 键）——恒绿守卫 `concurrent_feed_slave_test.go`——新开放项（lost=1 偶发）见 TODO §6 |
+| **§6 并发 FeedSlave 重发（feedMu 游标锁）** | 2026-09-05 | a4 §10 附8.1 选项 1——e304a07 实施——post-fix `-count=5` 全绿（dup=0）/ pre-fix 10509ab worktree 红（2/2 轮 dup 4/4 键）——恒绿守卫 `concurrent_feed_slave_test.go`。**遗留 lost=1 偶发（dup 已修复，此项为被 dup 掩盖后暴露的既有缺陷）**：候选根因 = 从侧 apply（reconnect.go:591-608）瞬时错误路径命令未 apply + `lastAppliedTS` 不推进 → ts 空洞依赖下一帧 `checkFeedTSGap`（line 582）自愈，断连窗口边界帧未被即时捕获即漏；kvrocks 对照 = RocksDB WAL sequence number 做 apply 游标（引擎原生单调 + apply/推进原子 + checkpoint 对齐），BoltDB `lastAppliedTS` 为应用层 atomic、与 store 写入解耦。**2026-09-08 测量**：3/3 `-count=1` 串行 lost=0（偶发非必现，cycle "not converged" 均为写者活跃期 slaveTS 滞后 1-2 帧假性、最终 converge）——定性 documented known-open flake（守卫显式"先测可达率再谈修复"），当前证据不足以驱动具体修复 |
 | **C4 发散悖论（feed 模式结构性消失）** | 2026-09-05 | TODO §5——e1fd352——重连判定全程 ts 域（PSYNC-ts 整数比较 + 降级 FULLRESYNC + resumeTS+1）——字节边界不参与——仅字节路径残留（gate 1 退役后彻底消除）——层 D 降级可选验证 |
 | §3 split-brain 家族 flake | 2026-09-01 | 负载敏感时序扰动（gossip HelloInterval 500ms），非共识缺陷；三重测移除 `t.Parallel()`；家族维持 documented-unreliable |
 | **v8.58.0 发版（56 提交——lost 定论修复 + 等价扫面 32 例 6 确定性缺陷 + apply 审计 11 组 + backup managed 兼容）** | 2026-09-06 | `CHANGELOG.md` v8.58.0——checkFeedTSGap 修复（141 轮 0 lost）——internal 全 10 包无 -short 全绿 + 复制守卫三件套 + lint 0 issues |
 | **§4 SSD 写入基线根因定论关闭** | 2026-09-07 | c49967a——NVMe（Samsung 960 PRO）零塌陷 130 keys/s vs HDD（sda1）单调崩塌 17→9 keys/s A/B 决定性对照——根因 = 数据落 HDD 分区的磁盘物理极限，非存储引擎 bug |
 | **§5 RDB 生成/载入侧 fail-fast + 判别守卫** | 2026-09-07 | `CHANGELOG.md` v8.58.1——b26523e（~50 处 continue→return err）+ 00e41a6（expire-time 补漏）+ 39f048d（判别守卫 pre-fix RED/post-fix GREEN）——remote -race + e2e roundtrip + code_review single-depth clean |
-| **A4 阶段 2（删 backlog 内存环——gate 严格）** | 2026-09-08 | TODO §2——476d6d9（删环收口：ring/WAL/换算表/字节分支全删 + FLUSHDB 传播帧修复——ClearAllData 无 logValue 不产生 REPLLOG 帧 → 从侧收不到清库——TestReplicationCompleteness_Key FLUSHDB poll 回归修复）+ f48c449（ts 域测试适配：catchup 重写/replLogCount helper/整删结构死码）——远程 -race 全绿 + regressions 守卫四件套 + lint 0 issues；遗留 §7 并发 FeedSlave 重发开放项 |
+| **A4 阶段 2（删 backlog 内存环——gate 严格）** | 2026-09-08 | TODO §2——476d6d9（删环收口：ring/WAL/换算表/字节分支全删 + FLUSHDB 传播帧修复——ClearAllData 无 logValue 不产生 REPLLOG 帧 → 从侧收不到清库——TestReplicationCompleteness_Key FLUSHDB poll 回归修复）+ f48c449（ts 域测试适配：catchup 重写/replLogCount helper/整删结构死码）——远程 -race 全绿 + regressions 守卫四件套 + lint 0 issues；遗留开放项 = §6 并发 FeedSlave 重发 lost=1 偶发（dup 已 feedMu 修复——见下方索引表 §6 + 2026-09-08 测量） |
