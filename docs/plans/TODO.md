@@ -8,14 +8,16 @@
 
 ## 待办
 
+> **无未闭环任务（2026-09-08）**：§2 + §3 均已收口/通过（正文留痕如下）。唯一 known-open =
+> §6 lost=1 偶发——非阻塞 flake，定性见下方「已知 known-open」小节。
+
 ### 2. A4 阶段 2——删除 backlog 内存环（gate 严格——不可在线回滚）
 
 > **✅ 已收口（2026-09-08）**：删环主体 + 测试适配全部完成并验证——
 > `476d6d9`（删环收口 + FLUSHDB 传播帧修复）+ `f48c449`（ts 域测试适配）。
 > 远程 -race 全绿（internal 全 10 包 + cmd/integration replication 相关多批次 +
-> regressions 守卫组四件套）+ lint 0 issues + gofmt 干净。遗留开放项：
-> §6 并发 FeedSlave 重发 lost=1 偶发（dup 已 feedMu 修复；原误标 §7——与 dw 协议节
-> 混淆，权威记录见下方索引表 §6）。
+> regressions 守卫组四件套）+ lint 0 issues + gofmt 干净。注：dup 已 feedMu 修复；
+> §6 lost=1 偶发 = 非阻塞 known-open flake，定性见「已知 known-open」小节（原误标 §7）。
 
 删 `ReplicationBacklog` / `BacklogWAL` / `SendBacklogData` / `CatchUpAndEnableSlave` 字节循环
 / psync 字节分支。`--feed-loop` 保留为启动要求（回滚需代码还原）。
@@ -107,6 +109,24 @@ bash scripts/remote-test.sh -race -timeout 180s -v ./cmd/integration/regressions
   -run TestRegressionDuplicateWindowMeasurement          # 加 -count=15（5 批 × 3 次）
 DW_READ_PROBE=1 ...                                      # 探针开 = §7 完整形态
 ```
+
+## 已知 known-open（据实定性，非阻塞 flake）
+
+### §6 并发 FeedSlave 重发 lost=1 偶发（documented known-open flake）
+
+- **性质**：非阻塞 flake。dup（重复 apply）已由 feedMu 游标锁 `e304a07` 修复，守卫断言
+  `dup==0` 恒绿；**lost=1 = 未归因罕见竞态**——当前证据不足以点名修复点，据实定性、不盲改。
+- **调查与复现（2026-09-08）**：三轮只读审计排除错误假设（原"瞬时错误 skip → ts 空洞"对本守卫
+  inert——`isTransientReplicationError` 仅对 "key not found" 返回 true，而 INCR 缺失键 store
+  语义 = 自动创建为 0，不报 key-not-found）；结构性差异 = BoltDB `lastAppliedTS` 应用层 atomic、
+  与 store 写入解耦（对照 kvrocks RocksDB WAL sequence number 原子推进）；**高成本复现轮
+  `-count=16`（4批×4，远程 -race）+ 前轮 3 = 累计 19 次串行零复现**（全 lost=0/dup=0）。
+- **现状**：本项**无已知可靠触发条件**（区别于 memory 记录的 flake 家族"仅 `--full` -p=2 触发"——
+  那是另一组测试的并发时序扰动）→ 维持 documented known-open flake。守卫
+  `concurrent_feed_slave_test.go`（dup==0 + lost≤2）恒绿，非阻塞。
+- **推进条件**：修复需待真实环境复现抓 LOST-DIAG 逐键定位具体丢失 ts 后再谈方案——当前无定向手段可烧。
+- **权威细节**：dup 修复收口见下方索引表 §6（`e304a07`）+ 2026-09-08 测量记录；守卫 =
+  `cmd/integration/regressions/concurrent_feed_slave_test.go`。
 
 ## 方法论（守卫写作——lost 调查产出——保留）
 
