@@ -10,6 +10,12 @@
 
 ### 2. A4 阶段 2——删除 backlog 内存环（gate 严格——不可在线回滚）
 
+> **✅ 已收口（2026-09-08）**：删环主体 + 测试适配全部完成并验证——
+> `476d6d9`（删环收口 + FLUSHDB 传播帧修复）+ `f48c449`（ts 域测试适配）。
+> 远程 -race 全绿（internal 全 10 包 + cmd/integration replication 相关多批次 +
+> regressions 守卫组四件套）+ lint 0 issues + gofmt 干净。遗留开放项：
+> §7 并发 FeedSlave 重发（详见 §7）——见下方索引表。
+
 删 `ReplicationBacklog` / `BacklogWAL` / `SendBacklogData` / `CatchUpAndEnableSlave` 字节循环
 / psync 字节分支。`--feed-loop` 保留为启动要求（回滚需代码还原）。
 
@@ -75,7 +81,10 @@
   GetBacklogCurrentOffset 的 10 处调用点——74/131/187/332 按上定论处理）→
   ⑤ 守卫更新 → ⑥ 全量回归。
 
-### 3. dw A/B ≤1/15 正式验收（gate 于阶段 2 之后）
+### 3. dw A/B ≤1/15 正式验收（gate 已解除——阶段 2 已收口，可重跑）
+
+> **gate 解除（2026-09-08）**：阶段 2 删环已收口（TODO §2）——复制切换完成——
+> 正式验收 gate 满足，可重跑下方命令。
 
 §7 协议（`1c-complete-fix-design.md`）——双轨下重复窗口度量。**基线数据已测**（纯对照
 14/15+1 flake、探针开 15/15——见 a4 §10 附9），正式验收须在复制切换（阶段 2）后重跑。
@@ -141,3 +150,4 @@ exit 0。判绿必须看 `go test` 自身的退出码（`set -o pipefail`，或�
 | **v8.58.0 发版（56 提交——lost 定论修复 + 等价扫面 32 例 6 确定性缺陷 + apply 审计 11 组 + backup managed 兼容）** | 2026-09-06 | `CHANGELOG.md` v8.58.0——checkFeedTSGap 修复（141 轮 0 lost）——internal 全 10 包无 -short 全绿 + 复制守卫三件套 + lint 0 issues |
 | **§4 SSD 写入基线根因定论关闭** | 2026-09-07 | c49967a——NVMe（Samsung 960 PRO）零塌陷 130 keys/s vs HDD（sda1）单调崩塌 17→9 keys/s A/B 决定性对照——根因 = 数据落 HDD 分区的磁盘物理极限，非存储引擎 bug |
 | **§5 RDB 生成/载入侧 fail-fast + 判别守卫** | 2026-09-07 | `CHANGELOG.md` v8.58.1——b26523e（~50 处 continue→return err）+ 00e41a6（expire-time 补漏）+ 39f048d（判别守卫 pre-fix RED/post-fix GREEN）——remote -race + e2e roundtrip + code_review single-depth clean |
+| **A4 阶段 2（删 backlog 内存环——gate 严格）** | 2026-09-08 | TODO §2——476d6d9（删环收口：ring/WAL/换算表/字节分支全删 + FLUSHDB 传播帧修复——ClearAllData 无 logValue 不产生 REPLLOG 帧 → 从侧收不到清库——TestReplicationCompleteness_Key FLUSHDB poll 回归修复）+ f48c449（ts 域测试适配：catchup 重写/replLogCount helper/整删结构死码）——远程 -race 全绿 + regressions 守卫四件套 + lint 0 issues；遗留 §7 并发 FeedSlave 重发开放项 |
