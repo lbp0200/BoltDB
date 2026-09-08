@@ -1,5 +1,32 @@
 # Changelog
 
+## v8.59.0 (2026-09-08) — A4 阶段 2 删 backlog 内存环（ts 域收口）+ FLUSHDB 传播帧修复
+
+> **复制架构 ts 域化收口**：删除 `ReplicationBacklog` 内存环 + `BacklogWAL` + 字节 catch-up 循环——复制全链路收敛到 ts 域（feed-only），backlog 概念退役。删环暴露 FLUSHDB 传播缺陷并修复——`FlushDB()`/`ClearAllData()` 原不写 logValue → 不产生 REPLLOG 帧 → 从侧收不到清库事件，现清库后写一条 `REPLLOG <ts> FLUSHDB` 帧 + apply 白名单零参命令。§3 dw ≤1/15 正式验收通过（全 5 批 `-count=3` gap=0）。§6 lost=1 定性为 documented known-open flake（非阻塞，累计 19 次复现零命中）。
+
+### A4 阶段 2——删 backlog 内存环（ts 域收口）
+
+- **删环主体（476d6d9）**：`ReplicationBacklog`/`BacklogWAL`/`SendBacklogData`/字节 catch-up 循环全删；`CatchUpAndEnableSlaveTS(slave, resumeTS)` ts 域激活替代字节 catch-up（feed `[resumeTS+1, curTS]` once——两入口 propMu 串行 → exactly-once 分区）；PSYNC/CONTINUE 无条件 ts-only。
+- **ts 域测试适配（f48c449）**：catchup 重写 / `replLogCount` helper / 整删结构死码——replication + replication_extended + feed_e2e + fullresync_ts_invariant 等 test files 全适配。
+
+### FLUSHDB 传播帧修复
+
+- **根因**：`handleFLUSHDB` → `FlushDB()` → `ClearAllData()`（`deleteBatchWithRetry` 无 logValue）→ 不写 REPLLOG_ 帧 → 从侧 feed 只读 REPLLOG_ 增量 → FLUSHDB 事件从侧完全不知（清库后从侧仍持旧数据）。
+- **修复**：`FlushDB()` 清库后写 `REPLLOG <ts> FLUSHDB` 帧（带 logValue）；`parseReplLogValue` 白名单零参命令（FLUSHDB/FLUSHALL），其余单参仍报错。
+
+### §3 dw ≤1/15 正式验收
+
+- `TestRegressionDuplicateWindowMeasurement -count=15`（全 5 批 × 3）PASS——gap=0 零亏空达标。
+
+### §6 lost=1 定性
+
+- documented known-open flake（非阻塞）：三轮只读审计排除错误假设 + 高成本复现轮 `-count=16`（累计 19 次串行零命中）——无已知可靠触发条件，据实定性入册。dup 已由 feedMu 游标锁修复（e304a07）。
+
+### 发版验证
+
+- 远程 Linux -race：`internal/...` 全 10 包绿 + cmd/integration replication 相关多批次绿 + regressions 守卫组绿。
+- `golangci-lint run --timeout 5m`：0 issues；`gofmt -l .` clean（CI 权威 gofmt gate，含 _test.go）。
+
 ## v8.58.1 (2026-09-07) — RDB 生成/载入 fail-fast（§5）+ 判别守卫
 
 > **RDB 快照静默丢数据点改 fail-fast**：生成侧 12 处读取 + 5 处编码错误原 `continue`→`return err`；载入侧 ~30 处 per-key parse 失败 + type-15 stream-groups/PEL 深层解析 + `default: return nil`（未知 typeByte 静默跳过）全改 fail-fast——decoder desync（parse 失败后继续读 → 后续键错位解析仍报"载入成功"）与静默跳键两类丢数据消除。expire-time 解码错误丢弃点补漏（原 `_` 吞掉真截断 → 损坏键静默永久化）。**判别守卫** pre-fix RED/post-fix GREEN 实测。**
