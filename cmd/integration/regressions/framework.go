@@ -261,9 +261,16 @@ func (s *RegressionServer) GetMasterOffset() int64 {
 	return s.replMgr.GetMasterReplOffset()
 }
 
-// GetSlaveOffset 返回 slave 复制偏移量
+// GetSlaveOffset 返回 slave 复制偏移量（字节域遗留——feed-only 下恒 0——
+// 新代码用 GetSlaveAppliedTS 做 ts 域比较）
 func (s *RegressionServer) GetSlaveOffset() int64 {
 	return s.replMgr.GetSlaveReplOffset()
+}
+
+// GetSlaveAppliedTS 返回 slave 已应用的 ts 水位（ts 域——feed-only 唯一有效
+// 比较域——与 master.GetMasterOffset() 同域）
+func (s *RegressionServer) GetSlaveAppliedTS() uint64 {
+	return s.replMgr.GetSlaveLastAppliedTS()
 }
 
 // Close closes all resources

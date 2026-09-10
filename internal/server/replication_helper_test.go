@@ -178,8 +178,10 @@ func TestProcessRequestPropagateGate(t *testing.T) {
 }
 
 // TestProcessRequest_WrongTypeDoesNotAdvanceOffset is an end-to-end gate:
-// WRONGTYPE must not enter the replication backlog (offset unchanged).
+// WRONGTYPE must not enter the replication backlog as a data frame.
 // Kills mutation that drops `!isErrorResponse(resp)` from processRequest.
+// 失败写只写 NOOP 墓碑（占住本 ts 保 feed ts 连续性——不是可重放数据帧），
+// 故水位 +1，但最新帧必须是 NOOP（编码冻结——见 store.encodePropagateCommand）。
 func TestProcessRequest_WrongTypeDoesNotAdvanceOffset(t *testing.T) {
 	t.Parallel()
 	handler, state := setupTestHandler(t)
@@ -198,7 +200,12 @@ func TestProcessRequest_WrongTypeDoesNotAdvanceOffset(t *testing.T) {
 	resp = handler.processRequest(wrong, nil, "127.0.0.1:1", nil, nil, state)
 	assert.True(t, isErrorResponse(resp))
 	afterWrong := handler.Replication.GetMasterReplOffset()
-	assert.Equal(t, before, afterWrong)
+	assert.Equal(t, before+1, afterWrong)
+	// 最新帧必须是 NOOP 墓碑而非数据帧
+	entries, err := handler.Db.ReplLogEntries()
+	assert.NoError(t, err)
+	assert.True(t, len(entries) > 0)
+	assert.Equal(t, []byte("*1\r\n$4\r\nNOOP\r\n"), entries[len(entries)-1].Value)
 
 	// Successful write still advances offset
 	okReq := &proto.Array{Args: [][]byte{[]byte("SET"), []byte("wt:ok"), []byte("1")}}

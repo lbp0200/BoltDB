@@ -85,10 +85,11 @@ func TestRegressionFullresyncTsDoubleApplyGuard(t *testing.T) {
 		t.Fatalf("guard: CLIENT KILL: %v", err)
 	}
 
-	// 等重连 + 收敛（字节判据——双轨下主从 offset 追平）
+	// 等重连 + 收敛（ts 域判据——字节 offset 在 feed-only 下已退役恒 0——
+	// 从侧 lastAppliedTS 追平主侧 currentTS 即收敛）
 	converged := false
 	for i := 0; i < 20; i++ {
-		if slave.GetSlaveOffset() >= master.GetMasterOffset() {
+		if slave.GetSlaveAppliedTS() >= uint64(master.GetMasterOffset()) {
 			converged = true
 			break
 		}

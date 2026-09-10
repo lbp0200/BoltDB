@@ -894,10 +894,12 @@ func waitReplicationConvergence(ctx context.Context, master, slave *redis.Client
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
-		sOff := parseSlaveReplOffset(sInfo)
+		// ts 域收敛（feed-only——slave_repl_offset 字节域已退役——与 ts 水位
+		// 跨域比较恒真/恒假故改用 slave_applied_ts，双方同域才有意义）
+		sApplied := parseSlaveAppliedTS(sInfo)
 
-		if replicationOffsetsConverged(mOff, sOff) {
-			t.Logf("converge-barrier: fully converged (mo=%d so=%d)", mOff, sOff)
+		if replicationOffsetsConverged(mOff, int64(sApplied)) {
+			t.Logf("converge-barrier: fully converged (mo=%d slaveAppliedTS=%d)", mOff, sApplied)
 			return true
 		}
 
@@ -926,6 +928,16 @@ func parseMasterReplOffset(info string) int64 {
 	for _, line := range strings.Split(info, "\n") {
 		if strings.HasPrefix(line, "master_repl_offset:") {
 			n, _ := strconv.ParseInt(strings.TrimPrefix(line, "master_repl_offset:"), 10, 64)
+			return n
+		}
+	}
+	return 0
+}
+
+func parseSlaveAppliedTS(info string) uint64 {
+	for _, line := range strings.Split(info, "\n") {
+		if strings.HasPrefix(line, "slave_applied_ts:") {
+			n, _ := strconv.ParseUint(strings.TrimPrefix(line, "slave_applied_ts:"), 10, 64)
 			return n
 		}
 	}
@@ -1463,6 +1475,7 @@ func summarizeReplInfo(info string) string {
 			strings.Contains(line, "master_repl_offset:") ||
 			strings.Contains(line, "connected_slaves:") ||
 			strings.Contains(line, "slave_repl_offset:") ||
+			strings.Contains(line, "slave_applied_ts:") ||
 			strings.Contains(line, "master_link_status:") ||
 			strings.Contains(line, "repl_backlog_active:") ||
 			strings.Contains(line, "repl_backlog_size:") ||

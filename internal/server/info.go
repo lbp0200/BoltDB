@@ -92,6 +92,7 @@ func (h *Handler) buildInfoResponse(section string) string {
 				builder.WriteString("master_replid:" + h.Replication.GetReplicationID() + "\n")
 				builder.WriteString("master_repl_offset:" + strconv.FormatInt(h.Replication.GetMasterReplOffset(), 10) + "\n")
 				builder.WriteString("slave_repl_offset:" + strconv.FormatInt(h.Replication.GetSlaveReplOffset(), 10) + "\n")
+				builder.WriteString("slave_applied_ts:" + strconv.FormatUint(h.Replication.GetSlaveLastAppliedTS(), 10) + "\n")
 				builder.WriteString("second_repl_offset:-1\n")
 				builder.WriteString("repl_backlog_active:0\n")
 				builder.WriteString("repl_backlog_size:0\n")

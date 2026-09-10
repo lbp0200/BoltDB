@@ -118,7 +118,8 @@ func isWriteCommand(cmd string) bool {
 //
 // Excluded:
 //   - control/admin commands that are never stream-replicated
-//   - SPOP: handler canonicalizes to SREM of the actual members (single path)
+//   - SPOP: store logs canonical SREM of the actual popped members in the same
+//     commitTS txn (single path) — raw SPOP would pop different members on slave
 //   - commands in replication.ReplicatedCommandsExcluded (no slave handler yet,
 //     or external side effects) — propagating them causes FULLRESYNC thrash
 func shouldPropagateCommand(cmd string) bool {

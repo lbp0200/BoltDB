@@ -30,7 +30,7 @@ func (s *BotreonStore) CreateEmptyStream(key string) error {
 			MaxDeletedID: 0,
 		}
 		return txn.Set(streamKey(key), encodeStreamMeta(meta))
-	}, 30)
+	}, 30, noopLogValue()) // 空流创建无数据帧可记——NOOP 占住本 ts（保 feed 连续性）
 }
 
 // XAdd adds a new entry to a stream

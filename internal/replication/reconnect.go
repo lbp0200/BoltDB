@@ -588,6 +588,15 @@ func (sr *SlaveReconnector) readCommandLoop(mc *MasterConnection) error {
 			for i, c := range feedCmd {
 				feedCmdBytes[i] = []byte(c)
 			}
+			// NOOP 墓碑帧：无数据语义——跳过执行，但必须推进水位
+			// （lastAppliedTS/lastOffset/lastApplyTime）——否则下一帧触发
+			// checkFeedTSGap 误判空洞而断开（墓碑的存在意义就是占住本 ts）。
+			if len(feedCmd) > 0 && strings.EqualFold(feedCmd[0], "NOOP") {
+				sr.lastAppliedTS.Store(ts)
+				sr.lastOffset.Add(int64(len(cmdBytes)))
+				sr.lastApplyTime.Store(time.Now().UnixNano())
+				continue
+			}
 			if err := executeReplicatedCommand(sr.store, feedCmdBytes, replCtx); err != nil {
 				currentOffset := sr.lastOffset.Load()
 				if isTransientReplicationError(err, feedCmd[0], currentOffset) {

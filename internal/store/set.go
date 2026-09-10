@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -459,7 +458,7 @@ func (s *BotreonStore) SPop(key string) (string, error) {
 	s.keyLockMgr.Lock(key)
 	defer s.keyLockMgr.Unlock(key)
 	var member string
-	err := s.retryUpdate(func(txn *badger.Txn) error {
+	err := s.retryUpdateLazy(func(txn *badger.Txn) error {
 		member = "" // reset each attempt; stale value must not survive conflict retry
 		// 先获取集合大小
 		countKey := s.setKey(key, "count")
@@ -539,7 +538,17 @@ func (s *BotreonStore) SPop(key string) (string, error) {
 
 		// 如果迭代器没有找到（理论上不应该发生），回退到旧方法
 		return nil
-	}, 30, encodePropagateCommand([]byte("SPOP"), []byte(key))) // 最多重试 30 次（高并发时需要更多重试）
+	}, 30, func() []byte {
+		// D4 确定性规范化：传播实际弹出的成员（SREM），而非 raw SPOP——
+		// raw SPOP 在从侧独立随机 pop 会弹出不同成员导致主从发散
+		// （TestRegressionLiveSPOPNoDoubleProp——Redis/KVrocks 同理：
+		// 复制的是 effect 不是 intent）。空 pop 记 NOOP 墓碑（占住本 ts——
+		// feed 连续性要求每个已分配 ts 恰一日志键）。
+		if member == "" {
+			return noopLogValue()
+		}
+		return encodePropagateCommand([]byte("SREM"), []byte(key), []byte(member))
+	}) // 最多重试 30 次（高并发时需要更多重试）
 	return member, err
 }
 
@@ -548,7 +557,7 @@ func (s *BotreonStore) SPopN(key string, count int) ([]string, error) {
 	s.keyLockMgr.Lock(key)
 	defer s.keyLockMgr.Unlock(key)
 	var members []string
-	err := s.retryUpdate(func(txn *badger.Txn) error {
+	err := s.retryUpdateLazy(func(txn *badger.Txn) error {
 		members = nil // reset each attempt; stale slice must not survive conflict retry
 		allMembers, err := s.getAllMembers(txn, key)
 		if err != nil {
@@ -599,7 +608,19 @@ func (s *BotreonStore) SPopN(key string, count int) ([]string, error) {
 			}
 		}
 		return nil
-	}, 30, encodePropagateCommand([]byte("SPOP"), []byte(key), []byte(strconv.Itoa(count)))) // 最多重试 30 次（高并发时需要更多重试）
+	}, 30, func() []byte {
+		// D4 确定性规范化：同 SPop（SREM of actual members——EXEC 内 SPOP
+		// 经此同一 store 路径规范化——TestRegressionMultiExecSPOPCanonical）。
+		if len(members) == 0 {
+			return noopLogValue()
+		}
+		args := make([][]byte, 0, 2+len(members))
+		args = append(args, []byte("SREM"), []byte(key))
+		for _, m := range members {
+			args = append(args, []byte(m))
+		}
+		return encodePropagateCommand(args...)
+	}) // 最多重试 30 次（高并发时需要更多重试）
 	return members, err
 }
 

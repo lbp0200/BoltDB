@@ -169,9 +169,12 @@ func (h *Handler) handleSPOP(state *connState, args [][]byte, remoteAddr string)
 			return &proto.Array{Args: [][]byte{}}
 		}
 		h.markDirtyKeys(state, key)
-		// Single propagation path: SREM of actual members. processRequest
-		// excludes SPOP via shouldPropagateCommand to avoid double-prop
-		// (SREM + raw SPOP) which would drop extra members on the slave.
+		// 规范化传播：store 层 SPopN 已在同 commitTS 事务内记 SREM of actual
+		// members 日志帧（D4 确定性——从侧重放删除同一批成员）；processRequest
+		// 经 shouldPropagateCommand 排除 raw SPOP（从侧独立随机 pop 会发散）。
+		// 此处 PropagateCommand 为 feed-only 排水触发（参数被忽略——只把本 ts
+		// 之前已提交的日志帧推给 Ready 从侧），必须保留——否则 SPOP 帧滞留到
+		// 下一次写才被推走。
 		if h.Replication != nil && h.Replication.IsMaster() {
 			propArgs := make([][]byte, 2, 2+len(members))
 			propArgs[0] = []byte("SREM")
@@ -199,7 +202,7 @@ func (h *Handler) handleSPOP(state *connState, args [][]byte, remoteAddr string)
 		return proto.NewBulkString(nil)
 	}
 	h.markDirtyKeys(state, key)
-	// See SPOP-N path: handler-only SREM propagation (not raw SPOP).
+	// 同 SPOP-N：store 层记规范 SREM 帧，此处仅排水触发。
 	if h.Replication != nil && h.Replication.IsMaster() {
 		h.Replication.PropagateCommand([][]byte{[]byte("SREM"), args[0], []byte(member)})
 	}

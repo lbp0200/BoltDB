@@ -24,6 +24,14 @@ func replLogKey(ts uint64) []byte {
 	return append(k, b[:]...)
 }
 
+// noopLogValue 返回 NOOP 墓碑帧（*1 RESP——parseReplLogValue 白名单放行——
+// 从侧 feed 应用时跳过执行但推进 ts 水位）。用途：空转写（空 SPOP 等）与
+// 失败提交尝试的 ts 占位——feed ts 连续性要求每个已分配 ts 恰有一个日志键
+// （无帧的 ts 即空洞——verifyFeedTSContinuity 误判为丢帧而卡死游标）。
+func noopLogValue() []byte {
+	return encodePropagateCommand([]byte("NOOP"))
+}
+
 // encodePropagateCommand 将命令参数编码为 RESP 数组字节（与复制层 serializeCommand
 // 同格式——复制层日志键消费者可直接解码重放）。格式在消费者增量前保持冻结。
 func encodePropagateCommand(args ...[]byte) []byte {

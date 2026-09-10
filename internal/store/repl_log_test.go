@@ -113,8 +113,8 @@ func TestReplLogOrdering(t *testing.T) {
 	}
 }
 
-// TestReplLogSuccessOnly 验证失败写不入日志：对已存在不同类型键 SET → ErrWrongType
-// → 无新日志条目；成功后才有。
+// TestReplLogSuccessOnly 验证失败写不入数据日志：对已存在不同类型键 SET → ErrWrongType
+// → 只写 NOOP 墓碑（占住本 ts 保 feed 连续性——不是可重放的数据帧）；成功后才有数据帧。
 func TestReplLogSuccessOnly(t *testing.T) {
 	t.Parallel()
 	s := setupTestStore(t)
@@ -124,19 +124,24 @@ func TestReplLogSuccessOnly(t *testing.T) {
 	}
 	before := len(replLogEntries(t, s))
 
-	// SET 到 LIST 键 → ErrWrongType（fn 失败——不得写日志）
+	// SET 到 LIST 键 → ErrWrongType（fn 失败——只写 NOOP 墓碑，不得写数据帧）
 	if err := s.Set("conflict:key", "v"); err == nil {
 		t.Fatal("expected ErrWrongType on SET over LIST key")
 	}
-	if got := len(replLogEntries(t, s)); got != before {
-		t.Fatalf("failed SET wrote a repl log entry: before %d after %d", before, got)
+	entries := replLogEntries(t, s)
+	if len(entries) != before+1 {
+		t.Fatalf("failed SET must leave exactly one NOOP tombstone: before %d after %d", before, len(entries))
+	}
+	// replLogEntries 返回 [ts, valueLen]——墓碑帧长必须等于 NOOP 编码长（数据帧更长）
+	if got, want := entries[len(entries)-1][1], uint64(len(noopLogValue())); got != want {
+		t.Fatalf("failed SET tombstone len = %d, want NOOP len %d", got, want)
 	}
 
-	// 成功 SET → 日志 +1
+	// 成功 SET → 数据帧 +1（累计 before+2：墓碑 1 + 数据 1）
 	if err := s.Set("ok:key", "v"); err != nil {
 		t.Fatal(err)
 	}
-	if got := len(replLogEntries(t, s)); got != before+1 {
+	if got := len(replLogEntries(t, s)); got != before+2 {
 		t.Fatalf("successful SET did not write exactly one log entry: before %d after %d", before, got)
 	}
 }

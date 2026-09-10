@@ -104,6 +104,9 @@ func (s *BotreonStore) commitTS(fn func(*badger.Txn) error, logValue ...[]byte) 
 	ts := s.tsSource.Begin()
 	defer s.tsSource.End(ts)
 	if err := fn(txn); err != nil {
+		// 失败尝试已烧掉 ts——写 NOOP 墓碑保连续性（否则该 ts 成永久空洞——
+		// verifyFeedTSContinuity 遇洞即错、游标永不推进——从侧饿死重连风暴）。
+		s.writeNoopTombstone(ts)
 		return err
 	}
 	// S2 D 定案（a4 §10 附6——kvrocks 式 log-in-commit）：传播日志键与数据变更
@@ -111,10 +114,12 @@ func (s *BotreonStore) commitTS(fn func(*badger.Txn) error, logValue ...[]byte) 
 	// 不入日志——防 slave apply 错误/FULLRESYNC thrash——handler_core 754 注释语义）。
 	if len(logValue) > 0 && len(logValue[0]) > 0 {
 		if err := txn.Set(replLogKey(ts), logValue[0]); err != nil {
+			s.writeNoopTombstone(ts)
 			return err
 		}
 	}
 	if err := txn.CommitAt(ts, nil); err != nil {
+		s.writeNoopTombstone(ts)
 		return err
 	}
 	s.discardMu.Lock()
@@ -128,20 +133,35 @@ func (s *BotreonStore) commitTS(fn func(*badger.Txn) error, logValue ...[]byte) 
 // commitTSLazy 与 commitTS 相同，但 logValue 为延迟求值函数（fn 成功后再调用——
 // 支持依赖事务内结果的 log 编码（XADD 的 stream id 生成——修复 log 帧写 `*`
 // 导致从侧重放 id 漂移——lost 家族扫面扩展发现 2026-09-06）。
+// writeNoopTombstone 在已分配 ts 上 best-effort 写 NOOP 墓碑（调用方 commit 失败
+// 后的同一 ts 复用——该 ts 未提交任何键——新 txn 空读写集无冲突）。错误忽略：
+// 墓碑是连续性优化而非正确性前提（失败本就返回错误给调用方重试/上报）。
+func (s *BotreonStore) writeNoopTombstone(ts uint64) {
+	txn := s.db.NewTransactionAt(math.MaxUint64, true)
+	defer txn.Discard()
+	if err := txn.Set(replLogKey(ts), noopLogValue()); err != nil {
+		return
+	}
+	_ = txn.CommitAt(ts, nil)
+}
+
 func (s *BotreonStore) commitTSLazy(fn func(*badger.Txn) error, logValue func() []byte) error {
 	txn := s.db.NewTransactionAt(math.MaxUint64, true)
 	defer txn.Discard()
 	ts := s.tsSource.Begin()
 	defer s.tsSource.End(ts)
 	if err := fn(txn); err != nil {
+		s.writeNoopTombstone(ts)
 		return err
 	}
 	if lv := logValue(); len(lv) > 0 {
 		if err := txn.Set(replLogKey(ts), lv); err != nil {
+			s.writeNoopTombstone(ts)
 			return err
 		}
 	}
 	if err := txn.CommitAt(ts, nil); err != nil {
+		s.writeNoopTombstone(ts)
 		return err
 	}
 	s.discardMu.Lock()

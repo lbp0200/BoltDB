@@ -528,9 +528,10 @@ func TestRegressionSlaveConnectionOwnership(t *testing.T) {
 		t.Fatalf("slave key1 value: got %q, want val1", val1)
 	}
 
-	// Verify offsets match
-	if off := slave.GetSlaveOffset(); off != master.GetMasterOffset() {
-		t.Fatalf("offset mismatch after key1: master=%d slave=%d", master.GetMasterOffset(), off)
+	// Verify offsets match（ts 域——字节 offset 在 feed-only 下已退役恒 0）
+	// #nosec G115——master ts 水位非负装入 int64
+	if off := slave.GetSlaveAppliedTS(); int64(off) != master.GetMasterOffset() {
+		t.Fatalf("offset mismatch after key1: master=%d slaveTS=%d", master.GetMasterOffset(), off)
 	}
 
 	// Write more commands to exercise the active connection
@@ -562,9 +563,10 @@ func TestRegressionSlaveConnectionOwnership(t *testing.T) {
 			reconnectsAfterSync, reconnectsAfterWork)
 	}
 
-	// Verify offsets still match after all work
-	if off := slave.GetSlaveOffset(); off != master.GetMasterOffset() {
-		t.Fatalf("offset mismatch after work: master=%d slave=%d", master.GetMasterOffset(), off)
+	// Verify offsets still match after all work（ts 域——同上）
+	// #nosec G115——master ts 水位非负装入 int64
+	if off := slave.GetSlaveAppliedTS(); int64(off) != master.GetMasterOffset() {
+		t.Fatalf("offset mismatch after work: master=%d slaveTS=%d", master.GetMasterOffset(), off)
 	}
 }
 
