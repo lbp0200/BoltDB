@@ -155,6 +155,29 @@ DW_READ_PROBE=1 ...                                      # 探针开 = §7 完�
 > **隔离**：CI `test` job `-skip` 加本测试（`[flaky]` 标签——与既有 `[GHA: resource]`
 > 区分：本项与机器无关）；`remote --full` 仍覆盖。
 >
+> **实证结论（2026-09-11——机制已定罪，修复待选型）**：
+> 探针 `TestDrainGapForensic`（`internal/replication/drain_gap_forensic_test.go`——
+> 只读 drain 模拟：游标 + `ReplLogEntriesFrom(since)` + `verifyFeedTSContinuity`，
+> 缺失 ts 反查逐键提交墙钟三分类）10/10 轮复现 gap（2–6 个/轮，共 45 个）：
+> `DURING`（提交于扫描窗口内）43 + `AFTER_END`（扫描结束仍未提交）2 +
+> `BEFORE_START`（扫描开始前已提交）**0** + `NEVER_COMMITTED`（静置仍无）**0**，
+> 且 10/10 轮 `finalSince == maxTS+1` 自愈收敛。另有 600 次全量扫描（stable/fresh
+> 双探针，已删，结论留档）对已提交键零缺席；badger 源码确认 `CommitAt(nil)` 同步
+> 落盘（`txn.go:Commit→req.Wait`），`View` 在 managed 下确为 MaxUint64 无快照读。
+>
+> **定罪**：签名② = snapshot-race / commit 乱序（in-flight），transient，恒自愈；
+> 迭代器漏已提交键 = 零证据；墓碑丢失永久空洞 = 零证据。签名①（静默少一帧，本次
+> 未复现）归因为同一 commit-race 在“最后一扫”边界的窄窗口（final drain 遍历中提交
+> 且槽位已过）——生产侧经重连自愈（resumeTS 仍在 miss 点之前），与既有观察一致。
+>
+> **候选裁决**：① gap 截断发前缀 + 游标停 gap——② 自愈（等价重试），① 不彻底（保留）；
+> ③ gap 重扫一次——② 即愈（forensic 证下一轮恒有），① 不可见仍漏（保留）；
+> ② done-前缀读（`tsSource.done` 连续完成水位限读集）——唯一根治两侧（in-flight ts
+> 根本不在读集内；final-drain 窄窗口同被水位卡掉）——**推荐**，但 `doneTs` 指定快照读
+> 在 managed 下的一致性需单独实证（`NewTransactionAt(doneTs)` 读已提交前缀是否成立）。
+> 另：测试零容忍断言（`send_drop==0`）与自愈重试的结构性冲突仍在——生产修好后测试判据
+> 需单独立项（本单只输出证据，不改测试）。
+>
 > **修复方向（待设计——勿直接放宽测试）**：候选① gap 处截断发前缀 + 游标停 gap
 > （mid-range 自愈；tail-miss 仍可能 short——不彻底）；候选② done-前缀读
 > （`tsSource.done` 连续完成水位 + 指定 ts 快照读——`0931b6b` 后每 ts 恰一帧使前缀
