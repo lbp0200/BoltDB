@@ -204,6 +204,56 @@ Added `isPositiveIntegerResp` helper in replication_helper.go.
 
 ---
 
+## 0931b6b — SPOP Canonical SREM + NOOP Tombstones + ts-Domain Tests
+
+**Date:** 2026-09-11. **Trigger:** `main` CI red — 4 regression FAILs +
+strict soak FAIL + package timeout (`34206190847`), all introduced by the
+A4 backlog-ring removal (`476d6d9`, feed-only `PropagateCommand` ignores its
+args — drain trigger only).
+
+**Defect 1 — non-deterministic SPOP frames:** store logged raw `SPOP key [count]`
+(`set.go`) while the handler's canonical `SREM` was dropped on the floor.
+Replica popped *different random members* than master
+(`slave has member "b" not on master`, `slave extra member "z"`).
+Same root as KVrocks' lesson: replicate *effects*, not intents.
+
+**Fix:** `SPop`/`SPopN` switched to `retryUpdateLazy` (XADD precedent) logging
+canonical `SREM key members...` of the *actually popped* members in the same
+`commitTS` txn; empty pop logs a NOOP tombstone (occupies its ts).
+Covers the EXEC path too (EXEC applies via the same store methods).
+
+**Defect 2 — ts holes wedge the feed:** failed attempts (conflicts, wrong-type)
+burn a ts with no frame; `verifyFeedTSContinuity` errored on every drain
+(`feed log ts gap at ts=43 (expected 42)` ×hundreds), cursor never advanced →
+slave starvation → reconnect storm → convergence barrier never met.
+
+**Fix:** `commitTS`/`commitTSLazy` write a best-effort NOOP tombstone at the
+*same* ts on fn-error/frame-write/commit-error; `CreateEmptyStream` (COPY
+empty-stream mid-stream hole source) logs NOOP. Invariant now: *every
+allocated ts has exactly one REPLLOG key*, making the continuity guard exact.
+Slave skips NOOP apply but advances `lastAppliedTS` (else its own gap check
+false-positives); `parseReplLogValue` whitelists NOOP (FLUSHDB precedent).
+
+**Defect 3 — cross-domain test comparisons:** byte-domain `GetSlaveOffset()`
+(stuck at 0 post-retirement) vs ts-domain `GetMasterReplOffset()`. Fixed two
+regression guards + the soak convergence barrier (which was vacuously true:
+`11355-755643<=0`) to ts-domain; added `slave_applied_ts` to slave INFO.
+Strict soak now converges exactly (`mo=12726 slaveAppliedTS=12726`, 35s).
+
+**Invariant evolution (2 tests updated, intent preserved):**
+`TestReplLogSuccessOnly` and `TestProcessRequest_WrongTypeDoesNotAdvanceOffset`
+now assert *failed writes leave exactly one NOOP tombstone, no data frame*
+(previously: no entry at all).
+
+**Regression guards (all green remote `-race`):**
+`TestRegressionLiveSPOPNoDoubleProp`, `TestRegressionMultiExecSPOPCanonical`,
+`TestRegressionSlaveConnectionOwnership`,
+`TestRegressionFullresyncTsDoubleApplyGuard`, CI-equivalent regressions package
+(232s), `TestSoakReplicationShortStrict`, full `cmd/integration` (271s),
+full `internal/... -short`, lint 0.
+
+---
+
 ## Summary
 
 | Commit | Date | Scope | Problem |
@@ -216,3 +266,4 @@ Added `isPositiveIntegerResp` helper in replication_helper.go.
 | `f250ad3` | Aug 2026 | Backlog WAL | Never truncated — unbounded growth, multi-GB startup replay |
 | `e322b7c` | Aug 2026 | Replication | Rejected conditional EXPIRE/PEXPIRE propagated as PEXPIREAT (slave TTL drift) |
 | `d5e210d` | Aug 2026 | Replication | Linearizable FULLRESYNC boundary — zero duplicate window (`store.snapshotMu`) |
+| `0931b6b` | Sep 2026 | Replication | SPOP canonical SREM + NOOP tombstones (every-ts-one-frame) + ts-domain test convergence |

@@ -8,7 +8,9 @@
 
 ## 待办
 
-> **无未闭环任务（2026-09-08）**：§2 + §3 均已收口/通过（正文留痕如下）。唯一 known-open =
+> **待办现状（2026-09-11）**：§2 + §3 均已收口/通过（正文留痕如下）。未闭环 = §8
+> EXPIRE store 层规范化（待做——非阻塞——handler 层规范化在 feed-only 下已死——
+> 从侧 TTL 漂移 = 复制 lag 量级——workload 长 TTL 下无爆点）；唯一 known-open =
 > §6 lost=1 偶发——非阻塞 flake，定性见下方「已知 known-open」小节。
 
 ### 2. A4 阶段 2——删除 backlog 内存环（gate 严格——不可在线回滚）
@@ -109,6 +111,25 @@ bash scripts/remote-test.sh -race -timeout 180s -v ./cmd/integration/regressions
   -run TestRegressionDuplicateWindowMeasurement          # 加 -count=15（5 批 × 3 次）
 DW_READ_PROBE=1 ...                                      # 探针开 = §7 完整形态
 ```
+
+### 8. EXPIRE/PEXPIRE 相对 TTL 的 store 层规范化（待做——非阻塞）
+
+> **背景（2026-09-11——`0931b6b` 调查副产品）**：`handler_core.go` 的
+> EXPIRE→PEXPIREAT 规范化（`propagateArgs`）在 feed-only 下已死——
+> `PropagateCommand` 忽略参数只当排水触发；store 记 raw `EXPIRE key seconds`
+> （`base.go:190`）/ `PEXPIRE`（`base.go:275`）→ 从侧滞后 lag 才 apply →
+> 绝对过期点漂移 lag 量级。`e322b7c` 只修了条件拒绝误传播，相对 TTL 本体未动。
+> 当前 workload 全长 TTL（EXPIRE ≥1s、SETEX ≥10s）+ strict soak 只比 key/值/类型
+> 不比 TTL 绝对点 → 无爆点 → 本单（`0931b6b`）范围外，记入 TODO。
+>
+> **修法（SPOP 同模式 `0931b6b`）**：`Expire`/`PExpire` 改 `retryUpdateLazy`——
+> 闭包捕获提交内算出的绝对过期点，记规范 `PEXPIREAT key absoluteMS` 帧；
+> 未命中（success=false）记 NOOP（占 ts）。注意面：① 条件变体 NX/XX/GT/LT +
+> `isPositiveIntegerResp` 门（`e322b7c` 语义——拒绝不传播）必须保留；② 秒/毫秒
+> 精度对齐（store 内 ExpiresAt 秒级 vs PEXPIREAT 毫秒）；③ PERSIST 不动。
+>
+> **验证**：远程 -race `TestRegressionCanonicalExpire*` 全族 +
+> strict soak（`TestSoakReplicationShortStrict`）+ 本文件 §2 级回归面。
 
 ## 已知 known-open（据实定性，非阻塞 flake）
 

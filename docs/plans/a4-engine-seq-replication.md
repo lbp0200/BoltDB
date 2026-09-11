@@ -830,3 +830,22 @@ StartsAtCommandBoundary 字节边界不参与——悖论结构性消失——�
 /SendBacklogData/psync 字节分支/BacklogWAL/环 + GetBacklogCurrentOffset/GetMasterReplOffset
 字节回退）+ 关键设计点（FULLRESYNC 后 ts 域激活替代字节 catch-up）+ 实施顺序
 （gate 1 部署 → gate 2/3 核验 → 改造 → 删除 → 守卫 → 回归）——见 TODO §2。
+
+**删环后修正链（2026-09-11——`0931b6b`——main CI 红 `34206190847` 定位修复）**：
+删环把 `PropagateCommand` 变为 feed-only 排水触发（参数丢弃）后暴露三连缺陷——
+① store 记 raw SPOP，从侧独立随机 pop 发散（`slave has member "b" not on master`）→
+`SPop`/`SPopN` 改 `retryUpdateLazy` 记规范 `SREM of actual members`（XADD 式——
+复制 effect 不是 intent——EXEC 同路径覆盖）；② 失败提交烧 ts 无帧→
+`verifyFeedTSContinuity` 卡游标致重连风暴（`gap at ts=43 expected 42` ×数百）→
+`commitTS`/`commitTSLazy` 失败路径同 ts 写 NOOP 墓碑 + `CreateEmptyStream` 补 NOOP +
+空 pop 记 NOOP——不变量现为**每已分配 ts 恰一日志键**（连续性守卫从近似正确变精确）；
+从侧跳过 NOOP 执行但推进 `lastAppliedTS`，`parseReplLogValue` 白名单放行
+（FLUSHDB 前例）；③ 测试跨域比较（字节 offset 恒 0 vs ts 水位——soak 收敛屏障恒真式
+`11355-755643<=0`）→ 2 回归守卫 + soak 屏障切 ts 域，从侧 INFO 加 `slave_applied_ts`。
+不变量演进（2 测试跟进——意图保留）：失败写只留墓碑、无数据帧
+（`TestReplLogSuccessOnly` / `TestProcessRequest_WrongTypeDoesNotAdvanceOffset`）。
+验证：4 红守卫 + 回归包 CI 同款（232s）+ 重型 dw/PsyncNoLoss/SnapshotFullresync +
+strict soak（35s 精确收敛 `mo=12726 slaveAppliedTS=12726` 零分歧）+
+`cmd/integration` 全包（271s）+ `internal/... -short` 全绿 + lint 0。
+遗留：EXPIRE 相对 TTL 同病（handler 规范化已死——从侧漂移 lag 量级——workload 长 TTL
+无爆点）→ TODO §8 待做。
