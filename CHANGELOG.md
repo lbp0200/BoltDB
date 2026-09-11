@@ -1,5 +1,20 @@
 # Changelog
 
+## v8.60.0 (2026-09-11) — EXPIRE 绝对过期帧规范化 + drain done-前缀读（§8/§9 收口）
+
+> **复制确定性补齐**：`Expire`/`PExpire` store 层改记绝对 `PEXPIREAT` 帧（相对 TTL 不再随从侧 lag 漂移）；drain 发送面改 done-前缀读（读集限 `tsSource.done` 连续完成水位——并发扫描瞬时空洞根治，原 flake `-count=10` 全绿，CI 隔离 skip 摘除）。TODO 待办区清空（§2 gate 1 前提消失关闭；§6 lost=1 记录移除，守卫保留）。
+
+### §8 EXPIRE/PEXPIRE 相对 TTL 的 store 层规范化
+
+- `Expire`/`PExpire` 改 `retryUpdateLazy`：闭包捕获提交内算出的绝对过期点，记规范 `PEXPIREAT key absoluteMS` 帧；未命中记 NOOP 占 ts（SPOP `0931b6b` 同模式）。`PExpire` 帧取秒级 `ExpiresAt*1000` 对齐（从侧重算 ceil 相位一致）。条件变体 NX/XX/GT/LT + `isPositiveIntegerResp` 门（`e322b7c`）原样保留；PERSIST/EXPIREAT 未动。
+- 新守卫 `TestRegressionCanonicalExpireAbsolutePoint`（帧为 PEXPIREAT 断言 + EXPIRETIME/PEXPIRETIME 主从精确相等）。
+
+### §9 并发 drain 扫描瞬时空洞 flake 根治
+
+- 实证定罪：`TestDrainGapForensic` 15 轮约 60 个 gap 全部分类为 in-flight（DURING/AFTER_END），迭代器漏键与墓碑空洞零证据，15/15 自愈收敛。
+- 根治：`FeedEntriesFrom` 先读 done 水位再以其为 readTs 上界扫 `[since, done]`（新增 `ReplLogEntriesRange`/`ReplLogDoneTS`/`doneWater`）；`done < since` 返回空等水位。
+- 新守卫 `TestDrainDoneBoundedNoGap`（零 gap + 精确 320 帧 + 游标收敛）10/10 绿；CI `test` 的 `[flaky]` 隔离 skip 摘除。
+
 ## v8.59.0 (2026-09-08) — A4 阶段 2 删 backlog 内存环（ts 域收口）+ FLUSHDB 传播帧修复
 
 > **复制架构 ts 域化收口**：删除 `ReplicationBacklog` 内存环 + `BacklogWAL` + 字节 catch-up 循环——复制全链路收敛到 ts 域（feed-only），backlog 概念退役。删环暴露 FLUSHDB 传播缺陷并修复——`FlushDB()`/`ClearAllData()` 原不写 logValue → 不产生 REPLLOG 帧 → 从侧收不到清库事件，现清库后写一条 `REPLLOG <ts> FLUSHDB` 帧 + apply 白名单零参命令。§3 dw ≤1/15 正式验收通过（全 5 批 `-count=3` gap=0）。§6 lost=1 定性为 documented known-open flake（非阻塞，累计 19 次复现零命中）。
