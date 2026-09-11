@@ -33,9 +33,8 @@
   ConcurrentWriters/Empty + TestTSReplayEquivalence——1.65s）；
 - **gate 3 持续通过**：`TestRegressionPsyncReconnectNoLossFeed` 复跑 PASS 45.53s
   （零 MISSING/EXTRA/MISMATCH）；
-- **gate 1 未满足（唯一剩余）**：部署内字节从侧退役——部署面——需运维确认部署
-  内从侧全量 `--feed-loop` 且无 ts=0 请求进入 PSYNC——代码面无法核验——阶段 2
-  实施等待此 gate
+- **gate 1 已关闭（2026-09-11——前提消失）**：无外部署，`--feed-loop`/feed-mode 为唯一模式
+  （字节路径随 `476d6d9` 在代码面删干净——无字节从侧可退役，无需运维确认，gate 自消）。
 
 > **依赖链注记（2026-09-05）**：gate 1 同时阻塞三件事——① 本节阶段 2 实施
 > ② §3 dw ≤1/15 正式验收 ③ 字节路径残留清除（原 §5 C4 残留面——gate 1 退役后
