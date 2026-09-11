@@ -142,7 +142,10 @@ func (s *BotreonStore) Expire(key string, seconds int) (bool, error) {
 	s.keyLockMgr.Lock(key)
 	defer s.keyLockMgr.Unlock(key)
 	success := false
-	err := s.retryUpdate(func(txn *badger.Txn) error {
+	var expiresAtSec uint64
+	err := s.retryUpdateLazy(func(txn *badger.Txn) error {
+		success = false // reset each attempt; stale value must not survive conflict retry
+		expiresAtSec = 0
 		typeKey := TypeOfKeyGet(key)
 		item, err := txn.Get(typeKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -179,6 +182,7 @@ func (s *BotreonStore) Expire(key string, seconds int) (bool, error) {
 
 		// 直接设置TTL：计算过期时间戳（秒 — 与 BadgerDB WithTTL 格式一致）
 		expiresAt := uint64(time.Now().Unix()) + uint64(seconds)
+		expiresAtSec = expiresAt
 		e := badger.NewEntry(valueKey, valBytes)
 		e.ExpiresAt = expiresAt
 		if err := txn.SetEntry(e); err != nil {
@@ -187,7 +191,15 @@ func (s *BotreonStore) Expire(key string, seconds int) (bool, error) {
 
 		success = true
 		return nil
-	}, 30, encodePropagateCommand([]byte("EXPIRE"), []byte(key), []byte(strconv.Itoa(seconds))))
+	}, 30, func() []byte {
+		// D4 确定性规范化：记绝对 PEXPIREAT（毫秒）而非相对 EXPIRE——
+		// 从侧滞后 lag 才 apply 时相对秒会漂移 lag 量级（TODO §8）。
+		// 未命中（success=false）记 NOOP 占住本 ts（保 feed 连续性）。
+		if !success || expiresAtSec == 0 {
+			return noopLogValue()
+		}
+		return encodePropagateCommand([]byte("PEXPIREAT"), []byte(key), []byte(strconv.FormatUint(expiresAtSec*1000, 10)))
+	})
 	return success, err
 }
 
@@ -223,7 +235,10 @@ func (s *BotreonStore) PExpire(key string, milliseconds int64) (bool, error) {
 	s.keyLockMgr.Lock(key)
 	defer s.keyLockMgr.Unlock(key)
 	success := false
-	err := s.retryUpdate(func(txn *badger.Txn) error {
+	var expiresAtMs uint64
+	err := s.retryUpdateLazy(func(txn *badger.Txn) error {
+		success = false // reset each attempt; stale value must not survive conflict retry
+		expiresAtMs = 0
 		typeKey := TypeOfKeyGet(key)
 		item, err := txn.Get(typeKey)
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -264,6 +279,11 @@ func (s *BotreonStore) PExpire(key string, milliseconds int64) (bool, error) {
 		if milliseconds%1000 != 0 {
 			expiresAt++ // 向上取整，确保不会因为截断而提前过期
 		}
+		// 规范帧用秒级 ExpiresAt 对齐的毫秒绝对点（expiresAt*1000——非 nowMs+ms）：
+		// store 仅秒级精度；若帧记精确 ms，从侧 PEXPIREAT→PExpire 重算 ceil 时因
+		// 起始 ms 余量不同可差 1 秒（M=10.0+1500ms→主12，从10.9起算600ms→从11）。
+		// 秒对齐帧经从侧重算恒得同一秒（floor(T)+ceil((E*1000-T)/1000)==E 恒成立）。
+		expiresAtMs = expiresAt * 1000
 		e := badger.NewEntry(valueKey, valBytes)
 		e.ExpiresAt = expiresAt
 		if err := txn.SetEntry(e); err != nil {
@@ -272,7 +292,13 @@ func (s *BotreonStore) PExpire(key string, milliseconds int64) (bool, error) {
 
 		success = true
 		return nil
-	}, 30, encodePropagateCommand([]byte("PEXPIRE"), []byte(key), []byte(strconv.FormatInt(milliseconds, 10))))
+	}, 30, func() []byte {
+		// D4 确定性规范化：同 Expire（绝对 PEXPIREAT——TODO §8）。
+		if !success || expiresAtMs == 0 {
+			return noopLogValue()
+		}
+		return encodePropagateCommand([]byte("PEXPIREAT"), []byte(key), []byte(strconv.FormatUint(expiresAtMs, 10)))
+	})
 	return success, err
 }
 

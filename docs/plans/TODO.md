@@ -8,8 +8,7 @@
 
 ## 待办
 
-> **待办现状（2026-09-11）**：§2 + §3 均已收口/通过（正文留痕如下）。未闭环 = §8
-> EXPIRE store 层规范化（待做——非阻塞）+ §9 并发 drain 扫描 flake（待修——
+> **待办现状（2026-09-11）**：§2 + §3 + §8 均已收口/通过（正文留痕如下）。未闭环 = §9 并发 drain 扫描 flake（待修——
 > CI 已隔离 skip）；唯一 known-open = §6 lost=1 偶发——非阻塞 flake，定性见下方
 > 「已知 known-open」小节。
 
@@ -112,8 +111,16 @@ bash scripts/remote-test.sh -race -timeout 180s -v ./cmd/integration/regressions
 DW_READ_PROBE=1 ...                                      # 探针开 = §7 完整形态
 ```
 
-### 8. EXPIRE/PEXPIRE 相对 TTL 的 store 层规范化（待做——非阻塞）
+### 8. EXPIRE/PEXPIRE 相对 TTL 的 store 层规范化（✅ 已收口 2026-09-11）
 
+> **收口**：`Expire`/`PExpire` 改 `retryUpdateLazy` 记规范绝对 `PEXPIREAT` 帧
+> （闭包捕获提交内算出的绝对过期点；未命中记 NOOP 占 ts——SPOP `0931b6b` 同模式）。
+> PExpire 帧取秒级 `ExpiresAt*1000` 对齐（非 `nowMs+ms`——否则从侧重算 ceil 因起始余量
+> 不同可差 1 秒）。条件变体 NX/XX/GT/LT（`key_commands.go:handleEXPIRE`）+
+> `isPositiveIntegerResp` 门（`e322b7c`）原样保留；PERSIST/EXPIREAT 未动。
+> 新守卫 `TestRegressionCanonicalExpireAbsolutePoint`（帧为 PEXPIREAT 断言 +
+> EXPIRETIME/PEXPIRETIME 主从精确相等）+ 既有全族 + strict soak 绿。
+>
 > **背景（2026-09-11——`0931b6b` 调查副产品）**：`handler_core.go` 的
 > EXPIRE→PEXPIREAT 规范化（`propagateArgs`）在 feed-only 下已死——
 > `PropagateCommand` 忽略参数只当排水触发；store 记 raw `EXPIRE key seconds`
