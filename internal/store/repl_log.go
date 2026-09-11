@@ -66,6 +66,14 @@ type ReplLogEntry struct {
 	Value []byte
 }
 
+// ReplLogDoneTS 返回传播日志的连续完成水位（tsSource.done——所有 ≤ 返回值的 ts
+// 其提交尝试均已结束——commitTS 同步提交语义下，每个 ≤ 水位的 ts 必有一个日志键
+// （数据帧或 NOOP 墓碑——见 commitTS/writeNoopTombstone）。drain 侧以此为读集上界
+// （ReplLogEntriesRange）——in-flight ts 恒大于水位，根本不在读集内（TODO §9 真修）。
+func (s *BotreonStore) ReplLogDoneTS() uint64 {
+	return s.tsSource.doneWater()
+}
+
 // ReplLogStartTS 返回当前传播日志键的最小 ts（日志键范围下界——PSYNC-ts 判定
 // [logStartTS, currentTS] 的起点）。正向前缀 Seek 第一个日志键（O(log N) 级）。
 func (s *BotreonStore) ReplLogStartTS() (uint64, error) {
@@ -106,9 +114,41 @@ func (s *BotreonStore) ReplLogEntries() ([]ReplLogEntry, error) {
 	return s.ReplLogEntriesFrom(0)
 }
 
+// ReplLogEntriesRange 读 [since, upto] 的传播日志键（drain 侧专用——TODO §9 真修）：
+// 以 upto 为 readTs 的 MVCC 快照读（NewTransactionAt——badger managed 语义——
+// 可见集恰为 commitTs ≤ upto 的版本）+ 显式上界截断。调用方按“先读 done 水位、
+// 再以该水位为 upto 扫”的顺序使用：一切 ≤ done 的 ts 在 done 被读到时早已提交可见
+// （commitTS 同步提交 + End 恒在返回后），故读集按构造稠密——in-flight ts 恒
+// 大于 done，根本不可见（旧无界读 View@MaxUint64 会把扫描窗口内提交的键带入
+// 遍历造成瞬时空洞——本单根因）。upto < since 时返回空（等提交推进水位，不报错）。
+func (s *BotreonStore) ReplLogEntriesRange(since, upto uint64) ([]ReplLogEntry, error) {
+	var out []ReplLogEntry
+	if upto < since {
+		return out, nil
+	}
+	seekKey := replLogKey(since)
+	txn := s.db.NewTransactionAt(upto, false)
+	defer txn.Discard()
+	it := txn.NewIterator(badger.DefaultIteratorOptions)
+	defer it.Close()
+	for it.Seek(seekKey); it.Valid() && bytes.HasPrefix(it.Item().Key(), replLogPrefix); it.Next() {
+		key := it.Item().Key()
+		ts := binary.BigEndian.Uint64(key[len(key)-8:])
+		if ts > upto {
+			break
+		}
+		v, err := it.Item().ValueCopy(nil)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ReplLogEntry{TS: ts, Value: v})
+	}
+	return out, nil
+}
+
 // ReplLogEntriesFrom 从指定 ts（含）起遍历传播日志键（replLogKey(since) seek——
-// 键序即 ts 升序——首个 ts >= since 的日志键起）。log-key 增量流（S2 分级 2/3 重排——
-// master 侧按从侧请求 ts 增量发送）的读取基础。
+// 键序即 ts 升序——首个 ts >= since 的日志键起）。诊断/测试/探针用无界读保留；
+// drain 发送面改用 ReplLogEntriesRange（done 水位限界——TODO §9 真修）。
 func (s *BotreonStore) ReplLogEntriesFrom(since uint64) ([]ReplLogEntry, error) {
 	var out []ReplLogEntry
 	seekKey := replLogKey(since)

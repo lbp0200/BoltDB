@@ -100,7 +100,12 @@ func verifyFeedTSContinuity(entries []store.ReplLogEntry) error {
 }
 
 func (rm *ReplicationManager) FeedEntriesFrom(since uint64) ([][]string, error) {
-	entries, err := rm.store.ReplLogEntriesFrom(since)
+	// done-前缀读（TODO §9 真修）：先读连续完成水位 done，再以 done 为 readTs 上界扫
+	// [since, done]。一切 ≤ done 的 ts 在水位读到时早已提交可见（commitTS 同步提交 +
+	// End 恒在返回后），读集按构造稠密——in-flight ts 恒大于 done，不可见、无瞬时空洞。
+	// done < since 时读集为空（等提交推进水位——返回空，不报错、不记 drop）。
+	done := rm.store.ReplLogDoneTS()
+	entries, err := rm.store.ReplLogEntriesRange(since, done)
 	if err != nil {
 		return nil, err
 	}

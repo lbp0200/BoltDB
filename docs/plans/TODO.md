@@ -8,8 +8,8 @@
 
 ## 待办
 
-> **待办现状（2026-09-11）**：§2 + §3 + §8 均已收口/通过（正文留痕如下）。未闭环 = §9 并发 drain 扫描 flake（待修——
-> CI 已隔离 skip）；唯一 known-open = §6 lost=1 偶发——非阻塞 flake，定性见下方
+> **待办现状（2026-09-11）**：§2 + §3 + §8 + §9 均已收口/通过（正文留痕如下）。
+> 唯一 known-open = §6 lost=1 偶发——非阻塞 flake，定性见下方
 > 「已知 known-open」小节。
 
 ### 2. A4 阶段 2——删除 backlog 内存环（gate 严格——不可在线回滚）
@@ -138,8 +138,20 @@ DW_READ_PROBE=1 ...                                      # 探针开 = §7 完�
 > **验证**：远程 -race `TestRegressionCanonicalExpire*` 全族 +
 > strict soak（`TestSoakReplicationShortStrict`）+ 本文件 §2 级回归面。
 
-### 9. 并发 drain 扫描瞬时空洞 flake（隔离待修——CI `test` 已 skip）
+### 9. 并发 drain 扫描瞬时空洞 flake（✅ 已收口 2026-09-11——done-前缀读）
 
+> **收口**：drain 发送面改 done-前缀读——`FeedEntriesFrom` 先读 `tsSource.done`
+> 连续完成水位，再以该水位为 readTs 上界扫 `[since, done]`（`ReplLogEntriesRange` +
+> `ReplLogDoneTS` + `tsSource.doneWater`）。一切 ≤ done 的 ts 在水位读到时早已提交可见
+> （commitTS 同步提交 + End 恒在返回后），读集按构造稠密——in-flight ts 恒大于 done，
+> 根本不可见。`done < since` 时返回空等水位（不报错、不记 drop）。CI `test` 的隔离
+> skip 已摘除；无界读（`ReplLogEntriesFrom`）诊断/测试/探针保留。
+> 新守卫 `TestDrainDoneBoundedNoGap`（真实 `FeedEntriesFrom` 路径：零 gap + 精确
+> 320 帧 + 游标收敛——修前构造 10 轮挂约 5 轮）10/10 绿；原 flake
+> `TestCatchUpAndEnableSlaveTS_ConcurrentPropagateNoDupNoHole` -count=10 全绿。
+> 验证：flake×10 + strict soak + regressions CI 同款 + internal 全包 + cmd/boltDB +
+> lint 0 issues（远程 -race）。
+>
 > **现象（2026-09-11）**：`TestCatchUpAndEnableSlaveTS_ConcurrentPropagateNoDupNoHole`
 > 远程 `-race -count=10` 挂 3-5 轮、两种签名：① `got 319 want 320`（send_drop=0，无
 > writer 报错）；② `send_drop=1`（`feed log ts gap at ts=25/27`）。**pre-fix worktree

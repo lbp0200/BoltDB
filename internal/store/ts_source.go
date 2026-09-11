@@ -65,6 +65,15 @@ func (t *tsSource) End(ts uint64) {
 	}
 }
 
+// doneWater 返回连续完成前缀水位（drain 读集上界专用——与 discard 推进解耦：
+// SafeDiscard/AdvanceDiscard 承载 discard 单调门，drain 只需 done 本身——
+// done 只前进一步调且 End 恒在提交返回后，读集 [since, done] 按构造无洞）。
+func (t *tsSource) doneWater() uint64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.done
+}
+
 // SafeDiscard 返回当前可安全推进 discard-ts 的值：连续完成前缀（所有 ≤ done 的
 // 提交均已结束——无 in-flight ts ≤ done——discard-ts ≤ done 永不越过未完成提交）。
 func (t *tsSource) SafeDiscard() uint64 {
