@@ -184,9 +184,9 @@ jobs:
           go test -race -timeout 120s -run 'TestMixedCluster' -count=1 ./cmd/integration/
 
       - name: Split brain tests
-        # ScenarioD 已知 flaky（GHA 上 3 哨兵中 2/3 达成共识，MinAgreedFraction=1.0 不满足）
+        # ScenarioD 曾 flaky（全票 1.0 判据比生产更严）——已改多数派 2/3，skip 摘除。
         run: |
-          go test -race -timeout 120s -run 'TestSplitBrain|TestRegressionFailoverOscillation' -skip 'TestRegressionFailoverOscillationScenarioD' -count=1 ./cmd/integration/
+          go test -race -timeout 120s -run 'TestSplitBrain|TestRegressionFailoverOscillation' -count=1 ./cmd/integration/
 
       - name: Shutdown tests
         run: |
