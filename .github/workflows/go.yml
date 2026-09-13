@@ -461,13 +461,21 @@ jobs:
 
       - name: Install benchstat
         run: |
+          # go install 落到 $(go env GOPATH)/bin（~/go/bin），默认不在 PATH 上；
+          # 不导出则后续步骤 command -v benchstat 失败，守卫静默跳过（此前 CI 的 4 条 warning 根因）。
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           # Retry up to 3 times — GHA 间歇性网络超时
           for i in 1 2 3; do
             go install golang.org/x/perf/cmd/benchstat@latest && break
             echo "Attempt $i failed, retrying in 5s..."
             sleep 5
           done
-          which benchstat || echo "::warning::benchstat not installed, benchmark checks will be skipped"
+          if ! command -v benchstat; then
+            echo "::error::benchstat 安装失败，基准回归守卫无法执行"
+            exit 1
+          fi
+          benchstat -help >/dev/null && echo "benchstat ready: $(command -v benchstat)"
 
       - name: Proto benchmark regression check
         run: ./scripts/guard_bench.sh proto
